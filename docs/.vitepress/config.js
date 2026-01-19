@@ -5,6 +5,13 @@ export default defineConfig({
   base :'/',
   title: 'BoothKernel',
   description: '现代的同人摊主点单与记账系统',
+  head: [
+    ['link', { rel: 'icon', href: '/favicon.ico' }],
+    // 可选：如果你有 svg 版
+    // ['link', { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
+    // 可选：苹果设备
+    // ['link', { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' }],
+  ],
 
   themeConfig: {
     /* =========================
@@ -14,10 +21,7 @@ export default defineConfig({
       { text: '主页', link: '/' },
       { text: '快速上手', link: '/guide/getting-started' },
       { text: 'FAQ', link: '/faq/' },
-      {
-        text: 'GitHub',
-        link: 'https://github.com/Academy-of-Boundary-Landscape/ABL-BoothApp'
-      }
+      { text: '联系与支持', link: '/support/contact' }
     ],
 
     /* =========================
@@ -67,7 +71,10 @@ export default defineConfig({
             { text: '社区与开源', link: '/faq/community' }
           ]
         }
-      ]
+      ],
+      '/support/': [
+      { text: '支持', items: [{ text: '联系与支持', link: '/support/contact' }] }
+    ]
     },
 
     /* =========================

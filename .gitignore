@@ -74,3 +74,15 @@ secret-key.txt
 # VitePress 相关
 docs/.vitepress/dist
 docs/.vitepress/cache
+
+# src文件夹，因为它被frontend替代
+/src/
+# index.html是初始的模板文件，不需要纳入版本控制
+/index.html
+
+# app-icon.png
+/app-icon.png
+
+# 构建产物
+dist/
+target/

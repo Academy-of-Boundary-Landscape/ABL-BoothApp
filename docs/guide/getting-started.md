@@ -31,6 +31,9 @@ description: 用一台主机 + 一台平板/手机，在没有互联网的漫展
 
 ## Step 1：软件安装与基础配置
 
+<div style="text-align: center;">
+  <img src="../images/help/p1.png" alt="Step 1" style="max-width: 200px;">
+</div>
 1. 从我们的官网Release页面下载并安装/解压 摊盒APP （记得区分 Windows / Android 版本）
 2. 打开应用，进入 **管理员页面（最高控制台）**
 
@@ -58,6 +61,10 @@ description: 用一台主机 + 一台平板/手机，在没有互联网的漫展
 
 ## Step 3: 创建展会，录入摊位商品
 
+<div style="text-align: center;">
+  <img src="../images/help/p2.png" alt="Step 3" style="max-width: 200px;">
+</div>
+
 从侧边栏回到 **展会管理**：
 
 1. 新建展会：名称 + 日期 + 地点等备注
@@ -70,6 +77,10 @@ description: 用一台主机 + 一台平板/手机，在没有互联网的漫展
 ---
 
 ## Step 4：组网（离线局域网）
+
+<div style="text-align: center;">
+  <img src="../images/help/p3.png" alt="Step 4" style="max-width: 200px;">
+</div>
 
 我们的多机同步依赖局域网，最稳的方式是 **手机开热点**：
 
@@ -87,6 +98,10 @@ description: 用一台主机 + 一台平板/手机，在没有互联网的漫展
 ---
 
 ## Step 5：配置APP页面显示
+
+<div style="text-align: center;">
+  <img src="../images/help/p4.png" alt="Step 5" style="max-width: 200px;">
+</div>
 
 由于**APP和网页访问**的功能几乎完全相同，实际上哪台设备打开app作为主机端并不重要。  
 你可以根据现场需求灵活分配角色：
@@ -121,6 +136,9 @@ description: 用一台主机 + 一台平板/手机，在没有互联网的漫展
 
 ## Step 6: 收摊后一键导出报表
 
+<div style="text-align: center;">
+  <img src="../images/help/p5.png" alt="Step 6" style="max-width: 200px;">
+</div>
 在管理员页面进入 **展会-销售统计**：
 
 - 在右上角的“下载Excel报表”按钮，导出完整的销售数据, 里面包含：
