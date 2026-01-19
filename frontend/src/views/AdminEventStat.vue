@@ -164,6 +164,7 @@ import { NButton, NSpin, NAlert, NCard, NTable } from 'naive-ui';
 
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 
 const route = useRoute();
 const statStore = useEventStatStore();
@@ -219,96 +220,85 @@ async function applyFilters() {
     intervalMinutes: intervalMinutes.value,
   });
 }
+const API_ORIGIN = 'http://127.0.0.1:5140';
+function toAbsoluteApiUrl(url) {
+  if (!url) return url;
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  if (url.startsWith('/')) return `${API_ORIGIN}${url}`;
+  return `${API_ORIGIN}/${url}`;
+}
+
 async function downloadReport() {
   if (!statStore.stats || !statStore.stats.summary?.length) return;
 
+  const isTauri = window.__TAURI_INTERNALS__ !== undefined;
+  const token = sessionStorage.getItem('access_token');
+
+  const safeName = (statStore.stats.event_name || 'sales_report').replace(/[\\/:*?"<>|]/g, '_');
+  const fileName = `sales_report_${safeName}.xlsx`;
+
+  const url = toAbsoluteApiUrl(statStore.downloadUrl);
+
   try {
-    console.log('开始请求 Excel 报告:', statStore.downloadUrl);
-    
-    // 从 sessionStorage 获取 token 并添加到请求头
-    const token = sessionStorage.getItem('access_token');
-    const headers = { 'credentials': 'include' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    
-    const response = await fetch(statStore.downloadUrl, { 
-      credentials: 'include',
-      headers: headers
-    });
-    
-    if (!response.ok) {
-      throw new Error(`下载失败: ${response.status}`);
-    }
-
-    // 1. 获取文件名
-    const safeName = (statStore.stats.event_name || 'sales_report').replace(/[\\/:*?"<>|]/g, '_');
-    const fileName = `sales_report_${safeName}.xlsx`;
-
-    // 2. 获取二进制数据
-    const blob = await response.blob();
-
-    console.log('Excel 报告下载完成，大小为', blob.size, '字节，准备保存');
-    
-    // 3. 判断环境：是 Tauri APP 还是 普通浏览器？
-    const isTauri = window.__TAURI_INTERNALS__ !== undefined;
+    console.log('开始请求 Excel 报告:', url, 'isTauri:', isTauri);
 
     if (isTauri) {
-      // ============================================================
-      // 场景 A: Tauri 主机环境 (使用原生系统弹窗保存)
-      // ============================================================
-      try {
-        // 1. 弹出"保存文件"对话框，让用户选位置
-        const filePath = await save({
-          defaultPath: fileName,
-          filters: [{
-            name: 'Excel Files',
-            extensions: ['xlsx']
-          }]
-        });
+      const headers = {
+        Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
 
-        // 用户如果取消了，filePath 为 null
-        if (!filePath) return;
+      const resp = await tauriFetch(url, { method: 'GET', headers });
 
-        // 2. 将 Blob 转为 Uint8Array (Rust 写入文件需要字节数组)
-        const arrayBuffer = await blob.arrayBuffer();
-        const uint8Array = new Uint8Array(arrayBuffer);
-
-        // 3. 写入硬盘
-        await writeFile(filePath, uint8Array);
-        
-        // (可选) 提示成功
-        // window.$message.success('导出成功'); 
-        alert('导出成功'); // 或者使用 Naive UI 的 message
-        
-      } catch (err) {
-        console.error('Tauri 保存文件失败:', err);
-        alert('保存失败，请检查文件权限');
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => '');
+        throw new Error(`下载失败: ${resp.status} ${resp.statusText} ${text.slice(0, 200)}`);
       }
 
-    } else {
-      // ============================================================
-      // 场景 B: 手机/电脑浏览器 (使用 Web 标准下载)
-      // ============================================================
-      console.log('检测到浏览器环境，使用 Blob 下载');
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.style.display = 'none';
-      a.href = url;
-      a.download = fileName;
+      const ab = await resp.arrayBuffer();
+      const bytes = new Uint8Array(ab);
 
-      document.body.appendChild(a);
-      a.click();
-      
-      // 延时清理，兼容移动端浏览器
-      setTimeout(() => {
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-      }, 100);
+      const filePath = await save({
+        defaultPath: fileName,
+        filters: [{ name: 'Excel Files', extensions: ['xlsx'] }]
+      });
+      if (!filePath) return;
+
+      await writeFile(filePath, bytes);
+      alert('导出成功');
+      return;
     }
 
+    // 浏览器环境
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      credentials: 'include',
+      headers
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(`下载失败: ${response.status} ${text.slice(0, 200)}`);
+    }
+
+    const blob = await response.blob();
+    const dl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = dl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(dl);
+    }, 100);
   } catch (e) {
     console.error('下载 Excel 报告失败:', e);
+    alert(e?.message || '下载失败');
   }
 }
 
