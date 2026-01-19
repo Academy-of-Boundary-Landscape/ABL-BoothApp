@@ -86,3 +86,5 @@ docs/.vitepress/cache
 # 构建产物
 dist/
 target/
+
+/vite.config.js
