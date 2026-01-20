@@ -384,7 +384,6 @@
   }
 }
 
-/* 移动：自然一列 */
 @media (max-width: 959px){
   .bk-shots3{
     grid-template-columns: 1fr;
@@ -418,8 +417,6 @@
   font-size: .92rem;
   line-height: 1.6;
 }
-
-/* Aspect hints (不会裁切，只是让卡片观感更统一) */
 .bk-shot--landscape img{
   aspect-ratio: 16 / 9;
   object-fit: contain; /* 保证不裁掉内容 */

@@ -2,21 +2,24 @@ import { defineConfig } from 'vitepress'
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
+    vite: {
+    optimizeDeps: {
+      include: [
+        'naive-ui',
+        'naive-ui/es', 
+        '@vicons/ionicons5'
+      ]
+    }
+  },
   base :'/',
   title: 'BoothKernel',
   description: '现代的同人摊主点单与记账系统',
   head: [
     ['link', { rel: 'icon', href: '/favicon.ico' }],
-    // 可选：如果你有 svg 版
-    // ['link', { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
-    // 可选：苹果设备
-    // ['link', { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' }],
   ],
 
   themeConfig: {
-    /* =========================
-     * 顶部导航（Nav）
-     * ========================= */
+
     nav: [
       { text: '主页', link: '/' },
       { text: '快速上手', link: '/guide/getting-started' },
@@ -24,10 +27,6 @@ export default defineConfig({
       { text: '联系与支持', link: '/support/contact' }
     ],
 
-    /* =========================
-     * 侧边栏（Sidebar）
-     * 按路径分别定义，避免混在一起
-     * ========================= */
     sidebar: {
       /* -------- Guide 教程 -------- */
       '/guide/': [
@@ -76,11 +75,6 @@ export default defineConfig({
       { text: '支持', items: [{ text: '联系与支持', link: '/support/contact' }] }
     ]
     },
-
-    /* =========================
-     * 其它推荐设置
-     * ========================= */
-
     outline: {
       level: [2, 3],
       label: '本页内容'
