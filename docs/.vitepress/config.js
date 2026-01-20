@@ -2,32 +2,24 @@ import { defineConfig } from 'vitepress'
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
-    vite: {
-    optimizeDeps: {
-      include: [
-        'naive-ui',
-        'naive-ui/es', 
-        '@vicons/ionicons5'
-      ]
-    }
-  },
-  base :'/',
-  title: 'BoothKernel',
-  description: '现代的同人摊主点单与记账系统',
-  head: [
-    ['link', { rel: 'icon', href: '/favicon.ico' }],
-  ],
+  base: '/',
+  
+  locales: {
+    root: {
+      label: '简体中文',
+      lang: 'zh-CN',
+      title: 'BoothKernel',
+      description: '现代的同人摊主点单与记账系统',
+      
+      themeConfig: {
+        nav: [
+          { text: '主页', link: '/' },
+          { text: '快速上手', link: '/guide/getting-started' },
+          { text: 'FAQ', link: '/faq/' },
+          { text: '联系与支持', link: '/support/contact' }
+        ],
 
-  themeConfig: {
-
-    nav: [
-      { text: '主页', link: '/' },
-      { text: '快速上手', link: '/guide/getting-started' },
-      { text: 'FAQ', link: '/faq/' },
-      { text: '联系与支持', link: '/support/contact' }
-    ],
-
-    sidebar: {
+        sidebar: {
       /* -------- Guide 教程 -------- */
       '/guide/': [
         {
@@ -71,20 +63,183 @@ export default defineConfig({
           ]
         }
       ],
-      '/support/': [
-      { text: '支持', items: [{ text: '联系与支持', link: '/support/contact' }] }
-    ]
-    },
-    outline: {
-      level: [2, 3],
-      label: '本页内容'
-    },
+          '/support/': [
+            { text: '支持', items: [{ text: '联系与支持', link: '/support/contact' }] }
+          ]
+        },
+        
+        outline: {
+          level: [2, 3],
+          label: '本页内容'
+        },
 
-    socialLinks: [
-      {
-        icon: 'github',
-        link: 'https://github.com/Academy-of-Boundary-Landscape/ABL-BoothApp'
+        socialLinks: [
+          {
+            icon: 'github',
+            link: 'https://github.com/Academy-of-Boundary-Landscape/ABL-BoothApp'
+          }
+        ]
       }
-    ]
-  }
+    },
+    
+    en: {
+      label: 'English',
+      lang: 'en-US',
+      title: 'BoothKernel',
+      description: 'Modern POS System for Doujin Events',
+      
+      themeConfig: {
+        nav: [
+          { text: 'Home', link: '/en/' },
+          { text: 'Getting Started', link: '/en/guide/getting-started' },
+          { text: 'FAQ', link: '/en/faq/' },
+          { text: 'Support', link: '/en/support/contact' }
+        ],
+
+        sidebar: {
+          /* -------- Guide -------- */
+          '/en/guide/': [
+            {
+              text: 'Getting Started',
+              items: [
+                {
+                  text: '5-Minute Quick Start',
+                  link: '/en/guide/getting-started'
+                }
+              ]
+            },
+            {
+              text: 'User Guide',
+              items: [
+                { text: 'Network Setup', link: '/en/guide/network' },
+                { text: 'Workflow Guide', link: '/en/guide/workflow' },
+                { text: 'Export & Review', link: '/en/guide/export' }
+              ]
+            }
+          ],
+
+          /* -------- FAQ -------- */
+          '/en/faq/': [
+            {
+              text: 'FAQ Overview',
+              items: [
+                { text: 'FAQ Index', link: '/en/faq/' }
+              ]
+            },
+            {
+              text: 'Categories',
+              items: [
+                { text: 'Network Connection', link: '/en/faq/network' },
+                { text: 'Operations', link: '/en/faq/operation' },
+                { text: 'Incidents', link: '/en/faq/incidents' },
+                { text: 'Images & UI', link: '/en/faq/images-ui' },
+                { text: 'Data Migration', link: '/en/faq/data-migration' },
+                { text: 'Advanced Tips', link: '/en/faq/advanced' },
+                { text: 'Hardware Recommendations', link: '/en/faq/hardware' },
+                { text: 'Community', link: '/en/faq/community' }
+              ]
+            }
+          ],
+          
+          '/en/support/': [
+            { text: 'Support', items: [{ text: 'Contact & Support', link: '/en/support/contact' }] }
+          ]
+        },
+        
+        outline: {
+          level: [2, 3],
+          label: 'On This Page'
+        },
+
+        socialLinks: [
+          {
+            icon: 'github',
+            link: 'https://github.com/Academy-of-Boundary-Landscape/ABL-BoothApp'
+          }
+        ]
+      }
+    }
+    ,
+    ja: {
+      label: '日本語',
+      lang: 'ja-JP',
+      title: 'BoothKernel',
+      description: '同人イベント向けの近代的な出店管理システム',
+      
+      themeConfig: {
+        nav: [
+          { text: 'ホーム', link: '/ja/' },
+          { text: 'クイックスタート', link: '/ja/guide/getting-started' },
+          { text: 'FAQ', link: '/ja/faq/' },
+          { text: 'サポート', link: '/ja/support/contact' }
+        ],
+
+        sidebar: {
+          /* -------- Guide -------- */
+          '/ja/guide/': [
+            {
+              text: 'クイックスタート',
+              items: [
+                {
+                  text: '5分で始める',
+                  link: '/ja/guide/getting-started'
+                }
+              ]
+            },
+            {
+              text: 'ユーザーガイド',
+              items: [
+                { text: 'ネットワーク設定', link: '/ja/guide/network' },
+                { text: 'ワークフロー', link: '/ja/guide/workflow' },
+                { text: 'エクスポートとレビュー', link: '/ja/guide/export' }
+              ]
+            }
+          ],
+
+          /* -------- FAQ -------- */
+          '/ja/faq/': [
+            {
+              text: 'FAQ 概要',
+              items: [
+                { text: 'FAQ インデックス', link: '/ja/faq/' }
+              ]
+            },
+            {
+              text: 'カテゴリ',
+              items: [
+                { text: 'ネットワーク接続', link: '/ja/faq/network' },
+                { text: '運用', link: '/ja/faq/operation' },
+                { text: 'トラブル対応', link: '/ja/faq/incidents' },
+                { text: '画像とUI', link: '/ja/faq/images-ui' },
+                { text: 'データ移行', link: '/ja/faq/data-migration' },
+                { text: '上級テクニック', link: '/ja/faq/advanced' },
+                { text: 'ハードウェア推奨', link: '/ja/faq/hardware' },
+                { text: 'コミュニティ', link: '/ja/faq/community' }
+              ]
+            }
+          ],
+          
+          '/ja/support/': [
+            { text: 'サポート', items: [{ text: 'お問い合わせ', link: '/ja/support/contact' }] }
+          ]
+        },
+        
+        outline: {
+          level: [2, 3],
+          label: 'このページの内容'
+        },
+
+        socialLinks: [
+          {
+            icon: 'github',
+            link: 'https://github.com/Academy-of-Boundary-Landscape/ABL-BoothApp'
+          }
+        ]
+      }
+    }
+  },
+  
+  head: [
+    ['link', { rel: 'icon', href: '/favicon.ico' }],
+  ]
 })
