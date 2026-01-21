@@ -32,6 +32,15 @@ export default defineConfig({
           ]
         },
         {
+          text: '设计理念',
+          items: [
+            {
+              text: '为什么选择离线方案？',
+              link: '/guide/why-offline'
+            }
+          ]
+        },
+        {
           text: '使用指南',
           items: [
             { text: '组网与连接', link: '/guide/network' },
