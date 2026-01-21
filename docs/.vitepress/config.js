@@ -34,10 +34,14 @@ export default defineConfig({
         {
           text: '设计理念',
           items: [
+            { text: '原子化与独立部署', 
+              link: '/guide/philosophy' 
+            },
             {
-              text: '为什么选择离线方案？',
+              text: '离线与支付问题',
               link: '/guide/why-offline'
-            }
+            },
+            { text: '适用边界', link: '/guide/boundary' },
           ]
         },
         {
