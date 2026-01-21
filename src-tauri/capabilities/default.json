@@ -9,6 +9,17 @@
     "core:default",
     "core:event:default",
     "shell:allow-open",
+    {
+      "identifier": "shell:allow-open",
+      "allow": [
+        {
+          "href": "https://github.com/**" 
+        },
+        {
+          "href": "https://api.github.com/**"
+        }
+      ]
+    },
     "opener:default",
     "fs:default",
     "fs:allow-write-text-file",

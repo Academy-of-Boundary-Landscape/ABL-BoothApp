@@ -87,4 +87,5 @@ docs/.vitepress/cache
 dist/
 target/
 
+/translate_faq.py
 /vite.config.js
