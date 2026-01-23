@@ -21,6 +21,9 @@ hero:
     - theme: alt
       text: 常见问题
       link: /faq/
+    - theme: brand
+      text: 备用下载地址
+      link: https://www.abl.secret-sealing.club/events/BoothKernel
 
 features:
   - icon: 🚀
