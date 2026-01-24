@@ -6,6 +6,14 @@
         <p>请选择您所在的展会进入点单页面</p>
       </header>
       
+      <n-alert v-if="showAlert" type="warning" :bordered="false" class="version-alert">
+        <div class="alert-content">
+          <span>该APP目前处于较早期版本，请时刻关注检查更新，避免被可能的恶性Bug困扰！</span>
+          <span>初次运行请点击上方的“管理员页面”进入后台。</span>
+          <n-button text type="primary" @click="showAlert = false" class="close-btn">关闭</n-button>
+        </div>
+      </n-alert>
+      
       <div v-if="eventStore.isLoading" class="loading">
         <n-spin>
           <template #description>正在加载展会列表...</template>
@@ -40,12 +48,13 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { RouterLink } from 'vue-router';
 import { useEventStore } from '@/stores/eventStore'; // 复用我们已有的 eventStore
-import { NCard, NSpin, NAlert, NSpace } from 'naive-ui';
+import { NCard, NSpin, NAlert, NSpace, NButton } from 'naive-ui';
 
 const eventStore = useEventStore();
+const showAlert = ref(true);
 
 // 计算属性，筛选出“进行中”的展会
 const ongoingEvents = computed(() => {
@@ -88,6 +97,20 @@ header h1 {
 header p {
   color: var(--text-muted);
   margin-bottom: 2rem;
+}
+.version-alert {
+  margin-bottom: 2rem;
+  background-color: #fffbe6;
+  border-color: #ffe58f;
+}
+.alert-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+.close-btn {
+  flex-shrink: 0;
 }
 .event-list {
   display: flex;

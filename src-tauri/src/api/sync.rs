@@ -13,10 +13,14 @@ use zip::{write::FileOptions, ZipArchive, ZipWriter};
 // 引入你的项目模块
 use crate::{api::guard::AdminOnly, db::models::MasterProduct, state::AppState};
 
+use axum::extract::DefaultBodyLimit;
+
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/sync/export-products", get(export_products))
         .route("/sync/import-products", post(import_products))
+        .layer(DefaultBodyLimit::max(1000 * 1024 * 1024))
 }
 
 // ==========================================
