@@ -1,186 +1,341 @@
 <template>
-  <div class="product-grid" :class="`card-size-${cardSize}`">
-    <n-card
-      v-for="product in products"
-      :key="product.id"
-      class="product-card"
-      :class="{ 'out-of-stock': product.current_stock === 0 }"
-      :hoverable="product.current_stock > 0"
-      embedded
-      :content-style="{ padding: 0 }"
-      @click="handleCardClick(product)"
-    >
-      <div class="image-container">
-        <n-image
-          v-if="product.image_url"
-          :src="product.image_url"
-          :alt="product.name"
-          preview-disabled
-          :img-props="{ style: 'width: 100%; height: 100%; object-fit: cover;' }"
-          style="width: 100%; height: 100%;"
-        />
-        <div v-else class="no-img-placeholder">
-          <span>{{ product.name?.charAt(0) || '🛍️' }}</span>
+  <draggable
+  v-model="localList"
+  class="product-grid"
+  :class="[`card-size-${cardSize}`, { 'is-editing': editable }]"
+  item-key="id"
+  :animation="250"
+  ghost-class="ghost-card"
+  drag-class="drag-card"
+  :disabled="!editable"
+
+  :force-fallback="true"
+  :fallback-on-body="false"
+  :fallback-tolerance="3"
+  :touch-start-threshold="4"
+
+  @end="handleDragEnd"
+>
+    <template #item="{ element: product }">
+      <n-card
+        class="product-card"
+        :class="{ 'out-of-stock': product.current_stock === 0 }"
+        embedded
+        :content-style="{ padding: 0 }"
+        :bordered="false"
+      >
+        <div class="card-inner" @click="handleCardClick(product)">
+          <div class="media-box">
+            <n-image
+              v-if="product.image_url"
+              class="media-img"
+              :src="product.image_url"
+              :alt="product.name"
+              preview-disabled
+              :img-props="{ loading: 'lazy', draggable: false }"
+            />
+            <div v-else class="media-placeholder">
+              <span class="placeholder-emoji">{{ product.name?.charAt(0) || '🛍️' }}</span>
+            </div>
+
+            <div v-if="editable" class="edit-overlay">
+              <span class="drag-icon">✋ 拖动排序</span>
+            </div>
+
+            <template v-else>
+              <div v-if="product.current_stock > 0 && product.current_stock <= 10" class="chip stock-warning">
+                <span>剩 {{ product.current_stock }}</span>
+              </div>
+              <div v-if="product.current_stock === 0" class="sold-overlay">
+                <span class="sold-text">SOLD OUT</span>
+              </div>
+            </template>
+          </div>
+
+          <div class="info-box">
+            <div class="title" :title="product.name">
+              {{ product.name }}
+            </div>
+
+            <div class="bottom-row">
+              <div class="price-wrapper">
+                <span class="currency">¥</span>
+                <span class="value">{{ Number(product.price).toFixed(2) }}</span>
+              </div>
+
+              <div class="action-icon" v-if="!editable && product.current_stock > 0">
+                <span class="plus-sign">+</span>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
-
-      <div class="product-info">
-        <span class="product-name" :title="product.name">{{ product.name }}</span>
-        <span class="product-price">¥{{ Number(product.price).toFixed(2) }}</span>
-      </div>
-
-      <div v-if="product.current_stock === 0" class="stock-overlay">
-        <span>完售</span>
-      </div>
-    </n-card>
-  </div>
+      </n-card>
+    </template>
+  </draggable>
 </template>
 
 <script setup>
+import { ref, watch } from 'vue'
+import draggable from 'vuedraggable'
 import { NCard, NImage } from 'naive-ui'
 
 const props = defineProps({
-  products: { type: Array, required: true },
+  products: { type: Array, default: () => [] },
   cardSize: {
     type: String,
     default: 'medium',
     validator: (v) => ['small', 'medium', 'large'].includes(v)
-  }
+  },
+  editable: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['addToCart'])
+const emit = defineEmits(['addToCart', 'update:products', 'order-changed'])
 
+/**
+ * ✅ 关键修复：draggable 使用本地数组，避免直接 mutate props.products
+ */
+const localList = ref([])
+
+watch(
+  () => props.products,
+  (val) => {
+    // 编辑模式下，外部如果重置 products，会打断用户拖拽；通常不建议。
+    // 这里选择：只有当“非编辑模式”或“首次进入”时才同步，以防覆盖拖拽过程。
+    if (!props.editable) localList.value = Array.isArray(val) ? [...val] : []
+    if (props.editable && localList.value.length === 0) localList.value = Array.isArray(val) ? [...val] : []
+  },
+  { immediate: true }
+)
+
+// 点击：编辑模式禁用加购
 function handleCardClick(product) {
+  if (props.editable) return
   if (product?.current_stock > 0) emit('addToCart', product)
+}
+
+// 拖拽结束：把新顺序同步给父组件，并通知保存
+function handleDragEnd() {
+  if (!props.editable) return
+  const next = [...localList.value]
+  emit('update:products', next)
+  emit('order-changed')
 }
 </script>
 
 <style scoped>
-/* --- 网格布局 --- */
 .product-grid {
+  --pg-bg: var(--card-bg-color);
+  --pg-border: var(--border-color);
+  --pg-accent: var(--accent-color);
+  --pg-radius: 12px;
+  --pg-aspect-ratio: 1 / 1;
+
   display: grid;
-  gap: 0.8rem;
+  grid-template-columns: repeat(auto-fill, minmax(var(--min-col), 1fr));
+  gap: 12px;
+  padding: 4px;
 }
 
-/* 三档：决定列宽（卡片宽度交给 grid） */
-.product-grid.card-size-small {
-  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-}
-.product-grid.card-size-medium {
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-}
-.product-grid.card-size-large {
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-}
+.product-grid.card-size-small  { --min-col: 110px; --pg-aspect-ratio: 1/1; }
+.product-grid.card-size-medium { --min-col: 150px; --pg-aspect-ratio: 1/1; }
+.product-grid.card-size-large  { --min-col: 220px; --pg-aspect-ratio: 4/3; }
 
-/* --- 商品卡片 --- */
 .product-card {
-  background-color: var(--card-bg-color);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
+  border-radius: var(--pg-radius);
+  transition: transform 0.2s, box-shadow 0.2s;
+  border: 1px solid var(--pg-border);
+  background-color: var(--pg-bg);
   overflow: hidden;
-  cursor: pointer;
-  position: relative;
-  transition: transform 0.18s, box-shadow 0.18s, border-color 0.18s;
-  display: flex;
-  flex-direction: column;
+  height: 100%;
 }
 
-.product-card:hover {
+.product-grid:not(.is-editing) .product-card:hover {
   transform: translateY(-3px);
-  box-shadow: 0 8px 16px var(--shadow-color);
-  border-color: var(--accent-color);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
 }
 
-/* 完售 */
-.out-of-stock {
-  cursor: not-allowed;
-}
-.out-of-stock:hover {
-  transform: none;
-  box-shadow: none;
-  border-color: var(--border-color);
+.card-inner {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+  user-select: none;
 }
 
-/* --- 图片区：用固定高度更稳 --- */
-.image-container {
+.media-box {
+  position: relative;
   width: 100%;
-  background-color: var(--bg-color);
+  background-color: var(--bg-secondary);
   overflow: hidden;
 }
 
-/* 三档图片高度 */
-.product-grid.card-size-small .image-container { height: 110px; }
-.product-grid.card-size-medium .image-container { height: 150px; }
-.product-grid.card-size-large .image-container { height: 220px; }
+/* 比例：默认 1/1；large 设 4/3 => padding-top = 75% */
+.product-grid { --pg-media-pad: 100%; }              /* 1/1 */
+.product-grid.card-size-large { --pg-media-pad: 75%; } /* 4/3 = 高/宽 = 3/4 */
 
-/* 让 n-image 填满容器 */
-:deep(.image-container .n-image) {
+.media-box::before {
+  content: "";
+  display: block;
+  padding-top: var(--pg-media-pad);
+}
+:deep(.media-img),
+.media-placeholder {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
 }
-:deep(.image-container .n-image img) {
+
+/* ✅ Naive n-image 内部 wrapper 也铺满 */
+:deep(.media-img .n-image),
+:deep(.media-img .n-image .n-image-wrapper),
+:deep(.media-img .n-image img) {
   width: 100%;
   height: 100%;
+  display: block;
+}
+
+:deep(.media-img .n-image img) {
   object-fit: cover;
+  object-position: center;
 }
-
-.no-img-placeholder {
+.media-placeholder {
   width: 100%;
   height: 100%;
   display: flex;
-  justify-content: center;
   align-items: center;
-  font-size: 2.2rem;
-  color: var(--accent-color);
-  opacity: 0.45;
+  justify-content: center;
+  font-size: 2.5em;
+  opacity: 0.5;
 }
 
-/* --- 信息区 --- */
-.product-info {
-  padding: 0.45rem 0.55rem 0.5rem;
+.chip {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  color: white;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
+}
+.chip.stock-warning { background: #d03050; }
+
+.sold-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255,255,255,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sold-text {
+  background: #333;
+  color: #fff;
+  padding: 4px 10px;
+  font-weight: 900;
+  font-size: 12px;
+  transform: rotate(-10deg);
+}
+
+.info-box {
+  padding: 10px 10px;
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
 }
 
-/* 三档字号 */
-.product-grid.card-size-small .product-name { font-size: 0.72rem; }
-.product-grid.card-size-medium .product-name { font-size: 0.84rem; }
-.product-grid.card-size-large .product-name { font-size: 0.98rem; }
-
-.product-name {
-  font-weight: 650;
+.title {
+  font-size: 0.92rem;
+  line-height: 1.35;
   color: var(--primary-text-color);
-  line-height: 1.15;
+  font-weight: 650;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  white-space: normal;
 }
 
-.product-grid.card-size-small .product-price { font-size: 0.82rem; }
-.product-grid.card-size-medium .product-price { font-size: 1.02rem; }
-.product-grid.card-size-large .product-price { font-size: 1.18rem; }
+.bottom-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: nowrap;
+  gap: 8px;
+}
 
-.product-price {
-  color: var(--accent-color);
-  font-weight: 800;
+.price-wrapper {
+  color: var(--pg-accent);
+  line-height: 1;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.currency { font-size: 0.75rem; margin-right: 1px; }
+.value { font-size: 1.1rem; font-weight: 900; font-family: sans-serif; }
+
+.action-icon {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--bg-secondary);
+  color: var(--primary-text-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
 }
 
-/* 完售遮罩 */
-.stock-overlay {
+/* 拖拽视觉 */
+.ghost-card {
+  opacity: 0.5;
+  background: #e0e0e0;
+  border: 2px dashed #999;
+  border-radius: var(--pg-radius);
+}
+.drag-card {
+  opacity: 1;
+  transform: scale(1.05) rotate(2deg);
+  box-shadow: 0 12px 24px rgba(0,0,0,0.2);
+  z-index: 1000;
+  cursor: grabbing;
+}
+
+.is-editing .product-card {
+  cursor: grab;
+  animation: shake 2s infinite ease-in-out;
+}
+.is-editing .product-card:active { cursor: grabbing; }
+
+.edit-overlay {
   position: absolute;
   inset: 0;
-  background-color: var(--overlay-color);
+  background: rgba(0, 0, 0, 0.05);
   display: flex;
-  justify-content: center;
   align-items: center;
-  color: var(--text-white);
-  font-size: 1.4rem;
-  font-weight: 900;
-  backdrop-filter: blur(2px);
+  justify-content: center;
+  border: 2px dashed var(--pg-accent);
+}
+.drag-icon {
+  background: var(--pg-accent);
+  color: white;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 800;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+@keyframes shake {
+  0% { transform: rotate(0deg); }
+  25% { transform: rotate(0.5deg); }
+  75% { transform: rotate(-0.5deg); }
+  100% { transform: rotate(0deg); }
 }
 </style>

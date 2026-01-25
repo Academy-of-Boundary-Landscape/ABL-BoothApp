@@ -90,7 +90,7 @@
                   </div>
                   <div class="form-group">
                     <label for="create-price">默认价格 (¥):</label>
-                    <n-input-number id="create-price" v-model:value="createFormData.default_price" :step="0.01" :min="0" placeholder="45.00" required />
+                    <n-input-number id="create-price" v-model:value="createFormData.default_price" :step="0.01" placeholder="45.00" required />
                   </div>
                   <div class="form-group">
                     <label for="create-category">商品分类:</label>
@@ -133,7 +133,7 @@
           </div>
           <div class="form-group">
             <label>默认价格 (¥):</label>
-            <n-input-number v-model:value="editableProduct.default_price" :step="0.01" :min="0" required />
+            <n-input-number v-model:value="editableProduct.default_price" :step="0.01" required />
           </div>
           <div class="form-group">
             <label>商品分类:</label>

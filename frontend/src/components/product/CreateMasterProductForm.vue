@@ -45,6 +45,7 @@ const formData = ref({
   default_price: null,
 });
 
+
 async function handleSubmit() {
   errorMessage.value = '';
   // 先做标准化，防止只输入空格导致提交空字符串

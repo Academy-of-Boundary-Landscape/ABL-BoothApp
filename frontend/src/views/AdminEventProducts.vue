@@ -81,8 +81,7 @@
           />
           <n-input-number 
             v-model:value="addProductData.price" 
-            placeholder="展会售价 (可选)" 
-            :min="0" 
+            placeholder="展会售价 (可选)"  
             :precision="2" 
             :step="0.01" 
           />
@@ -158,7 +157,6 @@
             <label>展会售价 (¥):</label>
             <n-input-number 
               v-model:value="editableProduct.price" 
-              :min="0" 
               :precision="2" 
               :step="0.01" 
               :show-button="true"
@@ -278,14 +276,7 @@ async function handleAddProduct() {
       return;
     }
     
-    // 验证价格（如果提供）
-    if (addProductData.value.price !== null && addProductData.value.price !== undefined && addProductData.value.price !== '') {
-      if (addProductData.value.price < 0) {
-        addError.value = '价格不能为负数';
-        isAdding.value = false;
-        return;
-      }
-    }
+    // 价格可以为负数（对应折扣），这里无需验证
     
     const dataToSend = { ...addProductData.value };
     if (dataToSend.price === null || dataToSend.price === '') {
@@ -324,9 +315,9 @@ async function handleUpdate() {
   try {
     const { id, price, initial_stock } = editableProduct.value;
     
-    // 验证价格
-    if (price === null || price === undefined || price < 0) {
-      editError.value = '请输入有效的售价（不能为负数）';
+    // 验证价格（允许负数用于折扣）
+    if (price === null || price === undefined) {
+      editError.value = '请输入有效的售价';
       isUpdating.value = false;
       return;
     }
