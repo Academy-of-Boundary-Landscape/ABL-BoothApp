@@ -5,14 +5,14 @@
         <h1>欢迎光临</h1>
         <p>请选择您所在的展会进入点单页面</p>
       </header>
-      
+
       <n-alert v-if="showAlert" type="warning" :bordered="false" class="version-alert">
         <div class="alert-content">
           <span>该 App 仍处于早期版本，建议定期检查更新；初次使用请先进入“管理员页面”完成后台设置。</span>
           <n-button text type="primary" @click="showAlert = false" class="close-btn">关闭</n-button>
         </div>
       </n-alert>
-      
+
       <div v-if="eventStore.isLoading" class="loading">
         <n-spin>
           <template #description>正在加载展会列表...</template>
@@ -21,11 +21,11 @@
       <div v-else-if="eventStore.error" class="error">
         <n-alert type="error" :bordered="false">{{ eventStore.error }}</n-alert>
       </div>
-      
+
       <div v-else-if="ongoingEvents.length" class="event-list">
         <n-space vertical size="large">
-          <RouterLink 
-            v-for="event in ongoingEvents" 
+          <RouterLink
+            v-for="event in ongoingEvents"
             :key="event.id"
             :to="`/events/${event.id}/order`"
             class="event-link-card"
@@ -37,7 +37,7 @@
           </RouterLink>
         </n-space>
       </div>
-      
+
       <div v-else class="no-events">
         <p>当前没有正在进行的贩售活动 (´·ω·`)</p>
         <p>请联系摊主确认展会状态。</p>
@@ -77,7 +77,7 @@ onMounted(() => {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  padding: 2rem;
+  padding: 1rem;
   box-sizing: border-box;
 }
 .portal-box {
@@ -85,7 +85,7 @@ onMounted(() => {
   max-width: 600px;
   background-color: var(--card-bg-color);
   border-radius: 8px;
-  padding: 2rem 3rem;
+  padding: 1.25rem 1rem;
   border: 1px solid var(--border-color);
   text-align: center;
 }
@@ -98,7 +98,7 @@ header p {
   margin-bottom: 2rem;
 }
 .version-alert {
-  margin-bottom: 2rem;
+  margin-bottom: 1.25rem;
   background-color: #fffbe6;
   border-color: #ffe58f;
 }
@@ -114,6 +114,22 @@ header p {
   flex-shrink: 0;
   align-self: flex-end;
 }
+
+/* 手机端：进一步收紧外边距和内边距，避免内容过窄 */
+@media (max-width: 767px) {
+  .portal-container {
+    padding: 0.5rem;
+  }
+
+  .portal-box {
+    padding: 1rem 0.75rem;
+  }
+
+  header p {
+    margin-bottom: 1.25rem;
+  }
+}
+
 /* 平板及以上屏幕 */
 @media (min-width: 768px) {
   .alert-content {

@@ -370,9 +370,9 @@ onUnmounted(() => {
     z-index: 1000;
   }
 
-  /* 移动端底部留出 safe area */
+  /* 移动端侧边栏底部按钮区域：额外留 50px，避免被系统操作栏遮挡 */
   .sidebar-footer {
-    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0));
+    padding-bottom: calc(0.75rem + 50px + env(safe-area-inset-bottom, 0));
   }
 }
 

@@ -1,12 +1,12 @@
 <template>
   <div class="theme-setting-container">
     <n-grid x-gap="24" y-gap="24" cols="1 s:1 m:2" responsive="screen">
-      
+
       <!-- 左侧：设置面板 -->
       <n-grid-item>
         <n-card title="主题偏好" size="medium">
           <n-space vertical size="large">
-            
+
             <!-- 1. 模式切换 -->
             <div class="setting-item">
               <div class="label">
@@ -33,7 +33,7 @@
                   恢复默认
                 </n-button>
               </div>
-              
+
               <!-- 预设色板 -->
               <div class="color-swatches">
                 <n-tooltip
@@ -59,8 +59,8 @@
               </div>
 
               <!-- 自定义取色器 -->
-              <n-color-picker 
-                v-model:value="themeStore.customPrimaryColor" 
+              <n-color-picker
+                v-model:value="themeStore.customPrimaryColor"
                 :show-alpha="false"
                 :actions="['confirm']"
                 class="mt-2"
@@ -75,7 +75,7 @@
       <n-grid-item>
         <n-card title="效果预览" size="medium" class="preview-card">
           <n-space vertical size="large">
-            
+
             <!-- 按钮展示 -->
             <n-space>
               <n-button type="primary">主要按钮</n-button>
@@ -114,9 +114,9 @@
 </template>
 
 <script setup>
-import { 
-  NCard, NSpace, NSwitch, NDivider, NButton, NColorPicker, 
-  NGrid, NGridItem, NIcon, NTag, NInput, NAlert, NTooltip 
+import {
+  NCard, NSpace, NSwitch, NDivider, NButton, NColorPicker,
+  NGrid, NGridItem, NIcon, NTag, NInput, NAlert, NTooltip
 } from 'naive-ui'
 import { Sunny, Moon, Checkmark } from '@vicons/ionicons5'
 import { useThemeStore } from '@/stores/themeStore'
@@ -125,12 +125,12 @@ const themeStore = useThemeStore()
 
 // 预设主色：带名称，悬停时通过 title 展示
 const presetColors = [
-  { color: '#62FFF4', label: '默认青' },   // 当前浅色主题默认主色
-  { color: '#FFA6A6', label: '少女粉' },   
-  { color: '#E9BA00', label: '奶龙黄' },   
-  { color: '#007ACC', label: 'VSCode蓝' },   
-  { color: '#8B0012', label: '北大红' },  
-  { color: '#660874', label: '清华紫' },   
+  { color: '#8B0012', label: '北大红' },   // 当前主题默认主色
+  { color: '#FFA6A6', label: '少女粉' },
+  { color: '#E9BA00', label: '奶龙黄' },
+  { color: '#007ACC', label: 'VSCode蓝' },
+  { color: '#62FFF4', label: '默认青（旧）' },
+  { color: '#660874', label: '清华紫' },
 ]
 
 const isDefaultColor = (swatch) => {

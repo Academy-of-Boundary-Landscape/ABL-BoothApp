@@ -208,19 +208,34 @@ function formatPrice(price) {
   height: 100%;
 }
 
-/* ✅ Naive n-image 内部 wrapper 也铺满 */
-:deep(.media-img .n-image),
-:deep(.media-img .n-image .n-image-wrapper),
-:deep(.media-img .n-image img) {
+/* ✅ 直接命中 n-image 根节点，保证居中布局生效 */
+:deep(.media-img) {
   width: 100%;
   height: 100%;
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-/* ✅ 关键改动：cover -> contain（不裁切竖图/二维码） */
-:deep(.media-img .n-image img) {
+/* ✅ Naive 内部 wrapper 拉满并居中 */
+:deep(.media-img .n-image-wrapper) {
+  width: 100% !important;
+  height: 100% !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 图片居中完整显示（宁可留白，不拉伸） */
+:deep(.media-img img),
+:deep(.media-img .n-image-img) {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
   object-fit: contain;
-  object-position: center;
+  object-position: center center;
   background: var(--bg-secondary);
 }
 

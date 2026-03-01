@@ -7,8 +7,8 @@ import { darkTheme, lightTheme, generateCSSVariables, generateNaiveUITheme } fro
 
 export const useThemeStore = defineStore('theme', () => {
   // 1. 状态：是否暗黑模式 (持久化)
-  const isDark = useStorage('isDark', true)
-  
+  const isDark = useStorage('isDark', false)
+
   // 2. 状态：自定义主色 (持久化)
   // 如果用户没选过，就用默认配置里的颜色
   const customPrimaryColor = useStorage('customPrimary', null)
@@ -20,7 +20,7 @@ export const useThemeStore = defineStore('theme', () => {
   // 如果用户选了自定义颜色，覆盖默认配置里的 primary.base
   const currentThemeConfig = computed(() => {
     const theme = { ...currentBaseTheme.value }
-    
+
     // 如果有自定义颜色，动态计算衍生色
     if (customPrimaryColor.value) {
       const c = customPrimaryColor.value

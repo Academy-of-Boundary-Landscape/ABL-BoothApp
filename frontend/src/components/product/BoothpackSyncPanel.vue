@@ -51,7 +51,7 @@
             ref="importFileInputRef"
             type="file"
             class="hidden-input"
-            accept=".zip,.boothpack"
+            accept=' '
             @change="handleImportFile"
           />
         </div>
@@ -303,6 +303,7 @@ onBeforeUnmount(() => {
   if (typeof tauriUnlisten === 'function') tauriUnlisten()
   if (typeof globalDropCleanup === 'function') globalDropCleanup()
 })
+
 </script>
 
 <style scoped>

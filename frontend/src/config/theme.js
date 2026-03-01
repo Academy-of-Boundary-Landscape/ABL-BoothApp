@@ -27,11 +27,11 @@ export const darkTheme = {
 
   // === 主题色 ===
   primary: {
-    base: '#03DAC6',         // 主色
-    hover: '#04E2CD',        // 悬停
-    pressed: '#02C7B5',      // 按下
-    dark: '#018786',         // 深色变体
-    light: 'rgba(3, 218, 198, 0.05)', // 浅色变体
+    base: '#8B0012',         // 主色（北大红）
+    hover: '#9D0015',        // 悬停
+    pressed: '#77000F',      // 按下
+    dark: '#5F000C',         // 深色变体
+    light: 'rgba(139, 0, 18, 0.05)', // 浅色变体
   },
 
   // === 状态颜色 ===
@@ -90,15 +90,15 @@ export const lightTheme = {
   // === 基础颜色 ===
   background: {
     // 关键修改：主背景不再是纯白，而是带有极淡蓝紫调的冷灰，护眼且显高级
-    primary: '#F2F5F8',      
+    primary: '#F2F5F8',
     // 次要背景（侧边栏/导航栏）：纯白，与主背景形成区分
-    secondary: '#FFFFFF',    
+    secondary: '#FFFFFF',
     // 卡片背景：纯白，在冷灰主背景上会很突出
-    card: '#FFFFFF',         
+    card: '#FFFFFF',
     // 悬浮层：纯白
-    elevated: '#FFFFFF',     
+    elevated: '#FFFFFF',
     // 输入框：极淡的灰，让输入框在白卡片上有这一层淡淡的底色，不纯靠边框
-    input: '#F9FAFB',        
+    input: '#F9FAFB',
   },
 
   // === 文本颜色 ===
@@ -114,36 +114,34 @@ export const lightTheme = {
 
   // === 主题色 ===
   primary: {
-    // 稍微调深一点点的青色，在亮色背景下对比度更高
-    base: '#00A99D',         
-    hover: '#00BDB0',        
-    pressed: '#008F85',      
-    dark: '#006960',         
-    // 选中态背景色：加深一点不透明度，让选中状态更明显
-    light: 'rgba(0, 169, 157, 0.12)', 
+    base: '#8B0012',
+    hover: '#9D0015',
+    pressed: '#77000F',
+    dark: '#5F000C',
+    light: 'rgba(139, 0, 18, 0.12)',
   },
 
   // === 状态颜色 ===
   // 保持你原有的现代色盘，这些颜色在白底上表现良好
   status: {
-    success: '#10B981',      
+    success: '#10B981',
     successHover: '#059669',
-    warning: '#F59E0B',      
+    warning: '#F59E0B',
     warningAlt: '#D97706',
     warningHover: '#B45309',
-    error: '#EF4444',        
+    error: '#EF4444',
     errorAlt: '#DC2626',
     errorHover: '#B91C1C',
-    info: '#3B82F6',         
+    info: '#3B82F6',
     infoHover: '#2563EB',
-    cancelled: '#9CA3AF',    
+    cancelled: '#9CA3AF',
   },
 
   // === 边框颜色 ===
   border: {
     // 关键修改：加深基础边框颜色。
     // 原来的 E5E7EB 在某些显示器上几乎看不见，改为 E2E4E8
-    base: '#E2E4E8',         
+    base: '#E2E4E8',
     hover: '#9CA3AF',        // 悬停时明显变深
     focus: '#00A99D',        // 聚焦颜色
     light: '#F3F4F6',        // 极浅分割线
@@ -153,13 +151,13 @@ export const lightTheme = {
 
   // === 特殊颜色 ===
   special: {
-    overlay: 'rgba(0, 0, 0, 0.4)',     
+    overlay: 'rgba(0, 0, 0, 0.4)',
     // 关键修改：加深阴影颜色。
     // 浅色模式主要靠阴影区分层级，0.08 太淡了，改为 0.1
-    shadow: 'rgba(0, 0, 0, 0.1)',      
+    shadow: 'rgba(0, 0, 0, 0.1)',
     tooltipBg: '#1F2937',              // Tooltip 保持深色背景
-    highlight: '#FEF3C7',              
-    delete: '#EF4444',                 
+    highlight: '#FEF3C7',
+    delete: '#EF4444',
   },
 
   // === 组件特定颜色 ===
@@ -176,7 +174,7 @@ export const lightTheme = {
       secondaryHover: '#E5E7EB', // 悬停加深
     },
     order: {
-      completed: '#F3F4F6',     
+      completed: '#F3F4F6',
     }
   }
 };
@@ -189,7 +187,7 @@ export function generateCSSVariables(theme) {
     --card-bg-color: ${theme.background.card};
     --bg-elevated: ${theme.background.elevated};
     --input-bg-color: ${theme.background.input};
-    
+
     /* 文本颜色 */
     --primary-text-color: ${theme.text.primary};
     --secondary-text-color: ${theme.text.secondary};
@@ -198,14 +196,14 @@ export function generateCSSVariables(theme) {
     --text-muted: ${theme.text.muted};
     --text-placeholder: ${theme.text.placeholder};
     --text-white: ${theme.text.white};
-    
+
     /* 主题色 */
     --accent-color: ${theme.primary.base};
     --accent-color-hover: ${theme.primary.hover};
     --accent-color-pressed: ${theme.primary.pressed};
     --accent-color-dark: ${theme.primary.dark};
     --accent-color-light: ${theme.primary.light};
-    
+
     /* 状态颜色 */
     --success-color: ${theme.status.success};
     --success-color-hover: ${theme.status.successHover};
@@ -218,7 +216,7 @@ export function generateCSSVariables(theme) {
     --info-color: ${theme.status.info};
     --info-color-hover: ${theme.status.infoHover};
     --cancelled-color: ${theme.status.cancelled};
-    
+
     /* 边框颜色 */
     --border-color: ${theme.border.base};
     --border-color-hover: ${theme.border.hover};
@@ -226,14 +224,14 @@ export function generateCSSVariables(theme) {
     --border-color-light: ${theme.border.light};
     --border-color-dark: ${theme.border.dark};
     --divider-color: ${theme.border.divider};
-    
+
     /* 特殊颜色 */
     --overlay-color: ${theme.special.overlay};
     --shadow-color: ${theme.special.shadow};
     --tooltip-bg: ${theme.special.tooltipBg};
     --highlight-color: ${theme.special.highlight};
     --delete-color: ${theme.special.delete};
-    
+
     /* 组件颜色 */
     --alert-bg: ${theme.components.alert.bg};
     --alert-info: ${theme.components.alert.info};

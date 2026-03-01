@@ -5,19 +5,33 @@
         <h1>{{ pageTitle }}</h1>
         <p>查看当前展会的销售数据和统计分析。</p>
       </div>
-      <n-button
+      <div
         v-if="statStore.stats && statStore.stats.summary.length > 0"
-        class="download-btn"
-        type="primary"
-        ghost
-        size="large"
-        @click="downloadReport"
+        class="download-actions"
       >
-        <template #icon>
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-        </template>
-        下载 Excel 报告
-      </n-button>
+        <n-button
+          class="download-btn"
+          type="default"
+          ghost
+          size="large"
+          @click="downloadCsv"
+        >
+          下载 CSV
+        </n-button>
+
+        <n-button
+          class="download-btn"
+          type="primary"
+          ghost
+          size="large"
+          @click="downloadReport"
+        >
+          <template #icon>
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          </template>
+          下载 Excel 报告
+        </n-button>
+      </div>
     </header>
 
     <div v-if="statStore.isLoading" class="loading-indicator">
@@ -302,6 +316,82 @@ async function downloadReport() {
   }
 }
 
+function escapeCsvCell(value) {
+  const text = String(value ?? '');
+  if (/[,"\n\r]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+async function downloadCsv() {
+  console.log('[CSV] 点击导出按钮');
+  const summary = statStore.stats?.summary || [];
+  console.log('[CSV] 当前数据条数:', summary.length);
+
+  if (!summary.length) {
+    console.warn('[CSV] 无可导出数据，已中止');
+    return;
+  }
+
+  try {
+    const isTauri = window.__TAURI_INTERNALS__ !== undefined;
+    const safeName = (statStore.stats.event_name || 'sales_report').replace(/[\\/:*?"<>|]/g, '_');
+    const fileName = `sales_report_${safeName}.csv`;
+
+    const header = ['SKU', '销量', '单价'];
+    const rows = summary.map(item => [
+      item.product_code ?? '',
+      item.total_quantity ?? 0,
+      typeof item.unit_price === 'number' ? item.unit_price.toFixed(2) : '0.00'
+    ]);
+
+    const csvContent = [header, ...rows]
+      .map(cols => cols.map(escapeCsvCell).join(','))
+      .join('\r\n');
+
+    console.log('[CSV] 文件名:', fileName);
+    console.log('[CSV] 生成内容长度:', csvContent.length);
+    console.log('[CSV] isTauri:', isTauri);
+
+    if (isTauri) {
+      const bytes = new TextEncoder().encode('\uFEFF' + csvContent);
+      const filePath = await save({
+        defaultPath: fileName,
+        filters: [{ name: 'CSV Files', extensions: ['csv'] }]
+      });
+
+      if (!filePath) {
+        console.warn('[CSV] 用户取消保存');
+        return;
+      }
+
+      await writeFile(filePath, bytes);
+      console.log('[CSV] Tauri 保存成功:', filePath);
+      alert('CSV 导出成功');
+      return;
+    }
+
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    console.log('[CSV] 已触发浏览器下载');
+
+    setTimeout(() => {
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      console.log('[CSV] 临时链接已释放');
+    }, 100);
+  } catch (error) {
+    console.error('[CSV] 导出失败:', error);
+  }
+}
+
 onMounted(() => {
   const eventId = route.params.id;
   if (eventId) statStore.setActiveEvent(eventId, { productCode: selectedProduct.value, startDate: startDate.value, endDate: endDate.value, intervalMinutes: intervalMinutes.value });
@@ -363,6 +453,14 @@ watch(() => route.params.id, (newEventId) => {
   transition: all 0.2s ease;
   flex-shrink: 0;
   white-space: nowrap;
+}
+
+.download-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .download-btn:hover {
@@ -751,6 +849,11 @@ tbody td {
     padding: 0.6rem 1.2rem;
   }
 
+  .download-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .section-container {
     padding: 1rem;
   }
@@ -840,6 +943,10 @@ tbody td {
     justify-content: center;
     font-size: 0.85rem;
     padding: 0.6rem 1rem;
+  }
+
+  .download-actions {
+    gap: 0.5rem;
   }
 
   .stats-table {
