@@ -20,8 +20,59 @@ export const useProductStore = defineStore('masterProduct', () => {
     return masterProducts.value.filter(product => {
       const nameMatch = product.name.toLowerCase().includes(lowerCaseSearchTerm);
       const codeMatch = product.product_code.toLowerCase().includes(lowerCaseSearchTerm);
-      return nameMatch || codeMatch;
+      const tagMatch = (product.tags || '').toLowerCase().includes(lowerCaseSearchTerm);
+      return nameMatch || codeMatch || tagMatch;
     });
+  });
+
+  const categoryOptions = computed(() => {
+    const counts = new Map();
+
+    masterProducts.value.forEach(product => {
+      const category = String(product.category || '').trim();
+      if (!category) {
+        return;
+      }
+      counts.set(category, (counts.get(category) || 0) + 1);
+    });
+
+    return Array.from(counts.entries())
+      .sort((a, b) => {
+        if (b[1] !== a[1]) {
+          return b[1] - a[1];
+        }
+        return a[0].localeCompare(b[0], 'zh-CN');
+      })
+      .map(([category]) => ({
+        label: category,
+        value: category,
+      }));
+  });
+
+  const tagOptions = computed(() => {
+    const counts = new Map();
+
+    masterProducts.value.forEach(product => {
+      const raw = String(product.tags || '').trim();
+      if (!raw) return;
+      raw.split(',').forEach(t => {
+        const tag = t.trim();
+        if (!tag) return;
+        counts.set(tag, (counts.get(tag) || 0) + 1);
+      });
+    });
+
+    return Array.from(counts.entries())
+      .sort((a, b) => {
+        if (b[1] !== a[1]) {
+          return b[1] - a[1];
+        }
+        return a[0].localeCompare(b[0], 'zh-CN');
+      })
+      .map(([tag]) => ({
+        label: tag,
+        value: tag,
+      }));
   });
 
   // --- Actions ---
@@ -101,6 +152,8 @@ export const useProductStore = defineStore('masterProduct', () => {
     error,
     searchTerm,
     filteredProducts,
+    categoryOptions,
+    tagOptions,
     fetchMasterProducts,
     createMasterProduct,
     updateMasterProduct,

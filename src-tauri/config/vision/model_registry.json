@@ -1,0 +1,58 @@
+{
+  "models": [
+    {
+      "model_id": "convnextv2_pico_fp32",
+      "model_version": "convnextv2_pico_fp32-v1",
+      "onnx_rel_path": "convnextv2_pico_fp32/model.onnx",
+      "input_size": 224,
+      "embed_dim": 512,
+      "mean": [0.485, 0.456, 0.406],
+      "std": [0.229, 0.224, 0.225],
+      "description": "ConvNeXt V2 Pico — 轻量级 CNN，体积最小，速度最快。",
+      "tier": "downloadable",
+      "sources": [
+        {
+          "source": "github",
+          "url": "https://github.com/Academy-of-Boundary-Landscape/ABL-BoothApp/releases/download/models-v1/convnextv2_pico_fp32_tract.onnx",
+          "sha256": "2605be7fb75a1d42f8978a5f4b42119155d3dd36c5a2b533c37e841ad9d17eb2"
+        }
+      ]
+    },
+    {
+      "model_id": "mobileclip_s0_fp32",
+      "model_version": "mobileclip_s0_fp32-v1",
+      "onnx_rel_path": "mobileclip_s0/model.onnx",
+      "input_size": 256,
+      "embed_dim": 512,
+      "mean": [0.48145466, 0.4578275, 0.40821073],
+      "std": [0.26862954, 0.26130258, 0.27577711],
+      "description": "MobileCLIP-S0 — CLIP 图像编码器，中等体积，均衡之选。",
+      "tier": "downloadable",
+      "sources": [
+        {
+          "source": "github",
+          "url": "https://github.com/Academy-of-Boundary-Landscape/ABL-BoothApp/releases/download/models-v1/mobileclip_s0_fp32_tract.onnx",
+          "sha256": "83b84612464ab211827ae4405372485a7d7c2aa565bdb0e02d42e3b5ecacc2bb"
+        }
+      ]
+    },
+    {
+      "model_id": "dinov2_small_fp32",
+      "model_version": "dinov2_small_fp32-v1",
+      "onnx_rel_path": "dinov2_small_fp32/model.onnx",
+      "input_size": 224,
+      "embed_dim": 384,
+      "mean": [0.485, 0.456, 0.406],
+      "std": [0.229, 0.224, 0.225],
+      "description": "DINOv2-Small — ViT 自监督模型，体积最大，检索质量最佳。",
+      "tier": "downloadable",
+      "sources": [
+        {
+          "source": "github",
+          "url": "https://github.com/Academy-of-Boundary-Landscape/ABL-BoothApp/releases/download/models-v1/dinov2_small_fp32_tract.onnx",
+          "sha256": "4a17e04a767dc750a9d03b7c31cbcf1c39ddfd2dbae6a428bca21b48863a3a32"
+        }
+      ]
+    }
+  ]
+}

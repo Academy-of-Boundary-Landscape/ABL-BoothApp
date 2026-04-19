@@ -1,11 +1,16 @@
 <template>
-  <div>
+  <div class="page">
     <header class="page-header">
-      <h1>订单管理</h1>
-      <p>查看并管理当前展会的所有订单记录。</p>
+      <div class="header-content">
+        <div class="header-title-row">
+          <h1>订单管理</h1>
+          <HelpBubble page="event-orders" />
+        </div>
+        <p>查看并管理当前展会的所有订单记录。</p>
+      </div>
     </header>
 
-    <main>
+    <main class="page-body">
       <!-- 筛选器区块 -->
       <section class="filter-section">
         <div class="section-header" @click="isFilterExpanded = !isFilterExpanded">
@@ -135,7 +140,12 @@
           </tbody>
         </n-table>
       </div>
-      <p v-else>没有找到符合条件的订单。</p>
+      <div v-else class="empty-guide">
+        <div class="empty-guide-icon">📝</div>
+        <div class="empty-guide-title">暂无订单</div>
+        <div class="empty-guide-desc">当顾客通过点单页面下单后，订单会自动出现在这里。你可以在这里查看、完成或取消订单。</div>
+        <div class="empty-guide-hint">将展会设为「进行中」，然后分享点单链接给顾客</div>
+      </div>
           </div>
         </transition>
       </section>
@@ -148,6 +158,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useEventDetailStore } from '@/stores/eventDetailStore';
 import { NSelect, NSpin, NAlert, NTable, NCard, NTag, NDropdown, NButton, NInput, NInputNumber, useDialog, useMessage } from 'naive-ui';
+import HelpBubble from '@/components/shared/HelpBubble.vue';
 import { formatTimestamp } from '@/utils/dateFormatter';
 const props = defineProps({
   id: { type: String, required: true }
@@ -254,14 +265,15 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.page-header {
-  position: relative;
-  margin-bottom: 2rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--border-color);
+.page { max-width: 960px; }
+.page-header { margin-bottom: 1.5rem; }
+.page-header h1 { margin: 0 0 0.25rem; font-size: var(--font-xl); color: var(--accent-color); }
+.page-header p { margin: 0; color: var(--text-muted); font-size: var(--font-base); }
+.header-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
-.page-header h1 { color: var(--accent-color); margin: 0; }
-.page-header p { color: var(--text-muted); margin-top: 0.5rem; }
 .btn-back {
   position: absolute;
   top: 0;
@@ -283,7 +295,7 @@ onUnmounted(() => {
   padding: 0.75rem 1rem;
   background: var(--card-bg-color);
   border: 2px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   transition: all 0.2s ease;
   margin-bottom: 0.5rem;
 }
@@ -295,13 +307,13 @@ onUnmounted(() => {
 
 .section-header h2 {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: var(--font-lg);
   color: var(--accent-color);
   font-weight: 600;
 }
 
 .toggle-btn {
-  font-size: 0.9rem;
+  font-size: var(--font-base);
   padding: 0.25rem 0.75rem;
   min-width: auto;
   color: var(--accent-color);
@@ -329,7 +341,7 @@ onUnmounted(() => {
 .section-container {
   background: var(--card-bg-color);
   border: 2px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 1.5rem;
   overflow: hidden;
 }
@@ -354,7 +366,7 @@ onUnmounted(() => {
 }
 
 .filter-content label {
-  font-size: 0.95rem;
+  font-size: var(--font-base);
   font-weight: 500;
   color: var(--primary-text-color);
   white-space: nowrap;
@@ -399,7 +411,7 @@ onUnmounted(() => {
   background-color: var(--card-bg-color);
   border: 1px solid var(--border-color);
   padding: 1.5rem;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   margin-bottom: 2rem;
 }
 
@@ -409,7 +421,7 @@ onUnmounted(() => {
   border: 1px solid var(--border-color);
   color: var(--primary-text-color);
   padding: 10px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   box-sizing: border-box;
   height: 42px;
 }
@@ -421,7 +433,7 @@ onUnmounted(() => {
   border-collapse: collapse;
   border-spacing: 0;
   text-align: left;
-  font-size: 0.95rem;
+  font-size: var(--font-base);
 }
 .order-table th {
   padding: 12px 16px;
@@ -443,7 +455,7 @@ onUnmounted(() => {
   width: 50px;
   height: 50px;
   object-fit: cover;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-color);
   vertical-align: middle;
 }
@@ -453,11 +465,11 @@ onUnmounted(() => {
   height: 50px;
   line-height: 50px;
   text-align: center;
-  font-size: 0.8rem;
+  font-size: var(--font-sm);
   color: var(--text-disabled);
   background-color: var(--bg-color);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   vertical-align: middle;
 }
 
@@ -475,7 +487,7 @@ onUnmounted(() => {
   border: 1px solid var(--border-color);
   color: var(--primary-text-color);
   padding: 10px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   box-sizing: border-box;
 }
 
@@ -493,9 +505,9 @@ button:disabled {
   border: 1px solid transparent; /* 默认透明边框 */
   color: var(--primary-text-color);
   padding: 6px 10px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: var(--font-base);
   transition: background-color 0.2s, color 0.2s, border-color 0.2s;
   display: inline-flex; /* 让图标和文字对齐 */
   align-items: center;
@@ -531,7 +543,7 @@ button:disabled {
 }
 /* 文字大小要保证能排开一行 */
 .filters label {
-  font-size: 0.9rem;
+  font-size: var(--font-base);
   font-weight: 600;
   white-space: nowrap; /* 防止中文自动换行 */
   flex-shrink: 0;      /* 在 flex 布局中不缩小导致换行 */
@@ -543,7 +555,7 @@ button:disabled {
 }
 .custom-select-wrapper::after {
   content: '▼';
-  font-size: 0.8rem;
+  font-size: var(--font-sm);
   color: var(--accent-color);
   position: absolute;
   right: 15px;
@@ -558,7 +570,7 @@ button:disabled {
   padding: 8px 30px 8px 12px;
   background-color: var(--card-bg-color);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--primary-text-color);
   cursor: pointer;
 }
@@ -567,21 +579,21 @@ button:disabled {
 .status-badge {
   display: inline-block;
   padding: 4px 12px;
-  border-radius: 15px;
-  font-size: 0.85rem;
+  border-radius: var(--radius-xl);
+  font-size: var(--font-sm);
   font-weight: 500;
   white-space: nowrap;
 }
 .status-badge.status-pending {
-  background-color: rgba(251, 140, 0, 0.15);
+  background-color: var(--accent-color-light);
   color: var(--warning-color-alt);
 }
 .status-badge.status-completed {
-  background-color: rgba(3, 218, 198, 0.15); /* 青色/主题色 */
+  background-color: var(--accent-color-light);
   color: var(--accent-color);
 }
 .status-badge.status-cancelled {
-  background-color: rgba(158, 158, 158, 0.15);
+  background-color: var(--hover-bg-color);
   color: var(--cancelled-color);
 }
 
@@ -598,7 +610,7 @@ button:disabled {
   padding: 6px 12px;
   background-color: var(--card-bg-color);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   color: var(--primary-text-color);
 }
@@ -615,8 +627,8 @@ button:disabled {
   origin-top-right: 0; /* 动画基点 */
   background-color: var(--card-bg-color);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
-  box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
   z-index: 10;
   overflow: hidden; /* 保证内部元素的圆角 */
 }
@@ -778,4 +790,34 @@ button:disabled {
   }
 }
 
+.empty-guide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 3rem 2rem;
+  text-align: center;
+}
+.empty-guide-icon {
+  font-size: 3rem;
+  margin-bottom: 12px;
+  opacity: 0.3;
+}
+.empty-guide-title {
+  font-size: var(--font-lg);
+  font-weight: 700;
+  color: var(--primary-text-color);
+  margin-bottom: 8px;
+}
+.empty-guide-desc {
+  font-size: var(--font-base);
+  color: var(--text-muted);
+  max-width: 400px;
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+.empty-guide-hint {
+  font-size: var(--font-sm);
+  color: var(--accent-color);
+  font-weight: 600;
+}
 </style>

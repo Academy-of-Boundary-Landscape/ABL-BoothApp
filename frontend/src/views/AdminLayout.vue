@@ -179,7 +179,8 @@ const ongoingEvents = computed(() => {
 
 const menuOptions = computed(() => {
   const baseOptions = [
-    { label: () => h(RouterLink, { to: '/admin' }, { default: () => '展会管理' }), key: '/admin' },
+    { label: () => h(RouterLink, { to: '/admin' }, { default: () => '控制台' }), key: '/admin' },
+    { label: () => h(RouterLink, { to: '/admin/events' }, { default: () => '展会管理' }), key: '/admin/events' },
     { label: () => h(RouterLink, { to: '/admin/master-products' }, { default: () => '全局商品库' }), key: '/admin/master-products' },
     { label: () => h(RouterLink, { to: '/admin/help' }, { default: () => '使用教程' }), key: '/admin/help' },
     { label: () => h('div', { onClick: () => (showThemeModal.value = true), style: { cursor: 'pointer' } }, '主题设置'), key: '/admin/theme-setting' }
@@ -234,6 +235,7 @@ onUnmounted(() => {
 /* sider 本体 */
 .sidebar-container {
   height: 100vh;
+  height: 100dvh;
 }
 
 /* ✅ 三段布局：header/body/footer */
@@ -341,7 +343,7 @@ onUnmounted(() => {
 /* 移动端汉堡按钮 */
 .mobile-fab {
   position: fixed;
-  bottom: 100px;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0));
   right: 24px;
   z-index: 1001;
   box-shadow: var(--shadow-md);
@@ -357,16 +359,18 @@ onUnmounted(() => {
 /* 主内容区滚动 */
 .main-content {
   min-height: 100vh;
+  min-height: 100dvh;
   box-sizing: border-box;
   overflow: auto;
-  padding-bottom: 40px;
+  padding-bottom: calc(40px + env(safe-area-inset-bottom, 0));
 }
 
 /* 移动端 sider 悬浮 */
 @media (max-width: 992px) {
   :deep(.n-layout-sider) {
     position: fixed !important;
-    height: 100% !important;
+    height: 100vh !important;
+    height: 100dvh !important;
     z-index: 1000;
   }
 

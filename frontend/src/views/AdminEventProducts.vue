@@ -1,11 +1,16 @@
 <template>
-  <div>
+  <div class="page">
     <header class="page-header">
-      <h1>商品管理</h1>
-      <p>为当前展会添加、修改和移除上架商品。</p>
+      <div class="header-content">
+        <div class="header-title-row">
+          <h1>商品管理</h1>
+          <HelpBubble page="event-products" />
+        </div>
+        <p>为当前展会添加、修改和移除上架商品。</p>
+      </div>
     </header>
 
-    <main>
+    <main class="page-body">
       <!-- 上架新商品区块 -->
       <section class="form-section">
         <div class="section-header" @click="isFormExpanded = !isFormExpanded">
@@ -143,7 +148,12 @@
           </tbody>
         </table>
       </div>
-      <p v-else>该展会还未上架任何商品。</p>
+      <div v-else class="empty-guide">
+        <div class="empty-guide-icon">📦</div>
+        <div class="empty-guide-title">还没有上架商品</div>
+        <div class="empty-guide-desc">从全局商品库中选择商品添加到本场展会，设置库存数量和展会特价。</div>
+        <div class="empty-guide-hint">在上方「上架新商品」区域选择商品并设置库存</div>
+      </div>
           </div>
         </transition>
       </section>
@@ -194,6 +204,7 @@ import { RouterLink } from 'vue-router';
 import { useEventDetailStore } from '@/stores/eventDetailStore';
 import { useProductStore } from '@/stores/productStore';
 import AppModal from '@/components/shared/AppModal.vue';
+import HelpBubble from '@/components/shared/HelpBubble.vue';
 import { NCard, NInput, NSelect, NImage, NInputNumber, NButton, NSpace, useDialog } from 'naive-ui';
 
 const props = defineProps({ id: { type: String, required: true } });
@@ -377,14 +388,15 @@ function getProductLabel(name) {
 </script>
 
 <style scoped>
-.page-header {
-  position: relative;
-  margin-bottom: 2rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--border-color);
+.page { max-width: 960px; }
+.page-header { margin-bottom: 1.5rem; }
+.page-header h1 { margin: 0 0 0.25rem; font-size: var(--font-xl); color: var(--accent-color); }
+.page-header p { margin: 0; color: var(--text-muted); font-size: var(--font-base); }
+.header-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
-.page-header h1 { color: var(--accent-color); margin: 0; }
-.page-header p { color: var(--text-muted); margin-top: 0.5rem; }
 .btn-back {
   position: absolute;
   top: 0;
@@ -406,7 +418,7 @@ function getProductLabel(name) {
   padding: 0.75rem 1rem;
   background: var(--card-bg-color);
   border: 2px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   transition: all 0.2s ease;
   margin-bottom: 0.5rem;
 }
@@ -418,13 +430,13 @@ function getProductLabel(name) {
 
 .section-header h2 {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: var(--font-lg);
   color: var(--accent-color);
   font-weight: 600;
 }
 
 .toggle-btn {
-  font-size: 0.9rem;
+  font-size: var(--font-base);
   padding: 0.25rem 0.75rem;
   min-width: auto;
   color: var(--accent-color);
@@ -452,7 +464,7 @@ function getProductLabel(name) {
 .section-container {
   background: var(--card-bg-color);
   border: 2px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 1.5rem;
   overflow: hidden;
 }
@@ -462,7 +474,7 @@ function getProductLabel(name) {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .add-product-form {
@@ -480,7 +492,7 @@ function getProductLabel(name) {
   border-collapse: collapse;
   border-spacing: 0;
   text-align: left;
-  font-size: 0.95rem;
+  font-size: var(--font-base);
   min-width: 700px;
 }
 
@@ -533,7 +545,7 @@ function getProductLabel(name) {
   width: 50px;
   height: 50px;
   object-fit: cover;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-color);
   vertical-align: middle;
 }
@@ -551,10 +563,10 @@ function getProductLabel(name) {
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, var(--accent-color), var(--accent-color-light, var(--accent-color)));
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-color);
   color: var(--text-white);
-  font-size: 0.75rem;
+  font-size: var(--font-xs);
   font-weight: 600;
   text-align: center;
   overflow: hidden;
@@ -565,11 +577,11 @@ function getProductLabel(name) {
   height: 50px;
   line-height: 50px;
   text-align: center;
-  font-size: 0.8rem;
+  font-size: var(--font-sm);
   color: var(--text-disabled);
   background-color: var(--bg-color);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   vertical-align: middle;
 }
 
@@ -587,9 +599,9 @@ function getProductLabel(name) {
   border: 1px solid transparent;
   color: var(--primary-text-color);
   padding: 6px 10px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: var(--font-base);
   transition: background-color 0.2s, color 0.2s, border-color 0.2s;
   display: inline-flex;
   align-items: center;
@@ -615,7 +627,7 @@ function getProductLabel(name) {
   max-height: 320px;
   overflow-y: auto;
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 0.5rem;
   background-color: var(--bg-color);
 }
@@ -641,9 +653,9 @@ function getProductLabel(name) {
   text-align: center;
   padding: 0.4rem;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
- 
+
 
 .preview-item-img-container {
   display: flex;
@@ -659,10 +671,10 @@ function getProductLabel(name) {
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, var(--accent-color), var(--accent-color-light, var(--accent-color)));
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-color);
   color: var(--text-white);
-  font-size: 0.85rem;
+  font-size: var(--font-sm);
   font-weight: 600;
   text-align: center;
 } transition: background-color 0.2s, border-color 0.2s;
@@ -681,7 +693,7 @@ function getProductLabel(name) {
   width: 64px;
   height: 64px;
   object-fit: cover;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   margin-bottom: 0.5rem;
 }
 .preview-item-img :deep(img) {
@@ -696,7 +708,7 @@ function getProductLabel(name) {
 }
 
 .preview-item-name {
-  font-size: 0.85rem;
+  font-size: var(--font-sm);
   font-weight: 500;
   color: var(--primary-text-color);
   white-space: nowrap;
@@ -706,11 +718,11 @@ function getProductLabel(name) {
 }
 
 .preview-item-code {
-  font-size: 0.75rem;
+  font-size: var(--font-xs);
   color: var(--text-disabled);
 }
 .preview-item-price {
-  font-size: 0.75rem;
+  font-size: var(--font-xs);
   color: var(--accent-color);
 }
 
@@ -934,5 +946,36 @@ function getProductLabel(name) {
   .edit-form .form-group {
     margin-bottom: 0.75rem;
   }
+}
+
+.empty-guide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 3rem 2rem;
+  text-align: center;
+}
+.empty-guide-icon {
+  font-size: 3rem;
+  margin-bottom: 12px;
+  opacity: 0.3;
+}
+.empty-guide-title {
+  font-size: var(--font-lg);
+  font-weight: 700;
+  color: var(--primary-text-color);
+  margin-bottom: 8px;
+}
+.empty-guide-desc {
+  font-size: var(--font-base);
+  color: var(--text-muted);
+  max-width: 400px;
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+.empty-guide-hint {
+  font-size: var(--font-sm);
+  color: var(--accent-color);
+  font-weight: 600;
 }
 </style>

@@ -125,25 +125,31 @@ async fn create_order(
 
         match product_opt {
             Ok(Some(prod)) => {
-                if prod.current_stock < item_req.quantity {
-                    return (
-                        StatusCode::NOT_ACCEPTABLE,
-                        Json(json!({
-                            "error": format!("Insufficient stock for product: {}", prod.name)
-                        })),
-                    )
-                        .into_response();
-                }
-                // 扣减库存
-                let new_stock = prod.current_stock - item_req.quantity;
-                if let Err(_e) = sqlx::query("UPDATE products SET current_stock = ? WHERE id = ?")
-                    .bind(new_stock)
-                    .bind(prod.id)
-                    .execute(&mut *tx)
-                    .await
-                {
-                    return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to update stock")
-                        .into_response();
+                // Atomic stock deduction with race-condition safety
+                let stock_result = sqlx::query(
+                    "UPDATE products SET current_stock = current_stock - ? WHERE id = ? AND current_stock >= ?"
+                )
+                .bind(item_req.quantity)
+                .bind(prod.id)
+                .bind(item_req.quantity)
+                .execute(&mut *tx)
+                .await;
+
+                match stock_result {
+                    Ok(r) if r.rows_affected() == 0 => {
+                        return (
+                            StatusCode::NOT_ACCEPTABLE,
+                            Json(json!({
+                                "error": format!("Insufficient stock for product: {}", prod.name)
+                            })),
+                        )
+                            .into_response();
+                    }
+                    Err(_) => {
+                        return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to update stock")
+                            .into_response();
+                    }
+                    _ => {}
                 }
 
                 total_amount += prod.price * (item_req.quantity as f64);
@@ -173,18 +179,15 @@ async fn create_order(
         }
     }
 
-    let order_id = match sqlx::query(
-        "INSERT INTO orders (event_id, total_amount, status) VALUES (?, ?, 'pending') RETURNING id",
+    let order_row = match sqlx::query_as::<_, Order>(
+        "INSERT INTO orders (event_id, total_amount, status) VALUES (?, ?, 'pending') RETURNING *",
     )
     .bind(event_id)
     .bind(total_amount)
     .fetch_one(&mut *tx)
     .await
     {
-        Ok(rec) => {
-            use sqlx::Row;
-            rec.get::<i64, _>("id")
-        }
+        Ok(row) => row,
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -193,6 +196,7 @@ async fn create_order(
                 .into_response()
         }
     };
+    let order_id = order_row.id;
 
     let mut response_items = Vec::new();
 
@@ -241,14 +245,6 @@ async fn create_order(
             .into_response();
     }
 
-    // 构造最终响应
-    // 重新查一下主表以获取准确数据 (如 created_at)
-    let order_row = sqlx::query_as::<_, Order>("SELECT * FROM orders WHERE id = ?")
-        .bind(order_id)
-        .fetch_one(&state.db)
-        .await
-        .unwrap();
-
     let response = OrderResponse {
         order: order_row,
         items: response_items,
@@ -270,17 +266,6 @@ async fn list_orders(
         return e.into_response();
     }
 
-    // 1. 查询所有符合条件的 Orders
-    let mut sql = "SELECT * FROM orders WHERE event_id = ?".to_string();
-    if let Some(status) = &params.status {
-        sql.push_str(" AND status = '");
-        sql.push_str(status); // 注意：生产环境应使用 bind 防止注入，这里为了简单拼接演示逻辑，只要 status 是枚举值就安全
-        sql.push_str("'");
-    }
-    sql.push_str(" ORDER BY id DESC");
-
-    // 只能使用 query_as 而不是 query! 宏，因为 SQL 是动态拼接的 (或者用 bind)
-    // 更安全的做法是：
     let orders: Vec<Order> = if let Some(s) = params.status {
         query_as("SELECT * FROM orders WHERE event_id = ? AND status = ? ORDER BY id DESC")
             .bind(event_id)
@@ -377,22 +362,39 @@ async fn update_order_status(
 
     if payload.status == "cancelled" {
         // 开启事务处理取消逻辑
-        let mut tx = state.db.begin().await.unwrap();
+        let mut tx = match state.db.begin().await {
+            Ok(tx) => tx,
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": format!("Failed to begin transaction: {}", e)})),
+                )
+                    .into_response()
+            }
+        };
 
         // 1. 检查订单当前状态，防止重复取消导致重复加库存
+        //    同时校验 event_id，防止越权取消其他展会的订单
         let current_status: Option<String> =
-            sqlx::query_scalar("SELECT status FROM orders WHERE id = ?")
+            sqlx::query_scalar("SELECT status FROM orders WHERE id = ? AND event_id = ?")
                 .bind(order_id)
+                .bind(event_id)
                 .fetch_optional(&mut *tx)
                 .await
                 .unwrap_or(None);
 
-        if let Some(s) = current_status {
+        let Some(s) = current_status else {
+            // 订单不存在或不属于该展会
+            return (StatusCode::NOT_FOUND, Json(json!({"error": "Order not found in this event"}))).into_response();
+        };
+
+        {
             match s.as_str() {
                 "cancelled" => {
                     // 已取消过，直接返回当前订单数据
-                    let order = query_as::<_, Order>("SELECT * FROM orders WHERE id = ?")
+                    let order = query_as::<_, Order>("SELECT * FROM orders WHERE id = ? AND event_id = ?")
                         .bind(order_id)
+                        .bind(event_id)
                         .fetch_optional(&state.db)
                         .await
                         .unwrap_or(None);
@@ -424,28 +426,85 @@ async fn update_order_status(
 
                     // 3. 归还库存
                     for item in items {
-                        let _ = sqlx::query(
+                        if let Err(e) = sqlx::query(
                             "UPDATE products SET current_stock = current_stock + ? WHERE id = ?",
                         )
                         .bind(item.quantity)
                         .bind(item.product_id)
                         .execute(&mut *tx)
-                        .await;
+                        .await
+                        {
+                            eprintln!("Failed to restore stock for product {}: {}", item.product_id, e);
+                            return (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Json(json!({"error": format!("Failed to restore stock: {}", e)})),
+                            )
+                                .into_response();
+                        }
                     }
                 }
                 _ => {}
             }
         }
 
-        // 4. 更新状态
-        let _ = sqlx::query("UPDATE orders SET status = 'cancelled' WHERE id = ?")
+        // 4. 更新状态 (同时校验 event_id 防止越权)
+        if let Err(e) = sqlx::query("UPDATE orders SET status = 'cancelled' WHERE id = ? AND event_id = ?")
             .bind(order_id)
+            .bind(event_id)
             .execute(&mut *tx)
-            .await;
+            .await
+        {
+            eprintln!("Failed to update order status to cancelled: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": format!("Failed to cancel order: {}", e)})),
+            )
+                .into_response();
+        }
 
-        tx.commit().await.unwrap();
+        if let Err(e) = tx.commit().await {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": format!("Transaction commit failed: {}", e)})),
+            )
+                .into_response();
+        }
     } else {
-        // 普通状态更新 (pending -> completed)
+        // 普通状态更新：验证状态白名单
+        match payload.status.as_str() {
+            "pending" | "completed" | "cancelled" => {}
+            _ => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"error": format!("Invalid order status: '{}'. Must be one of: pending, completed, cancelled", payload.status)})),
+                )
+                    .into_response();
+            }
+        }
+
+        // Prevent invalid state transitions (e.g. cancelled -> pending/completed)
+        let current: Option<String> =
+            sqlx::query_scalar("SELECT status FROM orders WHERE id = ? AND event_id = ?")
+                .bind(order_id)
+                .bind(event_id)
+                .fetch_optional(&state.db)
+                .await
+                .unwrap_or(None);
+
+        match current.as_deref() {
+            None => {
+                return (StatusCode::NOT_FOUND, Json(json!({"error": "Order not found"}))).into_response();
+            }
+            Some("cancelled") => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"error": "Cannot change status of a cancelled order. Stock has already been restored."})),
+                )
+                    .into_response();
+            }
+            _ => {}
+        }
+
         let result = query("UPDATE orders SET status = ? WHERE id = ? AND event_id = ?")
             .bind(&payload.status)
             .bind(order_id)
@@ -461,12 +520,18 @@ async fn update_order_status(
     // 返回更新后的完整对象 (略，为简化起见返回成功消息，或调用 list_orders 的逻辑获取单个)
     // 按照文档 "Response (200): Updated Order object"，最好是返回 OrderResponse。
     // 这里偷懒返回简单的 Order 结构体，实际项目建议复用 fetch 逻辑。
-    let updated_order = query_as::<_, Order>("SELECT * FROM orders WHERE id = ?")
+    match query_as::<_, Order>("SELECT * FROM orders WHERE id = ?")
         .bind(order_id)
         .fetch_one(&state.db)
         .await
-        .unwrap();
-    Json(updated_order).into_response()
+    {
+        Ok(order) => Json(order).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": format!("Failed to fetch updated order: {}", e)})),
+        )
+            .into_response(),
+    }
 }
 
 // ==========================================

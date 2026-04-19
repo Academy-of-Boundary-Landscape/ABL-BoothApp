@@ -28,7 +28,7 @@
       <!-- 【修改】只有在待处理状态下才显示按钮 -->
       <div v-if="!isCompleted" class="button-group">
         <n-button tertiary type="error" size="small" @click="$emit('cancel', order.id)">取消</n-button>
-        <n-button type="primary" size="small" @click="$emit('complete', order.id)">完成配货</n-button>
+        <n-button type="primary" @click="$emit('complete', order.id)">完成配货</n-button>
       </div>
     </div>
   </div>
@@ -58,16 +58,16 @@ const formattedTime = computed(() => {
   border-left-color: var(--order-completed); /* 已完成的订单用灰色边框 */
   opacity: 0.8;
 }
-.button-group { display: flex; gap: 0.5rem; }
+.button-group { display: flex; gap: 8px; }
 .btn-cancel { /* ... 危险操作的样式 ... */ }
-/* --- 整体卡片样式 (保持或微调) --- */
+/* --- 整体卡片样式 --- */
 .order-card {
   background-color: var(--card-bg-color);
   border: 1px solid var(--border-color);
   border-left: 4px solid var(--accent-color);
-  padding: 1rem 1.5rem;
-  margin-bottom: 1.5rem;
-  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
 }
@@ -77,36 +77,36 @@ const formattedTime = computed(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1rem;
-  padding-bottom: 0.75rem;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
   border-bottom: 1px solid var(--border-color);
 }
-.order-header h4 { margin: 0; color: var(--primary-text-color); }
-.order-header .order-time { font-size: 0.9rem; color: var(--text-muted); }
+.order-header h4 { margin: 0; font-size: var(--font-base); color: var(--primary-text-color); }
+.order-header .order-time { font-size: var(--font-sm); color: var(--text-muted); }
 
-/* --- 【新增/修改】商品列表样式 --- */
+/* --- 商品列表 --- */
 .item-list {
   display: flex;
   flex-direction: column;
-  gap: 1rem; /* 每个商品项之间的间距 */
-  margin-bottom: 1rem;
+  gap: 6px;
+  margin-bottom: 6px;
 }
 
 .order-item {
   display: flex;
   align-items: center;
-  gap: 1rem; /* 图片、信息、数量之间的间距 */
+  gap: 8px;
 }
 
 .item-thumbnail {
-  flex-shrink: 0; /* 防止图片被压缩 */
+  flex-shrink: 0;
 }
 
 .item-thumbnail img, .no-img-placeholder {
-  width: 50px;
-  height: 50px;
+  width: 36px;
+  height: 36px;
   object-fit: cover;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-color);
 }
 
@@ -116,28 +116,40 @@ const formattedTime = computed(() => {
   align-items: center;
   color: var(--text-disabled);
   background-color: var(--bg-color);
+  font-size: var(--font-sm);
 }
 
 .item-details {
-  flex-grow: 1; /* 占据剩余空间 */
+  flex-grow: 1;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
 }
 
 .item-name {
   font-weight: 600;
+  font-size: var(--font-base);
   color: var(--primary-text-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .item-price {
-  font-size: 0.85rem;
+  font-size: var(--font-sm);
   color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 .item-quantity {
-  font-size: 1.1rem;
-  font-weight: bold;
+  font-size: var(--font-md);
+  font-weight: 800;
   color: var(--accent-color);
+  flex-shrink: 0;
+  min-width: 32px;
+  text-align: right;
 }
 
 /* --- 订单尾 --- */
@@ -145,12 +157,11 @@ const formattedTime = computed(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 0.5rem;
-  padding-top: 1rem;
+  padding-top: 8px;
   border-top: 1px solid var(--border-color);
 }
 .total-amount strong {
-  font-size: 1.2rem;
+  font-size: var(--font-lg);
   color: var(--accent-color);
 }
 /* 【新增】按钮组容器样式 */
@@ -162,7 +173,7 @@ const formattedTime = computed(() => {
 /* 【修改】通用按钮样式，确保 .btn 基础样式存在 */
 .btn {
   padding: 8px 16px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-weight: bold;
   border: 1px solid;

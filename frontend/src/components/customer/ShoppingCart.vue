@@ -27,8 +27,8 @@
       <!-- 1. 顶部/手机底部 触发栏 -->
       <div class="cart-header" @click="isMobile ? toggleCart() : null">
         <div class="header-left">
-          <span class="icon">🛒</span>
-          <span class="title">购物车</span>
+          <span class="header-icon">🛒</span>
+          <span class="header-title">购物车</span>
           <span class="count-badge" v-if="cartCount > 0">{{ cartCount }}</span>
         </div>
         
@@ -46,6 +46,15 @@
         <div class="list-scroll-area">
           <ul v-if="cart.length" class="cart-list">
             <li v-for="item in cart" :key="item.id" class="cart-item">
+              <div class="item-thumb">
+                <img
+                  v-if="item.image_url"
+                  :src="item.image_url"
+                  :alt="item.name"
+                  class="thumb-img"
+                />
+                <span v-else class="thumb-fallback">{{ item.name?.charAt(0) || '?' }}</span>
+              </div>
               <div class="item-info">
                 <div class="item-name">{{ item.name }}</div>
                 <div class="item-price-row">
@@ -69,8 +78,9 @@
 
           <!-- 空购物车提示 -->
           <div v-else class="empty-cart">
-            <span class="empty-icon">🍂</span>
-            <p>还没选购商品</p>
+            <span class="empty-icon">🛒</span>
+            <p class="empty-title">购物车是空的</p>
+            <p class="empty-hint">点击商品卡片上的 <span class="hint-plus">+</span> 加入购物车</p>
           </div>
         </div>
 
@@ -99,7 +109,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { NButton } from 'naive-ui'
 
 const props = defineProps({
@@ -132,13 +142,27 @@ function toggleCart() {
   }
 }
 
+function syncBodyScrollLock(locked) {
+  if (typeof document === 'undefined') return
+  document.body.style.overflow = locked ? 'hidden' : ''
+}
+
 onMounted(() => {
   checkMobile()
   window.addEventListener('resize', checkMobile)
 })
 onUnmounted(() => {
+  syncBodyScrollLock(false)
   window.removeEventListener('resize', checkMobile)
 })
+
+watch(
+  [isMobile, expanded],
+  ([mobile, isExpanded]) => {
+    syncBodyScrollLock(mobile && isExpanded)
+  },
+  { immediate: true }
+)
 </script>
 
 <style scoped>
@@ -148,6 +172,7 @@ onUnmounted(() => {
 .shopping-cart-root {
   height: 100%;
   width: 100%;
+  min-height: 0;
 }
 
 .cart-container {
@@ -155,6 +180,7 @@ onUnmounted(() => {
   flex-direction: column;
   background: var(--card-bg-color);
   height: 100%;
+  min-height: 0;
   overflow: hidden;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -176,13 +202,23 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
 }
+.header-icon {
+  font-size: 1.4rem;
+}
+.header-title {
+  font-size: var(--font-lg);
+  font-weight: 800;
+}
 .count-badge {
   background: var(--error-color, #d03050);
   color: white;
-  font-size: 0.75rem;
-  padding: 1px 6px;
-  border-radius: 10px;
-  line-height: 1.2;
+  font-size: var(--font-base);
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: var(--radius-lg);
+  line-height: 1.3;
+  min-width: 24px;
+  text-align: center;
 }
 
 .header-right {
@@ -192,7 +228,8 @@ onUnmounted(() => {
 }
 .total-price {
   font-family: 'DIN Alternate', sans-serif;
-  font-size: 1.1rem;
+  font-size: var(--font-xl);
+  font-weight: 800;
   color: var(--accent-color);
 }
 
@@ -207,7 +244,9 @@ onUnmounted(() => {
 
 .list-scroll-area {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 0 12px;
 }
 
@@ -220,65 +259,102 @@ onUnmounted(() => {
 .cart-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 12px 0;
+  gap: 10px;
+  padding: 10px 0;
   border-bottom: 1px dashed var(--border-color);
 }
+
+/* 商品缩略图（圆形） */
+.item-thumb {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--bg-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.thumb-fallback {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
 .item-info {
   flex: 1;
   min-width: 0;
-  margin-right: 10px;
 }
 .item-name {
-  font-size: 0.9rem;
-  font-weight: 500;
+  font-size: var(--font-md);
+  font-weight: 600;
   margin-bottom: 4px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .unit-price {
-  font-size: 0.85rem;
-  color: var(--text-muted);
+  font-size: var(--font-base);
+  font-weight: 600;
+  color: var(--accent-color);
 }
 
 /* 加减按钮控件 */
 .item-controls {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: var(--bg-secondary, #f5f5f9);
-  padding: 2px;
-  border-radius: 6px;
+  gap: 4px;
+  background: var(--bg-secondary);
+  padding: 3px;
+  border-radius: var(--radius-md);
 }
 .ctrl-btn {
-  width: 24px;
-  height: 24px;
+  width: 36px;
+  height: 36px;
   border: none;
-  background: white;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: var(--primary-text-color);
-  font-size: 16px;
+  font-size: 22px;
+  font-weight: 700;
   line-height: 1;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  box-shadow: var(--shadow-sm);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: transform 0.12s;
+}
+.ctrl-btn.minus {
+  background: var(--bg-secondary);
+  color: var(--primary-text-color);
+}
+.ctrl-btn.plus {
+  background: var(--accent-color);
+  color: white;
 }
 .ctrl-btn:active {
-  transform: scale(0.9);
+  transform: scale(0.90);
 }
 .qty {
-  font-weight: 700;
-  font-size: 0.9rem;
-  min-width: 16px;
+  font-weight: 800;
+  font-size: var(--font-lg);
+  min-width: 28px;
   text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 底部结算 */
 .cart-footer {
   padding: 16px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--border-color);
   background: var(--card-bg-color);
 }
@@ -287,16 +363,19 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: baseline;
   margin-bottom: 12px;
-  font-size: 0.9rem;
+  font-size: var(--font-base);
   color: var(--text-muted);
 }
 .big-total {
-  font-size: 1.4rem;
-  font-weight: 800;
+  font-size: 1.8rem;
+  font-weight: 900;
   color: var(--accent-color);
+  font-variant-numeric: tabular-nums;
 }
 .checkout-btn {
-  font-weight: 700;
+  font-weight: 800;
+  font-size: var(--font-lg);
+  height: 48px;
 }
 
 /* 空状态 */
@@ -306,13 +385,41 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: var(--text-muted);
   min-height: 200px;
+  padding: 24px 16px;
 }
 .empty-icon {
-  font-size: 2.5rem;
-  margin-bottom: 10px;
-  opacity: 0.5;
+  font-size: 3rem;
+  margin-bottom: 12px;
+  opacity: 0.25;
+}
+.empty-title {
+  font-size: var(--font-base);
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 0 0 8px;
+}
+.empty-hint {
+  font-size: var(--font-sm, 13px);
+  font-weight: 500;
+  color: var(--text-muted);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.hint-plus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent-color);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 /* ============================================================================
@@ -325,10 +432,10 @@ onUnmounted(() => {
   right: 0;
   width: 100%;
   height: auto; /* 自动高度，不占满全屏 */
-  max-height: 80vh; /* 最大高度 */
+  max-height: min(80vh, calc(100dvh - 24px)); /* 最大高度 */
   z-index: 2000;
-  border-radius: 20px 20px 0 0;
-  box-shadow: 0 -4px 20px rgba(0,0,0,0.15);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  box-shadow: var(--shadow-xl);
   transform: translateY(calc(100% - 60px - env(safe-area-inset-bottom))); /* 默认只露出头部 */
   padding-bottom: env(safe-area-inset-bottom); /* 适配 iPhone X 横条 */
 }
@@ -347,6 +454,9 @@ onUnmounted(() => {
 }
 .cart-container.is-mobile.is-expanded .cart-header {
   border-bottom: 1px solid var(--border-color);
+}
+.cart-container.is-mobile .cart-body {
+  max-height: calc(min(80vh, 100dvh - 24px) - 60px - env(safe-area-inset-bottom, 0px));
 }
 
 /* 移动端遮罩层 */

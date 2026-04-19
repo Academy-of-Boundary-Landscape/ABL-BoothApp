@@ -48,15 +48,33 @@ export const useOrderStore = defineStore('order', () => {
     }
   }
 
+  let _visibilityHandler = null;
+
   function startPolling() {
     if (pollingInterval) stopPolling(); // 防止重复启动
     pollPendingOrders();
     pollingInterval = setInterval(pollPendingOrders, 3000);
+
+    // 页面不可见时暂停轮询，节省电量
+    _visibilityHandler = () => {
+      if (document.hidden) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+      } else if (activeEventId.value) {
+        pollPendingOrders();
+        pollingInterval = setInterval(pollPendingOrders, 3000);
+      }
+    };
+    document.addEventListener('visibilitychange', _visibilityHandler);
   }
 
   function stopPolling() {
     clearInterval(pollingInterval);
     pollingInterval = null;
+    if (_visibilityHandler) {
+      document.removeEventListener('visibilitychange', _visibilityHandler);
+      _visibilityHandler = null;
+    }
   }
 
   async function markOrderAsCompleted(orderId) {

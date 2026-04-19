@@ -1,9 +1,10 @@
 <template>
- <n-config-provider class="app-container" :theme="naiveTheme" :theme-overrides="themeOverrides">
+  <n-config-provider class="app-container" :theme="naiveTheme" :theme-overrides="themeOverrides">
     <n-message-provider>
       <n-dialog-provider>
-        <MainHeader />
-        <RouterView />
+        <main class="app-content">
+          <RouterView />
+        </main>
         <GlobalAlert />
       </n-dialog-provider>
     </n-message-provider>
@@ -14,7 +15,6 @@
 import { computed } from 'vue';
 import { RouterView } from 'vue-router';
 import GlobalAlert from '@/components/GlobalAlert.vue';
-import MainHeader from '@/components/shared/MainHeader.vue';
 import { NConfigProvider, NMessageProvider, NDialogProvider, darkTheme } from 'naive-ui';
 import { useThemeStore } from '@/stores/themeStore';
 
@@ -30,17 +30,33 @@ const themeOverrides = computed(() => themeStore.naiveThemeOverrides);
 </script>
 <style scoped>
 .app-container {
-  /* 关键代码：利用 padding 避开安全区 */
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
-
-  /* 设置最小高度以撑满屏幕 */
-  min-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   box-sizing: border-box;
-  
-  /* 消除滚动条 */
   overflow: hidden;
+  background: var(--bg-color);
+}
+
+.app-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-left: env(safe-area-inset-left, 0);
+  padding-right: env(safe-area-inset-right, 0);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  box-sizing: border-box;
+}
+
+:global(html),
+:global(body),
+:global(#app) {
+  height: 100%;
+  overflow: hidden;
+}
+
+:global(body) {
+  margin: 0;
+  background: var(--bg-color);
 }
 </style>

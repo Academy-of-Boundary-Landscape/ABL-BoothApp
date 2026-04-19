@@ -1,8 +1,8 @@
 [package]
 name = "BoothKernel"
-version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+version = "1.1.0"
+description = "摊盒 - 漫展摊位管理工具"
+authors = ["Renko_6626"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -14,8 +14,24 @@ edition = "2021"
 name = "booth_tool_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# devtools: 日常开发和 release 均包含，方便现场排查
+# 正式分发时可用 --no-default-features --features vision 去掉
+default = ["vision", "devtools"]
+vision = ["dep:ort", "dep:ndarray", "dep:image", "dep:reqwest", "dep:sha2", "dep:futures-util"]
+devtools = ["tauri/devtools"]
+
+# 日常开发时静音"无害但吵闹"的警告，减少编译输出干扰
+# 保留可能暴露真实 bug 的警告（unused_must_use, unreachable_code 等）
+[lints.rust]
+unused_variables = "allow"
+unused_imports = "allow"
+unused_mut = "allow"
+unused_assignments = "allow"
+dead_code = "allow"
+
 [dependencies]
-tauri = { version = "2", features = [ "devtools" ] } 
+tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
@@ -40,6 +56,7 @@ mime_guess = "2.0"
 jsonwebtoken = "9.2"
 bcrypt = "0.15" # 密码哈希
 uuid = { version = "1.0", features = ["v4", "serde"] }
+rand = "0.8"
 rust_xlsxwriter = "0.84"
 urlencoding = "2.1"
 tauri-plugin-fs = "2"
@@ -49,16 +66,50 @@ walkdir = "2"
 tauri-plugin-http = "2"
 tauri-plugin-os = "2"
 dirs = "6.0.0"
-tauri-plugin-app = "2.0.0-alpha.2"
+tauri-plugin-app = "2.0.0-alpha.2" # 注意：尚无稳定版，仅 alpha 可用
+ort = { version = "=2.0.0-rc.11", optional = true, default-features = false, features = ["load-dynamic", "copy-dylibs", "ndarray"] }
+ndarray = { version = "0.16", optional = true }
+image = { version = "0.25", optional = true }
+reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls"], optional = true }
+sha2 = { version = "0.10", optional = true }
+futures-util = { version = "0.3", optional = true }
 [build-dependencies]
 tauri-build = { version = "2.0", features = [] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"
 
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.58", features = ["Win32_Graphics_Dxgi"] }
+
+[profile.dev]
+# 自己的代码保持 opt=0，编译最快
+opt-level = 0
+debug = "line-tables-only"
+split-debuginfo = "unpacked"
+incremental = true
+
+# 关键：依赖在 opt=1 下编译一次，缓存到 target/ 永久有效
+# 第一次 build 慢一点，后续迭代链接速度会大幅提升
+[profile.dev.package."*"]
+opt-level = 1
+debug = false
+
+# 日常 release 构建（比原 profile 快 5-10 倍）
 [profile.release]
-panic = "abort"       # 移除 panic 的堆栈展开代码
-codegen-units = 4     # 降低并行度以获得更好的优化
-lto = true            # 启用链接时优化 (Link Time Optimization)
-opt-level = "z"       # 针对体积进行优化 (s 是 size, z 是 size min)
-strip = true          # 自动剥离符号表 (这一点对减小体积非常关键！)
+panic = "abort"
+codegen-units = 16
+lto = "thin"          # 从 full LTO 改为 thin，大幅减少链接时间
+opt-level = 3         # 速度优先（原来的 "z" 过于追求体积）
+debug = false
+strip = true
+
+# 发布分发专用，只在真正打包 installer 时用
+# 使用方法：cargo tauri build -- --profile dist
+[profile.dist]
+inherits = "release"
+codegen-units = 1
+lto = true
+opt-level = "z"
+strip = true
+incremental = false

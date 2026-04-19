@@ -1,14 +1,18 @@
 use axum::{
-    extract::{Multipart, Path, Query, State},
+    extract::{DefaultBodyLimit, Multipart, Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Json},
-    routing::{get, post, put}, // 注意：axum 中 update multipart 通常用 post 兼容性更好
+    routing::{get, post, put},
     Router,
 };
 use serde::Deserialize;
+#[cfg(feature = "vision")]
+use serde::Serialize;
 use serde_json::json;
 use sqlx::{query, query_as};
 
+#[cfg(feature = "vision")]
+use crate::vision::store::VisionStore;
 use crate::{
     api::guard::AdminOnly,
     db::models::MasterProduct,
@@ -16,22 +20,85 @@ use crate::{
     utils::file::{delete_file, save_upload_file},
 };
 
+const PRODUCT_UPLOAD_LIMIT_BYTES: usize = 10 * 1024 * 1024;
+
 pub fn router() -> Router<AppState> {
-    Router::new()
-        // 公开接口
+    let router = Router::new()
         .route("/", get(list_products))
-        // 管理员接口
         .route("/", post(create_product))
-        .route("/:id", post(update_product).put(update_product)) // 更新商品详情 (含图片)
-        .route("/:id/status", put(update_status)) // 上下架
+        .route("/:id", post(update_product).put(update_product))
+        .route("/:id/status", put(update_status));
+
+    #[cfg(feature = "vision")]
+    let router = router
+        .route("/:id/images", get(list_product_images))
+        .route("/:id/images", post(add_product_image))
+        .route(
+            "/:id/images/:image_id",
+            post(update_product_image).put(update_product_image),
+        )
+        .route(
+            "/:id/images/:image_id",
+            axum::routing::delete(delete_product_image),
+        );
+
+    // layer 放在所有路由之后，确保覆盖全部路由（包括 vision images）
+    router.layer(DefaultBodyLimit::max(PRODUCT_UPLOAD_LIMIT_BYTES))
 }
 
-// ==========================================
-// 1. 获取商品列表 (Public)
-// ==========================================
+#[cfg(feature = "vision")]
+#[derive(Debug, Serialize)]
+struct ProductImageDto {
+    id: i64,
+    master_product_id: i64,
+    image_url: String,
+    kind: String,
+    created_at: String,
+    has_embedding: bool,
+}
+
+#[cfg(feature = "vision")]
+async fn list_product_images(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> impl IntoResponse {
+    let store = VisionStore::new(state.db.clone());
+    let active_model_version = {
+        let snapshot = state.vision_runtime.snapshot().await;
+        snapshot.model_version
+    };
+
+    match store.list_master_product_images(id).await {
+        Ok(items) => {
+            let mut dtos = Vec::with_capacity(items.len());
+            for item in items {
+                let has_embedding = store
+                    .has_embedding_for_image(item.id, &active_model_version)
+                    .await
+                    .unwrap_or(false);
+                let url = if item.image_url.starts_with("/uploads/") {
+                    item.image_url
+                } else {
+                    format!("/uploads/{}", item.image_url)
+                };
+                dtos.push(ProductImageDto {
+                    id: item.id,
+                    master_product_id: item.master_product_id,
+                    image_url: url,
+                    kind: item.kind,
+                    created_at: item.created_at,
+                    has_embedding,
+                });
+            }
+            Json(dtos).into_response()
+        }
+        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Database Error").into_response(),
+    }
+}
+
 #[derive(Deserialize)]
 struct ListQuery {
-    all: Option<bool>, // ?all=true 显示所有，否则只显示 is_active=true
+    all: Option<bool>,
 }
 
 async fn list_products(
@@ -54,9 +121,6 @@ async fn list_products(
     Json(products)
 }
 
-// ==========================================
-// 2. 创建商品 (Admin Only - Multipart)
-// ==========================================
 async fn create_product(
     State(state): State<AppState>,
     _: AdminOnly,
@@ -66,13 +130,13 @@ async fn create_product(
     let mut name = String::new();
     let mut default_price: f64 = 0.0;
     let mut category: Option<String> = None;
+    let mut tags = String::new();
     let mut image_path: Option<String> = None;
 
     while let Some(field) = multipart.next_field().await.unwrap_or(None) {
         let field_name = field.name().unwrap_or("").to_string();
 
         if field_name == "image" {
-            // [文件处理] 存入 products 子目录
             match save_upload_file(&state.upload_dir, field, Some("products")).await {
                 Ok(path) => image_path = Some(path),
                 Err(e) => {
@@ -86,17 +150,14 @@ async fn create_product(
             match field_name.as_str() {
                 "product_code" => product_code = value,
                 "name" => name = value,
-                "default_price" => {
-                    // [数值解析] 字符串转浮点
-                    default_price = value.parse().unwrap_or(0.0);
-                }
+                "default_price" => default_price = value.parse().unwrap_or(0.0),
                 "category" => category = if value.is_empty() { None } else { Some(value) },
+                "tags" => tags = value,
                 _ => {}
             }
         }
     }
 
-    // 必填项检查
     if product_code.is_empty() || name.is_empty() {
         return (
             StatusCode::BAD_REQUEST,
@@ -105,11 +166,10 @@ async fn create_product(
             .into_response();
     }
 
-    // [修复] 使用 INSERT ... RETURNING * 原子地获取插入后的完整数据
     let result = query_as::<_, MasterProduct>(
         r#"
-        INSERT INTO master_products (product_code, name, default_price, category, image_url)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO master_products (product_code, name, default_price, category, image_url, tags)
+        VALUES (?, ?, ?, ?, ?, ?)
         RETURNING *
         "#,
     )
@@ -118,13 +178,16 @@ async fn create_product(
     .bind(default_price)
     .bind(category)
     .bind(image_path)
+    .bind(tags)
     .fetch_one(&state.db)
     .await;
 
     match result {
-        Ok(product) => (StatusCode::CREATED, Json(product)).into_response(),
+        Ok(product) => {
+
+            (StatusCode::CREATED, Json(product)).into_response()
+        }
         Err(e) => {
-            // [错误处理] 检查是否是唯一性约束冲突
             let error_msg = e.to_string();
             if error_msg.contains("UNIQUE constraint failed") {
                 (
@@ -140,16 +203,12 @@ async fn create_product(
     }
 }
 
-// ==========================================
-// 3. 更新商品 (Admin Only - Multipart)
-// ==========================================
 async fn update_product(
     State(state): State<AppState>,
     _: AdminOnly,
     Path(id): Path<i64>,
     mut multipart: Multipart,
 ) -> impl IntoResponse {
-    // 1. 查旧数据
     let old_product: MasterProduct = match query_as("SELECT * FROM master_products WHERE id = ?")
         .bind(id)
         .fetch_optional(&state.db)
@@ -160,23 +219,20 @@ async fn update_product(
         None => return (StatusCode::NOT_FOUND, "Product not found").into_response(),
     };
 
-    // 2. 准备更新容器
     let mut product_code = old_product.product_code;
     let mut name = old_product.name;
     let mut default_price = old_product.default_price;
     let mut category = old_product.category;
+    let mut tags = old_product.tags;
     let mut image_path = old_product.image_url;
     let mut should_remove_image = false;
 
-    // 3. 解析 Multipart
     while let Some(field) = multipart.next_field().await.unwrap_or(None) {
         let field_name = field.name().unwrap_or("").to_string();
 
         if field_name == "image" {
-            // 上传新图
             match save_upload_file(&state.upload_dir, field, Some("products")).await {
                 Ok(new_path) => {
-                    // 标记旧图删除
                     if let Some(old_path) = &image_path {
                         let _ = delete_file(&state.upload_dir, old_path).await;
                     }
@@ -195,6 +251,7 @@ async fn update_product(
                     }
                 }
                 "category" => category = if value.is_empty() { None } else { Some(value) },
+                "tags" => tags = value,
                 "remove_image" => {
                     if value == "true" {
                         should_remove_image = true;
@@ -205,7 +262,6 @@ async fn update_product(
         }
     }
 
-    // 4. 处理显式删除图片
     if should_remove_image {
         if let Some(old_path) = &image_path {
             let _ = delete_file(&state.upload_dir, old_path).await;
@@ -213,11 +269,10 @@ async fn update_product(
         image_path = None;
     }
 
-    // 5. 数据库更新
     let result = query_as::<_, MasterProduct>(
         r#"
-        UPDATE master_products 
-        SET product_code = ?, name = ?, default_price = ?, category = ?, image_url = ?
+        UPDATE master_products
+        SET product_code = ?, name = ?, default_price = ?, category = ?, image_url = ?, tags = ?
         WHERE id = ?
         RETURNING *
         "#,
@@ -227,14 +282,17 @@ async fn update_product(
     .bind(default_price)
     .bind(category)
     .bind(image_path)
+    .bind(tags)
     .bind(id)
     .fetch_one(&state.db)
     .await;
 
     match result {
-        Ok(product) => (StatusCode::OK, Json(product)).into_response(),
+        Ok(product) => {
+
+            (StatusCode::OK, Json(product)).into_response()
+        }
         Err(e) => {
-            // 同样也要检查唯一性冲突（如果修改了 product_code）
             let error_msg = e.to_string();
             if error_msg.contains("UNIQUE constraint failed") {
                 (
@@ -249,9 +307,6 @@ async fn update_product(
     }
 }
 
-// ==========================================
-// 4. 更新上下架状态 (Admin Only - JSON)
-// ==========================================
 #[derive(Deserialize)]
 struct UpdateStatusRequest {
     is_active: bool,
@@ -265,8 +320,8 @@ async fn update_status(
 ) -> impl IntoResponse {
     let result = query_as::<_, MasterProduct>(
         r#"
-        UPDATE master_products 
-        SET is_active = ? 
+        UPDATE master_products
+        SET is_active = ?
         WHERE id = ?
         RETURNING *
         "#,
@@ -280,4 +335,185 @@ async fn update_status(
         Ok(product) => (StatusCode::OK, Json(product)).into_response(),
         Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Database Error").into_response(),
     }
+}
+
+#[cfg(feature = "vision")]
+async fn add_product_image(
+    State(state): State<AppState>,
+    _: AdminOnly,
+    Path(master_product_id): Path<i64>,
+    mut multipart: Multipart,
+) -> impl IntoResponse {
+    let mut image_url: Option<String> = None;
+    let mut kind = "gallery".to_string();
+
+    while let Some(field) = multipart.next_field().await.unwrap_or(None) {
+        let field_name = field.name().unwrap_or("").to_string();
+        if field_name == "image" {
+            match save_upload_file(&state.upload_dir, field, Some("products")).await {
+                Ok(path) => image_url = Some(path),
+                Err(e) => {
+                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e})))
+                        .into_response();
+                }
+            }
+        } else if field_name == "kind" {
+            let value = field.text().await.unwrap_or_default();
+            if !value.is_empty() {
+                kind = value;
+            }
+        }
+    }
+
+    let image_url = match image_url {
+        Some(value) => value,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": "image is required"})),
+            )
+                .into_response();
+        }
+    };
+
+    let store = VisionStore::new(state.db.clone());
+    match store
+        .insert_master_product_image(master_product_id, &image_url, &kind)
+        .await
+    {
+        Ok(image_id) => {
+            state.vision_runtime.clone().start_incremental_for_images(
+                state.db.clone(),
+                state.upload_dir.clone(),
+                vec![image_id],
+            );
+
+            (
+                StatusCode::CREATED,
+                Json(json!({
+                    "id": image_id,
+                    "master_product_id": master_product_id,
+                    "image_url": image_url,
+                    "kind": kind
+                })),
+            )
+                .into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": format!("Database Error: {}", e)})),
+        )
+            .into_response(),
+    }
+}
+
+#[cfg(feature = "vision")]
+async fn update_product_image(
+    State(state): State<AppState>,
+    _: AdminOnly,
+    Path((_master_product_id, image_id)): Path<(i64, i64)>,
+    mut multipart: Multipart,
+) -> impl IntoResponse {
+    let store = VisionStore::new(state.db.clone());
+    let old = match store.get_master_product_image(image_id).await {
+        Ok(Some(item)) => item,
+        Ok(None) => return (StatusCode::NOT_FOUND, "Image not found").into_response(),
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Database Error").into_response(),
+    };
+
+    let mut new_image_url = old.image_url.clone();
+    let mut new_kind = old.kind.clone();
+    let mut image_replaced = false;
+
+    while let Some(field) = multipart.next_field().await.unwrap_or(None) {
+        let field_name = field.name().unwrap_or("").to_string();
+        if field_name == "image" {
+            match save_upload_file(&state.upload_dir, field, Some("products")).await {
+                Ok(path) => {
+                    new_image_url = path;
+                    image_replaced = true;
+                }
+                Err(e) => {
+                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e})))
+                        .into_response();
+                }
+            }
+        } else if field_name == "kind" {
+            let value = field.text().await.unwrap_or_default();
+            if !value.is_empty() {
+                new_kind = value;
+            }
+        }
+    }
+
+    if let Err(e) = store
+        .update_master_product_image(image_id, &new_image_url, &new_kind)
+        .await
+    {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": format!("Database Error: {}", e)})),
+        )
+            .into_response();
+    }
+
+    if image_replaced {
+        let _ = delete_file(&state.upload_dir, &old.image_url).await;
+    }
+
+    let _ = store.delete_embeddings_by_image_id(image_id).await;
+    state.vision_runtime.clone().start_incremental_for_images(
+        state.db.clone(),
+        state.upload_dir.clone(),
+        vec![image_id],
+    );
+
+    (
+        StatusCode::OK,
+        Json(json!({
+            "id": image_id,
+            "master_product_id": old.master_product_id,
+            "image_url": new_image_url,
+            "kind": new_kind
+        })),
+    )
+        .into_response()
+}
+
+#[cfg(feature = "vision")]
+async fn delete_product_image(
+    State(state): State<AppState>,
+    _: AdminOnly,
+    Path((_master_product_id, image_id)): Path<(i64, i64)>,
+) -> impl IntoResponse {
+    let store = VisionStore::new(state.db.clone());
+    let old = match store.get_master_product_image(image_id).await {
+        Ok(Some(item)) => item,
+        Ok(None) => return (StatusCode::NOT_FOUND, "Image not found").into_response(),
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Database Error").into_response(),
+    };
+
+    if let Err(e) = store.delete_embeddings_by_image_id(image_id).await {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": format!("Failed to delete embedding: {}", e)})),
+        )
+            .into_response();
+    }
+
+    if let Err(e) = store.delete_master_product_image(image_id).await {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": format!("Database Error: {}", e)})),
+        )
+            .into_response();
+    }
+
+    let _ = delete_file(&state.upload_dir, &old.image_url).await;
+
+    (
+        StatusCode::OK,
+        Json(json!({"ok": true, "deleted_image_id": image_id})),
+    )
+        .into_response()
 }

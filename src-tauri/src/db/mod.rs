@@ -1,9 +1,13 @@
 pub mod models;
 
 use crate::utils::security::hash_password;
-use sqlx::{sqlite::SqlitePoolOptions, Sqlite, SqlitePool};
+use sqlx::{
+    sqlite::{SqliteConnectOptions, SqlitePoolOptions},
+    Sqlite, SqlitePool,
+};
 use std::fs;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 pub async fn init_db(app_data_dir: &PathBuf) -> Result<SqlitePool, sqlx::Error> {
     use sqlx::migrate::MigrateDatabase;
@@ -22,10 +26,15 @@ pub async fn init_db(app_data_dir: &PathBuf) -> Result<SqlitePool, sqlx::Error> 
         Sqlite::create_database(&db_url).await?;
     }
 
-    // 4. 连接
+    // 4. 连接（通过 ConnectOptions 让每条连接都自动设置 PRAGMA）
+    let connect_options = SqliteConnectOptions::from_str(&db_url)?
+        .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
+        .busy_timeout(std::time::Duration::from_secs(5))
+        .pragma("foreign_keys", "ON");
+
     let pool = SqlitePoolOptions::new()
-        .max_connections(10)
-        .connect(&db_url)
+        .max_connections(5)
+        .connect_with(connect_options)
         .await?;
 
     // 5. 运行迁移 (使用运行时方式避免编译时需要 DATABASE_URL)

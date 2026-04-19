@@ -1,6 +1,6 @@
 {
   "name": "frontend",
-  "version": "0.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -23,7 +23,8 @@
     "socket.io-client": "^4.8.1",
     "vicons": "^0.0.1",
     "vue": "^3.5.18",
-    "vue-router": "^4.5.1"
+    "vue-router": "^4.5.1",
+    "naive-ui": "^2.43.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.54.1",
@@ -37,7 +38,6 @@
     "eslint-plugin-playwright": "^2.2.0",
     "eslint-plugin-vue": "~10.3.0",
     "jiti": "^2.4.2",
-    "naive-ui": "^2.43.2",
     "npm-run-all2": "^8.0.4",
     "prettier": "3.6.2",
     "typescript": "~5.8.0",

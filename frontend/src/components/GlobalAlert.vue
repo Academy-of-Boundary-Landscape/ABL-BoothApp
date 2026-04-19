@@ -39,10 +39,10 @@ const alertStore = useAlertStore();
 
 .alert-box {
   background-color: var(--alert-bg);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   width: 90%;
   max-width: 400px;
-  box-shadow: 0 10px 30px var(--shadow-color);
+  box-shadow: var(--shadow-xl);
   border-top: 4px solid var(--alert-info);
   color: var(--primary-text-color);
   transform: scale(1);
@@ -62,7 +62,7 @@ const alertStore = useAlertStore();
 }
 .alert-header h3 {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: var(--font-lg);
   font-weight: 500;
 }
 .close-btn {
@@ -77,7 +77,7 @@ const alertStore = useAlertStore();
 
 .alert-body {
   padding: 1.5rem;
-  font-size: 1rem;
+  font-size: var(--font-md);
   line-height: 1.6;
 }
 
@@ -86,7 +86,7 @@ const alertStore = useAlertStore();
   background-color: var(--bg-elevated);
   display: flex;
   justify-content: flex-end;
-  border-radius: 0 0 8px 8px;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
 }
 
 .ok-btn {
@@ -94,7 +94,7 @@ const alertStore = useAlertStore();
   color: var(--text-white);
   border: none;
   padding: 0.75rem 2rem;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   font-weight: bold;
   cursor: pointer;
   transition: background-color 0.2s;

@@ -1,0 +1,22 @@
+{
+  "active_model_id": "convnextv2_pico_fp32",
+  "download": {
+    "source_preference": "auto",
+    "github_proxy_prefix": "",
+    "hf_base_url": "https://huggingface.co"
+  },
+  "thresholds": {
+    "default_top1_min": 0.28,
+    "default_top1_top2_gap_min": 0.03,
+    "by_mode": {
+      "order": { "top1_min": 0.32, "top1_top2_gap_min": 0.04 },
+      "admin_event": { "top1_min": 0.26, "top1_top2_gap_min": 0.03 },
+      "admin_master": { "top1_min": 0.24, "top1_top2_gap_min": 0.02 }
+    }
+  },
+  "runtime": {
+    "max_concurrency": 2,
+    "timeout_ms": 5000,
+    "execution_provider": "auto"
+  }
+}

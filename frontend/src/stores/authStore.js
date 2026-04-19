@@ -31,12 +31,8 @@ export const useAuthStore = defineStore('auth', () => {
           payload.eventId = eventId;
         }
         
-        // 更明确的日志：字符串化 payload，避免移动端仅显示 [object Object]
-        try {
-          console.log('[authStore] Login payload:', JSON.stringify(payload));
-        } catch (e) {
-          console.log('[authStore] Login payload (raw object):', payload);
-        }
+        // 调试日志（不打印密码）
+        console.log('[authStore] Login attempt:', { role: payload.role, eventId: payload.eventId });
         // 发送原始对象，让 axios 统一序列化为 JSON
         const response = await api.post(
           '/auth/login',

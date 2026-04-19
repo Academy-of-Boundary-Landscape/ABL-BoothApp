@@ -5,6 +5,43 @@ use std::path::PathBuf;
 use tokio::fs;
 use uuid::Uuid;
 
+pub async fn save_upload_bytes(
+    base_dir: &PathBuf,
+    data: &[u8],
+    original_file_name: Option<&str>,
+    sub_folder: Option<&str>,
+) -> Result<String, String> {
+    let ext = original_file_name
+        .and_then(|name| std::path::Path::new(name).extension())
+        .and_then(|e| e.to_str())
+        .unwrap_or("jpg");
+
+    let new_filename = format!("{}.{}", Uuid::new_v4(), ext);
+
+    let mut file_path = base_dir.clone();
+    let mut relative_path_str = String::new();
+
+    if let Some(folder) = sub_folder {
+        file_path.push(folder);
+        if !file_path.exists() {
+            fs::create_dir_all(&file_path)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        relative_path_str.push_str(folder);
+        relative_path_str.push('/');
+    }
+
+    file_path.push(&new_filename);
+    relative_path_str.push_str(&new_filename);
+
+    fs::write(&file_path, data)
+        .await
+        .map_err(|e| format!("Write failed: {}", e))?;
+
+    Ok(format!("/uploads/{}", relative_path_str))
+}
+
 /// 保存上传的文件
 ///
 /// - `base_dir`: 物理根目录 (state.upload_dir)
@@ -17,49 +54,9 @@ pub async fn save_upload_file(
     field: Field<'_>,
     sub_folder: Option<&str>,
 ) -> Result<String, String> {
-    // 1. 获取并净化文件名
     let file_name = field.file_name().unwrap_or("unknown").to_string();
-
-    // 2. 获取扩展名 (默认为 jpg)
-    let ext = std::path::Path::new(&file_name)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("jpg"); // 这里可以加一个白名单检查，防止上传 .exe 等危险文件
-
-    // 3. 生成唯一文件名 (UUID)
-    let new_filename = format!("{}.{}", Uuid::new_v4(), ext);
-
-    // 4. 确定存储子目录 (例如: uploads/products/)
-    let mut file_path = base_dir.clone();
-    let mut relative_path_str = String::new();
-
-    if let Some(folder) = sub_folder {
-        file_path.push(folder);
-        // 确保子目录存在
-        if !file_path.exists() {
-            fs::create_dir_all(&file_path)
-                .await
-                .map_err(|e| e.to_string())?;
-        }
-        relative_path_str.push_str(folder);
-        relative_path_str.push('/');
-    }
-
-    // 拼接最终路径
-    file_path.push(&new_filename);
-    relative_path_str.push_str(&new_filename);
-
-    // 5. 读取并写入文件
-    // TODO: 如果未来需要图片压缩 (image crate)，可以在这里拦截 bytes 进行处理
     let data = field.bytes().await.map_err(|e| e.to_string())?;
-
-    fs::write(&file_path, data)
-        .await
-        .map_err(|e| format!("Write failed: {}", e))?;
-
-    // 返回完整的绝对路径，例如 "/uploads/products/550e8400...jpg"
-    // 前端在任何路由下都能正确加载：<img :src="image_url" />
-    Ok(format!("/uploads/{}", relative_path_str))
+    save_upload_bytes(base_dir, &data, Some(&file_name), sub_folder).await
 }
 
 /// 删除文件

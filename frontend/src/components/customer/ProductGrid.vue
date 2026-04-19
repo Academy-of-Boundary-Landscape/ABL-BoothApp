@@ -19,7 +19,8 @@
         class="product-card"
         :class="{
           'out-of-stock': product.current_stock === 0,
-          'low-stock': !editable && product.current_stock > 0 && product.current_stock <= 10
+          'low-stock': !editable && product.current_stock > 0 && product.current_stock <= 10,
+          'just-added': animatingIds.value.has(product.id)
         }"
         embedded
         :content-style="{ padding: 0 }"
@@ -61,14 +62,21 @@
             </div>
 
             <template v-else>
-              <div
-                v-if="product.current_stock > 0 && product.current_stock <= 10"
-                class="chip stock-warning"
-              >
-                <span>剩 {{ product.current_stock }}</span>
-              </div>
+              <!-- 低库存：角标 + 底部库存条 -->
+              <template v-if="product.current_stock > 0 && product.current_stock <= 10">
+                <div class="chip stock-warning">
+                  <span>仅剩 {{ product.current_stock }} 件</span>
+                </div>
+                <div class="stock-bar">
+                  <div
+                    class="stock-bar-fill"
+                    :class="{ critical: product.current_stock <= 3 }"
+                    :style="{ width: Math.min(product.current_stock / product.initial_stock * 100, 100) + '%' }"
+                  ></div>
+                </div>
+              </template>
 
-              <!-- ✅ 更美观的 SOLD OUT -->
+              <!-- 售罄 -->
               <div v-if="product.current_stock === 0" class="sold-overlay">
                 <div class="sold-badge">SOLD OUT</div>
                 <div class="sold-sub">已售罄</div>
@@ -87,9 +95,7 @@
                 <span class="value">{{ formatPrice(product.price) }}</span>
               </div>
 
-              <div class="action-icon" v-if="!editable && product.current_stock > 0">
-                <span class="plus-sign">+</span>
-              </div>
+              <div class="action-icon" v-if="!editable && product.current_stock > 0"></div>
             </div>
           </div>
         </div>
@@ -116,6 +122,7 @@ const props = defineProps({
 const emit = defineEmits(['addToCart', 'update:products', 'order-changed'])
 
 const localList = ref([])
+const animatingIds = ref(new Set())
 
 watch(
   () => props.products,
@@ -128,7 +135,15 @@ watch(
 
 function handleCardClick(product) {
   if (props.editable) return
-  if (product?.current_stock > 0) emit('addToCart', product)
+  if (product?.current_stock <= 0) return
+  // Trigger add-to-cart animation
+  animatingIds.value = new Set([...animatingIds.value, product.id])
+  setTimeout(() => {
+    const next = new Set(animatingIds.value)
+    next.delete(product.id)
+    animatingIds.value = next
+  }, 400)
+  emit('addToCart', product)
 }
 
 function handleDragEnd() {
@@ -149,12 +164,13 @@ function formatPrice(price) {
   --pg-bg: var(--card-bg-color);
   --pg-border: var(--border-color);
   --pg-accent: var(--accent-color);
-  --pg-radius: 12px;
+  --pg-radius: var(--radius-lg);
 
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--min-col), 1fr));
   gap: 12px;
   padding: 4px;
+  align-content: start;
 }
 
 .product-grid.card-size-small  { --min-col: 110px; }
@@ -172,7 +188,7 @@ function formatPrice(price) {
 
 .product-grid:not(.is-editing) .product-card:hover {
   transform: translateY(-3px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  box-shadow: var(--shadow-md);
 }
 
 .card-inner {
@@ -182,6 +198,10 @@ function formatPrice(price) {
   cursor: pointer;
   user-select: none;
 }
+.product-card.out-of-stock .card-inner {
+  cursor: default;
+  opacity: 0.6;
+}
 
 .media-box {
   position: relative;
@@ -190,9 +210,9 @@ function formatPrice(price) {
   overflow: hidden;
 }
 
-/* 维持网格比例（你原来的逻辑） */
-.product-grid { --pg-media-pad: 100%; }
-.product-grid.card-size-large { --pg-media-pad: 75%; }
+/* 图片区域宽高比：竖向 3:4 更适合漫展制品（立绘/明信片/海报多为竖版） */
+.product-grid { --pg-media-pad: 133%; }               /* small/medium: 3:4 竖向 */
+.product-grid.card-size-large { --pg-media-pad: 110%; }  /* large: 接近正方形，略高 */
 
 .media-box::before {
   content: "";
@@ -287,9 +307,9 @@ function formatPrice(price) {
   right: 8px;
   font-size: 12px;
   font-weight: 800;
-  color: rgba(0,0,0,0.55);
-  background: rgba(255,255,255,0.7);
-  border-radius: 8px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--card-bg-color) 85%, transparent);
+  border-radius: var(--radius-md);
   padding: 6px 8px;
   text-align: center;
 }
@@ -306,17 +326,47 @@ function formatPrice(price) {
   position: absolute;
   top: 6px;
   right: 6px;
-  padding: 2px 6px;
-  border-radius: 8px;
+  padding: 3px 8px;
+  border-radius: var(--radius-md);
   font-size: 10px;
-  font-weight: 900;
+  font-weight: 800;
   color: white;
   background: rgba(0,0,0,0.55);
   backdrop-filter: blur(6px);
 }
-.chip.stock-warning { background: #d03050; }
+.chip.stock-warning {
+  background: var(--warning-color, #f0a020);
+  animation: stock-pulse 2s ease-in-out infinite;
+}
+.product-card.low-stock {
+  border-color: var(--warning-color, #f0a020);
+}
 
-/* ✅ 更美观 SOLD OUT：磨砂 + badge */
+@keyframes stock-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* 库存进度条：贴在图片区域底部 */
+.stock-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: rgba(0,0,0,0.1);
+}
+.stock-bar-fill {
+  height: 100%;
+  background: var(--warning-color, #f0a020);
+  border-radius: 0 2px 2px 0;
+  transition: width 0.3s;
+}
+.stock-bar-fill.critical {
+  background: var(--error-color, #d03050);
+}
+
+/* ✅ SOLD OUT：磨砂 + badge，自适应明暗主题 */
 .sold-overlay {
   position: absolute;
   inset: 0;
@@ -325,26 +375,26 @@ function formatPrice(price) {
   gap: 6px;
   align-items: center;
   justify-content: center;
-  background: rgba(255,255,255,0.55);
+  background: color-mix(in srgb, var(--card-bg-color) 70%, transparent);
   backdrop-filter: blur(6px);
 }
 
 .sold-badge {
   padding: 6px 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-weight: 950;
   letter-spacing: 0.06em;
   font-size: 12px;
   color: white;
   background: rgba(20,20,20,0.86);
-  box-shadow: 0 8px 18px rgba(0,0,0,0.18);
+  box-shadow: var(--shadow-lg);
   transform: rotate(-6deg);
 }
 
 .sold-sub {
   font-size: 12px;
   font-weight: 800;
-  color: rgba(0,0,0,0.55);
+  color: var(--text-muted);
 }
 
 /* 信息区 */
@@ -359,7 +409,7 @@ function formatPrice(price) {
 }
 
 .title {
-  font-size: 0.92rem;
+  font-size: var(--font-base);
   line-height: 1.35;
   color: var(--primary-text-color);
   font-weight: 650;
@@ -384,33 +434,53 @@ function formatPrice(price) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.currency { font-size: 0.75rem; margin-right: 1px; }
-.value { font-size: 1.1rem; font-weight: 900; font-family: sans-serif; }
+.currency { font-size: var(--font-xs); margin-right: 1px; }
+.value { font-size: var(--font-lg); font-weight: 900; font-family: sans-serif; }
 
 .action-icon {
   flex-shrink: 0;
-  width: 22px;
-  height: 22px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
-  background: var(--bg-secondary);
-  color: var(--primary-text-color);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
+  background: var(--accent-color);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s;
+  position: relative;
+}
+/* 用伪元素画十字，确保像素级居中 */
+.action-icon::before,
+.action-icon::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  background: white;
+  border-radius: 1px;
+  transform: translate(-50%, -50%);
+}
+.action-icon::before {
+  width: 14px;
+  height: 2.5px;
+}
+.action-icon::after {
+  width: 2.5px;
+  height: 14px;
+}
+.action-icon:active {
+  transform: scale(0.88);
 }
 
 /* 拖拽视觉 */
 .ghost-card {
   opacity: 0.5;
-  background: #e0e0e0;
-  border: 2px dashed #999;
+  background: var(--bg-secondary);
+  border: 2px dashed var(--border-color);
   border-radius: var(--pg-radius);
 }
 .drag-card {
   opacity: 1;
   transform: scale(1.05) rotate(2deg);
-  box-shadow: 0 12px 24px rgba(0,0,0,0.2);
+  box-shadow: var(--shadow-xl);
   z-index: 1000;
   cursor: grabbing;
 }
@@ -434,10 +504,10 @@ function formatPrice(price) {
   background: var(--pg-accent);
   color: white;
   padding: 4px 10px;
-  border-radius: 20px;
+  border-radius: var(--radius-xl);
   font-size: 12px;
   font-weight: 800;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  box-shadow: var(--shadow-sm);
 }
 
 @keyframes shake {
@@ -445,5 +515,16 @@ function formatPrice(price) {
   25% { transform: rotate(0.5deg); }
   75% { transform: rotate(-0.5deg); }
   100% { transform: rotate(0deg); }
+}
+
+.product-card.just-added {
+  animation: add-pulse 0.4s ease;
+}
+
+@keyframes add-pulse {
+  0% { transform: scale(1); }
+  30% { transform: scale(0.93); box-shadow: 0 0 0 3px var(--accent-color); }
+  60% { transform: scale(1.03); }
+  100% { transform: scale(1); box-shadow: none; }
 }
 </style>

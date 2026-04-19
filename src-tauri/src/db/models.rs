@@ -14,7 +14,8 @@ pub struct MasterProduct {
     pub image_url: Option<String>, // 可能为空
     pub category: Option<String>,
     pub is_active: bool,
-    // created_at 通常 API 不需要返回，或者需要自定义序列化格式，这里暂时忽略
+    #[serde(default)]
+    pub tags: String, // 逗号分隔的标签，如 "博丽灵梦,红色,东方Project"
 }
 
 // 用于接收前端创建商品的请求 Body
@@ -63,6 +64,8 @@ pub struct Product {
     pub image_url: Option<String>,
     #[sqlx(default)]
     pub category: Option<String>,
+    #[sqlx(default)]
+    pub tags: Option<String>,
 }
 
 // ==========================================

@@ -147,8 +147,8 @@ const formatDate = (dateStr: string) => {
 }
 
 .text-muted { 
-  color: var(--text-color-3, #6b7280); 
-  font-size: 0.9rem;
+  color: var(--text-muted);
+  font-size: var(--font-base);
   margin-top: 1rem;
 }
 
@@ -165,31 +165,31 @@ const formatDate = (dateStr: string) => {
 }
 
 .date {
-  font-size: 0.85rem;
-  color: var(--text-color-3, #888);
+  font-size: var(--font-sm);
+  color: var(--text-muted);
 }
 
 .current-ver-tip {
-  font-size: 0.85rem;
-  color: var(--text-color-2, #555);
+  font-size: var(--font-sm);
+  color: var(--secondary-text-color);
   margin-top: 1rem;
   padding: 0.5rem 0.75rem;
-  background: var(--n-color-modal, rgba(0, 0, 0, 0.03)); /* 适配深色模式背景 */
-  border-radius: 4px;
-  border-left: 4px solid var(--primary-color, #18a058);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  border-left: 4px solid var(--accent-color);
 }
 
 .log-scroll {
   margin: 0.5rem 0;
   border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.09));
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 
 .release-note {
   white-space: pre-wrap;
   line-height: 1.6;
   padding: 1rem;
-  font-size: 0.9rem;
+  font-size: var(--font-base);
   color: var(--text-color-1, inherit);
   background: var(--card-color, transparent);
   word-break: break-word;

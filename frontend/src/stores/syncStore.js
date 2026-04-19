@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import api from '@/services/api'
 import { ref } from 'vue'
+import { SYNC_IMPORT_LIMIT_MB, validateFileSize } from '@/utils/upload'
 
 function detectEnv() {
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined

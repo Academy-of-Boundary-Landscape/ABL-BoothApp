@@ -1,8 +1,11 @@
 <template>
-  <div class="admin-event-stat">
-    <header class="stat-header">
-      <div>
-        <h1>{{ pageTitle }}</h1>
+  <div class="page">
+    <header class="page-header">
+      <div class="header-content">
+        <div class="header-title-row">
+          <h1>{{ pageTitle }}</h1>
+          <HelpBubble page="event-stats" />
+        </div>
         <p>查看当前展会的销售数据和统计分析。</p>
       </div>
       <div
@@ -169,12 +172,13 @@
 </template>
 
 <script setup>
-import { onMounted, watch, computed, ref } from 'vue';
+import { onMounted, onUnmounted, watch, computed, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { useEventStatStore } from '@/stores/eventStatStore';
 import SalesLineChart from '@/components/stats/SalesLineChart.vue';
 import StatFilters from '@/components/stats/StatFilters.vue';
 import { NButton, NSpin, NAlert, NCard, NTable } from 'naive-ui';
+import HelpBubble from '@/components/shared/HelpBubble.vue';
 
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
@@ -186,9 +190,14 @@ const selectedProduct = ref('');
 const startDate = ref('');
 const endDate = ref('');
 const intervalMinutes = ref(60);
-const chartWidth = 800;
+const chartWidth = ref(800)
 const chartHeight = 320;
 const padding = 48;
+
+function updateChartWidth() {
+  const el = document.querySelector('.chart-section .section-container')
+  if (el) chartWidth.value = Math.min(el.clientWidth - padding * 2, 1200)
+}
 const isFilterExpanded = ref(true);
 const isSummaryExpanded = ref(true);
 const isChartExpanded = ref(true);
@@ -325,34 +334,26 @@ function escapeCsvCell(value) {
 }
 
 async function downloadCsv() {
-  console.log('[CSV] 点击导出按钮');
   const summary = statStore.stats?.summary || [];
-  console.log('[CSV] 当前数据条数:', summary.length);
-
-  if (!summary.length) {
-    console.warn('[CSV] 无可导出数据，已中止');
-    return;
-  }
+  if (!summary.length) return;
 
   try {
     const isTauri = window.__TAURI_INTERNALS__ !== undefined;
     const safeName = (statStore.stats.event_name || 'sales_report').replace(/[\\/:*?"<>|]/g, '_');
     const fileName = `sales_report_${safeName}.csv`;
 
-    const header = ['SKU', '销量', '单价'];
+    const header = ['制品编号', '制品名', '单价', '销售量', '销售额'];
     const rows = summary.map(item => [
       item.product_code ?? '',
+      item.product_name ?? '',
+      typeof item.unit_price === 'number' ? item.unit_price.toFixed(2) : '0.00',
       item.total_quantity ?? 0,
-      typeof item.unit_price === 'number' ? item.unit_price.toFixed(2) : '0.00'
+      typeof item.total_revenue_per_item === 'number' ? item.total_revenue_per_item.toFixed(2) : '0.00',
     ]);
 
     const csvContent = [header, ...rows]
       .map(cols => cols.map(escapeCsvCell).join(','))
       .join('\r\n');
-
-    console.log('[CSV] 文件名:', fileName);
-    console.log('[CSV] 生成内容长度:', csvContent.length);
-    console.log('[CSV] isTauri:', isTauri);
 
     if (isTauri) {
       const bytes = new TextEncoder().encode('\uFEFF' + csvContent);
@@ -361,13 +362,9 @@ async function downloadCsv() {
         filters: [{ name: 'CSV Files', extensions: ['csv'] }]
       });
 
-      if (!filePath) {
-        console.warn('[CSV] 用户取消保存');
-        return;
-      }
+      if (!filePath) return;
 
       await writeFile(filePath, bytes);
-      console.log('[CSV] Tauri 保存成功:', filePath);
       alert('CSV 导出成功');
       return;
     }
@@ -380,12 +377,9 @@ async function downloadCsv() {
     a.download = fileName;
     document.body.appendChild(a);
     a.click();
-    console.log('[CSV] 已触发浏览器下载');
-
     setTimeout(() => {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
-      console.log('[CSV] 临时链接已释放');
     }, 100);
   } catch (error) {
     console.error('[CSV] 导出失败:', error);
@@ -395,7 +389,12 @@ async function downloadCsv() {
 onMounted(() => {
   const eventId = route.params.id;
   if (eventId) statStore.setActiveEvent(eventId, { productCode: selectedProduct.value, startDate: startDate.value, endDate: endDate.value, intervalMinutes: intervalMinutes.value });
-  console.log(statStore.stats)
+  setTimeout(updateChartWidth, 100)
+  window.addEventListener('resize', updateChartWidth)
+});
+
+onUnmounted(() => {
+  window.removeEventListener('resize', updateChartWidth)
 });
 
 watch(() => route.params.id, (newEventId) => {
@@ -406,48 +405,45 @@ watch(() => route.params.id, (newEventId) => {
 <style scoped>
 /* 主题色通过 App.vue 动态注入 */
 
-.admin-event-stat {
-  padding: 2rem;
-  color: var(--primary-text-color);
-  max-width: 100%;
-  overflow-x: hidden;
-  box-sizing: border-box;
-}
+.page { max-width: 960px; }
 
-.stat-header {
+.page-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 1rem;
-  margin-bottom: 2rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 1.5rem;
   min-width: 0;
 }
 
-.stat-header > div {
+.header-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.header-content {
   flex: 1;
   min-width: 0;
 }
 
-.stat-header h1 {
+.page-header h1 {
+  margin: 0 0 0.25rem;
+  font-size: var(--font-xl);
   color: var(--accent-color);
-  margin: 0;
-  font-size: 1.75rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 100%;
 }
 
-.stat-header p {
+.page-header p {
+  margin: 0;
   color: var(--text-muted);
-  margin-top: 0.5rem;
-  margin-bottom: 0;
+  font-size: var(--font-base);
 }
 
 .download-btn {
-  font-size: 1rem;
+  font-size: var(--font-md);
   font-weight: 600;
   padding: 0.75rem 1.5rem;
   transition: all 0.2s ease;
@@ -465,7 +461,7 @@ watch(() => route.params.id, (newEventId) => {
 
 .download-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(3, 218, 198, 0.3);
+  box-shadow: var(--shadow-md);
 }
 
 /* 统一区块样式 */
@@ -485,7 +481,7 @@ watch(() => route.params.id, (newEventId) => {
   padding: 0.75rem 1rem;
   background: var(--card-bg-color);
   border: 2px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   transition: all 0.2s ease;
   margin-bottom: 0.5rem;
 }
@@ -497,7 +493,7 @@ watch(() => route.params.id, (newEventId) => {
 
 .section-header h2 {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: var(--font-lg);
   color: var(--accent-color);
   font-weight: 600;
   overflow: hidden;
@@ -508,7 +504,7 @@ watch(() => route.params.id, (newEventId) => {
 }
 
 .toggle-btn {
-  font-size: 0.9rem;
+  font-size: var(--font-base);
   padding: 0.25rem 0.75rem;
   min-width: auto;
   color: var(--accent-color);
@@ -536,7 +532,7 @@ watch(() => route.params.id, (newEventId) => {
 .section-container {
   background: var(--card-bg-color);
   border: 2px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 1.5rem;
   max-width: 100%;
   overflow-x: hidden;
@@ -548,7 +544,7 @@ watch(() => route.params.id, (newEventId) => {
   padding: 5rem 2rem;
   color: var(--secondary-text-color);
   border: 1px dashed var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background-color: var(--overlay-light);
 }
 .error-message p { margin: 0.5rem 0; }
@@ -579,7 +575,7 @@ watch(() => route.params.id, (newEventId) => {
   background: linear-gradient(135deg, var(--card-bg-color) 0%, var(--bg-color) 100%);
   padding: 1.5rem;
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   text-align: center;
   display: flex;
   flex-direction: column;
@@ -589,19 +585,19 @@ watch(() => route.params.id, (newEventId) => {
 
 .summary-card:hover {
   transform: translateY(-3px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-md);
   border-color: var(--accent-color);
 }
 
 .summary-card .label {
-  font-size: 0.95rem;
+  font-size: var(--font-base);
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .summary-card .value {
-  font-size: 2rem;
+  font-size: var(--font-2xl);
   font-weight: 600;
   color: var(--accent-color);
   line-height: 1;
@@ -622,7 +618,7 @@ watch(() => route.params.id, (newEventId) => {
 
 .filter-group label {
   color: var(--secondary-text-color);
-  font-size: 0.9rem;
+  font-size: var(--font-base);
 }
 
 .filter-group select,
@@ -630,7 +626,7 @@ watch(() => route.params.id, (newEventId) => {
   background: var(--card-bg-color);
   color: var(--primary-text-color);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 0.65rem 0.75rem;
 }
 
@@ -640,7 +636,7 @@ watch(() => route.params.id, (newEventId) => {
 
 .chart-subtitle {
   color: var(--text-muted);
-  font-size: 0.9rem;
+  font-size: var(--font-base);
 }
 
 .chart-wrapper {
@@ -666,7 +662,7 @@ svg {
   border-collapse: collapse;
   border-spacing: 0;
   text-align: left;
-  font-size: 0.9rem;
+  font-size: var(--font-base);
   min-width: 700px;
 }
 
@@ -728,7 +724,7 @@ svg {
 
 .points text {
   fill: var(--primary-text-color);
-  font-size: 0.75rem;
+  font-size: var(--font-xs);
 }
 
 .grid-lines line {
@@ -739,7 +735,7 @@ svg {
 
 .y-ticks text {
   fill: var(--primary-text-color);
-  font-size: 0.75rem;
+  font-size: var(--font-xs);
 }
 
 .chart-tooltip {
@@ -748,7 +744,7 @@ svg {
   background: var(--tooltip-bg-color);
   color: var(--text-on-dark);
   padding: 0.5rem 0.75rem;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--border-color-light);
   pointer-events: none;
   white-space: nowrap;
@@ -756,13 +752,13 @@ svg {
 }
 
 .tooltip-date {
-  font-size: 0.8rem;
+  font-size: var(--font-sm);
   margin-bottom: 0.2rem;
   color: var(--secondary-text-color);
 }
 
 .tooltip-value {
-  font-size: 0.95rem;
+  font-size: var(--font-base);
   font-weight: 600;
   color: var(--primary-text-color);
 }
@@ -784,7 +780,7 @@ thead th {
   color: var(--secondary-text-color);
   font-weight: bold;
   text-transform: uppercase;
-  font-size: 0.8rem;
+  font-size: var(--font-sm);
   letter-spacing: 1px;
 }
 
@@ -803,7 +799,7 @@ tbody td {
 }
 .quantity-cell {
   font-weight: bold;
-  font-size: 1.1rem;
+  font-size: var(--font-lg);
 }
 .currency-cell {
   color: var(--accent-color);
@@ -821,26 +817,19 @@ tbody td {
 
 /* 响应式布局 */
 @media (max-width: 768px) {
-  .admin-event-stat {
+  .page {
     padding: 1rem;
   }
 
-  .stat-header {
-    margin-bottom: 1.5rem;
-    padding-bottom: 0.75rem;
+  .page-header {
     flex-direction: column;
-    gap: 1rem;
+    gap: 0.75rem;
   }
 
-  .stat-header h1 {
-    font-size: 1.5rem;
+  .page-header h1 {
     white-space: normal;
     overflow: visible;
     text-overflow: unset;
-  }
-
-  .stat-header p {
-    font-size: 0.9rem;
   }
 
   .download-btn {
@@ -890,7 +879,7 @@ tbody td {
 }
 
 @media (max-width: 480px) {
-  .admin-event-stat {
+  .page {
     padding: 0.75rem;
   }
 

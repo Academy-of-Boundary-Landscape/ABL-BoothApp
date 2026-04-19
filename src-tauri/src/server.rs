@@ -45,15 +45,31 @@ pub async fn start_server(state: AppState, port: u16) {
                     let relative_path = path.trim_start_matches("/uploads/");
 
                     // 解码 URL (处理文件名中的空格、中文等)
-                    // 需要在 Cargo.toml 添加 urlencoding 依赖，或者暂时忽略
                     let decoded_path = urlencoding::decode(relative_path)
                         .unwrap_or(std::borrow::Cow::Borrowed(relative_path));
 
                     // 拼接物理路径
                     let file_path = upload_dir.join(decoded_path.as_ref());
 
-                    // [调试日志] 打印出来看看它到底在找哪
-                    println!("[Static] Req: {} -> Looking at: {:?}", path, file_path);
+                    // 安全检查：防止路径遍历攻击 (如 ../../etc/passwd)
+                    // 规范化路径后确认仍在 upload_dir 内
+                    let canonical_upload = match upload_dir.canonicalize() {
+                        Ok(p) => p,
+                        Err(_) => {
+                            return (StatusCode::INTERNAL_SERVER_ERROR, "Upload dir error")
+                                .into_response();
+                        }
+                    };
+                    let canonical_file = match file_path.canonicalize() {
+                        Ok(p) => p,
+                        Err(_) => {
+                            // 文件不存在或路径无效
+                            return (StatusCode::NOT_FOUND, "Image Not Found").into_response();
+                        }
+                    };
+                    if !canonical_file.starts_with(&canonical_upload) {
+                        return (StatusCode::FORBIDDEN, "Access denied").into_response();
+                    }
 
                     if file_path.exists() && file_path.is_file() {
                         match tokio::fs::read(&file_path).await {

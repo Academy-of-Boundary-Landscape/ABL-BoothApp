@@ -1,3 +1,11 @@
+# ONNX Runtime + DirectML 动态库（打包时从官方下载，不提交到 git）
+src-tauri/resources/onnxruntime.dll
+src-tauri/resources/DirectML.dll
+src-tauri/resources/libonnxruntime.so
+src-tauri/resources/libonnxruntime.dylib
+src-tauri/resources/*.nupkg
+src-tauri/gen/android/app/src/main/jniLibs/arm64-v8a/libonnxruntime.so
+
 # Logs
 logs
 *.log
@@ -91,3 +99,22 @@ target/
 /vite.config.js
 
 src-tauri/android_backup
+cmd_config.md
+
+model-releases
+
+# --- 本地/个人文件 ---
+.claude/
+dxdiag.txt
+src-tauri/note*.md
+src-tauri/planv*.md
+src-tauri/docs/
+scripts/export_mobileclip.py
+PROJECT_REVIEW.md
+
+# --- 本地 Rust/Cargo 配置（含机器特定路径，如 NDK linker） ---
+.cargo/config.toml
+src-tauri/.cargo/config.toml
+
+# --- 模型二进制（按需下载，不应提交） ---
+src-tauri/resources/models/**/*.onnx

@@ -1,5 +1,3 @@
-# 摊盒 Booth-Kernel
-
 <p align="center">
   <img src="docs/images/app-icon.png" width="120" alt="Booth-Kernel Logo" />
 </p>
@@ -25,6 +23,24 @@
   <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Android-blue" />
   <img src="https://img.shields.io/badge/License-MIT-yellow" />
 </p>
+
+---
+
+## 🎉 v1.1.0 重大更新
+
+> **摊盒 v1.1.0 现已发布！** 这是一次重量级更新，跨越数月开发，从"能用"进化到"好用"。
+
+亮点：
+
+- 📸 **AI 拍照识别**：对准商品拍一张照，系统自动识别加入购物车。不用贴条形码、不用背 SKU——**专为"帮朋友看摊/寄售"这种"自己都认不全货"的场景设计**。底层基于 ONNX Runtime 的图像嵌入搜索，支持 GPU / NPU 硬件加速
+- 🏷️ **多维标签**：除了商品分类，现在可以按角色、IP、系列等多个维度快速筛选
+- 🎨 **界面全面翻新**：统一的设计 Token 系统，深色模式适配，触控尺寸优化
+- 📱 **Android 版本打磨**：NNAPI 硬件加速，arm64-v8a APK 构建流程成熟
+- 🛡️ **并发安全重铸**：SQLite 切换到 WAL 模式，库存扣减改为原子操作，多人同时下单不再丢数据
+- 🧭 **上手更容易**：快速上手进度条、空白页引导、页面帮助气泡，新摊主零学习成本
+
+👉 **完整变更日志**：[CHANGELOG-v1.1.md](./CHANGELOG-v1.1.md)
+
 ---
 
 ## 🚩 普通用户请先看这里
@@ -46,11 +62,25 @@
 
 **摊盒（Booth-Kernel）** 是一款专为 **漫展 / 同人展 / 校园集市** 场景设计的本地化出摊系统。
 
-它解决的不是“功能不够多”，而是几个在现场极其致命的问题：
+它解决的是几个在现场极其致命的问题：
 
 - 场馆网络拥堵 / 无信号  
-- 纸笔记账易错、难复盘  
+- 纸笔记账易错、难复盘
+- 管理和辨别大量商品的心智负担  
 - 小程序/云服务依赖网络与平台  
+
+在最新的v1.1.x版本, 我们引入了**AI 图像识别**功能。通过内嵌的神经网络, 可以让顾客/摊主调用摄像头拍照，识别最接近的商品并进行后续操作。
+这极大降低了摊主和顾客的心智负担 —— 不再需要刻意记忆sku、制品名、制品图片了。
+
+### 为什么 AI 拍照识别，而不是条形码？
+
+传统零售系统依赖条形码，因为商品稳定、由上游生产、长期复用。**但同人摊恰好相反**：
+
+- 二次元同人制品种类众多但单品量少，条码基本只能人力手动打印和粘贴，非常痛苦。
+- 对于较小亚克力＆明信片类制品，条形码难以贴附且不美观。
+- 如果你给他人看摊，对方连SKU都不一定有，条码基本不能指望，而视觉方案只需要临时手机拍照就能工作。
+
+只要预先给商品拍几张照（毕竟宣传总需要拍失误），开摊后拍照即结算。再也不需要记忆 “这个东西对应商品的名称和SKU是什么“了。
 
 ### 设计核心
 
@@ -74,144 +104,45 @@
 
 ## 🔑 核心特性
 
-- **离线优先**  
-  所有功能均可在 **无互联网** 情况下运行，仅依赖局域网。
-
-- **数据完全本地化**  
-  所有数据存储于本机 SQLite 数据库（`data.db`），不上传、不收集、不分析。
-
-- **高可靠性**  
-  SQLite 实时落盘 + Rust 后端，即使异常退出也能恢复数据。
-
-- **低资源占用**  
-  Rust + Tauri 架构，内存/CPU 占用远低于 Electron 方案。
-
-- **跨平台**  
-  当前稳定支持 Windows / Android（Linux & macOS 适配中）。
+- **离线优先** — 所有功能无需互联网，仅依赖局域网
+- **数据本地化** — 所有数据存储在本机 SQLite，不会上传给任何其他人
+- **高可靠性** — SQLite WAL 模式 + 原子事务，多人同时下单不丢数据，异常退出也能恢复
+- **AI 视觉识别** — ONNX Runtime 驱动的图像嵌入搜索，拍照即可找到商品
+- **低资源占用** — Rust + Tauri 架构，相对 Electron 方案更轻量
+- **跨平台** — 稳定支持 Windows 和 Android（arm64-v8a）
 
 ---
 
-## 🧠 技术架构
+## 💻 给开发者
 
-| 层级 | 技术 | 说明 |
-|----|----|----|
-| 应用框架 | **Tauri v2** | 跨平台容器，Rust + WebView |
-| 后端 | **Rust** | 核心逻辑、系统能力 |
-| HTTP | **Axum** | 嵌入式 REST API |
-| 数据库 | **SQLite + SQLx** | 本地存储，异步 ORM |
-| 前端 | **Vue 3 + Vite** | SPA 界面 |
-| UI | **Naive UI** | 统一、轻量、可主题化 |
-| 状态 | **Pinia** | 前端状态管理 |
+### 技术栈
 
----
+| 层级 | 技术 |
+|------|------|
+| 应用框架 | Tauri v2（Rust + WebView） |
+| 后端 | Rust + Axum（嵌入式 HTTP 服务） |
+| 数据库 | SQLite + SQLx（WAL 并发模式） |
+| AI 推理 | ONNX Runtime（动态加载，CPU / DirectML / NNAPI） |
+| 前端 | Vue 3 + Vite + Naive UI + Pinia |
 
-## 💻 开发指南（Development）
-
-### 环境要求
-
-- **Node.js** ≥ 18
-- **Rust** ≥ 1.75（推荐 stable via rustup）
-- **Package Manager**：`pnpm`
-- **平台工具链**
-  - Windows：Visual Studio C++ Build Tools
-  - Android：Android Studio + SDK / NDK
-
----
-
-### 快速启动（Desktop）
+### 快速启动
 
 ```bash
 git clone https://github.com/Academy-of-Boundary-Landscape/ABL-BoothApp.git
 cd ABL-BoothApp
 npm install
 npm run tauri dev
-````
+```
 
-> 该命令会同时启动：
->
-> * Vite 前端 dev server
-> * Tauri + Rust 后端
+更详细的环境配置、Android 交叉编译、签名打包等内容见 [**docs/BUILD.md**](./docs/BUILD.md)。
+
+最新变更见 [**CHANGELOG-v1.1.md**](./CHANGELOG-v1.1.md)。
 
 ---
 
-### Android 开发
+## 🤝 贡献
 
-```bash
-npm run tauri android init
-npm run tauri android dev
-```
-
----
-
-### 构建（Build）
-
-#### Windows
-
-```bash
-npm run tauri build
-```
-
-#### Android
-
-```bash
-npm run tauri android build
-```
-
-> ⚠️ Android 构建说明：
->
-> * 默认仅支持 **arm64-v8a / armeabi-v7a**
-> * 模拟器（x86）可能无法运行
-> * 签名配置位于 `src-tauri/gen/android/keystore.properties`
-
-#### 构建更小的 APK（推荐）
-
-```bash
-# 现代设备
-npm run tauri -- android build --apk true -t aarch64
-
-# 较老设备
-npm run tauri -- android build --apk true -t armv7
-```
-
----
-
-## 📂 项目结构
-
-```text
-.
-├── frontend/                 # Vue 前端
-│   ├── views/           # Admin / Vendor / Customer
-│   ├── components/
-│   ├── stores/
-│   └── services/
-├── src-tauri/           # Rust 后端
-│   ├── src/
-│   │   ├── main.rs
-│   │   ├── db/
-│   │   ├── http/
-│   │   └── utils/
-│   ├── tauri.conf.json
-│   └── capabilities/
-└── docs/                # 文档站（VitePress）
-```
-
----
-
-## 🤝 贡献指南（Contributing）
-
-欢迎任何形式的贡献，包括但不限于：
-
-* Bug 修复
-* 文档改进
-* UI / UX 优化
-* 新功能提案
-
-流程：
-
-1. Fork 本仓库
-2. 新建分支：`feat/xxx`
-3. 提交符合语义化规范的 commit
-4. 发起 Pull Request
+欢迎通过 Issue 反馈 Bug 或通过 Pull Request 提交改进。开发流程细节见 [docs/BUILD.md](./docs/BUILD.md)。
 
 ---
 
@@ -236,11 +167,12 @@ MIT License
 
 ## 👤 作者 / 核心维护
 
-- **Renko_1055**  
-  项目发起、核心架构与主要开发  
+- **Renko_1055** — 项目发起、核心架构与主要开发  
   GitHub: https://github.com/Renko6626
 
-  ## 🙏 致谢
+---
+
+## 🙏 致谢
 
 感谢以下东方Project同人社团在测试、设计与建议上的支持（排名不分先后）：
 
@@ -249,6 +181,7 @@ MIT License
 - 第零研究院、墨斯卡林之翼 — 在多次展会中使用项目的早期版本并提供宝贵反馈
 
 感谢维生素X绘制教程页面的插画素材。
+
 ---
 
 Built with ❤️ for doujin circles.

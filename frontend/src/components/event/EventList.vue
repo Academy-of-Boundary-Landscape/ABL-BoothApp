@@ -79,9 +79,12 @@
     <p v-else-if="store.events.length && !filteredEvents.length" class="no-results-message">
       没有找到符合筛选条件的展会。
     </p>
-    <p v-else>
-      还没有任何展会，请在上方创建一个。
-    </p>
+    <div v-else class="empty-guide">
+      <div class="empty-guide-icon">📋</div>
+      <div class="empty-guide-title">还没有创建展会</div>
+      <div class="empty-guide-desc">展会是管理摊位的核心单位。每场漫展创建一个展会，然后在其中管理商品库存和订单。</div>
+      <div class="empty-guide-hint">在上方「创建新展会」表单中填写信息开始吧</div>
+    </div>
 
 
     <!-- 编辑模态框 (保持不变) -->
@@ -238,7 +241,7 @@ async function handleUpdateEvent() {
 .list-container {
   background-color: var(--card-bg-color);
   border: 2px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   margin-bottom: 1.5rem;
   overflow: hidden;
 }
@@ -255,7 +258,7 @@ async function handleUpdateEvent() {
 .section-header h2 {
   margin: 0;
   color: var(--accent-color);
-  font-size: 1.1rem;
+  font-size: var(--font-lg);
   font-weight: 600;
 }
 
@@ -280,10 +283,10 @@ async function handleUpdateEvent() {
   width: 100%;
   background-color: var(--card-bg-color);
   border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   padding: 18px 20px;
   margin-bottom: 16px;     /* 卡片之间的间距 */
-  box-shadow: 0 6px 10px var(--shadow-color);
+  box-shadow: var(--shadow-md);
   transition: transform 0.12s ease, box-shadow 0.12s ease;
   cursor: default;         /* clickable 类会改为 pointer */
   min-height: 72px;     /* 保持卡片高度一致 */
@@ -295,7 +298,7 @@ async function handleUpdateEvent() {
 }
 .event-card.clickable:hover {
   transform: translateY(-6px);
-  box-shadow: 0 12px 30px var(--shadow-color);
+  box-shadow: var(--shadow-xl);
 }
 /* 左侧信息区域占满剩余空间 */
 .event-info {
@@ -304,14 +307,14 @@ async function handleUpdateEvent() {
 }
 .event-info h3 {
   margin: 0 0 6px 0;
-  font-size: 1.2rem;
+  font-size: var(--font-lg);
   line-height: 1.25;
   font-weight: 700;
 }
 .event-info p {
   margin: 0;
   color: var(--secondary-text-color);
-  font-size: 1rem;
+  font-size: var(--font-md);
   line-height: 1.3;
 }
 
@@ -329,8 +332,8 @@ async function handleUpdateEvent() {
 .status-badge {
   display: inline-block;
   padding: 6px 10px;
-  border-radius: 999px;
-  font-size: 0.92rem;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-base);
   font-weight: 600;
   color: var(--primary-text-color);
   border: 1px solid transparent;
@@ -355,9 +358,9 @@ async function handleUpdateEvent() {
   border: 1px solid var(--primary-text-color);
   color: var(--primary-text-color);
   padding: 8px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: var(--font-base);
 }
 .action-btn:hover {
   background-color: var(--primary-text-color);
@@ -398,7 +401,7 @@ async function handleUpdateEvent() {
 }
 
 .search-group label {
-  font-size: 0.9rem;
+  font-size: var(--font-base);
   color: var(--text-muted);
 }
 
@@ -408,8 +411,8 @@ async function handleUpdateEvent() {
   border: 1px solid var(--border-color);
   color: var(--primary-text-color);
   padding: 8px;
-  border-radius: 4px;
-  font-size: 1rem;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-md);
 }
 
 .date-range-inputs {
@@ -496,5 +499,36 @@ async function handleUpdateEvent() {
   .search-group label {
     font-size: 0.8rem;
   }
+}
+
+.empty-guide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 3rem 2rem;
+  text-align: center;
+}
+.empty-guide-icon {
+  font-size: 3rem;
+  margin-bottom: 12px;
+  opacity: 0.3;
+}
+.empty-guide-title {
+  font-size: var(--font-lg);
+  font-weight: 700;
+  color: var(--primary-text-color);
+  margin-bottom: 8px;
+}
+.empty-guide-desc {
+  font-size: var(--font-base);
+  color: var(--text-muted);
+  max-width: 400px;
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+.empty-guide-hint {
+  font-size: var(--font-sm);
+  color: var(--accent-color);
+  font-weight: 600;
 }
 </style>

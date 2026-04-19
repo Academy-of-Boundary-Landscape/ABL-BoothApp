@@ -1,10 +1,12 @@
 use axum::{
-    extract::{Multipart, Path, Query, State},
+    extract::{DefaultBodyLimit, Multipart, Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Json},
     routing::{delete, get, post, put},
     Router,
 };
+
+const EVENT_UPLOAD_LIMIT_BYTES: usize = 10 * 1024 * 1024;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{query, query_as};
@@ -29,6 +31,7 @@ pub fn router() -> Router<AppState> {
         .route("/:id", post(update_event).put(update_event))
         .route("/:id/status", put(update_status))
         .route("/:id", delete(delete_event))
+        .layer(DefaultBodyLimit::max(EVENT_UPLOAD_LIMIT_BYTES))
 }
 
 // ==========================================
@@ -50,20 +53,15 @@ struct EventResponse {
     pub event_date: String,
     pub location: Option<String>,
     pub status: String,
+    /// 向后兼容：保留单个 URL（取第一个），旧前端不会崩
     pub qrcode_url: Option<String>,
+    /// 新字段：所有收款码 URL 数组
+    pub qrcode_urls: Vec<String>,
 }
 
 impl EventResponse {
-    // 转换函数：将 DB 模型转换为 API 响应模型
     fn from_model(event: Event) -> Self {
-        // 数据库存的是 "events/xxx.jpg"，转换成 "/uploads/events/xxx.jpg"
-        let qrcode_url = event.payment_qr_code_path.as_ref().map(|path| {
-            if path.starts_with("/uploads/") {
-                path.clone()
-            } else {
-                format!("/uploads/{}", path)
-            }
-        });
+        let urls = parse_qr_paths(&event.payment_qr_code_path);
 
         Self {
             id: event.id,
@@ -71,9 +69,44 @@ impl EventResponse {
             event_date: event.event_date,
             location: event.location,
             status: event.status,
-            qrcode_url,
+            qrcode_url: urls.first().cloned(),
+            qrcode_urls: urls,
         }
     }
+}
+
+/// 解析 payment_qr_code_path 原始值为路径列表（不加 /uploads/ 前缀，用于文件删除）
+fn parse_raw_qr_paths(raw: &Option<String>) -> Vec<String> {
+    let Some(raw) = raw.as_deref() else { return vec![] };
+    let raw = raw.trim();
+    if raw.is_empty() { return vec![]; }
+    if raw.starts_with('[') {
+        serde_json::from_str(raw).unwrap_or_else(|_| vec![raw.to_string()])
+    } else {
+        vec![raw.to_string()]
+    }
+}
+
+/// 解析 payment_qr_code_path 字段：
+/// - JSON 数组 `["events/a.jpg","events/b.jpg"]` → 多个 URL
+/// - 纯字符串 `"events/a.jpg"` → 单个 URL（向后兼容旧数据）
+fn parse_qr_paths(raw: &Option<String>) -> Vec<String> {
+    let Some(raw) = raw.as_deref() else { return vec![] };
+    let raw = raw.trim();
+    if raw.is_empty() { return vec![]; }
+
+    let paths: Vec<String> = if raw.starts_with('[') {
+        serde_json::from_str(raw).unwrap_or_else(|_| vec![raw.to_string()])
+    } else {
+        vec![raw.to_string()]
+    };
+
+    paths.into_iter()
+        .filter(|p| !p.is_empty())
+        .map(|p| {
+            if p.starts_with("/uploads/") { p } else { format!("/uploads/{}", p) }
+        })
+        .collect()
 }
 
 // ==========================================
@@ -141,14 +174,15 @@ async fn create_event(
     let mut date = String::new();
     let mut location = String::new();
     let mut vendor_password = None;
-    let mut qr_code_path: Option<String> = None;
+    let mut qr_paths: Vec<String> = Vec::new();
 
     while let Some(field) = multipart.next_field().await.unwrap_or(None) {
         let field_name = field.name().unwrap_or("").to_string();
 
-        if field_name == "payment_qr_code" {
+        // 支持多个收款码：payment_qr_code / payment_qr_code_wechat / payment_qr_code_alipay
+        if field_name.starts_with("payment_qr_code") {
             match save_upload_file(&state.upload_dir, field, Some("events")).await {
-                Ok(path) => qr_code_path = Some(path),
+                Ok(path) => qr_paths.push(path),
                 Err(e) => {
                     eprintln!("Upload Failed: {}", e);
                     return (
@@ -182,7 +216,13 @@ async fn create_event(
             .into_response();
     }
 
-    // [修复] 使用 RETURNING 子句原子地获取插入的数据，避免并发问题和重复插入
+    // 存储为 JSON 数组（多码）或 None（无码）
+    let qr_code_path = if qr_paths.is_empty() {
+        None
+    } else {
+        Some(serde_json::to_string(&qr_paths).unwrap_or_default())
+    };
+
     let result = query_as::<_, Event>(
         r#"
         INSERT INTO events (name, event_date, location, vendor_password, payment_qr_code_path, status)
@@ -233,19 +273,18 @@ async fn update_event(
     let mut date = old_event.event_date;
     let mut location = old_event.location;
     let mut vendor_password_hash = old_event.vendor_password;
-    let mut qr_code_path = old_event.payment_qr_code_path;
     let mut should_remove_qr = false;
+    let mut new_qr_paths: Vec<String> = Vec::new();
+    let mut has_new_qr_upload = false;
 
     while let Some(field) = multipart.next_field().await.unwrap_or(None) {
         let field_name = field.name().unwrap_or("").to_string();
 
-        if field_name == "payment_qr_code" {
+        if field_name.starts_with("payment_qr_code") && !field_name.starts_with("remove_") {
             match save_upload_file(&state.upload_dir, field, Some("events")).await {
                 Ok(new_path) => {
-                    if let Some(old_path) = &qr_code_path {
-                        let _ = delete_file(&state.upload_dir, old_path).await;
-                    }
-                    qr_code_path = Some(new_path);
+                    new_qr_paths.push(new_path);
+                    has_new_qr_upload = true;
                 }
                 Err(e) => {
                     eprintln!("Update Upload Failed: {}", e);
@@ -274,12 +313,21 @@ async fn update_event(
         }
     }
 
-    if should_remove_qr {
-        if let Some(old_path) = &qr_code_path {
+    // 清理旧文件（删除所有旧码）
+    let old_raw_paths = parse_raw_qr_paths(&old_event.payment_qr_code_path);
+    if should_remove_qr || has_new_qr_upload {
+        for old_path in &old_raw_paths {
             let _ = delete_file(&state.upload_dir, old_path).await;
         }
-        qr_code_path = None;
     }
+
+    let qr_code_path = if should_remove_qr {
+        None
+    } else if has_new_qr_upload {
+        Some(serde_json::to_string(&new_qr_paths).unwrap_or_default())
+    } else {
+        old_event.payment_qr_code_path
+    };
 
     // [修复] 使用 RETURNING 子句原子地获取更新后的数据
     let result = query_as::<_, Event>(
@@ -375,44 +423,69 @@ async fn delete_event(
         .await
         .unwrap_or(None);
 
-    if let Some(e) = event {
-        // 1. 删除物理文件
-        if let Some(path) = &e.payment_qr_code_path {
-            let _ = delete_file(&state.upload_dir, &path).await;
+    let Some(e) = event else {
+        return (StatusCode::NOT_FOUND, Json(json!({"error": "Event not found"}))).into_response();
+    };
+
+    // 使用事务确保级联删除的原子性
+    let mut tx = match state.db.begin().await {
+        Ok(tx) => tx,
+        Err(e) => {
+            eprintln!("Failed to begin transaction: {:?}", e);
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Database error"}))).into_response();
         }
+    };
 
-        // 2. [修复] 删除关联的 orders 和 products (级联删除) ✓
-        // 注意：SQLite 需要开启 PRAGMA foreign_keys = ON 才能自动级联删除
-        // 这里显式删除以确保不依赖 DB 配置
-
-        // 先删除 orders 相关的 order_items
-        let _ = sqlx::query(
-            "DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE event_id = ?)",
-        )
-        .bind(id)
-        .execute(&state.db)
-        .await;
-
-        // 删除 orders
-        let _ = sqlx::query("DELETE FROM orders WHERE event_id = ?")
-            .bind(id)
-            .execute(&state.db)
-            .await;
-
-        // 删除 products
-        let _ = sqlx::query("DELETE FROM products WHERE event_id = ?")
-            .bind(id)
-            .execute(&state.db)
-            .await;
-
-        // 3. 最后删除 event
-        let _ = query("DELETE FROM events WHERE id = ?")
-            .bind(id)
-            .execute(&state.db)
-            .await;
-
-        (StatusCode::OK, Json(json!({"message": "Event deleted"}))).into_response()
-    } else {
-        (StatusCode::NOT_FOUND, "Event not found").into_response()
+    // 按外键依赖顺序删除: order_items -> orders -> products -> events
+    // 每一步都检查错误，失败则回滚
+    if let Err(err) = sqlx::query(
+        "DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE event_id = ?)",
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await
+    {
+        eprintln!("Failed to delete order_items for event {}: {:?}", id, err);
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Failed to delete order items"}))).into_response();
     }
+
+    if let Err(err) = sqlx::query("DELETE FROM orders WHERE event_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+    {
+        eprintln!("Failed to delete orders for event {}: {:?}", id, err);
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Failed to delete orders"}))).into_response();
+    }
+
+    if let Err(err) = sqlx::query("DELETE FROM products WHERE event_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+    {
+        eprintln!("Failed to delete products for event {}: {:?}", id, err);
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Failed to delete products"}))).into_response();
+    }
+
+    if let Err(err) = query("DELETE FROM events WHERE id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+    {
+        eprintln!("Failed to delete event {}: {:?}", id, err);
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Failed to delete event"}))).into_response();
+    }
+
+    // 提交事务 — 失败时所有删除都会回滚
+    if let Err(err) = tx.commit().await {
+        eprintln!("Transaction commit failed for delete event {}: {:?}", id, err);
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Transaction commit failed"}))).into_response();
+    }
+
+    // 事务成功后才清理物理文件 (文件删除无法回滚，所以放在事务之后)
+    for path in parse_raw_qr_paths(&e.payment_qr_code_path) {
+        let _ = delete_file(&state.upload_dir, &path).await;
+    }
+
+    (StatusCode::OK, Json(json!({"message": "Event deleted"}))).into_response()
 }

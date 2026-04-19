@@ -1,6 +1,6 @@
 <template>
   <div class="chart-wrapper">
-    <svg :viewBox="`0 0 ${width} ${height}`" preserveAspectRatio="none">
+    <svg :viewBox="`0 0 ${width} ${height}`" preserveAspectRatio="xMidYMid meet">
       <defs>
         <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stop-color="var(--accent-color)" stop-opacity="0.35" />
@@ -28,9 +28,9 @@
       <path class="line" :d="linePath" />
 
       <g class="points">
-        <g v-for="p in points" :key="p.label">
+        <g v-for="(p, idx) in points" :key="p.label">
           <circle :cx="p.x" :cy="p.y" r="4" @mouseenter="onEnter(p)" @mouseleave="onLeave" />
-          <text :x="p.x" :y="height - padding / 2" text-anchor="middle">{{ shortLabel(p.label) }}</text>
+          <text v-if="idx % labelStep === 0 || idx === points.length - 1" :x="p.x" :y="height - padding / 2" text-anchor="middle">{{ shortLabel(p.label) }}</text>
         </g>
       </g>
     </svg>
@@ -56,17 +56,53 @@ const props = defineProps({
 const hover = ref(null);
 
 const maxRevenue = computed(() => Math.max(...(props.series?.map(p => p.revenue) || [0]), 1));
-const yTicks = computed(() => [0, maxRevenue.value / 2, maxRevenue.value]);
-const stepX = computed(() => (props.series?.length > 1 ? (props.width - props.padding * 2) / (props.series.length - 1) : 0));
 
-const points = computed(() => (props.series || []).map((p, idx) => ({
-  x: props.padding + stepX.value * idx,
-  y: props.padding + (props.height - props.padding * 2) * (1 - p.revenue / maxRevenue.value),
-  label: formatChartLabel(p.date),
-  fullLabel: formatChartTooltip(p.date),
-  rawDate: p.date,
-  revenue: p.revenue,
-})));
+// Y 轴刻度取整
+const yTicks = computed(() => {
+  const max = maxRevenue.value;
+  if (max <= 0) return [0];
+  // 找一个漂亮的步长：1, 2, 5, 10, 20, 50, 100, ...
+  const raw = max / 4;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const nice = [1, 2, 5, 10].map(m => m * mag).find(s => s >= raw) || raw;
+  const ticks = [];
+  for (let v = 0; v <= max + nice * 0.01; v += nice) {
+    ticks.push(Math.round(v * 100) / 100);
+  }
+  return ticks;
+});
+
+const effectiveMax = computed(() => {
+  const ticks = yTicks.value;
+  return ticks.length ? ticks[ticks.length - 1] : maxRevenue.value;
+});
+
+const stepX = computed(() => {
+  const len = props.series?.length || 0;
+  if (len <= 1) return 0;
+  return (props.width - props.padding * 2) / (len - 1);
+});
+
+// X 轴标签间隔：避免重叠，大约每 80px 一个标签
+const labelStep = computed(() => {
+  const len = props.series?.length || 0;
+  if (len <= 1) return 1;
+  const availWidth = props.width - props.padding * 2;
+  return Math.max(1, Math.ceil(len / (availWidth / 80)));
+});
+
+const points = computed(() => {
+  const len = props.series?.length || 0;
+  const centerX = props.width / 2;
+  return (props.series || []).map((p, idx) => ({
+    x: len === 1 ? centerX : props.padding + stepX.value * idx,
+    y: props.padding + (props.height - props.padding * 2) * (1 - p.revenue / effectiveMax.value),
+    label: formatChartLabel(p.date),
+    fullLabel: formatChartTooltip(p.date),
+    rawDate: p.date,
+    revenue: p.revenue,
+  }));
+});
 
 const linePath = computed(() => {
   if (!points.value.length) return '';
@@ -83,8 +119,9 @@ const areaPath = computed(() => {
 });
 
 function yForValue(value) {
-  if (!maxRevenue.value) return props.height - props.padding;
-  return props.padding + (props.height - props.padding * 2) * (1 - value / maxRevenue.value);
+  const max = effectiveMax.value;
+  if (!max) return props.height - props.padding;
+  return props.padding + (props.height - props.padding * 2) * (1 - value / max);
 }
 
 function shortLabel(label) {
@@ -137,15 +174,15 @@ svg { width: 100%; height: auto; }
 .line { fill: none; stroke: var(--accent-color); stroke-width: 2.5; }
 .area { fill: url(#revenueGradient); stroke: none; }
 .points circle { fill: var(--accent-color); stroke: var(--card-bg-color); stroke-width: 2; }
-.points text { fill: var(--primary-text-color); font-size: 0.75rem; }
+.points text { fill: var(--primary-text-color); font-size: var(--font-xs); }
 .grid-lines line { stroke: var(--border-color-light); stroke-dasharray: 4 4; stroke-width: 1; }
-.y-ticks text { fill: var(--primary-text-color); font-size: 0.75rem; }
+.y-ticks text { fill: var(--primary-text-color); font-size: var(--font-xs); }
 .chart-tooltip {
   position: absolute; transform: translate(-50%, -120%);
   background: var(--tooltip-bg); color: var(--text-white);
-  padding: 0.5rem 0.75rem; border-radius: 6px; border: 1px solid var(--border-color-light);
-  pointer-events: none; white-space: nowrap; box-shadow: 0 8px 20px var(--shadow-color);
+  padding: 0.5rem 0.75rem; border-radius: var(--radius-md); border: 1px solid var(--border-color-light);
+  pointer-events: none; white-space: nowrap; box-shadow: var(--shadow-lg);
 }
-.tooltip-date { font-size: 0.8rem; margin-bottom: 0.2rem; color: var(--secondary-text-color); }
-.tooltip-value { font-size: 0.95rem; font-weight: 600; color: var(--primary-text-color); }
+.tooltip-date { font-size: var(--font-sm); margin-bottom: 0.2rem; color: var(--secondary-text-color); }
+.tooltip-value { font-size: var(--font-base); font-weight: 600; color: var(--primary-text-color); }
 </style>

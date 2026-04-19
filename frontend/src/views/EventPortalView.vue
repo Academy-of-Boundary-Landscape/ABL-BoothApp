@@ -42,6 +42,11 @@
         <p>当前没有正在进行的贩售活动 (´·ω·`)</p>
         <p>请联系摊主确认展会状态。</p>
       </div>
+
+      <div class="portal-nav">
+        <router-link to="/admin" class="portal-nav-link">管理后台</router-link>
+        <router-link to="/vendor" class="portal-nav-link">摊主页面</router-link>
+      </div>
     </n-card>
   </div>
 </template>
@@ -84,7 +89,7 @@ onMounted(() => {
   width: 100%;
   max-width: 600px;
   background-color: var(--card-bg-color);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 1.25rem 1rem;
   border: 1px solid var(--border-color);
   text-align: center;
@@ -99,8 +104,8 @@ header p {
 }
 .version-alert {
   margin-bottom: 1.25rem;
-  background-color: #fffbe6;
-  border-color: #ffe58f;
+  background-color: var(--highlight-color);
+  border-color: var(--warning-color);
 }
 .alert-content {
   display: flex;
@@ -159,5 +164,27 @@ header p {
 }
 .no-events p {
   line-height: 1.6;
+}
+.portal-nav {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-color);
+}
+.portal-nav-link {
+  padding: 6px 16px;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+  text-decoration: none;
+  border: 1px solid var(--border-color);
+  transition: all 0.15s;
+}
+.portal-nav-link:hover {
+  background: var(--accent-color);
+  color: white;
+  border-color: var(--accent-color);
 }
 </style>

@@ -2,7 +2,10 @@
   <div class="page">
     <header class="page-header">
       <div class="header-content">
-        <h1>全局商品库</h1>
+        <div class="header-title-row">
+          <h1>全局商品库</h1>
+          <HelpBubble page="master-products" />
+        </div>
         <p>管理可复用的商品模板：创建 / 导入导出 / 搜索编辑。</p>
       </div>
     </header>
@@ -36,8 +39,7 @@ import CreateMasterProductForm from '@/components/product/CreateMasterProductFor
 import BoothpackSyncPanel from '@/components/product/BoothpackSyncPanel.vue'
 import MasterProductList from '@/components/product/MasterProductList.vue'
 import EditMasterProductModal from '@/components/product/EditMasterProductModal.vue'
-
-defineEmits(['edit', 'toggleStatus'])
+import HelpBubble from '@/components/shared/HelpBubble.vue'
 
 const store = useProductStore()
 
@@ -55,8 +57,16 @@ function closeEditModal() {
 }
 
 async function onProductUpdated() {
-  // 最稳：刷新一下列表（避免本地状态与后端不一致）
   await store.fetchMasterProducts()
+}
+
+async function handleToggleStatus(product) {
+  try {
+    await store.toggleProductStatus(product)
+    message.success(`已${product.is_active ? '停用' : '启用'}：${product.name}`)
+  } catch (err) {
+    message.error(err?.message || '操作失败')
+  }
 }
 const message = useMessage()
 
@@ -86,12 +96,18 @@ onMounted(async () => {
   margin-bottom: 1rem;
   background: var(--card-bg-color);
   border: 2px solid var(--border-color);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
+}
+
+.header-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .header-content h1 {
   margin: 0;
-  font-size: 1.35rem;
+  font-size: var(--font-xl);
   color: var(--accent-color);
   font-weight: 700;
 }
@@ -99,7 +115,7 @@ onMounted(async () => {
 .header-content p {
   margin: 0.35rem 0 0 0;
   color: var(--text-muted);
-  font-size: 0.9rem;
+  font-size: var(--font-base);
 }
 
 .page-body {

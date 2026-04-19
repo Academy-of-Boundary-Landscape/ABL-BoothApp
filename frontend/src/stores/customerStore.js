@@ -18,25 +18,28 @@ export const useCustomerStore = defineStore('customer', () => {
   const activeEvent = ref(null); // 新增：当前展会信息
 
   // --- Actions ---
-  function setupStoreForEvent(eventId) {
+  async function setupStoreForEvent(eventId) {
     if (!eventId) {
       error.value = "未提供展会ID。";
       return;
     }
     activeEventId.value = parseInt(eventId, 10);
-    // 获取到 eventId 后立即加载商品和展会信息
-    fetchProductsForEvent();
-    fetchEventInfo(); // 新增：获取展会信息
+    // 并行加载商品和展会信息，都完成后再允许下单
+    await Promise.all([
+      fetchProductsForEvent(),
+      fetchEventInfo(),
+    ]);
   }
   
-  function initializeEventFromUrl() {
-    
+  async function initializeEventFromUrl() {
     const urlParams = new URLSearchParams(window.location.search);
     const eventIdFromUrl = urlParams.get('event');
     if (eventIdFromUrl) {
       activeEventId.value = parseInt(eventIdFromUrl, 10);
-      fetchProductsForEvent(); // 获取到 eventId 后再加载商品
-      fetchEventInfo(); // 新增：获取展会信息
+      await Promise.all([
+        fetchProductsForEvent(),
+        fetchEventInfo(),
+      ]);
     } else {
       error.value = "未指定展会ID，无法加载商品。请使用包含 ?event=ID 的链接访问。";
     }
@@ -68,7 +71,8 @@ export const useCustomerStore = defineStore('customer', () => {
       const response = await api.get(`/events/${activeEventId.value}`);
       activeEvent.value = {
         ...response.data,
-        qrcode_url: getImageUrl(response.data.qrcode_url)
+        qrcode_url: getImageUrl(response.data.qrcode_url),
+        qrcode_urls: (response.data.qrcode_urls || []).map(u => getImageUrl(u)).filter(Boolean)
       };
     } catch (err) {
       console.error('加载展会信息失败:', err);
@@ -145,9 +149,14 @@ export const useCustomerStore = defineStore('customer', () => {
     return cart.value.reduce((total, item) => total + item.quantity, 0);
   });
 
-  // 新增：获取收款码URL的getter
+  // 收款码 URL（向后兼容单码）
   const qrCodeUrl = computed(() => {
     return activeEvent.value?.qrcode_url || null;
+  });
+
+  // 收款码 URL 数组（多码）
+  const qrCodeUrls = computed(() => {
+    return activeEvent.value?.qrcode_urls || [];
   });
 
 
@@ -158,7 +167,8 @@ export const useCustomerStore = defineStore('customer', () => {
     error,
     activeEventId,
     activeEvent, // 新增：导出展会信息
-    qrCodeUrl, // 新增：导出收款码URL
+    qrCodeUrl,
+    qrCodeUrls,
     fetchProductsForEvent,
     fetchEventInfo, // 新增：导出获取展会信息方法
     addToCart,

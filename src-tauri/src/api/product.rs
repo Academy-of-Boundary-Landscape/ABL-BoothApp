@@ -7,7 +7,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::json;
-use sqlx::{query, query_as, Row};
+use sqlx::{query, query_as};
 
 use crate::{
     db::models::{MasterProduct, Product},
@@ -62,9 +62,9 @@ async fn list_event_products(
 ) -> impl IntoResponse {
     // 关键点：JOIN master_products 获取图片和分类
     let sql = r#"
-        SELECT 
-            p.id, p.event_id, p.master_product_id, p.product_code, p.name, p.price, 
-            p.initial_stock, p.current_stock, mp.image_url, mp.category
+        SELECT
+            p.id, p.event_id, p.master_product_id, p.product_code, p.name, p.price,
+            p.initial_stock, p.current_stock, mp.image_url, mp.category, mp.tags
         FROM products p
         JOIN master_products mp ON p.master_product_id = mp.id
         WHERE p.event_id = ?
@@ -140,11 +140,12 @@ async fn add_product_to_event(
 
     // 4. 插入库存表
     // 冗余存储 name 和 product_code 是为了快照，防止 master 删改后这里数据丢失
-    let result = query(
+    let result = sqlx::query_as::<_, (i64,)>(
         r#"
-        INSERT INTO products 
+        INSERT INTO products
         (event_id, master_product_id, product_code, name, price, initial_stock, current_stock)
         VALUES (?, ?, ?, ?, ?, ?, ?)
+        RETURNING id
         "#,
     )
     .bind(event_id)
@@ -153,40 +154,28 @@ async fn add_product_to_event(
     .bind(&master.name)
     .bind(final_price)
     .bind(payload.initial_stock)
-    .bind(payload.initial_stock) // 初始 current = initial
-    .execute(&state.db)
+    .bind(payload.initial_stock)
+    .fetch_one(&state.db)
     .await;
 
     match result {
-        Ok(_) => {
-            // 获取最后插入的行ID
-            let last_id: Option<(i64,)> = query_as("SELECT last_insert_rowid() as id")
-                .fetch_optional(&state.db)
-                .await
-                .unwrap_or(None);
-
-            if let Some((new_id,)) = last_id {
-                // 构建Product对象（直接使用已有的master信息）
-                let product = Product {
-                    id: new_id,
-                    event_id,
-                    master_product_id: master.id,
-                    product_code: master.product_code.clone(),
-                    name: master.name.clone(),
-                    price: final_price,
-                    initial_stock: payload.initial_stock,
-                    current_stock: payload.initial_stock,
-                    image_url: master.image_url.clone(),
-                    category: master.category.clone(),
-                };
-
-                (StatusCode::CREATED, Json(product)).into_response()
-            } else {
-                (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get insert ID").into_response()
-            }
+        Ok((new_id,)) => {
+            let product = Product {
+                id: new_id,
+                event_id,
+                master_product_id: master.id,
+                product_code: master.product_code.clone(),
+                name: master.name.clone(),
+                price: final_price,
+                initial_stock: payload.initial_stock,
+                current_stock: payload.initial_stock,
+                image_url: master.image_url.clone(),
+                category: master.category.clone(),
+                tags: Some(master.tags.clone()),
+            };
+            (StatusCode::CREATED, Json(product)).into_response()
         }
         Err(e) => {
-            // 检查是否重复添加
             if e.to_string().contains("UNIQUE constraint") {
                 (
                     StatusCode::CONFLICT,
@@ -233,64 +222,62 @@ async fn update_product(
         return e.into_response();
     }
 
-    // 3. 计算新库存
-    // 逻辑：current_stock 应该跟随 initial_stock 的变化而变化 (保持已售数量不变)
-    // sold = old_initial - old_current
-    // new_current = new_initial - sold
-    // [修复] 防止库存变成负数 ✓
-    let mut new_initial = product.initial_stock;
-    let mut new_current = product.current_stock;
-    let mut new_price = product.price;
+    let new_price = payload.price.unwrap_or(product.price);
 
-    if let Some(p) = payload.price {
-        new_price = p;
-    }
+    let result = if let Some(new_initial) = payload.initial_stock {
+        // Atomic stock adjustment: current_stock += (new_initial - old_initial)
+        // The WHERE guard prevents negative stock
+        let r = sqlx::query(
+            r#"UPDATE products
+               SET price = ?, initial_stock = ?, current_stock = current_stock + (? - initial_stock)
+               WHERE id = ? AND current_stock + (? - initial_stock) >= 0"#,
+        )
+        .bind(new_price)
+        .bind(new_initial)
+        .bind(new_initial)
+        .bind(product_id)
+        .bind(new_initial)
+        .execute(&state.db)
+        .await;
 
-    if let Some(init) = payload.initial_stock {
-        let sold = product.initial_stock - product.current_stock;
-        new_initial = init;
-        new_current = init - sold;
-
-        // [修复] 如果 sold > new_init，意味着试图将初始库存设置为小于已售数量
-        // 这是非法的，应该返回错误而不是允许负数库存
-        if new_current < 0 {
-            return (StatusCode::BAD_REQUEST, Json(json!({
-                "error": format!(
-                    "Cannot set initial stock to {} (already sold {}). New initial must be at least {}",
-                    init, sold, sold
-                )
-            }))).into_response();
+        match r {
+            Ok(ref qr) if qr.rows_affected() == 0 => {
+                return (StatusCode::BAD_REQUEST, Json(json!({
+                    "error": "Cannot reduce initial stock below the number already sold"
+                }))).into_response();
+            }
+            other => other,
         }
-    }
-
-    // 4. 更新数据库
-    let result =
-        query("UPDATE products SET price = ?, initial_stock = ?, current_stock = ? WHERE id = ?")
+    } else {
+        sqlx::query("UPDATE products SET price = ? WHERE id = ?")
             .bind(new_price)
-            .bind(new_initial)
-            .bind(new_current)
             .bind(product_id)
             .execute(&state.db)
-            .await;
+            .await
+    };
 
     match result {
         Ok(_) => {
             // 返回更新后的对象（使用内连接，master_product必定存在）
-            let updated_product = query_as::<_, Product>(
+            match query_as::<_, Product>(
                 r#"
-                SELECT p.id, p.event_id, p.master_product_id, p.product_code, p.name, p.price, 
-                       p.initial_stock, p.current_stock, mp.image_url, mp.category 
-                FROM products p 
-                JOIN master_products mp ON p.master_product_id = mp.id 
+                SELECT p.id, p.event_id, p.master_product_id, p.product_code, p.name, p.price,
+                       p.initial_stock, p.current_stock, mp.image_url, mp.category, mp.tags
+                FROM products p
+                JOIN master_products mp ON p.master_product_id = mp.id
                 WHERE p.id = ?
                 "#,
             )
             .bind(product_id)
             .fetch_one(&state.db)
             .await
-            .unwrap();
-
-            (StatusCode::OK, Json(updated_product)).into_response()
+            {
+                Ok(product) => (StatusCode::OK, Json(product)).into_response(),
+                Err(e) => {
+                    eprintln!("Fetch updated product error: {:?}", e);
+                    (StatusCode::INTERNAL_SERVER_ERROR, "Failed to fetch updated product").into_response()
+                }
+            }
         }
         Err(e) => {
             eprintln!("Update product error: {:?}", e);
@@ -325,10 +312,14 @@ async fn delete_product(
     }
 
     // 3. 删除
-    let _ = query("DELETE FROM products WHERE id = ?")
+    if let Err(e) = query("DELETE FROM products WHERE id = ?")
         .bind(product_id)
         .execute(&state.db)
-        .await;
+        .await
+    {
+        eprintln!("Delete product error: {:?}", e);
+        return (StatusCode::INTERNAL_SERVER_ERROR, "Database Error").into_response();
+    }
 
     (
         StatusCode::OK,

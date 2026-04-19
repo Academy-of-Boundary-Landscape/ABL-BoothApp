@@ -9,12 +9,13 @@
       
       <form @submit.prevent="handleLogin">
         <!-- 添加 :disabled 属性，防止请求期间修改密码 -->
-        <n-input 
-          v-model:value="password" 
-          type="text" 
-          placeholder="请输入密码" 
-          size="large" 
-          :disabled="loading" 
+        <n-input
+          v-model:value="password"
+          type="password"
+          show-password-on="click"
+          placeholder="请输入密码"
+          size="large"
+          :disabled="loading"
         />
         
         <div style="margin-top: 1rem;">
@@ -105,5 +106,5 @@ onMounted(async () => {
 <style scoped>
 /* 登录页面的居中样式 */
 .login-container { display: flex; justify-content: center; align-items: center; height: 100vh; }
-.login-box { width: 420px; max-width: 90vw; padding: 2rem; background-color: var(--card-bg-color); border-radius: 8px; text-align: center; }
+.login-box { width: 420px; max-width: 90vw; padding: 2rem; background-color: var(--card-bg-color); border-radius: var(--radius-md); text-align: center; }
 </style>

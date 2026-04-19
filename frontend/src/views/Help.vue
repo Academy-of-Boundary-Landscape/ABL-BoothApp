@@ -293,6 +293,40 @@ const qaList = [
     ]
   },
   {
+    category: 'AI 拍照识别',
+    icon: HardwareChipOutline,
+    items: [
+      {
+        q: '拍照识别是什么？怎么用？',
+        a: '拍照识别让顾客对准商品拍一张照片，系统自动识别是哪件商品并加入购物车，省去在列表里翻找的时间。<br/>使用前需要在 <strong>控制台 → AI 视觉识别</strong> 面板确认模型已安装、索引已构建。'
+      },
+      {
+        q: 'AI 识别的基本原理是什么？',
+        a: '系统将每张商品图片通过 AI 模型转化为一组"特征向量"（embedding），拍照时也对照片做同样的转化，然后<strong>比对向量相似度</strong>找到最像的商品。这不是"图片比对"，而是"语义理解"——即使角度、光线不同，只要是同一件商品就能识别。'
+      },
+      {
+        q: '如何上传识别用图片？有什么建议？',
+        a: '在 <strong>全局商品库 → 编辑商品 → 识别用图片</strong> Tab 中上传。<br/><br/><strong>最佳实践：</strong><br/>• 每件商品上传 <strong>3-5 张</strong>不同角度的照片<br/>• 使用<strong>接近正方形</strong>的构图，商品居中<br/>• 背景尽量简洁，避免杂物干扰<br/>• 上传后系统自动压缩到 512×512，无需手动调整<br/>• 上传后会自动触发增量索引构建'
+      },
+      {
+        q: '有几个模型可以选？该选哪个？',
+        a: '<strong>ConvNeXt V2 Pico</strong>（默认内嵌）：体积最小、速度最快，适合大多数场景。<br/><strong>MobileCLIP-S0</strong>（可下载）：CLIP 架构，语义理解更强，中等体积。<br/><strong>DINOv2-Small</strong>（可下载）：检索质量最佳，但体积最大。<br/><br/>一般情况下<strong>默认模型就够用</strong>。如果觉得识别不够准，可以试试下载更大的模型。'
+      },
+      {
+        q: '推理设备怎么选？CPU 和 GPU 有什么区别？',
+        a: '<strong>自动模式</strong>（推荐）：系统会自动尝试 GPU 加速，不可用时降级到 CPU。<br/><strong>GPU</strong>：速度快（通常 20-50ms/张），但需要显卡支持 DirectX 12。<br/><strong>CPU</strong>：兼容性最好，速度稍慢（通常 50-200ms/张），但对识别准确率没有影响。<br/><br/>在 <strong>控制台 → AI 视觉识别</strong> 面板可以切换推理设备。'
+      },
+      {
+        q: '索引构建是什么？什么时候需要重建？',
+        a: '<strong>索引构建</strong>就是让 AI 模型"学习"你上传的所有商品照片。<br/><br/>以下情况需要重建索引：<br/>• 上传了新的识别用图片（系统会<strong>自动增量构建</strong>）<br/>• 切换了 AI 模型（系统会提示重建）<br/>• 如果识别不准，可以手动点击<strong>"全量重建索引"</strong>刷新所有数据'
+      },
+      {
+        q: '识别不准怎么办？',
+        a: '可以尝试：<br/>1. <strong>补充图片</strong>：为识别不准的商品多上传几张不同角度的照片<br/>2. <strong>改善拍照</strong>：引导顾客将商品放在取景框中央，背景简洁<br/>3. <strong>换更大的模型</strong>：下载 MobileCLIP 或 DINOv2 试试<br/>4. <strong>全量重建</strong>：在控制台点击"全量重建索引"'
+      }
+    ]
+  },
+  {
     category: '高级技巧',
     icon: SettingsOutline,
     items: [
@@ -407,7 +441,7 @@ const copyLink = async (url: string, label: string) => {
 
 /* 通用排版工具类 */
 .text-muted { color: var(--text-muted); line-height: 1.6; }
-.text-small { font-size: 0.85rem; }
+.text-small { font-size: var(--font-sm); }
 .mb-2 { margin-bottom: 8px; }
 .mt-2 { margin-top: 16px; }
 .mt-4 { margin-top: 32px; }
@@ -417,15 +451,15 @@ const copyLink = async (url: string, label: string) => {
   text-align: center; 
   padding: 20px 0; 
 }
-.page-title { 
-  margin: 8px 0 4px; 
-  font-size: 2rem; 
+.page-title {
+  margin: 8px 0 4px;
+  font-size: var(--font-2xl); 
   font-weight: 800;
   letter-spacing: -0.5px;
   color: var(--primary-text-color);
 }
-.page-subtitle { 
-  font-size: 1.1rem; 
+.page-subtitle {
+  font-size: var(--font-lg); 
   color: var(--secondary-text-color); 
   margin-bottom: 20px;
   line-height: 1.6;
@@ -439,16 +473,16 @@ const copyLink = async (url: string, label: string) => {
   gap: 10px; 
   margin-bottom: 20px;
 }
-.section-header h2 { 
-  margin: 0; 
-  font-size: 1.25rem; 
+.section-header h2 {
+  margin: 0;
+  font-size: var(--font-lg); 
   font-weight: 600;
   color: var(--primary-text-color);
 }
 
 /* Carousel Tutorial */
 .tutorial-carousel {
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
   background: var(--bg-subtle);
   max-height: 500px;
@@ -482,9 +516,9 @@ const copyLink = async (url: string, label: string) => {
   background: var(--accent-color);
   color: var(--text-white);
   padding: 4px 12px;
-  border-radius: 20px;
+  border-radius: var(--radius-xl);
   font-weight: bold;
-  font-size: 0.8rem;
+  font-size: var(--font-sm);
 }
 
 .step-content {
@@ -494,9 +528,9 @@ const copyLink = async (url: string, label: string) => {
   max-height: 150px;
 }
 
-.step-content h3 { 
-  margin: 0 0 8px; 
-  font-size: 1.2rem;
+.step-content h3 {
+  margin: 0 0 8px;
+  font-size: var(--font-lg);
   color: var(--primary-text-color);
 }
 
@@ -504,7 +538,7 @@ const copyLink = async (url: string, label: string) => {
 :deep(.n-carousel__arrow) {
   background-color: rgba(0, 0, 0, 0.3) !important;
   color: var(--primary-text-color) !important;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 :deep(.n-carousel__arrow:hover) {
@@ -514,14 +548,14 @@ const copyLink = async (url: string, label: string) => {
 :deep(.n-carousel__dots) {
   background: rgba(0, 0, 0, 0.05);
   padding: 8px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 /* Quick Steps Card */
 .quick-step-card {
   background: var(--bg-subtle);
   padding: 16px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   text-align: center;
   transition: all 0.3s;
   height: 100%;
@@ -540,13 +574,13 @@ const copyLink = async (url: string, label: string) => {
   background-color: var(--bg-subtle) !important;
   color: var(--accent-color) !important;
   font-weight: 700;
-  font-size: 1.5rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  font-size: var(--font-xl);
+  box-shadow: var(--shadow-md);
 }
 
-.quick-step-text { 
-  font-weight: 600; 
-  font-size: 0.95rem;
+.quick-step-text {
+  font-weight: 600;
+  font-size: var(--font-base);
   color: var(--primary-text-color);
 }
 
@@ -583,17 +617,17 @@ const copyLink = async (url: string, label: string) => {
 
 .category-title {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: var(--font-lg);
   font-weight: 700;
   color: var(--primary-text-color);
 }
 
 .category-count {
-  font-size: 0.85rem;
+  font-size: var(--font-sm);
   color: var(--text-muted);
   background: var(--bg-subtle);
   padding: 4px 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
 }
 
 .qa-answer { 
@@ -608,8 +642,8 @@ const copyLink = async (url: string, label: string) => {
   padding-bottom: 20px; 
 }
 
-.copyright { 
-  font-size: 0.8rem; 
+.copyright {
+  font-size: var(--font-sm); 
   color: var(--text-muted); 
   font-family: monospace;
 }

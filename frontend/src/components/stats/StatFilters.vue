@@ -61,13 +61,13 @@ function onInterval(e) { emit('update:intervalMinutes', Number(e.target.value));
   margin-bottom: 1.5rem;
 }
 .filter-group { display: flex; flex-direction: column; gap: 0.5rem; }
-.filter-group label { color: var(--secondary-text-color); font-size: 0.9rem; }
+.filter-group label { color: var(--secondary-text-color); font-size: var(--font-base); }
 .filter-group select,
 .filter-group input[type="date"] {
   background: var(--card-bg-color);
   color: var(--primary-text-color);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 0.65rem 0.75rem;
 }
 </style>

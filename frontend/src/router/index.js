@@ -3,6 +3,7 @@ import { useAuthStore } from '@/stores/authStore'; // 导入 auth store
 // 导入所有需要的布局和视图
 import AdminLayout from '../views/AdminLayout.vue'
 import AdminDashboard from '../views/AdminDashboard.vue'
+import AdminControlPanel from '../views/AdminControlPanel.vue'
 import AdminMasterProducts from '../views/AdminMasterProducts.vue'
 import AdminEventProducts from '../views/AdminEventProducts.vue'
 import VendorEventSelection from '../views/VendorEventSelection.vue'; // 【新增】导入新视图
@@ -26,8 +27,13 @@ const routes = [
       // 管理后台的所有子页面
       children: [
         {
-          path: '', // 默认 /admin 路径
-          name: 'admin-dashboard',
+          path: '', // 默认 /admin 路径 → 控制台
+          name: 'admin-control-panel',
+          component: AdminControlPanel,
+        },
+        {
+          path: 'events',
+          name: 'admin-events',
           component: AdminDashboard,
         },
         {

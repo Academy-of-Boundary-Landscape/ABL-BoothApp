@@ -11,16 +11,23 @@ mod order;
 mod product;
 mod stats;
 mod sync;
+#[cfg(feature = "vision")]
+mod vision;
 
 pub fn router() -> Router<AppState> {
-    Router::new()
+    let router = Router::new()
         .nest("/auth", auth::router())
-        .nest("/events", event::router()) // 包含 /events CRUD 和 /events/:id/status
-        .nest("/events", stats::router()) // 包含 /events/:id/stats 等
+        .nest("/events", event::router())
+        .nest("/events", stats::router())
         .nest("/master-products", master_product::router())
-        .nest("/admin", admin::router()) // /api/admin/...
+        .nest("/admin", admin::router())
         .merge(sync::router())
-        .merge(info::router()) // /api/server-info
-        .merge(product::router()) // /api/events/:id/products
-        .merge(order::router()) // /api/events/:id/orders
+        .merge(info::router())
+        .merge(product::router())
+        .merge(order::router());
+
+    #[cfg(feature = "vision")]
+    let router = router.nest("/vision", vision::router());
+
+    router
 }

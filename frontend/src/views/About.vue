@@ -322,75 +322,75 @@ const resetDatabase = () => {
   max-width: 800px;
   margin: 0 auto;
   padding: 24px 16px;
-  --text-primary: var(--n-text-color);
-  --text-secondary: var(--n-text-color-3);
+  --text-primary: var(--primary-text-color);
+  --text-secondary: var(--text-muted);
   --bg-subtle: rgba(128, 128, 128, 0.08);
 }
 
 /* 通用排版 */
 .text-muted { color: var(--text-secondary); line-height: 1.6; }
-.text-small { font-size: 0.85rem; }
+.text-small { font-size: var(--font-sm); }
 .mb-2 { margin-bottom: 8px; }
 .mt-4 { margin-top: 32px; }
 
 /* 头部 Header */
 .header-section { text-align: center; padding: 20px 0; }
-.logo { margin-bottom: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-.app-title { margin: 0 0 8px; font-size: 2rem; font-weight: 800; letter-spacing: -0.5px; }
-.app-subtitle { font-size: 1.1rem; color: var(--text-secondary); margin: 0 0 24px; }
+.logo { margin-bottom: 16px; box-shadow: var(--shadow-md); }
+.app-title { margin: 0 0 8px; font-size: var(--font-2xl); font-weight: 800; letter-spacing: -0.5px; }
+.app-subtitle { font-size: var(--font-lg); color: var(--text-secondary); margin: 0 0 24px; }
 
 /* 章节通用 */
 .section { margin-bottom: 40px; }
 .section-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
-.section-header h2 { margin: 0; font-size: 1.25rem; font-weight: 600; }
+.section-header h2 { margin: 0; font-size: var(--font-lg); font-weight: 600; }
 
 /* 核心功能卡片 */
-.feature-card { height: 100%; border-radius: 8px; transition: transform 0.2s; }
+.feature-card { height: 100%; border-radius: var(--radius-md); transition: transform 0.2s; }
 .feature-card:hover { transform: translateY(-3px); }
 .feature-header { margin-bottom: 12px; }
-.feature-title { font-weight: 600; font-size: 1.05rem; margin-left: 8px; }
-.feature-desc { color: var(--text-secondary); font-size: 0.95rem; margin: 0; line-height: 1.5; }
+.feature-title { font-weight: 600; font-size: var(--font-md); margin-left: 8px; }
+.feature-desc { color: var(--text-secondary); font-size: var(--font-base); margin: 0; line-height: 1.5; }
 
 /* 致谢模块 */
 .credit-item {
   background: var(--bg-subtle);
   padding: 12px 16px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   height: 100%;
 }
-.credit-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 4px; }
-.credit-desc { font-size: 0.9rem; color: var(--text-secondary); }
+.credit-title { font-weight: 600; font-size: var(--font-base); margin-bottom: 4px; }
+.credit-desc { font-size: var(--font-base); color: var(--text-secondary); }
 
 /* 折叠面板内容 */
-.collapse-inner { padding: 12px 4px; font-size: 0.95rem; }
+.collapse-inner { padding: 12px 4px; font-size: var(--font-base); }
 .qa-q { font-weight: 600; margin-bottom: 8px; }
 .qa-list { margin: 0; padding-left: 20px; color: var(--text-secondary); }
 .qa-list li { margin-bottom: 6px; }
-.highlight-item { color: var(--n-primary-color); font-weight: 500; }
+.highlight-item { color: var(--accent-color); font-weight: 500; }
 
 /* 底部区域 */
 .footer-section { margin-top: 48px; text-align: center; }
 .dev-info { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
 .author-avatar { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); }
-.author-name { font-weight: 700; font-size: 1.1rem; }
-.author-title { font-size: 0.85rem; color: var(--text-secondary); }
-.copyright { font-size: 0.8rem; color: var(--text-secondary); font-family: monospace; }
+.author-name { font-weight: 700; font-size: var(--font-lg); }
+.author-title { font-size: var(--font-sm); color: var(--text-secondary); }
+.copyright { font-size: var(--font-sm); color: var(--text-secondary); font-family: monospace; }
 
 /* 危险操作区 */
 .danger-zone {
-  border: 1px dashed var(--n-error-color);
-  background: rgba(208, 48, 80, 0.05);
-  border-radius: 8px;
+  border: 1px dashed var(--error-color);
+  background: var(--accent-color-light);
+  border-radius: var(--radius-md);
   padding: 16px;
   width: 100%;
   max-width: 400px;
   margin: 0 auto;
 }
 .danger-header { 
-  color: var(--n-error-color); font-weight: 600; display: flex; 
+  color: var(--error-color); font-weight: 600; display: flex;
   align-items: center; justify-content: center; gap: 6px; margin-bottom: 4px;
 }
-.danger-desc { font-size: 0.85rem; color: var(--text-secondary); margin: 0 0 12px; }
+.danger-desc { font-size: var(--font-sm); color: var(--text-secondary); margin: 0 0 12px; }
 
 /* 移动端微调：利用 CSS 变量微调间距，而非重写整个布局 */
 @media (max-width: 600px) {

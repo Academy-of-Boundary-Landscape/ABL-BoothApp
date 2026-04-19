@@ -77,9 +77,9 @@ async fn get_event_stats(
 
     let summary: SummaryStats = sqlx::query_as(
         r#"
-        SELECT 
+        SELECT
             COALESCE(SUM(o.total_amount), 0.0) as total_revenue,
-            COUNT(o.id) as completed_orders_count,
+            COUNT(DISTINCT o.id) as completed_orders_count,
             COALESCE(SUM(oi.quantity), 0) as total_items_sold
         FROM orders o
         LEFT JOIN order_items oi ON o.id = oi.order_id
@@ -272,37 +272,58 @@ async fn get_sales_summary(
     let interval_minutes = params.interval_minutes.unwrap_or(60);
     let interval_val = if interval_minutes == 30 { 30 } else { 60 };
 
-    let mut bucketed: HashMap<String, f64> = HashMap::new();
-    for point in time_points {
-        let floored_minute =
-            (point.created_at.minute() / interval_val as u32) * interval_val as u32;
-        let bucket_time = point
-            .created_at
-            .with_minute(floored_minute)
-            .unwrap()
-            .with_second(0)
-            .unwrap();
-        let key = bucket_time.format("%Y-%m-%d %H:%M").to_string();
-        *bucketed.entry(key).or_insert(0.0) += point.total_amount;
+    fn floor_time(
+        t: NaiveDateTime,
+        interval: u32,
+    ) -> Option<NaiveDateTime> {
+        let floored = (t.minute() / interval) * interval;
+        t.with_minute(floored).and_then(|t| t.with_second(0))
     }
 
-    // 5. 转换为时间序列格式
+    let mut bucketed: HashMap<String, f64> = HashMap::new();
+    for point in &time_points {
+        if let Some(bucket_time) = floor_time(point.created_at, interval_val as u32) {
+            let key = bucket_time.format("%Y-%m-%d %H:%M").to_string();
+            *bucketed.entry(key).or_insert(0.0) += point.total_amount;
+        }
+    }
+
+    // 5. 填充空白时间桶（让图表显示连续的时间轴，无销售的时段为 0）
     #[derive(Serialize)]
     struct TimeseriesItem {
         date: String,
         revenue: f64,
     }
 
-    let mut timeseries: Vec<TimeseriesItem> = bucketed
-        .into_iter()
-        .map(|(date, revenue)| TimeseriesItem {
-            date,
-            revenue: (revenue * 100.0).round() / 100.0,
-        })
-        .collect();
+    let mut timeseries: Vec<TimeseriesItem> = Vec::new();
 
-    // 按时间排序
-    timeseries.sort_by(|a, b| a.date.cmp(&b.date));
+    if time_points.len() >= 2 {
+        let first_time = time_points.first().and_then(|p| floor_time(p.created_at, interval_val as u32));
+        let last_time = time_points.last().and_then(|p| floor_time(p.created_at, interval_val as u32));
+
+        if let (Some(start), Some(end)) = (first_time, last_time) {
+            let mut cursor = start;
+            while cursor <= end {
+                let key = cursor.format("%Y-%m-%d %H:%M").to_string();
+                let revenue = bucketed.get(&key).copied().unwrap_or(0.0);
+                timeseries.push(TimeseriesItem {
+                    date: key,
+                    revenue: (revenue * 100.0).round() / 100.0,
+                });
+                cursor += chrono::Duration::minutes(interval_val);
+            }
+        }
+    } else {
+        // 0 或 1 个数据点：直接输出，不需要填充
+        timeseries = bucketed
+            .into_iter()
+            .map(|(date, revenue)| TimeseriesItem {
+                date,
+                revenue: (revenue * 100.0).round() / 100.0,
+            })
+            .collect();
+        timeseries.sort_by(|a, b| a.date.cmp(&b.date));
+    }
 
     #[derive(Serialize)]
     struct SalesResponse {

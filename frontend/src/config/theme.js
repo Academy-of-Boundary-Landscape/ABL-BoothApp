@@ -178,9 +178,84 @@ export const lightTheme = {
     }
   }
 };
+// ============================================================
+// Design Tokens — 间距 / 圆角 / 字号 / 阴影
+// 这些不随主题切换而改变，是全局几何常量
+// ============================================================
+export const tokens = {
+  // 4px 基准的间距刻度
+  spacing: {
+    xs: '4px',    // 紧凑内间距、icon 与文字间距
+    sm: '8px',    // 列表项间距、badge padding
+    md: '12px',   // 卡片内间距、工具栏 padding
+    lg: '16px',   // 区块间距、section gap
+    xl: '24px',   // 页面边距、大区块分隔
+    '2xl': '32px', // 页面顶部/底部留白
+  },
+
+  // 圆角：4 档 + pill
+  radius: {
+    sm: '4px',     // badge、tag、小按钮
+    md: '8px',     // 卡片、输入框、面板
+    lg: '12px',    // 商品卡片、modal
+    xl: '16px',    // 大面板、移动端抽屉顶部
+    pill: '999px', // 胶囊按钮、分类 chip
+  },
+
+  // 字号层级（基于 rem，根 16px）
+  font: {
+    xs: '0.75rem',   // 12px — 时间戳、辅助标注
+    sm: '0.85rem',   // 13.6px — 次要文本、描述、meta
+    base: '0.95rem', // 15.2px — 正文、列表项
+    md: '1.05rem',   // 16.8px — 强调正文、子标题
+    lg: '1.25rem',   // 20px — 区块标题、面板 header
+    xl: '1.5rem',    // 24px — 页面标题
+    '2xl': '2rem',   // 32px — Hero 标题
+  },
+
+  // 阴影层级
+  shadow: {
+    sm: '0 1px 3px rgba(0,0,0,0.08)',           // 卡片静态
+    md: '0 4px 12px rgba(0,0,0,0.1)',            // 悬浮、弹出
+    lg: '0 8px 24px rgba(0,0,0,0.15)',           // modal、抽屉
+    xl: '0 12px 32px rgba(0,0,0,0.2)',           // 拖拽中
+  },
+}
+
 // 生成 CSS 变量
 export function generateCSSVariables(theme) {
+  const t = tokens
   return `
+    /* ===== 间距 ===== */
+    --space-xs: ${t.spacing.xs};
+    --space-sm: ${t.spacing.sm};
+    --space-md: ${t.spacing.md};
+    --space-lg: ${t.spacing.lg};
+    --space-xl: ${t.spacing.xl};
+    --space-2xl: ${t.spacing['2xl']};
+
+    /* ===== 圆角 ===== */
+    --radius-sm: ${t.radius.sm};
+    --radius-md: ${t.radius.md};
+    --radius-lg: ${t.radius.lg};
+    --radius-xl: ${t.radius.xl};
+    --radius-pill: ${t.radius.pill};
+
+    /* ===== 字号 ===== */
+    --font-xs: ${t.font.xs};
+    --font-sm: ${t.font.sm};
+    --font-base: ${t.font.base};
+    --font-md: ${t.font.md};
+    --font-lg: ${t.font.lg};
+    --font-xl: ${t.font.xl};
+    --font-2xl: ${t.font['2xl']};
+
+    /* ===== 阴影 ===== */
+    --shadow-sm: ${t.shadow.sm};
+    --shadow-md: ${t.shadow.md};
+    --shadow-lg: ${t.shadow.lg};
+    --shadow-xl: ${t.shadow.xl};
+
     /* 背景色 */
     --bg-color: ${theme.background.primary};
     --bg-secondary: ${theme.background.secondary};
@@ -231,6 +306,9 @@ export function generateCSSVariables(theme) {
     --tooltip-bg: ${theme.special.tooltipBg};
     --highlight-color: ${theme.special.highlight};
     --delete-color: ${theme.special.delete};
+
+    /* 交互颜色 */
+    --hover-bg-color: ${theme.primary.light};
 
     /* 组件颜色 */
     --alert-bg: ${theme.components.alert.bg};

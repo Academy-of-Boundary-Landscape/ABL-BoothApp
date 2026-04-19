@@ -19,9 +19,9 @@ export const useEventStatStore = defineStore('eventStat', () => {
 
   // --- Actions ---
   async function setActiveEvent(eventId, filters = {}) {
-    if (activeEventId.value === eventId && !filters.forceReload) return;
+    const isSameEvent = activeEventId.value === eventId;
     activeEventId.value = eventId;
-    stats.value = null;
+    if (!isSameEvent) stats.value = null;
     if (eventId) {
       await fetchStats(filters);
     }
@@ -43,10 +43,8 @@ export const useEventStatStore = defineStore('eventStat', () => {
           interval_minutes: intervalMinutes || undefined,
         },
       });
-      console.log("获取销售统计成功:", response.data);
       stats.value = response.data;
     } catch (err) {
-      console.error("获取销售统计失败:", err);
       if (err.response && err.response.status === 404) {
         error.value = "无法找到该展会或该展会暂无销售数据。";
       } else {

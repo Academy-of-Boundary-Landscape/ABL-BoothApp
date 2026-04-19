@@ -6,11 +6,8 @@ fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let manifest_path = PathBuf::from(manifest_dir);
 
-    // 2. 拼接出前端 dist 的绝对路径
-    // 如果你已经把 dist 复制到了 src-tauri 下，就用 "dist"
-    // 如果还在 frontend 下，就用 "../frontend/dist"
-    // 这里推荐指向你复制过来的 src-tauri/dist，因为最稳定
-    let dist_path = manifest_path.join("dist");
+    // 2. 拼接出前端 dist 的绝对路径（与 tauri.conf.json 的 frontendDist 一致）
+    let dist_path = manifest_path.join("..").join("frontend").join("dist");
 
     // 3. 检查一下路径是否存在，给个编译时提示
     if !dist_path.exists() {
@@ -28,6 +25,6 @@ fn main() {
     );
 
     // 5. 告诉 Cargo，如果 dist 文件夹变了，需要重新编译
-    println!("cargo:rerun-if-changed=dist");
+    println!("cargo:rerun-if-changed=../frontend/dist");
     tauri_build::build();
 }

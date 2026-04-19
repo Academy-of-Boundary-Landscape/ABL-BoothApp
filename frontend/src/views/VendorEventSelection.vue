@@ -92,7 +92,7 @@ onMounted(() => {
   max-width: 90%;
   padding: 2rem;
   background-color: var(--card-bg-color);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   text-align: center;
 }
 .event-list {
@@ -110,7 +110,7 @@ onMounted(() => {
 }
 .admin-login-link {
   margin-top: 2rem;
-  font-size: 0.9rem;
+  font-size: var(--font-base);
 }
 .admin-login-link a { text-decoration: none; }
 </style>

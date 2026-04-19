@@ -10,7 +10,9 @@ body {
 #app {
   max-width: 1600px;
   margin: 0 auto;
-  padding: 2rem;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 /* 可以在这里添加更多全局样式，例如按钮、输入框等 */

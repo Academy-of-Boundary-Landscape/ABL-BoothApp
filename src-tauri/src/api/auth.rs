@@ -285,9 +285,15 @@ fn build_success_response(
     // 注意：上面去掉了 "; Secure"
 
     let mut response = Json(body).into_response();
+    let cookie_val = match HeaderValue::from_str(&cookie_str) {
+        Ok(v) => v,
+        Err(_) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Invalid cookie value").into_response()
+        }
+    };
     response.headers_mut().insert(
         header::SET_COOKIE,
-        HeaderValue::from_str(&cookie_str).unwrap(),
+        cookie_val,
     );
 
     response
@@ -295,7 +301,7 @@ fn build_success_response(
 
 // 退出登录：清除 HttpOnly Cookie
 async fn logout_handler() -> Response {
-    let cookie_str = "access_token_cookie=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0; Secure";
+    let cookie_str = "access_token_cookie=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0";
     let mut response = Json(serde_json::json!({"message": "Logged out"})).into_response();
     response
         .headers_mut()

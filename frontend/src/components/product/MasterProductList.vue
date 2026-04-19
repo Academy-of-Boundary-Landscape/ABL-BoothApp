@@ -12,7 +12,7 @@
         <div class="search-section">
           <div class="search-header">
             <h3>搜索和过滤</h3>
-            <p class="search-hint">输入关键词快速查找商品，或按分类筛选</p>
+            <p class="search-hint">按关键词、分类或默认价格快速筛选商品</p>
           </div>
 
           <div class="search-box">
@@ -24,12 +24,25 @@
             />
             <n-select
               v-model:value="selectedCategory"
-              :options="categoryOptions.map(c => ({ label: c, value: c }))"
+              :options="store.categoryOptions"
               clearable
               placeholder="选择分类"
               class="category-select"
             />
-            <n-button tertiary @click="handleClearFilters" v-if="store.searchTerm || selectedCategory">
+            <n-input-number
+              v-model:value="maxPrice"
+              :show-button="false"
+              :precision="2"
+              :min="0"
+              placeholder="最高价格"
+              class="price-filter"
+            />
+            <n-button
+              tertiary
+              class="clear-btn"
+              @click="handleClearFilters"
+              v-if="store.searchTerm || selectedCategory || maxPrice != null"
+            >
               清空
             </n-button>
           </div>
@@ -57,6 +70,7 @@
                   <th>名称</th>
                   <th>默认价格</th>
                   <th>商品分类</th>
+                  <th>标签</th>
                   <th>操作</th>
                 </tr>
               </thead>
@@ -84,6 +98,20 @@
                   <td>{{ product.name }}</td>
                   <td>¥{{ Number(product.default_price ?? 0).toFixed(2) }}</td>
                   <td>{{ product.category || '未分类' }}</td>
+                  <td class="tags-cell">
+                    <template v-if="product.tags">
+                      <n-tag
+                        v-for="tag in product.tags.split(',').filter(Boolean)"
+                        :key="tag"
+                        size="small"
+                        :bordered="false"
+                        type="info"
+                        style="margin: 2px;"
+                      >
+                        {{ tag.trim() }}
+                      </n-tag>
+                    </template>
+                  </td>
 
                   <td class="action-cell">
                     <n-button size="small" tertiary @click="$emit('edit', product)">编辑</n-button>
@@ -102,10 +130,15 @@
             </table>
           </div>
 
-          <p v-else-if="store.searchTerm && !store.filteredProducts.length">
-            没有找到匹配 "<strong>{{ store.searchTerm }}</strong>" 的商品。
+          <p v-else-if="hasActiveFilters">
+            当前筛选条件下没有找到匹配的商品。
           </p>
-          <p v-else>商品库为空。</p>
+          <div v-else class="empty-guide">
+            <div class="empty-guide-icon">🛍️</div>
+            <div class="empty-guide-title">全局商品库为空</div>
+            <div class="empty-guide-desc">先在这里添加你的制品信息（名称、价格、图片），之后就能在每场展会中快速上架。</div>
+            <div class="empty-guide-hint">在上方表单中创建你的第一个商品</div>
+          </div>
         </n-spin>
       </div>
     </transition>
@@ -113,39 +146,44 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useProductStore } from '@/stores/productStore'
-import { NInput, NSelect, NImage, NButton, NSpin, NCheckbox } from 'naive-ui'
+import { NButton, NCheckbox, NImage, NInput, NInputNumber, NSelect, NSpin, NTag } from 'naive-ui'
 
 const store = useProductStore()
+
 defineEmits(['edit', 'toggleStatus'])
 
 const isListCollapsed = ref(false)
 const selectedCategory = ref('')
+const maxPrice = ref(null)
 
-function handleClearFilters() {
-  store.searchTerm = ''
-  selectedCategory.value = ''
-}
-
-const categoryOptions = computed(() => {
-  const cats = (store.masterProducts || [])
-    .map(p => p.category)
-    .filter(cat => !!cat && String(cat).trim() !== '')
-  return [...new Set(cats)]
+const hasActiveFilters = computed(() => {
+  return Boolean(store.searchTerm || selectedCategory.value || maxPrice.value != null)
 })
 
 const filteredProducts = computed(() => {
   let list = store.filteredProducts || []
+
   if (selectedCategory.value) {
-    list = list.filter(p => p.category === selectedCategory.value)
+    list = list.filter((product) => product.category === selectedCategory.value)
   }
+
+  if (maxPrice.value != null) {
+    list = list.filter((product) => Number(product.default_price ?? 0) <= Number(maxPrice.value))
+  }
+
   return list
 })
+
+function handleClearFilters() {
+  store.searchTerm = ''
+  selectedCategory.value = ''
+  maxPrice.value = null
+}
 </script>
 
 <style scoped>
-/* ✅ 直接复用你旧版的样式（已去除 sync 相关样式） */
 .list-container {
   margin-bottom: 2rem;
 }
@@ -159,7 +197,7 @@ const filteredProducts = computed(() => {
   padding: 0.75rem 1rem;
   background: var(--card-bg-color);
   border: 2px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   transition: all 0.2s ease;
   margin-bottom: 0.5rem;
 }
@@ -171,13 +209,13 @@ const filteredProducts = computed(() => {
 
 .section-header h2 {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: var(--font-lg);
   color: var(--accent-color);
   font-weight: 600;
 }
 
 .toggle-btn {
-  font-size: 0.9rem;
+  font-size: var(--font-base);
   padding: 0.25rem 0.75rem;
   min-width: auto;
   color: var(--accent-color);
@@ -204,7 +242,7 @@ const filteredProducts = computed(() => {
 .section-container {
   background: var(--card-bg-color);
   border: 2px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 1.5rem;
 }
 
@@ -221,30 +259,35 @@ const filteredProducts = computed(() => {
 .search-header h3 {
   margin: 0;
   color: var(--accent-color);
-  font-size: 1rem;
+  font-size: var(--font-md);
   font-weight: 600;
 }
 
 .search-hint {
-  margin: 0.5rem 0 0 0;
+  margin: 0.5rem 0 0;
   color: var(--text-muted);
-  font-size: 0.85rem;
+  font-size: var(--font-sm);
 }
 
 .search-box {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(220px, 1.8fr) minmax(150px, 1fr) minmax(120px, 0.8fr) auto;
   align-items: center;
   gap: 12px;
-  flex-wrap: wrap;
 }
 
-.search-input {
-  flex: 1;
-  min-width: 220px;
+.search-input,
+.category-select,
+.price-filter {
+  min-width: 0;
 }
 
-.category-select {
-  min-width: 150px;
+.price-filter :deep(.n-input-number) {
+  width: 100%;
+}
+
+.clear-btn {
+  justify-self: end;
 }
 
 .filter-options {
@@ -260,7 +303,7 @@ const filteredProducts = computed(() => {
 
 .checkbox-label {
   color: var(--primary-text-color);
-  font-size: 0.9rem;
+  font-size: var(--font-base);
   margin-left: 0.5rem;
 }
 
@@ -276,7 +319,7 @@ const filteredProducts = computed(() => {
   border-collapse: collapse;
   border-spacing: 0;
   text-align: left;
-  font-size: 0.9rem;
+  font-size: var(--font-base);
   min-width: 700px;
 }
 
@@ -322,7 +365,7 @@ const filteredProducts = computed(() => {
 .preview-img {
   width: 64px;
   height: 64px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-color);
   vertical-align: middle;
 }
@@ -330,7 +373,7 @@ const filteredProducts = computed(() => {
 :deep(.preview-img img) {
   width: 100%;
   height: 100%;
-  object-fit: contain; /* ✅ 缩略图改为 contain */
+  object-fit: contain;
   display: block;
   background: var(--bg-color);
 }
@@ -341,11 +384,11 @@ const filteredProducts = computed(() => {
   height: 50px;
   line-height: 50px;
   text-align: center;
-  font-size: 0.8rem;
+  font-size: var(--font-sm);
   color: var(--text-disabled);
   background-color: var(--bg-color);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   vertical-align: middle;
 }
 
@@ -353,19 +396,24 @@ const filteredProducts = computed(() => {
   opacity: 0.5;
   background-color: var(--bg-elevated);
 }
+
 .inactive td {
   text-decoration: line-through;
 }
 
-/* 响应式（保留你原来的） */
 @media (max-width: 768px) {
   .section-container { padding: 1rem; }
   .search-section { margin-bottom: 1rem; padding-bottom: 1rem; }
   .search-header h3 { font-size: 0.95rem; }
   .search-hint { font-size: 0.8rem; }
-  .search-box { gap: 8px; }
-  .search-input { min-width: 180px; }
-  .category-select { min-width: 120px; }
+  .search-box {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+  }
+  .clear-btn {
+    justify-self: stretch;
+    grid-column: 1 / -1;
+  }
   .product-table { font-size: 0.85rem; min-width: 650px; }
   .product-table th, .product-table td { padding: 10px 12px; }
   .preview-img { width: 60px; height: 60px; }
@@ -380,9 +428,13 @@ const filteredProducts = computed(() => {
   .search-section { margin-bottom: 0.75rem; padding-bottom: 0.75rem; }
   .search-header h3 { font-size: 0.9rem; }
   .search-hint { font-size: 0.75rem; }
-  .search-box { gap: 6px; }
-  .search-input { min-width: 150px; }
-  .category-select { min-width: 100px; }
+  .search-box {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .clear-btn {
+    grid-column: auto;
+  }
   .filter-options { margin-top: 0.75rem; padding-top: 0.75rem; }
   .checkbox-label { font-size: 0.85rem; }
   .product-table { font-size: 0.75rem; min-width: 600px; }
@@ -393,14 +445,34 @@ const filteredProducts = computed(() => {
   .action-cell :deep(.n-button) { font-size: 0.75rem; padding: 4px 8px; }
 }
 
-/* 你原先对 category-select 的覆盖保留 */
-.category-select {
-  margin-left: 0;
-  padding: 8px 12px;
-  border-radius: 4px;
-  border: 1px solid var(--border-color);
-  background: var(--card-bg-color);
+.empty-guide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 3rem 2rem;
+  text-align: center;
+}
+.empty-guide-icon {
+  font-size: 3rem;
+  margin-bottom: 12px;
+  opacity: 0.3;
+}
+.empty-guide-title {
+  font-size: var(--font-lg);
+  font-weight: 700;
   color: var(--primary-text-color);
-  min-width: 120px;
+  margin-bottom: 8px;
+}
+.empty-guide-desc {
+  font-size: var(--font-base);
+  color: var(--text-muted);
+  max-width: 400px;
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+.empty-guide-hint {
+  font-size: var(--font-sm);
+  color: var(--accent-color);
+  font-weight: 600;
 }
 </style>
