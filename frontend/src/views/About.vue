@@ -52,8 +52,11 @@
           <n-timeline-item type="warning" title="发布: Nuitka打包版" time="2025年11月">
             <span class="text-muted">尝试朴素地把Flask给打包，但受限于 Python 后端体积与平台限制难以广泛分发。</span>
           </n-timeline-item>
-          <n-timeline-item type="success" title="现在：Tauri 本地应用" time="2025年12月-至今">
+          <n-timeline-item type="success" title="v1.0：Tauri 本地应用" time="2025年12月">
             <span class="text-muted">使用 Rust 重写后端，Tauri v2 构建，实现 Win/Android 双平台高性能体验。</span>
+          </n-timeline-item>
+          <n-timeline-item type="info" title="v1.1：AI 拍照识别 + 体验打磨" time="2026年4月">
+            <span class="text-muted">引入针对二次元同人场景优化的 AI 图像识别（ONNX Runtime 驱动），新增多维标签系统、管理端引导、闲置吸引屏、售罄置底等上百处体验打磨；数据库层重构并发安全，SQLite WAL + 原子事务，多人同时下单不再丢数据。</span>
           </n-timeline-item>
         </n-timeline>
       </section>

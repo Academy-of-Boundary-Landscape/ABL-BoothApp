@@ -66,6 +66,50 @@
       </div>
     </section>
 
+    <!-- ⭐ v1.1.0 头号新功能：AI 拍照识别 -->
+    <section class="bk-section bk-vision-spotlight">
+      <div class="bk-vision-badge">⭐ v1.1.0 新功能</div>
+      <header class="bk-section-header">
+        <h2 class="bk-h2">📸 拍照识别 — 针对二次元同人的商品识别优化</h2>
+        <p class="bk-sub">
+          对准商品拍一张照，自动识别加入购物车。<br/>
+          不用贴条形码，不用记 SKU。
+        </p>
+      </header>
+
+      <div class="bk-vision-grid">
+        <div class="bk-vision-card">
+          <div class="bk-vision-emoji">🖼️</div>
+          <h3 class="bk-h3">商品不用贴标签</h3>
+          <p class="bk-p">同人制品量少、阵容常变，逐件贴条码既费人工也不美观。直接用商品照片当"标签"。</p>
+        </div>
+
+        <div class="bk-vision-card">
+          <div class="bk-vision-emoji">🤝</div>
+          <h3 class="bk-h3">帮朋友看摊也能干</h3>
+          <p class="bk-p">你不认识朋友的商品没关系——拍一下就有名字、价格、库存，零学习成本上岗。</p>
+        </div>
+
+        <div class="bk-vision-card">
+          <div class="bk-vision-emoji">⚡</div>
+          <h3 class="bk-h3">顾客自助下单</h3>
+          <p class="bk-p">平板放摊位前，顾客自己拍、自己加购、自己扫码付款，摊主只管收钱。</p>
+        </div>
+
+        <div class="bk-vision-card">
+          <div class="bk-vision-emoji">🔌</div>
+          <h3 class="bk-h3">本地推理 / 硬件加速</h3>
+          <p class="bk-p">模型下载后完全离线推理，不依赖网络。Android 端启用 NNAPI，桌面端支持 DirectML。</p>
+        </div>
+      </div>
+
+      <div class="bk-vision-cta">
+        <a class="bk-btn bk-btn-primary" href="/guide/vision-search">
+          📖 了解如何启用
+        </a>
+      </div>
+    </section>
+
     <section class="bk-section bk-solution">
       <header class="bk-section-header">
         <h2 class="bk-h2">✅ 我们的答案：本地 App + 局域网连接</h2>
@@ -312,6 +356,77 @@
   padding: 1.2rem 1.1rem;
 }
 .bk-highlight .bk-h3{ margin-bottom: .4rem; color: var(--vp-c-brand); }
+
+/* Vision Spotlight (v1.1.0 highlight) */
+.bk-vision-spotlight{
+  position: relative;
+  background: linear-gradient(135deg,
+    color-mix(in oklab, var(--vp-c-brand) 12%, transparent),
+    color-mix(in oklab, var(--vp-c-brand) 4%, transparent));
+  border: 2px solid color-mix(in oklab, var(--vp-c-brand) 40%, var(--vp-c-divider));
+  border-radius: 24px;
+  padding: 2.5rem 1.8rem 2rem;
+  margin-top: 3.75rem;
+}
+.bk-vision-badge{
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--vp-c-brand);
+  color: white;
+  font-weight: 800;
+  font-size: 0.85rem;
+  padding: 0.4rem 1rem;
+  border-radius: 999px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+  white-space: nowrap;
+}
+.bk-vision-grid{
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1.75rem;
+}
+@media (max-width: 960px){
+  .bk-vision-grid{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 520px){
+  .bk-vision-grid{ grid-template-columns: 1fr; }
+}
+.bk-vision-card{
+  background: var(--vp-c-bg);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 14px;
+  padding: 1.3rem 1.1rem;
+  text-align: center;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.bk-vision-card:hover{
+  transform: translateY(-3px);
+  box-shadow: 0 10px 28px rgba(0,0,0,0.08);
+}
+.bk-vision-emoji{
+  font-size: 2.2rem;
+  margin-bottom: 0.5rem;
+  line-height: 1;
+}
+.bk-vision-card .bk-h3{
+  margin-bottom: 0.5rem;
+  color: var(--vp-c-brand);
+}
+.bk-vision-cta{
+  display: flex;
+  justify-content: center;
+  margin-top: 1.75rem;
+}
+.bk-vision-quote{
+  text-align: center;
+  margin: 1.25rem 0 0;
+  color: var(--vp-c-text-2);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
 
 /* Workflow */
 .bk-workflow{

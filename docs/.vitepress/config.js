@@ -32,10 +32,19 @@ export default defineConfig({
           ]
         },
         {
+          text: '核心功能',
+          items: [
+            {
+              text: '🆕 AI 拍照识别',
+              link: '/guide/vision-search'
+            }
+          ]
+        },
+        {
           text: '设计理念',
           items: [
-            { text: '原子化与独立部署', 
-              link: '/guide/philosophy' 
+            { text: '原子化与独立部署',
+              link: '/guide/philosophy'
             },
             {
               text: '离线与支付问题',
