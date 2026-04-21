@@ -224,9 +224,9 @@ const qaList = [
     category: '现场运营',
     icon: WalletOutline,
     items: [
-      { 
-        q: '怎么设置收款码？支持多渠道吗？', 
-        a: '在“展会管理”点击“编辑”，可以上传图片。如果您同时支持微信/支付宝，可以将两个二维码<strong>拼成一张长图</strong>上传。' 
+      {
+        q: '怎么设置收款码？支持多渠道吗？',
+        a: '在“展会管理”点击“编辑”，可以<strong>分别上传微信和支付宝</strong>两张收款码。顾客结算页会自动并排显示两个码，顾客用哪个 App 扫哪个即可。只上传一张也行，这时页面单码居中显示。'
       },
       { 
         q: '顾客付款后，系统会自动完成订单吗？', 
@@ -306,11 +306,11 @@ const qaList = [
       },
       {
         q: '如何上传识别用图片？有什么建议？',
-        a: '在 <strong>全局商品库 → 编辑商品 → 识别用图片</strong> Tab 中上传。<br/><br/><strong>最佳实践：</strong><br/>• 每件商品上传 <strong>3-5 张</strong>不同角度的照片<br/>• 使用<strong>接近正方形</strong>的构图，商品居中<br/>• 背景尽量简洁，避免杂物干扰<br/>• 上传后系统自动压缩到 512×512，无需手动调整<br/>• 上传后会自动触发增量索引构建'
+        a: '在 <strong>全局商品库 → 编辑商品 → 识别用图片</strong> Tab 中上传。<br/><br/><strong>最佳实践：</strong><br/>• 每件商品上传 <strong>1~3 张</strong>不同角度的照片<br/>• 使用<strong>接近正方形</strong>的构图，商品居中<br/>• 背景尽量简洁，避免杂物干扰<br/>• 上传后系统自动压缩到 512×512，无需手动调整<br/>• 上传后会自动触发增量索引构建<br/><br/><strong>快速定位缺图：</strong>全局商品库列表有"识别图"列（🔴/🟡/🟢 三档），勾选"只看缺识别图的商品"可批量筛选。'
       },
       {
         q: '有几个模型可以选？该选哪个？',
-        a: '<strong>ConvNeXt V2 Pico</strong>（默认内嵌）：体积最小、速度最快，适合大多数场景。<br/><strong>MobileCLIP-S0</strong>（可下载）：CLIP 架构，语义理解更强，中等体积。<br/><strong>DINOv2-Small</strong>（可下载）：检索质量最佳，但体积最大。<br/><br/>一般情况下<strong>默认模型就够用</strong>。如果觉得识别不够准，可以试试下载更大的模型。'
+        a: 'v1.1 起共 5 个可选模型，主推两个 FP16 量化版：<br/><br/>⭐ <strong>ConvNeXt V2 Pico FP16</strong>（默认推荐，约 17MB）：体积最小、下载最快，大多数场景够用<br/>⭐ <strong>DINOv2-Small FP16</strong>（高精度推荐，约 43MB）：ViT 模型，对细节最敏感，追求识别精度时选它<br/><strong>MobileCLIP-S0</strong>（约 46MB）：CLIP 家族，擅长语义理解<br/><strong>ConvNeXt / DINOv2 的 FP32 参考版</strong>：一般选 FP16 即可<br/><br/><strong>注意：</strong>模型不再打包进安装包，首次启用需联网下载，建议展会前一天完成。'
       },
       {
         q: '推理设备怎么选？CPU 和 GPU 有什么区别？',
@@ -352,9 +352,9 @@ const qaList = [
         q: '我可以在手机上运行主机端吗？', 
         a: '技术上可以，但<strong>强烈不推荐</strong>。主机需要长时间运行服务，手机容易因锁屏、后台杀进程或发热导致服务中断。<strong>推荐使用笔记本电脑或平板作为主机。</strong>' 
       },
-      { 
-        q: '对设备性能有要求吗？', 
-        a: '要求很低。任何能运行最新版 Chrome/Edge 的 Windows 电脑或 Android 8.0+ 的平板均可流畅运行。老旧设备作为“顾客点单机”也是完美的废物利用方案。' 
+      {
+        q: '对设备性能有要求吗？',
+        a: '要求很低。任何能运行最新版 Chrome/Edge 的 Windows 电脑或 Android 8.0+ 的平板均可流畅运行（<strong>v1.1 新增 Android 支持</strong>）。老旧设备作为"顾客点单机"也是完美的废物利用方案。<br/><br/>AI 拍照识别对性能要求也不高：CPU 上每张图约 50-200ms，有 DirectX 12 GPU 或 Android NNAPI 加速可进一步提速。'
       },
       { 
         q: '需要一直亮屏吗？', 

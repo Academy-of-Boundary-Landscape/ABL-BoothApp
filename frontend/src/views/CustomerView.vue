@@ -824,6 +824,13 @@ function closePaymentModal() {
   user-select: none;
   overflow: hidden;
   background: var(--bg-color);
+  /* iPhone X+ 刘海/底部横条安全区 */
+  padding:
+    env(safe-area-inset-top)
+    env(safe-area-inset-right)
+    env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+  box-sizing: border-box;
 }
 
 .attract-content {
@@ -914,7 +921,8 @@ function closePaymentModal() {
 /* ===================== 引导条 ===================== */
 .guide-toast {
   position: fixed;
-  bottom: 24px;
+  /* 避开 iPhone X+ 底部手势横条 */
+  bottom: calc(24px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
   z-index: 8000;

@@ -51,94 +51,72 @@
     </div>
 
     <div v-else-if="statStore.stats" class="stats-content">
-      <section class="filter-section">
-        <div class="section-header" @click="isFilterExpanded = !isFilterExpanded">
-          <h2>数据筛选</h2>
-          <n-button text class="toggle-btn">
-            {{ isFilterExpanded ? '折叠' : '展开' }}
-          </n-button>
-        </div>
-        <transition name="expand">
-          <div v-show="isFilterExpanded" class="section-container">
-            <StatFilters
-              :product-options="productOptions"
-              :selected-product="selectedProduct"
-              :start-date="startDate"
-              :end-date="endDate"
-              :interval-minutes="intervalMinutes"
-              @update:selectedProduct="val => (selectedProduct = val)"
-              @update:startDate="val => (startDate = val)"
-              @update:endDate="val => (endDate = val)"
-              @update:intervalMinutes="val => (intervalMinutes = val)"
-              @change="applyFilters"
-            />
-          </div>
-        </transition>
-      </section>
+      <CollapsibleSection
+        title="数据筛选"
+        v-model:collapsed="isFilterCollapsed"
+        class="filter-section"
+      >
+        <StatFilters
+          :product-options="productOptions"
+          :selected-product="selectedProduct"
+          :start-date="startDate"
+          :end-date="endDate"
+          :interval-minutes="intervalMinutes"
+          @update:selectedProduct="val => (selectedProduct = val)"
+          @update:startDate="val => (startDate = val)"
+          @update:endDate="val => (endDate = val)"
+          @update:intervalMinutes="val => (intervalMinutes = val)"
+          @change="applyFilters"
+        />
+      </CollapsibleSection>
 
       <!-- 关键数据总览 -->
-      <section class="summary-section">
-        <div class="section-header" @click="isSummaryExpanded = !isSummaryExpanded">
-          <h2>关键数据总览</h2>
-          <n-button text class="toggle-btn">
-            {{ isSummaryExpanded ? '折叠' : '展开' }}
-          </n-button>
-        </div>
-        <transition name="expand">
-          <div v-show="isSummaryExpanded" class="section-container">
-            <div class="summary-cards">
-              <div class="summary-card">
-                <span class="label">总销售额</span>
-                <span class="value">{{ formatCurrency(statStore.stats.total_revenue) }}</span>
-              </div>
-              <div class="summary-card">
-                <span class="label">总销售件数</span>
-                <span class="value">{{ totalItemsSold }}</span>
-              </div>
-              <div class="summary-card">
-                <span class="label">销售品类数</span>
-                <span class="value">{{ productVarietyCount }}</span>
-              </div>
-            </div>
+      <CollapsibleSection
+        title="关键数据总览"
+        v-model:collapsed="isSummaryCollapsed"
+        class="summary-section"
+      >
+        <div class="summary-cards">
+          <div class="summary-card">
+            <span class="label">总销售额</span>
+            <span class="value">{{ formatCurrency(statStore.stats.total_revenue) }}</span>
           </div>
-        </transition>
-      </section>
+          <div class="summary-card">
+            <span class="label">总销售件数</span>
+            <span class="value">{{ totalItemsSold }}</span>
+          </div>
+          <div class="summary-card">
+            <span class="label">销售品类数</span>
+            <span class="value">{{ productVarietyCount }}</span>
+          </div>
+        </div>
+      </CollapsibleSection>
 
       <!-- 销售趋势图 -->
-      <section class="chart-section">
-        <div class="section-header" @click="isChartExpanded = !isChartExpanded">
-          <h2>销售额趋势</h2>
-          <n-button text class="toggle-btn">
-            {{ isChartExpanded ? '折叠' : '展开' }}
-          </n-button>
+      <CollapsibleSection
+        title="销售额趋势"
+        v-model:collapsed="isChartCollapsed"
+        class="chart-section"
+      >
+        <div class="chart-info">
+          <span v-if="statStore.stats.timeseries?.length" class="chart-subtitle">{{ chartSubtitle }}</span>
         </div>
-        <transition name="expand">
-          <div v-show="isChartExpanded" class="section-container">
-            <div class="chart-info">
-              <span v-if="statStore.stats.timeseries?.length" class="chart-subtitle">{{ chartSubtitle }}</span>
-            </div>
-            <SalesLineChart
-              v-if="statStore.stats.timeseries?.length"
-              :series="statStore.stats.timeseries"
-              :width="chartWidth"
-              :height="chartHeight"
-              :padding="padding"
-            />
-            <p v-else class="no-data">// 暂无趋势数据</p>
-          </div>
-        </transition>
-      </section>
+        <SalesLineChart
+          v-if="statStore.stats.timeseries?.length"
+          :series="statStore.stats.timeseries"
+          :width="chartWidth"
+          :height="chartHeight"
+          :padding="padding"
+        />
+        <p v-else class="no-data">// 暂无趋势数据</p>
+      </CollapsibleSection>
 
       <!-- 销售详情表格 -->
-      <section class="table-section">
-        <div class="section-header" @click="isTableExpanded = !isTableExpanded">
-          <h2>销售数据表</h2>
-          <n-button text class="toggle-btn">
-            {{ isTableExpanded ? '折叠' : '展开' }}
-          </n-button>
-        </div>
-        <transition name="expand">
-          <div v-show="isTableExpanded" class="section-container">
+      <CollapsibleSection
+        title="销售数据表"
+        v-model:collapsed="isTableCollapsed"
+        class="table-section"
+      >
             <p v-if="!statStore.stats.summary.length" class="no-data">
               // 无有效销售数据记录...
             </p>
@@ -164,9 +142,7 @@
                 </tbody>
               </table>
             </div>
-          </div>
-        </transition>
-      </section>
+      </CollapsibleSection>
     </div>
   </div>
 </template>
@@ -179,6 +155,7 @@ import SalesLineChart from '@/components/stats/SalesLineChart.vue';
 import StatFilters from '@/components/stats/StatFilters.vue';
 import { NButton, NSpin, NAlert, NCard, NTable } from 'naive-ui';
 import HelpBubble from '@/components/shared/HelpBubble.vue';
+import CollapsibleSection from '@/components/shared/CollapsibleSection.vue';
 
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
@@ -195,13 +172,13 @@ const chartHeight = 320;
 const padding = 48;
 
 function updateChartWidth() {
-  const el = document.querySelector('.chart-section .section-container')
+  const el = document.querySelector('.chart-section .cs-body')
   if (el) chartWidth.value = Math.min(el.clientWidth - padding * 2, 1200)
 }
-const isFilterExpanded = ref(true);
-const isSummaryExpanded = ref(true);
-const isChartExpanded = ref(true);
-const isTableExpanded = ref(true);
+const isFilterCollapsed = ref(false);
+const isSummaryCollapsed = ref(false);
+const isChartCollapsed = ref(false);
+const isTableCollapsed = ref(false);
 
 const pageTitle = computed(() => statStore.stats?.event_name ? `${statStore.stats.event_name} - 数据统计` : '数据统计');
 const totalItemsSold = computed(() => statStore.stats?.summary.reduce((sum, item) => sum + item.total_quantity, 0) || 0);
@@ -472,72 +449,7 @@ watch(() => route.params.id, (newEventId) => {
   margin-bottom: 2rem;
 }
 
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  cursor: pointer;
-  user-select: none;
-  padding: 0.75rem 1rem;
-  background: var(--card-bg-color);
-  border: 2px solid var(--border-color);
-  border-radius: var(--radius-md);
-  transition: all 0.2s ease;
-  margin-bottom: 0.5rem;
-}
-
-.section-header:hover {
-  background: var(--hover-bg-color, var(--card-bg-color));
-  border-color: var(--accent-color);
-}
-
-.section-header h2 {
-  margin: 0;
-  font-size: var(--font-lg);
-  color: var(--accent-color);
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-  min-width: 0;
-}
-
-.toggle-btn {
-  font-size: var(--font-base);
-  padding: 0.25rem 0.75rem;
-  min-width: auto;
-  color: var(--accent-color);
-}
-
-/* 展开/折叠动画 */
-.expand-enter-active,
-.expand-leave-active {
-  transition: all 0.3s ease;
-  overflow: hidden;
-}
-
-.expand-enter-from,
-.expand-leave-to {
-  opacity: 0;
-  max-height: 0;
-}
-
-.expand-enter-to,
-.expand-leave-from {
-  opacity: 1;
-  max-height: 3000px;
-}
-
-.section-container {
-  background: var(--card-bg-color);
-  border: 2px solid var(--border-color);
-  border-radius: var(--radius-md);
-  padding: 1.5rem;
-  max-width: 100%;
-  overflow-x: hidden;
-  box-sizing: border-box;
-}
+/* section 外壳样式由 CollapsibleSection 统一提供 */
 
 .loading-indicator, .error-message {
   text-align: center;
@@ -843,10 +755,6 @@ tbody td {
     justify-content: flex-start;
   }
 
-  .section-container {
-    padding: 1rem;
-  }
-
   .summary-cards {
     gap: 0.75rem;
   }
@@ -896,18 +804,6 @@ tbody td {
 
   .stat-header p {
     font-size: 0.85rem;
-  }
-
-  .section-header {
-    padding: 0.6rem 0.75rem;
-  }
-
-  .section-header h2 {
-    font-size: 1.1rem;
-  }
-
-  .section-container {
-    padding: 0.75rem;
   }
 
   .summary-cards {

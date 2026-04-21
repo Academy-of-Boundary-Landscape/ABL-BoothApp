@@ -79,12 +79,13 @@
     <p v-else-if="store.events.length && !filteredEvents.length" class="no-results-message">
       没有找到符合筛选条件的展会。
     </p>
-    <div v-else class="empty-guide">
-      <div class="empty-guide-icon">📋</div>
-      <div class="empty-guide-title">还没有创建展会</div>
-      <div class="empty-guide-desc">展会是管理摊位的核心单位。每场漫展创建一个展会，然后在其中管理商品库存和订单。</div>
-      <div class="empty-guide-hint">在上方「创建新展会」表单中填写信息开始吧</div>
-    </div>
+    <EmptyGuide
+      v-else
+      icon="📋"
+      title="还没有创建展会"
+      desc="展会是管理摊位的核心单位。每场漫展创建一个展会，然后在其中管理商品库存和订单。"
+      hint="在上方「创建新展会」表单中填写信息开始吧"
+    />
 
 
     <!-- 编辑模态框 (保持不变) -->
@@ -104,6 +105,7 @@ import { onMounted, ref, computed } from 'vue';
 import { useEventStore } from '@/stores/eventStore';
 import AppModal from '@/components/shared/AppModal.vue';
 import EditEventForm from '@/components/event/EditEventForm.vue';
+import EmptyGuide from '@/components/shared/EmptyGuide.vue';
 import { RouterLink } from 'vue-router';
 import { NInput, NDatePicker, NButton, NCard, NSpace, NTag } from 'naive-ui';
 
@@ -501,34 +503,4 @@ async function handleUpdateEvent() {
   }
 }
 
-.empty-guide {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 3rem 2rem;
-  text-align: center;
-}
-.empty-guide-icon {
-  font-size: 3rem;
-  margin-bottom: 12px;
-  opacity: 0.3;
-}
-.empty-guide-title {
-  font-size: var(--font-lg);
-  font-weight: 700;
-  color: var(--primary-text-color);
-  margin-bottom: 8px;
-}
-.empty-guide-desc {
-  font-size: var(--font-base);
-  color: var(--text-muted);
-  max-width: 400px;
-  line-height: 1.6;
-  margin-bottom: 16px;
-}
-.empty-guide-hint {
-  font-size: var(--font-sm);
-  color: var(--accent-color);
-  font-weight: 600;
-}
 </style>

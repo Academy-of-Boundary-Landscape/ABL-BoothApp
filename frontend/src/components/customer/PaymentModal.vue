@@ -109,7 +109,13 @@ onUnmounted(stopCountdown)
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px;
+  /* 基础 padding + iPhone X+ 安全区偏移 */
+  padding:
+    calc(16px + env(safe-area-inset-top))
+    calc(16px + env(safe-area-inset-right))
+    calc(16px + env(safe-area-inset-bottom))
+    calc(16px + env(safe-area-inset-left));
+  box-sizing: border-box;
 }
 
 .payment-card {
@@ -169,7 +175,8 @@ onUnmounted(stopCountdown)
   align-items: center;
   justify-content: center;
   flex-shrink: 1;
-  min-width: 0;
+  /* 保证二维码可扫描的最小尺寸（双码并排时尤其重要） */
+  min-width: 140px;
 }
 
 .qr-img {

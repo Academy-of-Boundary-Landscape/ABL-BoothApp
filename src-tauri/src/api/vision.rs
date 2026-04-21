@@ -93,6 +93,7 @@ struct VisionModelItem {
     tier: Option<String>,
     dim: usize,
     input_size: usize,
+    size_mb: Option<f64>,
     installed: bool,
     is_active: bool,
 }
@@ -545,6 +546,7 @@ async fn list_models(State(state): State<AppState>) -> impl IntoResponse {
             tier: item.tier,
             dim: item.embed_dim,
             input_size: item.input_size,
+            size_mb: item.size_mb,
             installed,
             is_active: active,
         })

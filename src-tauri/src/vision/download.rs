@@ -27,6 +27,8 @@ pub struct ModelManifest {
     #[serde(default)]
     pub tier: Option<String>,
     #[serde(default)]
+    pub size_mb: Option<f64>,
+    #[serde(default)]
     pub sources: Vec<ModelSource>,
 }
 

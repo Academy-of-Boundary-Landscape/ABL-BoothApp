@@ -63,11 +63,45 @@
           <transition name="expand">
             <div v-show="!qrCollapsed" class="section-container">
               <n-space vertical size="small">
+                <!-- 使用指南：三个二维码是给摊主自己的设备扫的，顾客只用摊主放在摊位上的平板 -->
+                <div class="lan-guide">
+                  <div class="lan-guide__head">
+                    <span class="lan-guide__icon">📡</span>
+                    <span class="lan-guide__title">怎么把摊盒铺到自己的设备上</span>
+                  </div>
+
+                  <p class="lan-guide__intro">
+                    三个二维码是给<strong>摊主自己的其他设备</strong>扫的：把顾客点单页挂到平板上（摆在摊位给顾客点），把摊主页挂到手机上（实时看订单）。<strong>顾客不需要扫码</strong>，他们只用你摆好的平板。
+                  </p>
+
+                  <ol class="lan-guide__steps">
+                    <li>
+                      <strong>所有设备连同一个 WiFi</strong>——装摊盒的主机、顾客用的平板、摊主看订单的手机，三台设备必须接入同一个无线网络。
+                    </li>
+                    <li>
+                      <strong>强烈推荐用手机开热点</strong>：漫展会场 WiFi 常常拥堵或禁止设备互通，自己开个热点让主机 + 平板 + 手机都连上，稳定可控。
+                    </li>
+                    <li>
+                      用设备<strong>自带相机或浏览器</strong>扫码，打开后加入书签 / 主屏幕快捷方式，方便下次直达。<span class="lan-guide__warn">微信/支付宝内扫可能拦截，请用系统相机。</span>
+                    </li>
+                  </ol>
+
+                  <details class="lan-guide__faq">
+                    <summary>扫码后无法连接？点击展开排障</summary>
+                    <ul class="lan-guide__faq-list">
+                      <li>确认两台设备连的是<strong>同一个 WiFi 名称</strong>（会场常有多个相近名字，别选错）</li>
+                      <li>主机的<strong>防火墙</strong>需要放行 <code>5140</code> 端口（Windows 首次运行会弹出询问，选"允许专用/公用网络"）</li>
+                      <li>主机 IP 会在换网后变化 → 点下方「<strong>获取局域网二维码</strong>」刷新</li>
+                      <li>部分校园网 / 酒店 WiFi 有"AP 隔离"禁止设备互通，换用手机热点</li>
+                    </ul>
+                  </details>
+                </div>
+
                 <div class="qr-actions">
                   <n-button type="primary" :loading="isFetching" @click="fetchServerInfo">
                     {{ isFetching ? '获取中...' : '获取局域网二维码' }}
                   </n-button>
-                  <span class="hint">同一局域网内扫码可直接访问对应页面，若无法连接请检查主机的防火墙设置</span>
+                  <span class="hint">生成当前局域网的访问二维码，给顾客手机或摊主平板扫</span>
                 </div>
                 <n-alert v-if="fetchError" type="error" :bordered="false">{{ fetchError }}</n-alert>
                 <div v-if="serverInfo" class="qr-grid">
@@ -131,6 +165,31 @@
           </transition>
         </section>
 
+        <!-- v1.1 AI 拍照识别 推荐体验 -->
+        <section v-if="showAiSpotlight" class="ai-spotlight">
+          <button class="ai-spotlight-dismiss" aria-label="关闭" @click="dismissAiSpotlight">
+            ×
+          </button>
+          <div class="ai-spotlight-body">
+            <div class="ai-spotlight-emoji">📸</div>
+            <div class="ai-spotlight-text">
+              <div class="ai-spotlight-badge">v1.1 新功能</div>
+              <div class="ai-spotlight-title">试试 AI 拍照识别</div>
+              <div class="ai-spotlight-desc">
+                让顾客拿手机对准商品拍张照，自动识别加入购物车。专为"帮朋友看摊 / 寄售"场景设计——不用贴条码、不用记 SKU，3 分钟就能跑起来。
+              </div>
+              <div class="ai-spotlight-actions">
+                <n-button type="primary" @click="scrollToVisionPanel">
+                  🚀 开始配置
+                </n-button>
+                <router-link to="/admin/help" class="ai-spotlight-link">
+                  先看文档了解 →
+                </router-link>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- AI 视觉识别 -->
         <VisionModelPanel />
       </n-space>
@@ -157,6 +216,26 @@ const hasOngoingEvent = ref(false)
 const hasProducts = ref(false)
 const hasEventProducts = ref(false)
 const visionReady = ref(false)
+
+// ===================== v1.1 AI 推荐体验 =====================
+const AI_SPOTLIGHT_KEY = 'ai_spotlight_dismissed_v1.1'
+const aiSpotlightDismissed = ref(localStorage.getItem(AI_SPOTLIGHT_KEY) === '1')
+
+// 仅当用户未手动关闭、且 AI 视觉尚未就绪时显示
+const showAiSpotlight = computed(() => !aiSpotlightDismissed.value && !visionReady.value)
+
+function dismissAiSpotlight() {
+  aiSpotlightDismissed.value = true
+  localStorage.setItem(AI_SPOTLIGHT_KEY, '1')
+}
+
+function scrollToVisionPanel() {
+  // VisionModelPanel 组件的根元素是 .vision-container
+  const el = document.querySelector('.vision-container')
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+}
 
 const showGuide = computed(() => !guideDismissed.value || !guideAllDone.value)
 
@@ -339,6 +418,116 @@ async function updateVendorPassword() {
 </script>
 
 <style scoped>
+/* ===== v1.1 AI 推荐体验 ===== */
+.ai-spotlight {
+  position: relative;
+  border-radius: var(--radius-lg, 12px);
+  padding: 1.25rem 1.5rem;
+  background: linear-gradient(
+    135deg,
+    var(--accent-color-light, rgba(99, 102, 241, 0.12)) 0%,
+    var(--accent-color-lighter, rgba(99, 102, 241, 0.04)) 100%
+  );
+  border: 1px solid var(--accent-color);
+  overflow: hidden;
+}
+/* 右上角装饰 —— 低调的光晕点缀 */
+.ai-spotlight::after {
+  content: '';
+  position: absolute;
+  top: -40px;
+  right: -40px;
+  width: 160px;
+  height: 160px;
+  background: radial-gradient(circle, var(--accent-color) 0%, transparent 70%);
+  opacity: 0.12;
+  pointer-events: none;
+}
+.ai-spotlight-dismiss {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 50%;
+  z-index: 2;
+  transition: background-color 0.15s, color 0.15s;
+}
+.ai-spotlight-dismiss:hover {
+  background: var(--bg-secondary, rgba(0, 0, 0, 0.06));
+  color: var(--primary-text-color);
+}
+.ai-spotlight-body {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.ai-spotlight-emoji {
+  font-size: 2.5rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.ai-spotlight-text {
+  flex: 1;
+  min-width: 0;
+}
+.ai-spotlight-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-color);
+  background: var(--card-bg-color);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill, 999px);
+  border: 1px solid var(--accent-color);
+  margin-bottom: 6px;
+  letter-spacing: 0.5px;
+}
+.ai-spotlight-title {
+  font-size: var(--font-lg);
+  font-weight: 700;
+  color: var(--primary-text-color);
+  margin-bottom: 6px;
+}
+.ai-spotlight-desc {
+  font-size: var(--font-sm);
+  color: var(--secondary-text-color, var(--text-muted));
+  line-height: 1.6;
+  margin-bottom: 14px;
+  max-width: 560px;
+}
+.ai-spotlight-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.ai-spotlight-link {
+  color: var(--accent-color);
+  font-size: var(--font-sm);
+  text-decoration: none;
+  font-weight: 600;
+}
+.ai-spotlight-link:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 480px) {
+  .ai-spotlight { padding: 1rem; }
+  .ai-spotlight-emoji { font-size: 2rem; }
+  .ai-spotlight-body { gap: 12px; }
+  .ai-spotlight-title { font-size: var(--font-md); }
+}
+
 /* ===== 快速开始引导 ===== */
 .guide-card {
   background: var(--card-bg-color);
@@ -511,6 +700,108 @@ async function updateVendorPassword() {
 .hint {
   font-size: var(--font-sm);
   color: var(--text-muted);
+}
+
+/* ===== 局域网使用指南卡片 ===== */
+.lan-guide {
+  padding: 14px 16px;
+  background: var(--bg-secondary, rgba(99, 102, 241, 0.04));
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--accent-color);
+  border-radius: var(--radius-md);
+  margin-bottom: 4px;
+}
+.lan-guide__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.lan-guide__icon {
+  font-size: 1.2rem;
+  line-height: 1;
+}
+.lan-guide__title {
+  font-size: var(--font-md, 15px);
+  font-weight: 700;
+  color: var(--primary-text-color);
+}
+.lan-guide__intro {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  background: var(--card-bg-color);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
+  line-height: 1.6;
+  color: var(--secondary-text-color, var(--text-muted));
+}
+.lan-guide__intro strong {
+  color: var(--primary-text-color);
+  font-weight: 700;
+}
+.lan-guide__steps {
+  margin: 0;
+  padding-left: 1.25rem;
+  font-size: var(--font-sm);
+  line-height: 1.7;
+  color: var(--secondary-text-color, var(--text-muted));
+}
+.lan-guide__steps li {
+  margin-bottom: 6px;
+}
+.lan-guide__steps li:last-child {
+  margin-bottom: 0;
+}
+.lan-guide__steps strong {
+  color: var(--primary-text-color);
+  font-weight: 700;
+}
+.lan-guide__warn {
+  color: var(--warning-color, #d08700);
+  font-weight: 500;
+}
+.lan-guide__faq {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-color);
+}
+.lan-guide__faq > summary {
+  cursor: pointer;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--accent-color);
+  list-style: none;
+  user-select: none;
+  padding: 2px 0;
+}
+.lan-guide__faq > summary::-webkit-details-marker {
+  display: none;
+}
+.lan-guide__faq > summary::before {
+  content: '▸ ';
+  display: inline-block;
+  transition: transform 0.15s;
+}
+.lan-guide__faq[open] > summary::before {
+  transform: rotate(90deg);
+}
+.lan-guide__faq-list {
+  margin: 8px 0 0;
+  padding-left: 1.25rem;
+  font-size: var(--font-sm);
+  line-height: 1.7;
+  color: var(--secondary-text-color, var(--text-muted));
+}
+.lan-guide__faq-list li {
+  margin-bottom: 4px;
+}
+.lan-guide__faq-list code {
+  background: var(--card-bg-color);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.92em;
+  color: var(--accent-color);
 }
 .qr-grid {
   display: grid;

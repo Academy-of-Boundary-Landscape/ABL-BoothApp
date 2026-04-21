@@ -12,15 +12,11 @@
 
     <main class="page-body">
       <!-- 上架新商品区块 -->
-      <section class="form-section">
-        <div class="section-header" @click="isFormExpanded = !isFormExpanded">
-          <h2>上架新商品</h2>
-          <n-button text class="toggle-btn">
-            {{ isFormExpanded ? '折叠' : '展开' }}
-          </n-button>
-        </div>
-        <transition name="expand">
-          <div v-show="isFormExpanded" class="section-container">
+      <CollapsibleSection
+        title="上架新商品"
+        v-model:collapsed="isFormCollapsed"
+        class="form-section"
+      >
         <div class="search-filters">
           <n-input
             v-model:value="searchQuery"
@@ -95,20 +91,14 @@
           </n-button>
         </form>
         <p v-if="addError" class="error-message">{{ addError }}</p>
-      </div>
-      </transition>
-      </section>
+      </CollapsibleSection>
 
       <!-- 商品列表区块 -->
-      <section class="list-section">
-        <div class="section-header" @click="isListExpanded = !isListExpanded">
-          <h2>已上架商品</h2>
-          <n-button text class="toggle-btn">
-            {{ isListExpanded ? '折叠' : '展开' }}
-          </n-button>
-        </div>
-        <transition name="expand">
-          <div v-show="isListExpanded" class="section-container">
+      <CollapsibleSection
+        title="已上架商品"
+        v-model:collapsed="isListCollapsed"
+        class="list-section"
+      >
             <div v-if="eventDetailStore.isLoading" class="loading-message">正在加载商品列表...</div>
             <div v-else-if="eventDetailStore.products.length" class="table-wrapper">
         <table class="product-table">
@@ -148,15 +138,14 @@
           </tbody>
         </table>
       </div>
-      <div v-else class="empty-guide">
-        <div class="empty-guide-icon">📦</div>
-        <div class="empty-guide-title">还没有上架商品</div>
-        <div class="empty-guide-desc">从全局商品库中选择商品添加到本场展会，设置库存数量和展会特价。</div>
-        <div class="empty-guide-hint">在上方「上架新商品」区域选择商品并设置库存</div>
-      </div>
-          </div>
-        </transition>
-      </section>
+      <EmptyGuide
+        v-else
+        icon="📦"
+        title="还没有上架商品"
+        desc="从全局商品库中选择商品添加到本场展会，设置库存数量和展会特价。"
+        hint="在上方「上架新商品」区域选择商品并设置库存"
+      />
+      </CollapsibleSection>
     </main>
 
     <AppModal :show="isEditModalVisible" @close="closeEditModal">
@@ -205,6 +194,8 @@ import { useEventDetailStore } from '@/stores/eventDetailStore';
 import { useProductStore } from '@/stores/productStore';
 import AppModal from '@/components/shared/AppModal.vue';
 import HelpBubble from '@/components/shared/HelpBubble.vue';
+import EmptyGuide from '@/components/shared/EmptyGuide.vue';
+import CollapsibleSection from '@/components/shared/CollapsibleSection.vue';
 import { NCard, NInput, NSelect, NImage, NInputNumber, NButton, NSpace, useDialog } from 'naive-ui';
 
 const props = defineProps({ id: { type: String, required: true } });
@@ -216,8 +207,8 @@ const dialog = useDialog();
 const searchQuery = ref('');
 const stockInputRef = ref(null);
 const selectedCategory = ref(null);
-const isFormExpanded = ref(true);
-const isListExpanded = ref(true);
+const isFormCollapsed = ref(false);
+const isListCollapsed = ref(false);
 
 const categoryOptions = computed(() => {
   const cats = (productStore.masterProducts || [])
@@ -409,65 +400,7 @@ function getProductLabel(name) {
   margin-bottom: 2rem;
 }
 
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  cursor: pointer;
-  user-select: none;
-  padding: 0.75rem 1rem;
-  background: var(--card-bg-color);
-  border: 2px solid var(--border-color);
-  border-radius: var(--radius-md);
-  transition: all 0.2s ease;
-  margin-bottom: 0.5rem;
-}
-
-.section-header:hover {
-  background: var(--hover-bg-color, var(--card-bg-color));
-  border-color: var(--accent-color);
-}
-
-.section-header h2 {
-  margin: 0;
-  font-size: var(--font-lg);
-  color: var(--accent-color);
-  font-weight: 600;
-}
-
-.toggle-btn {
-  font-size: var(--font-base);
-  padding: 0.25rem 0.75rem;
-  min-width: auto;
-  color: var(--accent-color);
-}
-
-/* 展开/折叠动画 */
-.expand-enter-active,
-.expand-leave-active {
-  transition: all 0.3s ease;
-  overflow: hidden;
-}
-
-.expand-enter-from,
-.expand-leave-to {
-  opacity: 0;
-  max-height: 0;
-}
-
-.expand-enter-to,
-.expand-leave-from {
-  opacity: 1;
-  max-height: 2000px;
-}
-
-.section-container {
-  background: var(--card-bg-color);
-  border: 2px solid var(--border-color);
-  border-radius: var(--radius-md);
-  padding: 1.5rem;
-  overflow: hidden;
-}
+/* section 外壳样式由 CollapsibleSection 统一提供 */
 
 .table-wrapper {
   width: 100%;
@@ -655,7 +588,9 @@ function getProductLabel(name) {
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
-
+  transition: background-color 0.2s, border-color 0.2s;
+  background-color: var(--card-bg-color);
+}
 
 .preview-item-img-container {
   display: flex;
@@ -677,8 +612,6 @@ function getProductLabel(name) {
   font-size: var(--font-sm);
   font-weight: 600;
   text-align: center;
-} transition: background-color 0.2s, border-color 0.2s;
-  background-color: var(--card-bg-color);
 }
 .preview-item:hover {
   border-color: var(--accent-color);
@@ -767,10 +700,6 @@ function getProductLabel(name) {
 
   .page-header p {
     font-size: 0.9rem;
-  }
-
-  .section-container {
-    padding: 1rem;
   }
 
   .search-filters {
@@ -862,18 +791,6 @@ function getProductLabel(name) {
     font-size: 0.8rem;
   }
 
-  .section-header {
-    padding: 0.6rem 0.75rem;
-  }
-
-  .section-header h2 {
-    font-size: 1.1rem;
-  }
-
-  .section-container {
-    padding: 0.75rem;
-  }
-
   .search-filters {
     gap: 0.5rem;
   }
@@ -948,34 +865,4 @@ function getProductLabel(name) {
   }
 }
 
-.empty-guide {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 3rem 2rem;
-  text-align: center;
-}
-.empty-guide-icon {
-  font-size: 3rem;
-  margin-bottom: 12px;
-  opacity: 0.3;
-}
-.empty-guide-title {
-  font-size: var(--font-lg);
-  font-weight: 700;
-  color: var(--primary-text-color);
-  margin-bottom: 8px;
-}
-.empty-guide-desc {
-  font-size: var(--font-base);
-  color: var(--text-muted);
-  max-width: 400px;
-  line-height: 1.6;
-  margin-bottom: 16px;
-}
-.empty-guide-hint {
-  font-size: var(--font-sm);
-  color: var(--accent-color);
-  font-weight: 600;
-}
 </style>

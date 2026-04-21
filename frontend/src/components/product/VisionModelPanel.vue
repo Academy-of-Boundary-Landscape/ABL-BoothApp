@@ -1,7 +1,12 @@
 <template>
   <div class="vision-container">
     <div class="section-header" @click="isCollapsed = !isCollapsed">
-      <h2>AI 视觉识别</h2>
+      <h2>
+        AI 视觉识别
+        <span class="help-wrap" @click.stop>
+          <HelpBubble page="vision" />
+        </span>
+      </h2>
       <n-button text class="toggle-btn">
         {{ isCollapsed ? '展开' : '折叠' }}
       </n-button>
@@ -46,25 +51,55 @@
           </div>
         </div>
 
+        <!-- 行动指引（基于当前状态） -->
+        <n-alert
+          v-if="nextAction"
+          :type="nextAction.type"
+          :bordered="false"
+          class="next-action-hint"
+        >
+          <div class="next-action-content">
+            <span>{{ nextAction.text }}</span>
+            <n-button
+              v-if="nextAction.link"
+              size="tiny"
+              type="primary"
+              @click="goToLink(nextAction.link)"
+            >
+              {{ nextAction.linkLabel }}
+            </n-button>
+          </div>
+        </n-alert>
+
         <!-- 操作按钮 -->
         <div class="action-row">
-          <n-button
-            type="primary"
-            :loading="isRebuilding"
-            :disabled="isRebuilding"
-            @click="handleRebuild(false)"
-          >
-            增量构建索引
-          </n-button>
-          <n-button
-            type="warning"
-            secondary
-            :loading="isRebuilding"
-            :disabled="isRebuilding"
-            @click="handleRebuild(true)"
-          >
-            全量重建索引
-          </n-button>
+          <n-tooltip trigger="hover" placement="top">
+            <template #trigger>
+              <n-button
+                type="primary"
+                :loading="isRebuilding"
+                :disabled="isRebuilding"
+                @click="handleRebuild(false)"
+              >
+                增量构建索引
+              </n-button>
+            </template>
+            只处理新上传 / 未嵌入的图片，日常用这个
+          </n-tooltip>
+          <n-tooltip trigger="hover" placement="top">
+            <template #trigger>
+              <n-button
+                type="warning"
+                secondary
+                :loading="isRebuilding"
+                :disabled="isRebuilding"
+                @click="handleRebuild(true)"
+              >
+                全量重建索引
+              </n-button>
+            </template>
+            清空索引后重新处理所有图片。换模型或索引出错时使用
+          </n-tooltip>
           <n-button secondary @click="refreshStatus">刷新状态</n-button>
         </div>
 
@@ -88,7 +123,14 @@
         <!-- 模型列表 -->
         <div class="model-list">
           <h3 class="sub-title">可用模型</h3>
-          <div v-if="models.length === 0" class="empty-hint">加载中...</div>
+          <div v-if="loadError" class="empty-hint empty-hint--error">
+            <span>{{ loadError }}</span>
+            <n-button size="tiny" secondary @click="refreshStatus">重新加载</n-button>
+          </div>
+          <div v-else-if="modelsLoading && models.length === 0" class="empty-hint">加载中...</div>
+          <div v-else-if="models.length === 0" class="empty-hint">
+            暂无可用模型，请检查后端服务是否正常运行
+          </div>
 
           <div v-for="m in models" :key="m.model_id" class="model-card" :class="{ 'model-card--active': m.is_active }">
             <div class="model-main">
@@ -101,9 +143,9 @@
               </div>
               <div class="model-desc" v-if="m.description">{{ m.description }}</div>
               <div class="model-specs">
+                <span v-if="m.size_mb" class="spec-chip spec-chip--size">{{ formatSize(m.size_mb) }}</span>
                 <span class="spec-chip">{{ m.dim }} 维</span>
                 <span class="spec-chip">{{ m.input_size }}×{{ m.input_size }} 输入</span>
-                <span class="spec-chip">{{ m.model_version }}</span>
               </div>
             </div>
             <div class="model-actions">
@@ -162,7 +204,8 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { NButton, NTag, NAlert, NProgress, NSelect } from 'naive-ui'
+import { useRouter } from 'vue-router'
+import { NButton, NTag, NAlert, NProgress, NSelect, NTooltip } from 'naive-ui'
 import {
   getVisionStatus,
   listModels,
@@ -172,6 +215,13 @@ import {
   activateModel,
 } from '@/services/vision'
 import apiClient from '@/services/api'
+import HelpBubble from '@/components/shared/HelpBubble.vue'
+
+const router = useRouter()
+
+function goToLink(to) {
+  router.push(to)
+}
 
 const isCollapsed = ref(false)
 
@@ -231,13 +281,53 @@ const status = ref({})
 const models = ref([])
 const actionMsg = ref('')
 const actionMsgType = ref('success')
+const modelsLoading = ref(true)
+const loadError = ref('')
+
+const activeModel = computed(() => models.value.find(m => m.is_active))
+const hasInstalledModel = computed(() => models.value.some(m => m.installed))
 
 const statusText = computed(() => {
   if (status.value.is_rebuilding) return '正在构建索引...'
   if (status.value.is_ready) return '就绪'
   if (status.value.reason === 'VISION_INDEX_EMPTY') return '索引为空'
   if (status.value.reason === 'VISION_REBUILD_REQUIRED') return '需要重建'
+  if (!activeModel.value) return '未激活模型'
   return '未就绪'
+})
+
+// 基于当前状态给出"下一步该做什么"的行动提示
+const nextAction = computed(() => {
+  if (loadError.value) return null
+  if (status.value.is_rebuilding) return null
+  if (status.value.is_ready) return null
+  if (!hasInstalledModel.value) {
+    return {
+      type: 'info',
+      text: '第 1 步：从下方「可用模型」中选择一个下载（推荐 ⭐ 标注的版本）',
+    }
+  }
+  if (!activeModel.value) {
+    return {
+      type: 'info',
+      text: '第 2 步：点击已下载模型上的「激活」按钮，系统才会使用该模型进行识别',
+    }
+  }
+  if (status.value.reason === 'VISION_INDEX_EMPTY') {
+    return {
+      type: 'warning',
+      text: '索引为空：请先给商品上传识别图，然后回来点击上方「增量构建索引」',
+      link: { path: '/admin/master-products', query: { filter: 'need_vision_images' } },
+      linkLabel: '去上传识别图',
+    }
+  }
+  if (status.value.reason === 'VISION_REBUILD_REQUIRED') {
+    return {
+      type: 'warning',
+      text: '有新照片未处理 / 模型已切换，请点击上方「增量构建索引」',
+    }
+  }
+  return null
 })
 
 const statusTagType = computed(() => {
@@ -246,7 +336,14 @@ const statusTagType = computed(() => {
   return 'error'
 })
 
+function formatSize(mb) {
+  if (mb == null) return ''
+  return mb < 10 ? `${mb.toFixed(1)} MB` : `${Math.round(mb)} MB`
+}
+
 async function refreshStatus() {
+  modelsLoading.value = true
+  loadError.value = ''
   try {
     status.value = await getVisionStatus()
   } catch {
@@ -255,8 +352,11 @@ async function refreshStatus() {
   try {
     const resp = await listModels()
     models.value = resp.models || []
-  } catch {
+  } catch (err) {
     models.value = []
+    loadError.value = err?.response?.data?.error || '加载模型列表失败，请检查后端服务后重试'
+  } finally {
+    modelsLoading.value = false
   }
 }
 
@@ -420,6 +520,13 @@ onBeforeUnmount(() => { stopRebuildPoll(); stopInstallPoll() })
   margin: 0;
   color: var(--accent-color);
   font-size: var(--font-lg);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.help-wrap {
+  display: inline-flex;
+  align-items: center;
 }
 .toggle-btn { color: var(--accent-color); }
 
@@ -526,6 +633,11 @@ onBeforeUnmount(() => { stopRebuildPoll(); stopInstallPoll() })
   font-weight: 500;
   white-space: nowrap;
 }
+.spec-chip--size {
+  background: var(--primary-bg-subtle, rgba(99, 102, 241, 0.08));
+  color: var(--primary-text, #4f46e5);
+  font-variant-numeric: tabular-nums;
+}
 .model-actions {
   display: flex;
   gap: 6px;
@@ -536,6 +648,22 @@ onBeforeUnmount(() => { stopRebuildPoll(); stopInstallPoll() })
   color: var(--text-muted);
   font-size: var(--font-sm);
   padding: 8px 0;
+}
+.empty-hint--error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--n-error-color, #d03050);
+}
+.next-action-hint {
+  margin: 10px 0;
+}
+.next-action-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 /* 重建进度 */

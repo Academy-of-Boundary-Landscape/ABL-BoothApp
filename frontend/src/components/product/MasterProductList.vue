@@ -1,14 +1,9 @@
 <template>
-  <div class="list-container">
-    <div class="section-header" @click="isListCollapsed = !isListCollapsed">
-      <h2>商品列表</h2>
-      <n-button text class="toggle-btn">
-        {{ isListCollapsed ? '展开' : '折叠' }}
-      </n-button>
-    </div>
-
-    <transition name="expand">
-      <div v-show="!isListCollapsed" class="section-container">
+  <CollapsibleSection
+    title="商品列表"
+    v-model:collapsed="isListCollapsed"
+    class="list-container"
+  >
         <div class="search-section">
           <div class="search-header">
             <h3>搜索和过滤</h3>
@@ -56,6 +51,12 @@
           >
             <span class="checkbox-label">显示已停用的商品</span>
           </n-checkbox>
+          <n-checkbox
+            v-model:checked="onlyMissingVisionImages"
+            class="show-inactive-checkbox"
+          >
+            <span class="checkbox-label">只看缺识别图的商品</span>
+          </n-checkbox>
         </div>
 
         <n-spin :show="store.isLoading">
@@ -71,6 +72,7 @@
                   <th>默认价格</th>
                   <th>商品分类</th>
                   <th>标签</th>
+                  <th>识别图</th>
                   <th>操作</th>
                 </tr>
               </thead>
@@ -113,8 +115,28 @@
                     </template>
                   </td>
 
+                  <td class="vision-cell">
+                    <n-tag
+                      size="small"
+                      :type="visionTagType(product.image_count)"
+                      :bordered="false"
+                    >
+                      {{ visionTagLabel(product.image_count) }}
+                    </n-tag>
+                  </td>
+
                   <td class="action-cell">
                     <n-button size="small" tertiary @click="$emit('edit', product)">编辑</n-button>
+                    <n-button
+                      size="small"
+                      type="info"
+                      tertiary
+                      @click="$emit('edit', product, 'gallery')"
+                      style="margin-left: 8px;"
+                      :title="'直接打开识别图 Tab'"
+                    >
+                      识别图
+                    </n-button>
                     <n-button
                       size="small"
                       :type="product.is_active ? 'error' : 'success'"
@@ -133,33 +155,42 @@
           <p v-else-if="hasActiveFilters">
             当前筛选条件下没有找到匹配的商品。
           </p>
-          <div v-else class="empty-guide">
-            <div class="empty-guide-icon">🛍️</div>
-            <div class="empty-guide-title">全局商品库为空</div>
-            <div class="empty-guide-desc">先在这里添加你的制品信息（名称、价格、图片），之后就能在每场展会中快速上架。</div>
-            <div class="empty-guide-hint">在上方表单中创建你的第一个商品</div>
-          </div>
+          <EmptyGuide
+            v-else
+            icon="🛍️"
+            title="全局商品库为空"
+            desc="先在这里添加你的制品信息（名称、价格、图片），之后就能在每场展会中快速上架。"
+            hint="在上方表单中创建你的第一个商品"
+          />
         </n-spin>
-      </div>
-    </transition>
-  </div>
+  </CollapsibleSection>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useProductStore } from '@/stores/productStore'
 import { NButton, NCheckbox, NImage, NInput, NInputNumber, NSelect, NSpin, NTag } from 'naive-ui'
+import EmptyGuide from '@/components/shared/EmptyGuide.vue'
+import CollapsibleSection from '@/components/shared/CollapsibleSection.vue'
 
 const store = useProductStore()
+const route = useRoute()
 
 defineEmits(['edit', 'toggleStatus'])
 
 const isListCollapsed = ref(false)
 const selectedCategory = ref('')
 const maxPrice = ref(null)
+const onlyMissingVisionImages = ref(false)
 
 const hasActiveFilters = computed(() => {
-  return Boolean(store.searchTerm || selectedCategory.value || maxPrice.value != null)
+  return Boolean(
+    store.searchTerm ||
+    selectedCategory.value ||
+    maxPrice.value != null ||
+    onlyMissingVisionImages.value
+  )
 })
 
 const filteredProducts = computed(() => {
@@ -173,6 +204,10 @@ const filteredProducts = computed(() => {
     list = list.filter((product) => Number(product.default_price ?? 0) <= Number(maxPrice.value))
   }
 
+  if (onlyMissingVisionImages.value) {
+    list = list.filter((product) => !Number(product.image_count || 0))
+  }
+
   return list
 })
 
@@ -180,7 +215,33 @@ function handleClearFilters() {
   store.searchTerm = ''
   selectedCategory.value = ''
   maxPrice.value = null
+  onlyMissingVisionImages.value = false
 }
+
+function visionTagLabel(count) {
+  const n = Number(count || 0)
+  if (n === 0) return '未上传'
+  return `${n} 张`
+}
+
+function visionTagType(count) {
+  const n = Number(count || 0)
+  if (n === 0) return 'error'
+  if (n < 3) return 'warning'
+  return 'success'
+}
+
+// 从 /admin/master-products?filter=need_vision_images 进入时自动开启筛选
+watch(
+  () => route.query.filter,
+  (filter) => {
+    if (filter === 'need_vision_images') {
+      onlyMissingVisionImages.value = true
+      isListCollapsed.value = false
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <style scoped>
@@ -188,63 +249,7 @@ function handleClearFilters() {
   margin-bottom: 2rem;
 }
 
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  cursor: pointer;
-  user-select: none;
-  padding: 0.75rem 1rem;
-  background: var(--card-bg-color);
-  border: 2px solid var(--border-color);
-  border-radius: var(--radius-md);
-  transition: all 0.2s ease;
-  margin-bottom: 0.5rem;
-}
-
-.section-header:hover {
-  background: var(--hover-bg-color, var(--card-bg-color));
-  border-color: var(--accent-color);
-}
-
-.section-header h2 {
-  margin: 0;
-  font-size: var(--font-lg);
-  color: var(--accent-color);
-  font-weight: 600;
-}
-
-.toggle-btn {
-  font-size: var(--font-base);
-  padding: 0.25rem 0.75rem;
-  min-width: auto;
-  color: var(--accent-color);
-}
-
-.expand-enter-active,
-.expand-leave-active {
-  transition: all 0.3s ease;
-  overflow: hidden;
-}
-
-.expand-enter-from,
-.expand-leave-to {
-  opacity: 0;
-  max-height: 0;
-}
-
-.expand-enter-to,
-.expand-leave-from {
-  opacity: 1;
-  max-height: 2000px;
-}
-
-.section-container {
-  background: var(--card-bg-color);
-  border: 2px solid var(--border-color);
-  border-radius: var(--radius-md);
-  padding: 1.5rem;
-}
+/* section 外壳样式已由 CollapsibleSection 组件统一提供 */
 
 .search-section {
   margin-bottom: 1.5rem;
@@ -294,6 +299,9 @@ function handleClearFilters() {
   margin-top: 1rem;
   padding-top: 1rem;
   border-top: 1px solid var(--border-color);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
 }
 
 .show-inactive-checkbox {
@@ -320,7 +328,7 @@ function handleClearFilters() {
   border-spacing: 0;
   text-align: left;
   font-size: var(--font-base);
-  min-width: 700px;
+  min-width: 820px;
 }
 
 .product-table th {
@@ -360,6 +368,10 @@ function handleClearFilters() {
 
 .action-cell {
   white-space: nowrap;
+}
+.vision-cell {
+  white-space: nowrap;
+  text-align: center;
 }
 
 .preview-img {
@@ -402,7 +414,6 @@ function handleClearFilters() {
 }
 
 @media (max-width: 768px) {
-  .section-container { padding: 1rem; }
   .search-section { margin-bottom: 1rem; padding-bottom: 1rem; }
   .search-header h3 { font-size: 0.95rem; }
   .search-hint { font-size: 0.8rem; }
@@ -414,7 +425,7 @@ function handleClearFilters() {
     justify-self: stretch;
     grid-column: 1 / -1;
   }
-  .product-table { font-size: 0.85rem; min-width: 650px; }
+  .product-table { font-size: 0.85rem; min-width: 760px; }
   .product-table th, .product-table td { padding: 10px 12px; }
   .preview-img { width: 60px; height: 60px; }
   .no-img { width: 60px; height: 60px; line-height: 60px; font-size: 0.75rem; }
@@ -422,9 +433,6 @@ function handleClearFilters() {
 
 @media (max-width: 480px) {
   .list-container { margin-bottom: 1.5rem; }
-  .section-header { padding: 0.6rem 0.75rem; }
-  .section-header h2 { font-size: 1.1rem; }
-  .section-container { padding: 0.75rem; }
   .search-section { margin-bottom: 0.75rem; padding-bottom: 0.75rem; }
   .search-header h3 { font-size: 0.9rem; }
   .search-hint { font-size: 0.75rem; }
@@ -445,34 +453,4 @@ function handleClearFilters() {
   .action-cell :deep(.n-button) { font-size: 0.75rem; padding: 4px 8px; }
 }
 
-.empty-guide {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 3rem 2rem;
-  text-align: center;
-}
-.empty-guide-icon {
-  font-size: 3rem;
-  margin-bottom: 12px;
-  opacity: 0.3;
-}
-.empty-guide-title {
-  font-size: var(--font-lg);
-  font-weight: 700;
-  color: var(--primary-text-color);
-  margin-bottom: 8px;
-}
-.empty-guide-desc {
-  font-size: var(--font-base);
-  color: var(--text-muted);
-  max-width: 400px;
-  line-height: 1.6;
-  margin-bottom: 16px;
-}
-.empty-guide-hint {
-  font-size: var(--font-sm);
-  color: var(--accent-color);
-  font-weight: 600;
-}
 </style>

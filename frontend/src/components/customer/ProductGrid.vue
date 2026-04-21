@@ -20,7 +20,7 @@
         :class="{
           'out-of-stock': product.current_stock === 0,
           'low-stock': !editable && product.current_stock > 0 && product.current_stock <= 10,
-          'just-added': animatingIds.value.has(product.id)
+          'just-added': animatingIds.has(product.id)
         }"
         embedded
         :content-style="{ padding: 0 }"
@@ -328,7 +328,7 @@ function formatPrice(price) {
   right: 6px;
   padding: 3px 8px;
   border-radius: var(--radius-md);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 800;
   color: white;
   background: rgba(0,0,0,0.55);
@@ -409,7 +409,8 @@ function formatPrice(price) {
 }
 
 .title {
-  font-size: var(--font-base);
+  /* 最小 11px 保证可读，随视口宽度放大，上限 16px */
+  font-size: clamp(11px, 2vw, 16px);
   line-height: 1.35;
   color: var(--primary-text-color);
   font-weight: 650;

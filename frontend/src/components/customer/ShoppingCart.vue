@@ -169,10 +169,26 @@ watch(
 /* ============================================================================
    通用样式 (Desktop First)
 ============================================================================ */
+/*
+ * 根元素策略：
+ *   - 桌面端：作为 .cart-panel-desktop 的子元素，需要撑满其高度
+ *   - 移动端：内容全部 position:fixed 出流；根元素若占高度会挤压主内容面板（product-panel / vision-panel）
+ *             → 移动端需要"存在但不占空间"
+ */
 .shopping-cart-root {
   height: 100%;
   width: 100%;
   min-height: 0;
+}
+
+@media (max-width: 768px) {
+  .shopping-cart-root {
+    /* 移动端：零尺寸根，避免在 flex column 父容器里抢占高度 */
+    height: 0;
+    width: 0;
+    min-height: 0;
+    position: relative;
+  }
 }
 
 .cart-container {
@@ -474,5 +490,17 @@ watch(
 }
 .fade-enter-from, .fade-leave-to {
   opacity: 0;
+}
+
+/* 窄屏（手机）：允许商品名占 2 行，避免过早被截断 */
+@media (max-width: 480px) {
+  .item-name {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.3;
+  }
 }
 </style>

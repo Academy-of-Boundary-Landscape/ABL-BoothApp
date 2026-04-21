@@ -48,7 +48,61 @@
       <canvas ref="canvasRef" class="vision-camera__canvas" />
     </div>
 
-    <!-- ========== 普通输入模式 ========== -->
+    <!-- ========== 相机模式：未激活态（取景框启动前/被关闭后的过渡页） ========== -->
+    <template v-else-if="cameraMode">
+      <div class="vision-camera-cta">
+        <div class="vision-camera-cta__icon">📷</div>
+        <div class="vision-camera-cta__title">拍照识别商品</div>
+        <div v-if="errorMsg" class="vision-camera-cta__error">{{ errorMsg }}</div>
+        <div v-else class="vision-camera-cta__hint">
+          点击下方按钮开启摄像头，对准商品按快门即可识别
+        </div>
+        <n-button
+          type="primary"
+          size="large"
+          block
+          class="vision-camera-cta__primary"
+          @click="startCamera"
+        >
+          📷 开启摄像头
+        </n-button>
+        <n-button
+          size="small"
+          tertiary
+          block
+          class="vision-camera-cta__fallback"
+          @click="triggerFileInput"
+        >
+          或从相册选择图片
+        </n-button>
+        <input
+          ref="fileInputRef"
+          type="file"
+          accept="image/*"
+          capture="environment"
+          class="vision-file-input"
+          @change="onFileSelected"
+        />
+        <!-- 若用户从相册选了图片，展示预览 + 搜索按钮 -->
+        <div v-if="previewUrl" class="vision-camera-cta__preview">
+          <img :src="previewUrl" class="vision-camera-cta__preview-img" alt="查询图片" />
+          <div class="vision-camera-cta__preview-actions">
+            <n-button size="small" tertiary @click="clearImage">清除</n-button>
+            <n-button
+              type="primary"
+              size="small"
+              :loading="isSearching"
+              :disabled="isSearching"
+              @click="doSearch"
+            >
+              {{ isSearching ? '搜索中...' : '以图搜图' }}
+            </n-button>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- ========== 普通输入模式（非相机场景，如管理端上传） ========== -->
     <template v-else>
       <div class="vision-input">
         <div
@@ -74,14 +128,6 @@
           @change="onFileSelected"
         />
         <div class="vision-input-actions">
-          <n-button
-            v-if="cameraMode"
-            size="small"
-            tertiary
-            @click="startCamera"
-          >
-            打开摄像头
-          </n-button>
           <n-button
             v-if="previewUrl"
             size="small"
@@ -864,4 +910,83 @@ onBeforeUnmount(() => {
 .result-pop-leave-active { transition: opacity 0.15s, transform 0.15s; }
 .result-pop-enter-from { opacity: 0; transform: scale(0.95); }
 .result-pop-leave-to { opacity: 0; transform: scale(0.95); }
+
+/* ========== 相机模式未激活时的 CTA 过渡页 ========== */
+.vision-camera-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  padding: 32px 20px;
+  text-align: center;
+  background: var(--card-bg-color);
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+.vision-camera-cta__icon {
+  font-size: 3rem;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+.vision-camera-cta__title {
+  font-size: var(--font-lg);
+  font-weight: 700;
+  color: var(--primary-text-color);
+}
+.vision-camera-cta__hint {
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+  line-height: 1.5;
+  max-width: 320px;
+  margin: 0 auto 8px;
+}
+.vision-camera-cta__error {
+  font-size: var(--font-sm);
+  color: var(--error-color, #d03050);
+  line-height: 1.5;
+  padding: 8px 12px;
+  background: rgba(208, 48, 80, 0.08);
+  border-radius: var(--radius-sm);
+  margin: 0 auto 8px;
+  max-width: 360px;
+}
+.vision-camera-cta__primary :deep(.n-button__content) {
+  font-size: var(--font-md);
+}
+.vision-camera-cta__fallback {
+  margin-top: -4px;
+}
+.vision-camera-cta__preview {
+  margin-top: 12px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--border-color);
+}
+.vision-camera-cta__preview-img {
+  max-width: 200px;
+  max-height: 160px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  margin: 0 auto 12px;
+  display: block;
+}
+.vision-camera-cta__preview-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+/* 超窄屏（iPhone SE 等 ≤400px）：取景框四角和快门按钮略缩小 */
+@media (max-width: 400px) {
+  .frame-corner {
+    width: 20px;
+    height: 20px;
+  }
+  .vision-camera-cta {
+    padding: 24px 16px;
+  }
+  .vision-camera-cta__icon {
+    font-size: 2.5rem;
+  }
+}
 </style>

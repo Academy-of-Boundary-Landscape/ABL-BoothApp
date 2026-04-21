@@ -107,10 +107,26 @@ async fn list_products(
 ) -> impl IntoResponse {
     let show_all = params.all.unwrap_or(false);
 
+    // LEFT JOIN master_product_images 得到每个商品的识别图数量（image_count）。
+    // 用 idx_mp_images_product_id 索引保证性能；mp.* 必须放在 SELECT 前列，
+    // 否则 sqlx 的 FromRow 可能按位置错位赋值。
     let sql = if show_all {
-        "SELECT * FROM master_products ORDER BY product_code ASC"
+        r#"
+        SELECT mp.*, COUNT(mpi.id) AS image_count
+        FROM master_products mp
+        LEFT JOIN master_product_images mpi ON mpi.master_product_id = mp.id
+        GROUP BY mp.id
+        ORDER BY mp.product_code ASC
+        "#
     } else {
-        "SELECT * FROM master_products WHERE is_active = 1 ORDER BY product_code ASC"
+        r#"
+        SELECT mp.*, COUNT(mpi.id) AS image_count
+        FROM master_products mp
+        LEFT JOIN master_product_images mpi ON mpi.master_product_id = mp.id
+        WHERE mp.is_active = 1
+        GROUP BY mp.id
+        ORDER BY mp.product_code ASC
+        "#
     };
 
     let products: Vec<MasterProduct> = query_as::<_, MasterProduct>(sql)

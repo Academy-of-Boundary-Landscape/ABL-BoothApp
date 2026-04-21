@@ -83,9 +83,19 @@
           <!-- ==================== Tab 2: 识别用图片 ==================== -->
           <n-tab-pane name="gallery" tab="识别用图片">
             <div class="gallery-section">
+              <n-alert
+                v-if="visionModelReady === false"
+                :bordered="false"
+                type="warning"
+                class="gallery-hint"
+              >
+                <strong>⚠ 尚未激活 AI 视觉模型。</strong>
+                现在上传的图片会暂存但无法生成识别向量（状态为"未嵌入"）。
+                请先到「控制台 → AI 视觉识别」下载并激活一个模型，之后再回来构建索引。
+              </n-alert>
               <n-alert :bordered="false" type="info" class="gallery-hint">
-                上传商品不同角度的照片，系统会用这些图片学习识别该商品。照片越多、角度越丰富，拍照识别越准确。
-                <br /><strong>建议：</strong>使用接近正方形的照片（商品居中、背景简洁），上传后会自动压缩到 512×512。
+                上传商品不同角度的照片，系统会用这些图片学习识别该商品。
+                <br /><strong>建议：</strong>每个商品上传 <strong>1~3 张</strong>不同角度的接近正方形的照片（商品居中、背景简洁）；上传后会自动压缩到 512×512。
               </n-alert>
 
               <!-- 加载中 -->
@@ -182,7 +192,9 @@
       <template #footer>
         <div class="modal-footer">
           <n-space justify="end">
-            <n-button @click="handleClose">取消</n-button>
+            <n-button @click="handleClose">
+              {{ activeTab === 'gallery' ? '关闭' : '取消' }}
+            </n-button>
             <n-button
               v-if="activeTab === 'info'"
               type="primary"
@@ -191,6 +203,13 @@
               @click="handleUpdate"
             >
               {{ isUpdating ? '保存中...' : '保存更改' }}
+            </n-button>
+            <n-button
+              v-else-if="activeTab === 'gallery'"
+              type="primary"
+              @click="handleClose"
+            >
+              保存并退出
             </n-button>
           </n-space>
         </div>
@@ -213,6 +232,7 @@ import {
   listProductImages,
   addProductImage,
   deleteProductImage,
+  listModels as listVisionModels,
 } from '@/services/vision'
 import {
   IMAGE_UPLOAD_LIMIT_MB,
@@ -227,6 +247,7 @@ const GALLERY_RESIZE_PX = 512
 const props = defineProps({
   show: { type: Boolean, default: false },
   product: { type: Object, default: null },
+  initialTab: { type: String, default: 'info' },
 })
 
 const emit = defineEmits(['close', 'updated'])
@@ -274,6 +295,8 @@ watch(
       galleryImages.value = []
       galleryError.value = ''
     } else if (visible && localProduct.value) {
+      // 打开时如果外部指定了初始 Tab（如"识别图"快速入口），跳到该 Tab
+      activeTab.value = props.initialTab || 'info'
       // 弹窗打开时也加载一次（覆盖 product watch 可能的时序问题）
       loadGallery()
     }
@@ -330,6 +353,16 @@ const galleryUploading = ref(false)
 const galleryError = ref('')
 const galleryDeleting = ref(null)
 const galleryFileRef = ref(null)
+const visionModelReady = ref(null) // null = 未检查，true = 有激活模型，false = 无
+
+async function checkVisionModelReady() {
+  try {
+    const resp = await listVisionModels()
+    visionModelReady.value = !!(resp.models || []).find((m) => m.is_active)
+  } catch {
+    visionModelReady.value = false
+  }
+}
 
 function resolveUrl(url) { return getImageUrl(url) }
 
@@ -353,6 +386,8 @@ async function loadGallery() {
   if (!localProduct.value) return
   galleryLoading.value = true
   galleryError.value = ''
+  // 顺便检查当前是否有激活的视觉模型（并行，不阻塞图片列表加载）
+  checkVisionModelReady()
   try {
     galleryImages.value = await listProductImages(localProduct.value.id)
   } catch {

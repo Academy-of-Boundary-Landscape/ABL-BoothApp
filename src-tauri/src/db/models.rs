@@ -16,6 +16,11 @@ pub struct MasterProduct {
     pub is_active: bool,
     #[serde(default)]
     pub tags: String, // 逗号分隔的标签，如 "博丽灵梦,红色,东方Project"
+    // 由 list_products 的 LEFT JOIN + COUNT 计算得到的识别图数量；
+    // 其它 SELECT * 的查询该列缺失时 sqlx::default() 返回 None
+    #[serde(default)]
+    #[sqlx(default)]
+    pub image_count: Option<i64>,
 }
 
 // 用于接收前端创建商品的请求 Body

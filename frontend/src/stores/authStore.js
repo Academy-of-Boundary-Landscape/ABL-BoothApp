@@ -62,6 +62,11 @@ export const useAuthStore = defineStore('auth', () => {
         user.value = userData;
         sessionStorage.setItem('user', JSON.stringify(userData));
 
+        // 标记此设备上曾有管理员成功登录过 —— 用于首页判断是否"全新未配置"
+        if (userData.role === 'admin') {
+          localStorage.setItem('admin_first_login_done', 'true');
+        }
+
         // 3. 执行跳转
         const finalRedirectPath = redirectPath || (userData.role === 'admin' ? '/admin' : '/');
         await router.push(finalRedirectPath);

@@ -12,15 +12,11 @@
 
     <main class="page-body">
       <!-- 筛选器区块 -->
-      <section class="filter-section">
-        <div class="section-header" @click="isFilterExpanded = !isFilterExpanded">
-          <h2>订单筛选</h2>
-          <n-button text class="toggle-btn">
-            {{ isFilterExpanded ? '折叠' : '展开' }}
-          </n-button>
-        </div>
-        <transition name="expand">
-          <div v-show="isFilterExpanded" class="section-container">
+      <CollapsibleSection
+        title="订单筛选"
+        v-model:collapsed="isFilterCollapsed"
+        class="filter-section"
+      >
             <div class="filter-content">
               <div class="filter-row">
                 <label for="status-filter">状态:</label>
@@ -80,20 +76,14 @@
                 清空筛选
               </n-button>
             </div>
-          </div>
-        </transition>
-      </section>
+      </CollapsibleSection>
 
       <!-- 订单列表区块 -->
-      <section class="list-section">
-        <div class="section-header" @click="isListExpanded = !isListExpanded">
-          <h2>订单列表</h2>
-          <n-button text class="toggle-btn">
-            {{ isListExpanded ? '折叠' : '展开' }}
-          </n-button>
-        </div>
-        <transition name="expand">
-          <div v-show="isListExpanded" class="section-container">
+      <CollapsibleSection
+        title="订单列表"
+        v-model:collapsed="isListCollapsed"
+        class="list-section"
+      >
 
       <div v-if="store.isLoading" class="loading-message">
         <n-spin size="large">
@@ -140,15 +130,14 @@
           </tbody>
         </n-table>
       </div>
-      <div v-else class="empty-guide">
-        <div class="empty-guide-icon">📝</div>
-        <div class="empty-guide-title">暂无订单</div>
-        <div class="empty-guide-desc">当顾客通过点单页面下单后，订单会自动出现在这里。你可以在这里查看、完成或取消订单。</div>
-        <div class="empty-guide-hint">将展会设为「进行中」，然后分享点单链接给顾客</div>
-      </div>
-          </div>
-        </transition>
-      </section>
+      <EmptyGuide
+        v-else
+        icon="📝"
+        title="暂无订单"
+        desc="当顾客通过点单页面下单后，订单会自动出现在这里。你可以在这里查看、完成或取消订单。"
+        hint="将展会设为「进行中」，然后分享点单链接给顾客"
+      />
+      </CollapsibleSection>
     </main>
   </div>
 </template>
@@ -159,6 +148,8 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useEventDetailStore } from '@/stores/eventDetailStore';
 import { NSelect, NSpin, NAlert, NTable, NCard, NTag, NDropdown, NButton, NInput, NInputNumber, useDialog, useMessage } from 'naive-ui';
 import HelpBubble from '@/components/shared/HelpBubble.vue';
+import EmptyGuide from '@/components/shared/EmptyGuide.vue';
+import CollapsibleSection from '@/components/shared/CollapsibleSection.vue';
 import { formatTimestamp } from '@/utils/dateFormatter';
 const props = defineProps({
   id: { type: String, required: true }
@@ -171,8 +162,8 @@ const maxAmount = ref(null); // 最大金额
 const productNameFilter = ref(''); // 商品名称筛选
 const dialog = useDialog();
 const message = useMessage();
-const isFilterExpanded = ref(true);
-const isListExpanded = ref(true);
+const isFilterCollapsed = ref(false);
+const isListCollapsed = ref(false);
 const statusOptions = [
   { label: '所有订单', value: 'all' },
   { label: '待处理', value: 'pending' },
@@ -286,65 +277,7 @@ onUnmounted(() => {
   margin-bottom: 2rem;
 }
 
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  cursor: pointer;
-  user-select: none;
-  padding: 0.75rem 1rem;
-  background: var(--card-bg-color);
-  border: 2px solid var(--border-color);
-  border-radius: var(--radius-md);
-  transition: all 0.2s ease;
-  margin-bottom: 0.5rem;
-}
-
-.section-header:hover {
-  background: var(--hover-bg-color, var(--card-bg-color));
-  border-color: var(--accent-color);
-}
-
-.section-header h2 {
-  margin: 0;
-  font-size: var(--font-lg);
-  color: var(--accent-color);
-  font-weight: 600;
-}
-
-.toggle-btn {
-  font-size: var(--font-base);
-  padding: 0.25rem 0.75rem;
-  min-width: auto;
-  color: var(--accent-color);
-}
-
-/* 展开/折叠动画 */
-.expand-enter-active,
-.expand-leave-active {
-  transition: all 0.3s ease;
-  overflow: hidden;
-}
-
-.expand-enter-from,
-.expand-leave-to {
-  opacity: 0;
-  max-height: 0;
-}
-
-.expand-enter-to,
-.expand-leave-from {
-  opacity: 1;
-  max-height: 2000px;
-}
-
-.section-container {
-  background: var(--card-bg-color);
-  border: 2px solid var(--border-color);
-  border-radius: var(--radius-md);
-  padding: 1.5rem;
-  overflow: hidden;
-}
+/* section 外壳样式由 CollapsibleSection 统一提供 */
 
 .table-wrapper {
   width: 100%;
@@ -668,10 +601,6 @@ button:disabled {
     font-size: 0.9rem;
   }
 
-  .section-container {
-    padding: 1rem;
-  }
-
   .filter-content {
     gap: 1rem;
   }
@@ -737,18 +666,6 @@ button:disabled {
     font-size: 0.8rem;
   }
 
-  .section-header {
-    padding: 0.6rem 0.75rem;
-  }
-
-  .section-header h2 {
-    font-size: 1.1rem;
-  }
-
-  .section-container {
-    padding: 0.75rem;
-  }
-
   .filter-content {
     gap: 0.75rem;
   }
@@ -790,34 +707,4 @@ button:disabled {
   }
 }
 
-.empty-guide {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 3rem 2rem;
-  text-align: center;
-}
-.empty-guide-icon {
-  font-size: 3rem;
-  margin-bottom: 12px;
-  opacity: 0.3;
-}
-.empty-guide-title {
-  font-size: var(--font-lg);
-  font-weight: 700;
-  color: var(--primary-text-color);
-  margin-bottom: 8px;
-}
-.empty-guide-desc {
-  font-size: var(--font-base);
-  color: var(--text-muted);
-  max-width: 400px;
-  line-height: 1.6;
-  margin-bottom: 16px;
-}
-.empty-guide-hint {
-  font-size: var(--font-sm);
-  color: var(--accent-color);
-  font-weight: 600;
-}
 </style>

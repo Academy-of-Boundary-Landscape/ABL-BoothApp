@@ -1,5 +1,5 @@
 {
-  "active_model_id": "convnextv2_pico_fp32",
+  "active_model_id": "convnextv2_pico_fp16",
   "download": {
     "source_preference": "auto",
     "github_proxy_prefix": "",

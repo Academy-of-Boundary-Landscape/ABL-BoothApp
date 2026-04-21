@@ -11,18 +11,21 @@
     </header>
 
     <main class="page-body">
-      <CreateMasterProductForm @created="refreshProducts('created')" />
+      <n-space vertical size="large">
+        <CreateMasterProductForm @created="refreshProducts('created')" />
 
-      <BoothpackSyncPanel @imported="refreshProducts('imported')" />
+        <BoothpackSyncPanel @imported="refreshProducts('imported')" />
 
-      <MasterProductList
-        @edit="openEditModal"
-        @toggleStatus="handleToggleStatus"
-      />
+        <MasterProductList
+          @edit="openEditModal"
+          @toggleStatus="handleToggleStatus"
+        />
+      </n-space>
 
       <EditMasterProductModal
         :show="isEditModalVisible"
         :product="editableProduct"
+        :initial-tab="editInitialTab"
         @close="closeEditModal"
         @updated="onProductUpdated"
       />
@@ -32,7 +35,7 @@
 
 <script setup>
 import { onMounted, ref } from 'vue'
-import { useMessage } from 'naive-ui'
+import { NSpace, useMessage } from 'naive-ui'
 import { useProductStore } from '@/stores/productStore'
 
 import CreateMasterProductForm from '@/components/product/CreateMasterProductForm.vue'
@@ -45,15 +48,18 @@ const store = useProductStore()
 
 const isEditModalVisible = ref(false)
 const editableProduct = ref(null)
+const editInitialTab = ref('info')
 
-function openEditModal(product) {
+function openEditModal(product, initialTab = 'info') {
   editableProduct.value = product
+  editInitialTab.value = initialTab
   isEditModalVisible.value = true
 }
 
 function closeEditModal() {
   isEditModalVisible.value = false
   editableProduct.value = null
+  editInitialTab.value = 'info'
 }
 
 async function onProductUpdated() {
@@ -88,15 +94,7 @@ onMounted(async () => {
 
 <style scoped>
 .page {
-  width: 100%;
-}
-
-.page-header {
-  padding: 1rem 1.25rem;
-  margin-bottom: 1rem;
-  background: var(--card-bg-color);
-  border: 2px solid var(--border-color);
-  border-radius: var(--radius-lg);
+  max-width: 960px;
 }
 
 .header-title-row {
@@ -105,22 +103,17 @@ onMounted(async () => {
   gap: 10px;
 }
 
-.header-content h1 {
-  margin: 0;
+.page-header {
+  margin-bottom: 1.5rem;
+}
+.page-header h1 {
+  margin: 0 0 0.25rem;
   font-size: var(--font-xl);
   color: var(--accent-color);
-  font-weight: 700;
 }
-
-.header-content p {
-  margin: 0.35rem 0 0 0;
+.page-header p {
+  margin: 0;
   color: var(--text-muted);
   font-size: var(--font-base);
-}
-
-.page-body {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
 }
 </style>

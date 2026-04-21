@@ -11,7 +11,8 @@
     <div class="help-content">
       <div class="help-title">{{ content.title }}</div>
       <ul class="help-tips">
-        <li v-for="(tip, i) in content.tips" :key="i">{{ tip }}</li>
+        <!-- tips 是 helpContent.js 里的静态文案（非用户输入），仅支持 **粗体** 简易 Markdown -->
+        <li v-for="(tip, i) in content.tips" :key="i" v-html="renderTip(tip)"></li>
       </ul>
       <router-link to="/admin/help" class="help-more">查看完整教程 →</router-link>
     </div>
@@ -28,6 +29,18 @@ const props = defineProps({
 })
 
 const content = computed(() => helpContent[props.page] || { title: '帮助', tips: [] })
+
+// 先转义 HTML 特殊字符，再把 **xxx** 替换为 <strong>xxx</strong>
+// 内容来自仓库内静态 JS 文件，不是用户输入，但仍做 escape 防御
+function renderTip(raw) {
+  const escaped = String(raw)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+  return escaped.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+}
 </script>
 
 <style scoped>
@@ -84,6 +97,10 @@ const content = computed(() => helpContent[props.page] || { title: '帮助', tip
   position: absolute;
   left: 4px;
   color: var(--accent-color);
+  font-weight: 700;
+}
+.help-tips li :deep(strong) {
+  color: var(--primary-text-color);
   font-weight: 700;
 }
 
