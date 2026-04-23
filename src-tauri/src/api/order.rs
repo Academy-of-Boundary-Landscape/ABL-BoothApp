@@ -266,19 +266,29 @@ async fn list_orders(
         return e.into_response();
     }
 
-    let orders: Vec<Order> = if let Some(s) = params.status {
+    let orders_res: Result<Vec<Order>, _> = if let Some(s) = params.status {
         query_as("SELECT * FROM orders WHERE event_id = ? AND status = ? ORDER BY id DESC")
             .bind(event_id)
             .bind(s)
             .fetch_all(&state.db)
             .await
-            .unwrap_or_default()
     } else {
         query_as("SELECT * FROM orders WHERE event_id = ? ORDER BY id DESC")
             .bind(event_id)
             .fetch_all(&state.db)
             .await
-            .unwrap_or_default()
+    };
+
+    let orders = match orders_res {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("list_orders: fetch orders failed: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "Failed to load orders"})),
+            )
+                .into_response();
+        }
     };
 
     if orders.is_empty() {
@@ -308,7 +318,17 @@ async fn list_orders(
 
     // 由于 OrderItem 结构体没有 product_image_url，我们需要一个新的临时结构体或者使用 sqlx::Row
     // 这里我们直接用 Row 手动映射
-    let items_rows = query_builder.fetch_all(&state.db).await.unwrap_or_default();
+    let items_rows = match query_builder.fetch_all(&state.db).await {
+        Ok(rows) => rows,
+        Err(e) => {
+            eprintln!("list_orders: fetch items failed: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "Failed to load order items"})),
+            )
+                .into_response();
+        }
+    };
 
     // 3. 内存分组
     let mut items_map: HashMap<i64, Vec<OrderItemResponse>> = HashMap::new();
@@ -483,37 +503,46 @@ async fn update_order_status(
         }
 
         // Prevent invalid state transitions (e.g. cancelled -> pending/completed)
-        let current: Option<String> =
-            sqlx::query_scalar("SELECT status FROM orders WHERE id = ? AND event_id = ?")
-                .bind(order_id)
-                .bind(event_id)
-                .fetch_optional(&state.db)
-                .await
-                .unwrap_or(None);
+        // 使用一条 UPDATE 做 CAS：只在订单存在且未被取消时更新，规避 SELECT→UPDATE 之间的 TOCTOU
+        let result = query(
+            "UPDATE orders SET status = ? WHERE id = ? AND event_id = ? AND status <> 'cancelled'",
+        )
+        .bind(&payload.status)
+        .bind(order_id)
+        .bind(event_id)
+        .execute(&state.db)
+        .await;
 
-        match current.as_deref() {
-            None => {
-                return (StatusCode::NOT_FOUND, Json(json!({"error": "Order not found"}))).into_response();
+        match result {
+            Err(e) => {
+                eprintln!("update_order_status: update failed: {}", e);
+                return (StatusCode::INTERNAL_SERVER_ERROR, "Database Error").into_response();
             }
-            Some("cancelled") => {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({"error": "Cannot change status of a cancelled order. Stock has already been restored."})),
-                )
-                    .into_response();
+            Ok(r) if r.rows_affected() == 0 => {
+                // rows_affected == 0 只可能是两种情况：
+                //   a) id/event_id 不匹配任何订单 → 404
+                //   b) 订单存在但已取消 (被 status <> 'cancelled' 过滤掉) → 400
+                // 其他 status 一定会被 UPDATE 命中；不存在第三种情况。
+                let current: Option<String> =
+                    sqlx::query_scalar("SELECT status FROM orders WHERE id = ? AND event_id = ?")
+                        .bind(order_id)
+                        .bind(event_id)
+                        .fetch_optional(&state.db)
+                        .await
+                        .unwrap_or(None);
+
+                return if current.is_none() {
+                    (StatusCode::NOT_FOUND, Json(json!({"error": "Order not found"})))
+                        .into_response()
+                } else {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({"error": "Cannot change status of a cancelled order. Stock has already been restored."})),
+                    )
+                        .into_response()
+                };
             }
-            _ => {}
-        }
-
-        let result = query("UPDATE orders SET status = ? WHERE id = ? AND event_id = ?")
-            .bind(&payload.status)
-            .bind(order_id)
-            .bind(event_id)
-            .execute(&state.db)
-            .await;
-
-        if let Err(_) = result {
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Database Error").into_response();
+            Ok(_) => {}
         }
     }
 

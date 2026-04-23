@@ -35,16 +35,19 @@ export const useOrderStore = defineStore('order', () => {
 
     try {
       const response = await api.get(`/events/${activeEventId.value}/orders?status=pending`);
-      
+
       const processedOrders = processOrders(response.data);
-      const oldOrderCount = pendingOrders.value.length;
       if (JSON.stringify(pendingOrders.value) !== JSON.stringify(processedOrders)) {
         pendingOrders.value = processedOrders;
       }
     } catch (err) {
       console.error("Polling failed:", err);
-      // 如果获取失败（比如展会不存在），停止轮询避免无限报错
-      stopPolling();
+      // 只有在展会不存在 / 无权限这类"不可恢复"的错误才停止轮询；
+      // 网络抖动等瞬时错误应保留轮询，避免摊主错过新订单。
+      const status = err.response?.status;
+      if (status === 404 || status === 403 || status === 401) {
+        stopPolling();
+      }
     }
   }
 

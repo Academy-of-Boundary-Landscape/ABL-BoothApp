@@ -42,6 +42,14 @@ async fn update_admin_password(
     _: AdminOnly,
     Json(payload): Json<UpdateAdminPasswordRequest>,
 ) -> impl IntoResponse {
+    if payload.new_password.chars().count() < 4 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "新密码至少 4 位"})),
+        )
+            .into_response();
+    }
+
     // 1. 获取当前密码 Hash
     let row: Option<(String,)> =
         sqlx::query_as("SELECT value FROM settings WHERE key = 'admin_password'")
@@ -107,6 +115,14 @@ async fn update_vendor_default_password(
     _: AdminOnly,
     Json(payload): Json<UpdateVendorPasswordRequest>,
 ) -> impl IntoResponse {
+    if payload.new_password.chars().count() < 4 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "新密码至少 4 位"})),
+        )
+            .into_response();
+    }
+
     let new_hash = hash_password(&payload.new_password);
     // eprintln!(
     //     "[DEBUG] Updating global vendor password. New hash: {}",

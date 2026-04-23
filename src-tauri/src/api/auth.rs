@@ -70,12 +70,11 @@ where
         match serde_json::from_slice::<T>(&bytes) {
             Ok(value) => Ok(DebugJson(value)),
             Err(e) => {
-                // 4. 只有在解析失败时，才打印详细的 Body 内容，方便排查
-                let body_str = String::from_utf8_lossy(&bytes);
+                // 4. 解析失败时只记录长度和错误，不打印明文 Body —— 这里包含登录密码
                 eprintln!("========================================");
                 eprintln!("[DEBUG] JSON Parsing FAILED!");
                 eprintln!("[DEBUG] Error: {}", e);
-                eprintln!("[DEBUG] Raw Body Content: '{}'", body_str);
+                eprintln!("[DEBUG] Body length: {} bytes", bytes.len());
                 eprintln!("========================================");
 
                 // 返回 400 Bad Request 给前端，而不是 422

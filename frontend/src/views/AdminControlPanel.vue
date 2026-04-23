@@ -376,17 +376,26 @@ const vendorMessage = ref(null)
 const authStore = useAuthStore()
 
 async function updateAdminPassword() {
+  const newPassword = adminForm.value.newPassword
+  if (!adminForm.value.oldPassword) {
+    adminMessage.value = { type: 'error', text: '请输入旧密码' }
+    return
+  }
+  if (newPassword.length < 4) {
+    adminMessage.value = { type: 'error', text: '新密码至少 4 位' }
+    return
+  }
   adminSaving.value = true
   adminMessage.value = null
   try {
-    await api.put('/auth/admin-password', {
-      old_password: adminForm.value.oldPassword,
-      new_password: adminForm.value.newPassword,
+    await api.put('/admin/password', {
+      oldPassword: adminForm.value.oldPassword,
+      newPassword,
     })
     adminMessage.value = { type: 'success', text: '管理员密码已更新' }
     adminForm.value = { oldPassword: '', newPassword: '' }
     // 密码改了需要重新登录
-    await authStore.login(adminForm.value.newPassword, 'admin')
+    await authStore.login(newPassword, 'admin')
   } catch (e) {
     adminMessage.value = {
       type: 'error',
@@ -398,11 +407,15 @@ async function updateAdminPassword() {
 }
 
 async function updateVendorPassword() {
+  if (vendorForm.value.newPassword.length < 4) {
+    vendorMessage.value = { type: 'error', text: '新密码至少 4 位' }
+    return
+  }
   vendorSaving.value = true
   vendorMessage.value = null
   try {
-    await api.put('/auth/vendor-password', {
-      new_password: vendorForm.value.newPassword,
+    await api.put('/admin/vendor-default-password', {
+      newPassword: vendorForm.value.newPassword,
     })
     vendorMessage.value = { type: 'success', text: '默认摊主密码已更新' }
     vendorForm.value = { newPassword: '' }
