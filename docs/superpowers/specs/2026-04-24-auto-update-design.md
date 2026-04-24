@@ -156,13 +156,13 @@ capabilities 里放行 updater + process 能力（`capabilities/default.json` �
 
 ```json
 {
-  "version": "1.2.0",
-  "notes": "摊盒 1.2.0 — AI 识别模型库扩充、网络稳定性提升",
+  "version": "1.1.1",
+  "notes": "摊盒 1.1.1 — AI 识别模型库扩充、网络稳定性提升",
   "pub_date": "2026-05-01T12:00:00Z",
   "platforms": {
     "windows-x86_64": {
       "signature": "<base64-encoded .sig 文件内容>",
-      "url": "https://github.com/.../releases/download/v1.2.0/摊盒_1.2.0_x64-setup.exe"
+      "url": "https://github.com/.../releases/download/v1.1.1/摊盒_1.1.1_x64-setup.exe"
     }
   }
 }
@@ -246,10 +246,10 @@ Tauri updater 插件本身由 Tauri 团队测试。本项目需要测试的：
 4. **UI 更新**：`UpdateModal.vue` 按设计改进度条 + 重启流程，Android 分支保留旧行为
 5. **本地 smoke test**：无远程 latest.json 时的错误路径；构造本地 `latest.json` 验证正常路径
 6. **文档**：用户指南 + BUILD.md 补章节
-7. **首个有 updater 的 release**：v1.2.0，作为里程碑发布，附完整 latest.json 和 .sig
+7. **首个有 updater 的 release**：v1.1.1，作为里程碑发布，附完整 latest.json 和 .sig
 
 ## 风险与开放问题
 
 - **用户 rsign 私钥密码**：已加密的 `secret-key.txt` 需要密码才能使用。若用户忘记密码，无法签名。**建议用户在密码管理器存一份**，并在 BUILD.md 里明确这一点。
 - **无法验证"这个 secret-key.txt 对应什么公钥"**：需要用户手动跑一次 `tauri signer sign` 并从输出里提公钥，或从过去构建过的旧 sig 文件反推。首次实施时要处理这个。
-- **v1.1.0 用户无法收到"使用 updater 的新版本"通知**：因为 v1.1.0 的检查更新逻辑不走 updater endpoint。这版用户第一次收到更新要么通过现有的"打开 GitHub 页面"流程手装一次 v1.2.0，从 v1.2.0 起后续版本才能真正自动更新。这是过渡期无法避免的。需要在 v1.2.0 的 changelog 里明说："此版本起支持一键更新，后续版本无需手动下载"。
+- **v1.1.0 用户无法收到"使用 updater 的新版本"通知**：因为 v1.1.0 的检查更新逻辑不走 updater endpoint。这版用户第一次收到更新要么通过现有的"打开 GitHub 页面"流程手装一次 v1.1.1，从 v1.1.1 起后续版本才能真正自动更新。这是过渡期无法避免的。需要在 v1.1.1 的 changelog 里明说："此版本起支持一键更新，后续版本无需手动下载"。

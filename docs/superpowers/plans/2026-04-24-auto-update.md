@@ -747,7 +747,7 @@ Create `docs/guide/auto-update.md` with:
 ```markdown
 # 自动更新
 
-摊盒 v1.2.0 起支持一键更新。不再需要打开 GitHub 页面手动下载安装。
+摊盒 v1.1.1 起支持一键更新。不再需要打开 GitHub 页面手动下载安装。
 
 ## 如何检查和更新
 
@@ -765,9 +765,9 @@ Create `docs/guide/auto-update.md` with:
 - **无网络**时会报告「网络错误」，连上网络再重试
 - **更新包校验失败**说明下载内容不完整或被篡改 —— 请从官方 GitHub 页面手动下载
 
-## 从 v1.1.0 及以下升级到 v1.2.0
+## 从 v1.1.0 及以下升级到 v1.1.1
 
-因为 v1.1.0 及更早版本没有「下载并安装」功能，**第一次升级到 v1.2.0 仍需手动下载**。从 v1.2.0 起才能真正自动更新。
+因为 v1.1.0 及更早版本没有「下载并安装」功能，**第一次升级到 v1.1.1 仍需手动下载**。从 v1.1.1 起才能真正自动更新。
 
 ## 隐私
 
@@ -784,7 +784,7 @@ Read the current `docs/BUILD.md` first to decide where to append. Then append th
 
 ## 发布新版本（带自动更新）
 
-从 v1.2.0 开始，客户端会自动从 GitHub Releases 拉取 `latest.json` 判断更新。发布流程新增了签名和清单步骤。
+从 v1.1.1 开始，客户端会自动从 GitHub Releases 拉取 `latest.json` 判断更新。发布流程新增了签名和清单步骤。
 
 ### 准备（一次性）
 
@@ -825,13 +825,13 @@ npm run tauri build
 
 ```json
 {
-  "version": "1.2.0",
-  "notes": "摊盒 1.2.0 —— 支持一键自动更新",
+  "version": "1.1.1",
+  "notes": "摊盒 1.1.1 —— 支持一键自动更新",
   "pub_date": "2026-05-01T12:00:00Z",
   "platforms": {
     "windows-x86_64": {
       "signature": "<将 .sig 文件内容一行粘贴到这里>",
-      "url": "https://github.com/Academy-of-Boundary-Landscape/ABL-BoothApp/releases/download/v1.2.0/摊盒_1.2.0_x64-setup.exe"
+      "url": "https://github.com/Academy-of-Boundary-Landscape/ABL-BoothApp/releases/download/v1.1.1/摊盒_1.1.1_x64-setup.exe"
     }
   }
 }
@@ -840,28 +840,28 @@ npm run tauri build
 - `signature` 字段是 `.sig` 文件的**完整内容**（包含 `untrusted comment:` 头那几行），但作为 JSON 字符串需要把换行编码为 `\n`。PowerShell 生成：
 
 ```powershell
-(Get-Content "src-tauri/target/release/bundle/nsis/摊盒_1.2.0_x64-setup.exe.sig" -Raw) -replace "`r`n", "\n"
+(Get-Content "src-tauri/target/release/bundle/nsis/摊盒_1.1.1_x64-setup.exe.sig" -Raw) -replace "`r`n", "\n"
 ```
 
 - `url` 必须是 GitHub release 上传后的最终下载链接。先上传 `.exe`，然后从 release 页面拷贝链接回来填入。
 
 5. 在 GitHub 上：
 
-- 创建 tag `v1.2.0`
+- 创建 tag `v1.1.1`
 - 创建 Release，粘贴 changelog
-- 上传三个文件作为 asset：`摊盒_1.2.0_x64-setup.exe`、`摊盒_1.2.0_x64-setup.exe.sig`、`latest.json`
+- 上传三个文件作为 asset：`摊盒_1.1.1_x64-setup.exe`、`摊盒_1.1.1_x64-setup.exe.sig`、`latest.json`
 - Publish
 
 6. 验证：
 
 - 在一台装有旧版摊盒的机器（或一台没装的机器，先手装旧版）点「检查更新」
-- 确认能看到 1.2.0、能下载、下载进度正确、重启后版本真的变了
+- 确认能看到 1.1.1、能下载、下载进度正确、重启后版本真的变了
 
 ### 常见问题
 
 - **"invalid signature" 错误**：`.sig` 文件和 `.exe` 不匹配，或上传时顺序错。重新构建 + 重新上传。
 - **"No version available" 错误**：`latest.json` 没传或名字不是 `latest.json`。
-- **中文文件名下载后变 `???`**：GitHub Release 有时会对中文文件名 URL-encode。用英文文件名（如 `BoothTool_1.2.0_x64-setup.exe`）避开这个问题。需要同时改 `tauri.conf.json` 里 `productName` 的导出策略，或在 release 上传时重命名再填到 `latest.json` 里。
+- **中文文件名下载后变 `???`**：GitHub Release 有时会对中文文件名 URL-encode。用英文文件名（如 `BoothTool_1.1.1_x64-setup.exe`）避开这个问题。需要同时改 `tauri.conf.json` 里 `productName` 的导出策略，或在 release 上传时重命名再填到 `latest.json` 里。
 ```
 
 - [ ] **Step 3: Commit**

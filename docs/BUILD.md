@@ -152,3 +152,102 @@ npx tauri android build --apk true --aab true -t aarch64
 | Android | NNAPI (NPU/GPU) → CPU | NNAPI / 仅 CPU |
 
 设备选择在 管理后台 → 控制台 → AI 视觉识别 面板的"设备选择"下拉框中配置，设置持久化到 `vision_model.json`。
+
+## 发布带自动更新的新版本
+
+从 v1.1.1 起，客户端会从 GitHub Releases 拉取 `latest.json` 清单判断更新。每次发布需要把三个 artifact 一起传上去：安装器、签名文件、清单。
+
+### 一次性准备：生成 updater 签名密钥
+
+当前 `src-tauri/tauri.conf.json` 的 `plugins.updater.pubkey` 字段是 **`TODO_REPLACE_WITH_GENERATED_PUBKEY_...`** 占位。**在发布第一个带更新功能的版本之前必须替换掉。**
+
+```powershell
+cd E:\Tauri\booth-tool
+npx @tauri-apps/cli signer generate -w src-tauri\updater-key.key
+```
+
+- 它会弹出一个密码提示。**选一个强密码，存进密码管理器。** 密码丢了 = 密钥没法再用，下次发布签不出合法签名。
+- 生成两个文件：
+  - `src-tauri/updater-key.key` —— 加密的**私钥**（绝对不进 git）
+  - `src-tauri/updater-key.key.pub` —— **公钥**（可以进 git，也可以直接内联到 config）
+
+打开 `updater-key.key.pub`，你会看到：
+
+```
+untrusted comment: minisign public key XXXXXXXX
+RWR<一长串base64字符>
+```
+
+把 **只有 `RWR...` 那一行**（不含 comment 行）复制到 `src-tauri/tauri.conf.json`：
+
+```json
+"pubkey": "RWR..."
+```
+
+把私钥安全地放好。仓库根 `secret-key.txt` 可以用作一个备份位置（已在 `.gitignore`）。
+
+### 每次发布
+
+1. 更新版本号：
+   - `src-tauri/tauri.conf.json` → `"version"`
+   - `frontend/package.json` → `"version"`
+   - 追加 `CHANGELOG-v1.x.md`
+
+2. 设置签名环境变量（PowerShell）：
+
+```powershell
+$env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content E:\Tauri\booth-tool\src-tauri\updater-key.key -Raw)
+$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "<生成密钥时设置的那个密码>"
+```
+
+3. 构建：
+
+```powershell
+cd E:\Tauri\booth-tool\frontend
+npm run build
+
+cd E:\Tauri\booth-tool
+npm run tauri build
+```
+
+产出物在 `src-tauri/target/release/bundle/nsis/`：
+- `摊盒_x.y.z_x64-setup.exe` — NSIS 安装器
+- `摊盒_x.y.z_x64-setup.exe.sig` — rsign 签名文件
+
+4. 生成 `latest.json`。内容模板：
+
+```json
+{
+  "version": "1.1.1",
+  "notes": "摊盒 1.1.1 —— 支持一键自动更新",
+  "pub_date": "2026-05-01T12:00:00Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "<.sig 文件的完整内容，换行改成 \\n>",
+      "url": "https://github.com/Academy-of-Boundary-Landscape/ABL-BoothApp/releases/download/v1.1.1/摊盒_1.1.1_x64-setup.exe"
+    }
+  }
+}
+```
+
+一个 PowerShell one-liner 可以帮你生成 `signature` 字段（输出需要再塞到 JSON 字符串里）：
+
+```powershell
+(Get-Content "src-tauri/target/release/bundle/nsis/摊盒_1.1.1_x64-setup.exe.sig" -Raw) -replace "`r`n", "\n"
+```
+
+5. 在 GitHub 打 tag `v1.1.1` → 建 Release → 上传三个 asset：
+   - `摊盒_1.1.1_x64-setup.exe`
+   - `摊盒_1.1.1_x64-setup.exe.sig`
+   - `latest.json`（**文件名必须就叫 `latest.json`**，客户端 endpoint 写死了这个名字）
+6. Publish Release。
+
+### 验收
+
+在一台装着旧版（比如 v1.1.0，或者你故意装的 v1.1.99）的机器上点「检查更新」。应当能看到新版本、下载进度、重启后版本真的变了。如果任一环节失败，看 `docs/guide/auto-update.md`「什么时候用不了自动更新」章节排障。
+
+### 常见问题
+
+- **"invalid signature" 错误**：`.sig` 和 `.exe` 不匹配。多半是重新构建了 `.exe` 但忘了重新生成 `.sig`，或上传顺序弄错。把三个文件重新做一遍。
+- **"No version available"**：`latest.json` 没上传，或文件名不对。客户端 endpoint 写的是 `/releases/latest/download/latest.json`，GitHub 要求 asset 名字**精确**是 `latest.json`。
+- **中文文件名下载后变 `???`**：部分浏览器 / CDN 对中文 URL 处理有坑。考虑把 `productName` 改成 ASCII-only 名称重新构建，或在上传到 release 时重命名 `.exe` 为英文再更新 `latest.json` 里的 `url`。
