@@ -14,17 +14,19 @@
   "dependencies": {
     "@headlessui/vue": "^1.7.23",
     "@tauri-apps/api": "^2.9.1",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.10.1",
     "@vicons/ionicons5": "^0.13.0",
     "@vueuse/core": "^14.1.0",
     "axios": "^1.11.0",
     "colord": "^2.9.3",
+    "naive-ui": "^2.43.2",
     "pinia": "^2.1.7",
     "qrcode.vue": "^3.6.0",
     "socket.io-client": "^4.8.1",
     "vicons": "^0.0.1",
     "vue": "^3.5.18",
-    "vue-router": "^4.5.1",
-    "naive-ui": "^2.43.2"
+    "vue-router": "^4.5.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.54.1",
