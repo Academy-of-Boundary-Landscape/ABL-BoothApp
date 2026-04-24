@@ -41,5 +41,17 @@
         "languages": ["SimpChinese", "English"]
       }
     }
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/Academy-of-Boundary-Landscape/ABL-BoothApp/releases/latest/download/latest.json"
+      ],
+      "pubkey": "TODO_REPLACE_WITH_GENERATED_PUBKEY_SEE_docs_BUILD_md",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }
