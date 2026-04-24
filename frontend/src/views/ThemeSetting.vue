@@ -25,6 +25,20 @@
 
             <n-divider />
 
+            <!-- 1.5 商品图比例 -->
+            <div class="setting-item">
+              <div class="label">
+                <span class="title">商品图比例</span>
+                <span class="desc">商品网格展示 + 上传裁剪默认比例</span>
+              </div>
+              <n-radio-group v-model:value="themeStore.productImageAspect" size="small">
+                <n-radio-button value="3:4">3 : 4（竖版）</n-radio-button>
+                <n-radio-button value="1:1">1 : 1（方形）</n-radio-button>
+              </n-radio-group>
+            </div>
+
+            <n-divider />
+
             <!-- 2. 颜色选择 -->
             <div class="setting-item-vertical">
               <div class="label-row">
@@ -116,7 +130,8 @@
 <script setup>
 import {
   NCard, NSpace, NSwitch, NDivider, NButton, NColorPicker,
-  NGrid, NGridItem, NIcon, NTag, NInput, NAlert, NTooltip
+  NGrid, NGridItem, NIcon, NTag, NInput, NAlert, NTooltip,
+  NRadioGroup, NRadioButton
 } from 'naive-ui'
 import { Sunny, Moon, Checkmark } from '@vicons/ionicons5'
 import { useThemeStore } from '@/stores/themeStore'

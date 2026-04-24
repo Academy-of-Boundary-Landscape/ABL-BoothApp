@@ -54,6 +54,17 @@
 
     <p class="upload-hint">{{ uploadHint }}</p>
     <p v-if="errorMessage" class="upload-error">{{ errorMessage }}</p>
+
+    <!-- 裁剪器（仅 cropEnabled 时启用） -->
+    <ImageCropper
+      v-if="cropEnabled"
+      :show="cropperShow"
+      :file="cropperFile"
+      :default-aspect="cropDefaultAspect"
+      @confirm="onCropConfirm"
+      @skip="onCropSkip"
+      @close="onCropClose"
+    />
   </div>
 </template>
 
@@ -61,6 +72,7 @@
 import { computed, ref, watch } from 'vue'
 import { NButton, NImage, NTag, NUpload } from 'naive-ui'
 
+import ImageCropper from '@/components/shared/ImageCropper.vue'
 import { getImageUrl } from '@/services/url'
 import {
   IMAGE_UPLOAD_LIMIT_MB,
@@ -95,12 +107,25 @@ const props = defineProps({
     type: Number,
     default: IMAGE_UPLOAD_LIMIT_MB,
   },
+  // ===== 裁剪相关 =====
+  cropEnabled: {
+    type: Boolean,
+    default: false,
+  },
+  cropDefaultAspect: {
+    type: String,
+    default: 'free', // 'free' | '1:1' | '3:4'
+  },
 })
 
 const emit = defineEmits(['update:modelValue', 'image-removed', 'invalid-file'])
 
 const previewUrl = ref(null)
 const errorMessage = ref('')
+
+// 裁剪器状态
+const cropperShow = ref(false)
+const cropperFile = ref(null)
 
 const displayInitialUrl = computed(() => getImageUrl(props.initialImageUrl))
 
@@ -142,11 +167,40 @@ async function onUploadChange({ file }) {
   }
 
   errorMessage.value = ''
+
+  // 启用裁剪：先打开裁剪器；用户确定/跳过后再走 finalize
+  if (props.cropEnabled) {
+    cropperFile.value = raw
+    cropperShow.value = true
+    return
+  }
+
+  finalizeFile(raw)
+}
+
+function finalizeFile(f) {
   if (previewUrl.value) {
     URL.revokeObjectURL(previewUrl.value)
   }
-  previewUrl.value = URL.createObjectURL(raw)
-  emit('update:modelValue', raw)
+  previewUrl.value = URL.createObjectURL(f)
+  emit('update:modelValue', f)
+}
+
+// ===== 裁剪器回调 =====
+function onCropConfirm(croppedFile) {
+  cropperShow.value = false
+  cropperFile.value = null
+  finalizeFile(croppedFile)
+}
+function onCropSkip(originalFile) {
+  cropperShow.value = false
+  cropperFile.value = null
+  finalizeFile(originalFile)
+}
+function onCropClose() {
+  // 用户取消 → 不提交，清空 cropperFile
+  cropperShow.value = false
+  cropperFile.value = null
 }
 
 function removeImage() {

@@ -3,6 +3,7 @@
     v-model="localList"
     class="product-grid"
     :class="[`card-size-${cardSize}`, { 'is-editing': editable }]"
+    :style="{ '--pg-media-pad': mediaPadPercent }"
     item-key="id"
     :animation="250"
     ghost-class="ghost-card"
@@ -105,9 +106,18 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import draggable from 'vuedraggable'
 import { NCard, NImage, NSkeleton } from 'naive-ui'
+import { useThemeStore } from '@/stores/themeStore'
+
+const themeStore = useThemeStore()
+
+// 根据全局偏好计算图片区 padding-top（= 高/宽 × 100%）
+// 3:4 竖版 → 4/3 = 133.3%；1:1 方形 → 100%
+const mediaPadPercent = computed(() => {
+  return themeStore.productImageAspect === '1:1' ? '100%' : '133.33%'
+})
 
 const props = defineProps({
   products: { type: Array, default: () => [] },
@@ -210,9 +220,11 @@ function formatPrice(price) {
   overflow: hidden;
 }
 
-/* 图片区域宽高比：竖向 3:4 更适合漫展制品（立绘/明信片/海报多为竖版） */
-.product-grid { --pg-media-pad: 133%; }               /* small/medium: 3:4 竖向 */
-.product-grid.card-size-large { --pg-media-pad: 110%; }  /* large: 接近正方形，略高 */
+/* 图片区域宽高比：由 themeStore.productImageAspect 通过 inline style 传入。
+   3:4（默认）=> 133.33%（竖向，适合立绘/明信片/海报）
+   1:1        => 100%（方形，适合亚克力/徽章/周边小物）
+   如果 inline style 未提供，兜底 133% 保持旧行为。 */
+.product-grid { --pg-media-pad: 133%; }
 
 .media-box::before {
   content: "";

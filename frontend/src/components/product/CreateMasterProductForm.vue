@@ -69,6 +69,8 @@
                 <ImageUploader
                   label="商品预览图"
                   v-model="createFormFile"
+                  crop-enabled
+                  :crop-default-aspect="themeStore.productImageAspect"
                   @invalid-file="handleInvalidFile"
                 />
               </div>
@@ -92,6 +94,7 @@ import { NButton, NCard, NInput, NInputNumber, NSelect } from 'naive-ui'
 
 import ImageUploader from '@/components/shared/ImageUploader.vue'
 import { useProductStore } from '@/stores/productStore'
+import { useThemeStore } from '@/stores/themeStore'
 import {
   IMAGE_UPLOAD_LIMIT_MB,
   normalizeUploadError,
@@ -99,6 +102,7 @@ import {
 
 const emit = defineEmits(['created'])
 const store = useProductStore()
+const themeStore = useThemeStore()
 
 const isCreating = ref(false)
 const createError = ref('')

@@ -13,6 +13,12 @@ export const useThemeStore = defineStore('theme', () => {
   // 如果用户没选过，就用默认配置里的颜色
   const customPrimaryColor = useStorage('customPrimary', null)
 
+  // 2.5 商品图比例偏好 (持久化)
+  // '3:4' = 竖版（默认，适合立绘/明信片/海报）
+  // '1:1' = 正方形（适合亚克力/徽章/周边小物）
+  // 影响：商品网格展示比例 + 上传裁剪器的默认比例
+  const productImageAspect = useStorage('productImageAspect', '3:4')
+
   // 3. 计算当前的基础配置 (根据模式选择 lightTheme 或 darkTheme)
   const currentBaseTheme = computed(() => isDark.value ? darkTheme : lightTheme)
 
@@ -60,6 +66,7 @@ export const useThemeStore = defineStore('theme', () => {
   return {
     isDark,
     customPrimaryColor,
+    productImageAspect,
     currentBaseTheme, // 供 App.vue 判断使用 naive 的 darkTheme 还是 null
     naiveThemeOverrides,
     resetColor

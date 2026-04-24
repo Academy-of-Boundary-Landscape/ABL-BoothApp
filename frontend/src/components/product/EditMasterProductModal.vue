@@ -71,6 +71,8 @@
                     label="更换商品预览图"
                     :initial-image-url="localProduct.image_url"
                     v-model="editFormFile"
+                    crop-enabled
+                    :crop-default-aspect="themeStore.productImageAspect"
                     @image-removed="handleImageRemoval"
                     @invalid-file="handleInvalidFile"
                   />
@@ -95,7 +97,8 @@
               </n-alert>
               <n-alert :bordered="false" type="info" class="gallery-hint">
                 上传商品不同角度的照片，系统会用这些图片学习识别该商品。
-                <br /><strong>建议：</strong>每个商品上传 <strong>1~3 张</strong>不同角度的接近正方形的照片（商品居中、背景简洁）；上传后会自动压缩到 512×512。
+                <br /><strong>建议：</strong>每个商品上传 <strong>1~3 张</strong>不同角度的接近正方形的照片（商品居中、背景简洁）。
+                <br /><strong>📐 上传时会依次弹出裁剪框</strong>（多选时每张单独处理）——把商品框进 1:1 方框里识别更准；不想裁剪可以点"跳过（使用原图）"。
               </n-alert>
 
               <!-- 加载中 -->
@@ -181,6 +184,17 @@
                 @change="handleGalleryFileSelected"
               />
 
+              <!-- 识别图批量上传的裁剪器（每张弹出，可跳过使用原图） -->
+              <ImageCropper
+                :show="galleryCropperShow"
+                :file="galleryCropperFile"
+                default-aspect="1:1"
+                :batch-label="galleryCropperBatchLabel"
+                @confirm="onGalleryCropConfirm"
+                @skip="onGalleryCropSkip"
+                @close="onGalleryCropClose"
+              />
+
               <p v-if="galleryError" class="error-message">{{ galleryError }}</p>
             </div>
           </n-tab-pane>
@@ -226,7 +240,9 @@ import {
 } from 'naive-ui'
 
 import ImageUploader from '@/components/shared/ImageUploader.vue'
+import ImageCropper from '@/components/shared/ImageCropper.vue'
 import { useProductStore } from '@/stores/productStore'
+import { useThemeStore } from '@/stores/themeStore'
 import { getImageUrl } from '@/services/url'
 import {
   listProductImages,
@@ -252,6 +268,7 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'updated'])
 const store = useProductStore()
+const themeStore = useThemeStore()
 
 const activeTab = ref('info')
 const isUpdating = ref(false)
@@ -411,14 +428,25 @@ async function handleGalleryFileSelected(e) {
   galleryUploading.value = true
 
   try {
-    for (const file of files) {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+
       const validation = validateFileSize(file, IMAGE_UPLOAD_LIMIT_MB)
       if (!validation.ok) {
         showUploadDialog('图片过大', `${file.name}: ${validation.message}`)
         continue
       }
+
+      // 依次弹出裁剪器（用户可选择裁剪 / 跳过使用原图 / 关闭跳过该图）
+      const batchLabel = files.length > 1 ? `${i + 1} / ${files.length}` : ''
+      const processedFile = await openGalleryCropper(file, batchLabel)
+      if (processedFile === null) {
+        // 用户关闭裁剪器 → 跳过这张，继续下一张
+        continue
+      }
+
       // AI 识别图强制缩放到 512px，减少存储和推理预处理开销
-      const resized = await resizeImageFile(file, GALLERY_RESIZE_PX)
+      const resized = await resizeImageFile(processedFile, GALLERY_RESIZE_PX)
       await addProductImage(localProduct.value.id, resized, 'gallery')
     }
     await loadGallery()
@@ -428,6 +456,33 @@ async function handleGalleryFileSelected(e) {
     galleryUploading.value = false
   }
 }
+
+// ===== 识别图裁剪器：Promise-based 顺序处理 =====
+const galleryCropperShow = ref(false)
+const galleryCropperFile = ref(null)
+const galleryCropperBatchLabel = ref('')
+let galleryCropperResolve = null
+
+function openGalleryCropper(file, batchLabel) {
+  return new Promise((resolve) => {
+    galleryCropperResolve = resolve
+    galleryCropperFile.value = file
+    galleryCropperBatchLabel.value = batchLabel
+    galleryCropperShow.value = true
+  })
+}
+function resolveGalleryCropper(value) {
+  galleryCropperShow.value = false
+  galleryCropperFile.value = null
+  galleryCropperBatchLabel.value = ''
+  if (galleryCropperResolve) {
+    galleryCropperResolve(value)
+    galleryCropperResolve = null
+  }
+}
+function onGalleryCropConfirm(croppedFile) { resolveGalleryCropper(croppedFile) }
+function onGalleryCropSkip(originalFile) { resolveGalleryCropper(originalFile) }
+function onGalleryCropClose() { resolveGalleryCropper(null) }
 
 async function handleDeleteImage(img) {
   if (!localProduct.value) return
