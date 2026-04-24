@@ -62,34 +62,75 @@
 
       <n-divider title-placement="left" style="margin: 12px 0;">更新内容</n-divider>
 
-      <!-- 滚动区域 -->
       <n-scrollbar style="max-height: 200px" class="log-scroll">
-        <!-- 使用 pre-wrap 保留 GitHub Release 说明的格式 -->
         <div class="release-note">{{ releaseNote }}</div>
       </n-scrollbar>
 
+      <!-- 下载进度 -->
+      <div v-if="isDownloading" class="progress-section">
+        <n-progress
+          type="line"
+          :percentage="downloadProgress.percent"
+          indicator-placement="inside"
+        />
+        <p class="progress-text">
+          正在下载 {{ formatBytes(downloadProgress.downloaded) }} /
+          {{ formatBytes(downloadProgress.total) }}
+        </p>
+      </div>
+
+      <!-- 安装完成提示 -->
+      <div v-else-if="isInstalled" class="installed-hint">
+        <n-alert type="success" :bordered="false">
+          新版本已安装完成。点击「立即重启」以完成更新。
+        </n-alert>
+      </div>
+
       <div class="actions">
-        <n-button @click="close" ghost>暂不更新</n-button>
-        <n-button type="primary" @click="handleDownload">
-          前往下载
-        </n-button>
+        <template v-if="isInstalled">
+          <n-button @click="close" ghost>稍后重启</n-button>
+          <n-button type="primary" @click="confirmRestart">立即重启</n-button>
+        </template>
+        <template v-else-if="isDownloading">
+          <n-button disabled>下载中... {{ downloadProgress.percent }}%</n-button>
+        </template>
+        <template v-else>
+          <n-button @click="close" ghost>暂不更新</n-button>
+          <n-button
+            v-if="canAuto"
+            type="primary"
+            @click="handleAutoInstall"
+          >
+            下载并安装
+          </n-button>
+          <n-button
+            v-else
+            type="primary"
+            @click="handleDownload"
+          >
+            前往下载
+          </n-button>
+        </template>
       </div>
     </div>
   </n-modal>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useUpdateCheck } from '@/composables/useUpdateCheck';
-import { 
-  NModal, NSpin, NResult, NButton, NTag, NDivider, NScrollbar 
+import {
+  NModal, NSpin, NResult, NButton, NTag, NDivider, NScrollbar,
+  NAlert, NProgress, useDialog,
 } from 'naive-ui';
 
 const props = defineProps<{ show: boolean }>();
 const emit = defineEmits(['update:show']);
 
-// 判断环境
-const isTauriEnv = ref(window.__TAURI_INTERNALS__ !== undefined);
+const isTauriEnv = ref(
+  typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined
+);
+const dialog = useDialog();
 
 const showModal = computed({
   get: () => props.show,
@@ -104,9 +145,25 @@ const {
   latestVersion,
   releaseNote,
   releaseDate,
+
+  isDownloading,
+  downloadProgress,
+  isInstalled,
+
   checkUpdate,
+  downloadAndInstall,
+  restartApp,
   goToDownload,
+  canAutoUpdate,
 } = useUpdateCheck();
+
+const canAuto = ref(false);
+
+onMounted(async () => {
+  if (isTauriEnv.value) {
+    canAuto.value = await canAutoUpdate();
+  }
+});
 
 const handleEnter = () => {
   if (isTauriEnv.value) {
@@ -126,13 +183,41 @@ const close = () => {
 
 const handleDownload = () => {
   goToDownload();
-  // 可选：点击下载后是否关闭弹窗？通常保留让用户知道发生了什么
-  // close(); 
+};
+
+const handleAutoInstall = async () => {
+  await downloadAndInstall();
+  // 成功时 isInstalled 变 true，UI 自动切换到"立即重启"。
+  // 失败时 error.value 已被设置；UI 会回退到错误分支让用户重试。
+};
+
+const confirmRestart = () => {
+  dialog.warning({
+    title: '即将重启摊盒',
+    content: '重启会关闭应用以完成安装。请确认当前没有未保存的订单或编辑。继续吗？',
+    positiveText: '确认重启',
+    negativeText: '再等等',
+    onPositiveClick: async () => {
+      await restartApp();
+    },
+  });
 };
 
 const formatDate = (dateStr: string) => {
   if (!dateStr) return '';
   return new Date(dateStr).toLocaleDateString();
+};
+
+const formatBytes = (bytes: number) => {
+  if (!bytes || bytes < 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let i = 0;
+  let n = bytes;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i += 1;
+  }
+  return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 };
 </script>
 
@@ -217,5 +302,18 @@ const formatDate = (dateStr: string) => {
   .actions button {
     width: 100%;
   }
+}
+
+.progress-section {
+  margin-top: 1rem;
+}
+.progress-text {
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+  margin-top: 0.5rem;
+  text-align: center;
+}
+.installed-hint {
+  margin-top: 1rem;
 }
 </style>
