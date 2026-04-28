@@ -53,6 +53,11 @@ const tauriAdapter = async (config) => {
       } else if (config.data instanceof FormData) {
         headers.delete('Content-Type')
         body = config.data
+      } else if (config.data instanceof Uint8Array || config.data instanceof ArrayBuffer) {
+        // 原始字节流：用于大文件上传（如 boothpack 导入），避免 plugin-http 把 FormData
+        // 序列化为 base64 跨 IPC，此路径直接透传字节，不阻塞主线程。
+        // Content-Type 由调用方显式设置（如 application/zip）。
+        body = config.data
       } else {
         body = JSON.stringify(config.data)
         headers.set('Content-Type', 'application/json')

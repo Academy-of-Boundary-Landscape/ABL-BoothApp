@@ -1,7 +1,8 @@
 use axum::{
+    body::Bytes,
     extract::{Multipart, State},
     http::{header, StatusCode},
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -33,7 +34,11 @@ const SYNC_IMPORT_LIMIT_BYTES: usize = 1000 * 1024 * 1024;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/sync/export-products", get(export_products))
+        // 多部分（multipart/form-data）端点 —— 老路径，LAN 客户端 / 浏览器 fallback 走这里，保留向后兼容
         .route("/sync/import-products", post(import_products))
+        // 原始字节端点 —— Tauri webview 走这里，避开 plugin-http 的 IPC 序列化阻塞
+        // body 直接是 zip 字节流，Content-Type 期望 application/zip 或 application/octet-stream
+        .route("/sync/import-products-raw", post(import_products_raw))
         .layer(DefaultBodyLimit::max(SYNC_IMPORT_LIMIT_BYTES))
 }
 
@@ -225,33 +230,20 @@ async fn export_products(
 // ==========================================
 // 2. 导入制品包 (Import)
 // ==========================================
-async fn import_products(
-    State(state): State<AppState>,
-    _: AdminOnly,
-    mut multipart: Multipart,
-) -> impl IntoResponse {
-    let t0 = Instant::now();
-    eprintln!("{} import: start", TAG);
+//
+// 提供两个端点共享同一套 ZIP 解析 + DB 写入逻辑：
+//
+//   POST /sync/import-products       —— multipart/form-data，向后兼容
+//                                       (LAN 浏览器 / 任何用 FormData 的客户端)
+//   POST /sync/import-products-raw   —— body 直接是 zip 字节流
+//                                       Tauri webview 走这条，避开 plugin-http 的 IPC 序列化阻塞主线程
+//
+// 共享部分抽到 process_import_bytes() 里，两个 handler 只负责把字节拿出来。
 
-    while let Some(field) = multipart.next_field().await.unwrap_or(None) {
-        if field.name() == Some("file") {
-            let t_recv = Instant::now();
-            let data = match field.bytes().await {
-                Ok(d) => d,
-                Err(e) => {
-                    eprintln!("{} import: receive bytes failed: {}", TAG, e);
-                    return (StatusCode::BAD_REQUEST, format!("Upload error: {}", e))
-                        .into_response();
-                }
-            };
-            eprintln!(
-                "{} import: received {} bytes in {:?}",
-                TAG,
-                data.len(),
-                t_recv.elapsed()
-            );
-
-            // ── 1. 解析 ZIP + catalog（纯内存操作，放在 spawn_blocking 里避免阻塞 tokio） ──
+/// 共享导入处理：拿到完整 zip 字节后做解压 + DB 写入，返回 axum Response。
+/// `t0` 是请求入口时间戳，用于打印总耗时。
+async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Response {
+    // ── 1. 解析 ZIP + catalog（纯内存操作，放在 spawn_blocking 里避免阻塞 tokio） ──
             let upload_dir = state.upload_dir.clone();
             let received_bytes = data.len();
             let parsed = tokio::task::spawn_blocking(move || {
@@ -592,13 +584,56 @@ async fn import_products(
                 })),
             )
                 .into_response();
+}
+
+// ─── 端点 1: multipart/form-data（向后兼容）────────────────────────────────
+// LAN 浏览器、curl、任何用标准 FormData 上传的客户端走这条。
+async fn import_products(
+    State(state): State<AppState>,
+    _: AdminOnly,
+    mut multipart: Multipart,
+) -> Response {
+    let t0 = Instant::now();
+    eprintln!("{} import (multipart): start", TAG);
+
+    while let Some(field) = multipart.next_field().await.unwrap_or(None) {
+        if field.name() == Some("file") {
+            let t_recv = Instant::now();
+            let data = match field.bytes().await {
+                Ok(d) => d,
+                Err(e) => {
+                    eprintln!("{} import (multipart): receive bytes failed: {}", TAG, e);
+                    return (StatusCode::BAD_REQUEST, format!("Upload error: {}", e))
+                        .into_response();
+                }
+            };
+            eprintln!(
+                "{} import (multipart): received {} bytes in {:?}",
+                TAG,
+                data.len(),
+                t_recv.elapsed()
+            );
+            return process_import_bytes(state, data, t0).await;
         }
     }
 
     eprintln!(
-        "{} import: no 'file' field found in multipart body (t={:?})",
+        "{} import (multipart): no 'file' field found (t={:?})",
         TAG,
         t0.elapsed()
     );
     (StatusCode::BAD_REQUEST, "No file found in request").into_response()
+}
+
+// ─── 端点 2: 原始字节（Tauri webview 主用）────────────────────────────────
+// body 直接是 zip 字节流，无需 multipart 解析。客户端把 Uint8Array 直接当 body 发即可，
+// 这条路径不走 plugin-http 的 multipart 编码 / IPC 字符串化，主线程不会被冻住。
+async fn import_products_raw(
+    State(state): State<AppState>,
+    _: AdminOnly,
+    body: Bytes,
+) -> Response {
+    let t0 = Instant::now();
+    eprintln!("{} import (raw): received {} bytes", TAG, body.len());
+    process_import_bytes(state, body, t0).await
 }

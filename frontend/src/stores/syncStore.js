@@ -161,25 +161,42 @@ export const useSyncStore = defineStore('sync', () => {
     }
   }
 
+  // 走 raw endpoint：把整个 zip 当字节流直接当 HTTP body 发出去。
+  //
+  // 这避开了 Tauri plugin-http 在传 FormData 时的 IPC 序列化阻塞问题
+  // （详见 docs，原症状是 71MB 文件让主线程冻 30 秒）。
+  // raw endpoint 不需要 multipart 解析、不需要 base64 跨 IPC，body 直接透传。
+  //
+  // 注意：旧的 multipart endpoint /sync/import-products 仍然保留在后端，
+  // 用于 LAN 浏览器或任何不走 Tauri webview 的客户端，向后兼容。
+  function extractImportError(err, fallback = '导入失败') {
+    return (
+      err?.response?.data?.error ||
+      err?.response?.data?.message ||
+      err?.message ||
+      fallback
+    )
+  }
+
+  async function postRawZip(uint8) {
+    const response = await api.post('/sync/import-products-raw', uint8, {
+      headers: { 'Content-Type': 'application/zip' },
+    })
+    return response.data
+  }
+
   async function importProducts(file) {
     if (!file) throw new Error('请选择要导入的文件')
 
     isImporting.value = true
     lastError.value = null
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      const response = await api.post('/sync/import-products', formData)
-      return response.data
+      const buffer = await file.arrayBuffer()
+      return await postRawZip(new Uint8Array(buffer))
     } catch (err) {
       console.error(err)
       lastError.value = err
-      const msg =
-        err?.response?.data?.error ||
-        err?.response?.data?.message ||
-        err?.message ||
-        '导入失败，请检查文件格式或稍后重试'
-      throw new Error(msg)
+      throw new Error(extractImportError(err, '导入失败，请检查文件格式或稍后重试'))
     } finally {
       isImporting.value = false
     }
@@ -194,24 +211,13 @@ export const useSyncStore = defineStore('sync', () => {
     lastError.value = null
     try {
       const fsModule = await import('@tauri-apps/plugin-fs')
-      const data = await fsModule.readFile(filePath) // Uint8Array
-      const blob = new Blob([data], { type: 'application/zip' })
-      const fileName = filePath.split(/[/\\]/).pop() || 'import.boothpack'
-      const file = new File([blob], fileName, { type: 'application/zip' })
-
-      const formData = new FormData()
-      formData.append('file', file)
-      const response = await api.post('/sync/import-products', formData)
-      return response.data
+      const data = await fsModule.readFile(filePath) // 已经是 Uint8Array
+      // 不再包 Blob、不再包 File、不再 FormData ——直接当 body 发
+      return await postRawZip(data)
     } catch (err) {
       console.error('[Tauri] importProductsFromPath error:', err)
       lastError.value = err
-      const msg =
-        err?.response?.data?.error ||
-        err?.response?.data?.message ||
-        err?.message ||
-        '导入失败'
-      throw new Error(msg)
+      throw new Error(extractImportError(err, '导入失败'))
     } finally {
       isImporting.value = false
     }
