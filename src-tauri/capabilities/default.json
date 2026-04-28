@@ -8,8 +8,6 @@
   "permissions": [
     "core:default",
     "core:event:default",
-    "updater:default",
-    "process:default",
     "shell:allow-open",
     {
       "identifier": "shell:allow-open",
