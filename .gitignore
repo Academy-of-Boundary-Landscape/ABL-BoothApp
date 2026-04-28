@@ -75,6 +75,10 @@ src-tauri/gen/schemas/
 
 secret-key.txt
 
+# Tauri updater 签名私钥（rsign 格式）。公钥 .pub 可以提交（已内联到 tauri.conf.json）
+*.key
+!*.key.pub
+
 # 所有叫做keystore.properties的文件
 **/keystore.properties
 # 所有.jks文件

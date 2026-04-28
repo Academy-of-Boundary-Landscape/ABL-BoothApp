@@ -48,7 +48,7 @@
       "endpoints": [
         "https://github.com/Academy-of-Boundary-Landscape/ABL-BoothApp/releases/latest/download/latest.json"
       ],
-      "pubkey": "TODO_REPLACE_WITH_GENERATED_PUBKEY_SEE_docs_BUILD_md",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM1NkNFNDNDOTQ4NjMyMDcKUldRSE1vYVVQT1JzeFpkYWlZUGt4UndCUGY5QU5IeUp3K2w3dGI0dnlOVFpHOTZxT2ZrSTduc1MK",
       "windows": {
         "installMode": "passive"
       }
