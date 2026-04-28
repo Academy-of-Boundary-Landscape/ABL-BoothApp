@@ -9,9 +9,22 @@ use chrono::Local;
 use serde::{Deserialize, Serialize};
 use sqlx::{query, query_as, FromRow};
 use std::io::{Cursor, Read, Write};
+use std::time::Instant;
 use zip::{write::FileOptions, ZipArchive, ZipWriter};
 
 use crate::{api::guard::AdminOnly, db::models::MasterProduct, state::AppState};
+
+// 日志前缀，方便从大堆 stdout/stderr 里 grep 出来。
+// 用 eprintln! 是为了和现有错误日志风格一致；dev 与 release 都会写到 stderr。
+// 用户朋友实际运行的是 release 构建，所以诊断日志对 release 也开启 —— 排查这次崩溃需要看到。
+// 导入/导出是用户主动触发的低频操作，每次产生几十行日志可接受。
+const TAG: &str = "[sync]";
+
+macro_rules! dev_log {
+    ($($arg:tt)*) => {
+        eprintln!("{} {}", TAG, format_args!($($arg)*));
+    };
+}
 
 use axum::extract::DefaultBodyLimit;
 
@@ -52,14 +65,24 @@ async fn export_products(
     State(state): State<AppState>,
     _: AdminOnly,
 ) -> impl IntoResponse {
+    let t0 = Instant::now();
+    eprintln!("{} export: start", TAG);
+
     // 1. 获取所有商品
-    let products = query_as::<_, MasterProduct>("SELECT * FROM master_products")
+    let products = match query_as::<_, MasterProduct>("SELECT * FROM master_products")
         .fetch_all(&state.db)
         .await
-        .unwrap_or_default();
+    {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("{} export: fetch master_products failed: {}", TAG, e);
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load products").into_response();
+        }
+    };
+    dev_log!("export: loaded {} master_products in {:?}", products.len(), t0.elapsed());
 
     // 2. 获取所有识别用图片（排除 legacy_main 和 feedback_incorrect）
-    let product_images = query_as::<_, ProductImageExport>(
+    let product_images = match query_as::<_, ProductImageExport>(
         r#"
         SELECT mp.product_code, mpi.image_url, mpi.kind
         FROM master_product_images mpi
@@ -70,7 +93,15 @@ async fn export_products(
     )
     .fetch_all(&state.db)
     .await
-    .unwrap_or_default();
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            eprintln!("{} export: fetch product_images failed: {}", TAG, e);
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load product images")
+                .into_response();
+        }
+    };
+    dev_log!("export: loaded {} product_images", product_images.len());
 
     // 3. 构建 catalog
     let catalog = CatalogExport {
@@ -119,6 +150,9 @@ async fn export_products(
     }
 
     // 7. 写入所有图片文件
+    let mut images_written = 0usize;
+    let mut images_missing = 0usize;
+    let mut total_image_bytes: u64 = 0;
     for image_url in &image_paths {
         let relative_path = image_url
             .trim_start_matches("/uploads/")
@@ -131,19 +165,30 @@ async fn export_products(
                 Ok(file_bytes) => {
                     let zip_path = relative_path.replace('\\', "/");
                     if let Err(e) = zip.start_file(&zip_path, options) {
-                        eprintln!("Failed to add {} to zip: {}", zip_path, e);
+                        eprintln!("{} export: add {} to zip failed: {}", TAG, zip_path, e);
                         continue;
                     }
                     if let Err(e) = zip.write_all(&file_bytes) {
-                        eprintln!("Failed to write {} to zip: {}", zip_path, e);
+                        eprintln!("{} export: write {} to zip failed: {}", TAG, zip_path, e);
+                    } else {
+                        total_image_bytes += file_bytes.len() as u64;
+                        images_written += 1;
                     }
                 }
                 Err(e) => {
-                    eprintln!("Failed to read image file {:?}: {}", physical_path, e);
+                    eprintln!("{} export: read {:?} failed: {}", TAG, physical_path, e);
+                    images_missing += 1;
                 }
             }
+        } else {
+            dev_log!("export: skip missing image {:?}", physical_path);
+            images_missing += 1;
         }
     }
+    dev_log!(
+        "export: zip body — images_written={} missing={} total_image_bytes={} elapsed={:?}",
+        images_written, images_missing, total_image_bytes, t0.elapsed()
+    );
 
     // 8. 完成 ZIP
     let cursor = match zip.finish() {
@@ -155,6 +200,12 @@ async fn export_products(
     };
 
     let buf = cursor.into_inner();
+    eprintln!(
+        "{} export: done — zip {} bytes, total elapsed {:?}",
+        TAG,
+        buf.len(),
+        t0.elapsed()
+    );
     let filename = format!(
         "booth_catalog_{}.boothpack",
         Local::now().format("%Y%m%d_%H%M")
@@ -179,88 +230,187 @@ async fn import_products(
     _: AdminOnly,
     mut multipart: Multipart,
 ) -> impl IntoResponse {
+    let t0 = Instant::now();
+    eprintln!("{} import: start", TAG);
+
     while let Some(field) = multipart.next_field().await.unwrap_or(None) {
         if field.name() == Some("file") {
+            let t_recv = Instant::now();
             let data = match field.bytes().await {
                 Ok(d) => d,
                 Err(e) => {
+                    eprintln!("{} import: receive bytes failed: {}", TAG, e);
                     return (StatusCode::BAD_REQUEST, format!("Upload error: {}", e))
-                        .into_response()
+                        .into_response();
                 }
             };
+            eprintln!(
+                "{} import: received {} bytes in {:?}",
+                TAG,
+                data.len(),
+                t_recv.elapsed()
+            );
 
             // ── 1. 解析 ZIP + catalog（纯内存操作，放在 spawn_blocking 里避免阻塞 tokio） ──
             let upload_dir = state.upload_dir.clone();
+            let received_bytes = data.len();
             let parsed = tokio::task::spawn_blocking(move || {
+                let t_blk = Instant::now();
+                dev_log!("import.blk: spawn_blocking entered, {} bytes", received_bytes);
+
                 let reader = Cursor::new(data);
                 let mut archive = match ZipArchive::new(reader) {
                     Ok(a) => a,
-                    Err(_) => return Err((StatusCode::BAD_REQUEST, "Invalid ZIP/Boothpack file".to_string())),
+                    Err(e) => {
+                        eprintln!("{} import.blk: ZipArchive::new failed: {}", TAG, e);
+                        return Err((
+                            StatusCode::BAD_REQUEST,
+                            "Invalid ZIP/Boothpack file".to_string(),
+                        ));
+                    }
                 };
+                let entry_count = archive.len();
+                dev_log!(
+                    "import.blk: zip opened, {} entries, t={:?}",
+                    entry_count,
+                    t_blk.elapsed()
+                );
 
                 // 读取 catalog.json
                 let mut json_content = String::new();
                 match archive.by_name("catalog.json") {
                     Ok(mut file) => {
-                        if file.read_to_string(&mut json_content).is_err() {
-                            return Err((StatusCode::BAD_REQUEST, "Failed to read catalog.json".to_string()));
+                        if let Err(e) = file.read_to_string(&mut json_content) {
+                            eprintln!("{} import.blk: read catalog.json failed: {}", TAG, e);
+                            return Err((
+                                StatusCode::BAD_REQUEST,
+                                "Failed to read catalog.json".to_string(),
+                            ));
                         }
                     }
-                    Err(_) => return Err((StatusCode::BAD_REQUEST, "Missing catalog.json in package".to_string())),
+                    Err(e) => {
+                        eprintln!("{} import.blk: catalog.json missing: {}", TAG, e);
+                        return Err((
+                            StatusCode::BAD_REQUEST,
+                            "Missing catalog.json in package".to_string(),
+                        ));
+                    }
                 };
+                dev_log!("import.blk: catalog.json read, {} bytes", json_content.len());
 
                 // 向后兼容：尝试解析新格式（CatalogExport），回退到旧格式（Vec<MasterProduct>）
-                let catalog: CatalogExport =
-                    if let Ok(c) = serde_json::from_str::<CatalogExport>(&json_content) {
-                        c
-                    } else if let Ok(products) =
-                        serde_json::from_str::<Vec<MasterProduct>>(&json_content)
-                    {
-                        CatalogExport {
-                            products,
-                            product_images: vec![],
-                        }
-                    } else {
-                        return Err((StatusCode::BAD_REQUEST, "JSON Parse Error in catalog.json".to_string()));
-                    };
+                let catalog: CatalogExport = if let Ok(c) =
+                    serde_json::from_str::<CatalogExport>(&json_content)
+                {
+                    dev_log!(
+                        "import.blk: parsed as CatalogExport — products={} images={}",
+                        c.products.len(),
+                        c.product_images.len()
+                    );
+                    c
+                } else if let Ok(products) =
+                    serde_json::from_str::<Vec<MasterProduct>>(&json_content)
+                {
+                    dev_log!(
+                        "import.blk: parsed as legacy Vec<MasterProduct> — products={}",
+                        products.len()
+                    );
+                    CatalogExport {
+                        products,
+                        product_images: vec![],
+                    }
+                } else {
+                    // 解析失败时打印 JSON 头一段帮助定位（截断到 200 字节避免刷屏）
+                    let preview: String = json_content.chars().take(200).collect();
+                    eprintln!(
+                        "{} import.blk: JSON parse failed; preview: {:?}",
+                        TAG, preview
+                    );
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        "JSON Parse Error in catalog.json".to_string(),
+                    ));
+                };
 
                 // ── 2. 解压所有图片文件（磁盘 I/O，在 blocking 线程池里执行） ──
-                for i in 0..archive.len() {
+                let t_extract = Instant::now();
+                let mut extracted = 0usize;
+                let mut skipped = 0usize;
+                let mut errored = 0usize;
+                for i in 0..entry_count {
                     let mut file = match archive.by_index(i) {
                         Ok(f) => f,
                         Err(e) => {
-                            eprintln!("Failed to read zip entry {}: {}", i, e);
+                            eprintln!("{} import.blk: read zip entry {} failed: {}", TAG, i, e);
+                            errored += 1;
                             continue;
                         }
                     };
                     let file_path_str = file.name().to_string();
 
                     if file_path_str == "catalog.json" || file_path_str.ends_with('/') {
+                        skipped += 1;
                         continue;
                     }
                     if file_path_str.contains("..") {
-                        eprintln!("Security: rejected path with ..: {}", file_path_str);
+                        eprintln!(
+                            "{} import.blk: rejected path-traversal entry: {}",
+                            TAG, file_path_str
+                        );
+                        errored += 1;
                         continue;
                     }
 
                     let target_path = upload_dir.join(&file_path_str);
                     if let Some(parent) = target_path.parent() {
                         if let Err(e) = std::fs::create_dir_all(parent) {
-                            eprintln!("Failed to create dir {:?}: {}", parent, e);
+                            eprintln!(
+                                "{} import.blk: create_dir_all {:?} failed: {}",
+                                TAG, parent, e
+                            );
+                            errored += 1;
                             continue;
                         }
                     }
                     match std::fs::File::create(&target_path) {
-                        Ok(mut outfile) => {
-                            if let Err(e) = std::io::copy(&mut file, &mut outfile) {
-                                eprintln!("Failed to extract file {}: {}", file_path_str, e);
+                        Ok(mut outfile) => match std::io::copy(&mut file, &mut outfile) {
+                            Ok(_) => {
+                                extracted += 1;
+                                // 每 50 个 entry 打一行进度，免得 200 张图刷屏
+                                if extracted % 50 == 0 {
+                                    dev_log!(
+                                        "import.blk: extracted {}/{} entries (t={:?})",
+                                        extracted,
+                                        entry_count,
+                                        t_extract.elapsed()
+                                    );
+                                }
                             }
-                        }
+                            Err(e) => {
+                                eprintln!(
+                                    "{} import.blk: extract {} -> {:?} failed: {}",
+                                    TAG, file_path_str, target_path, e
+                                );
+                                errored += 1;
+                            }
+                        },
                         Err(e) => {
-                            eprintln!("Failed to create file {:?}: {}", target_path, e);
+                            eprintln!(
+                                "{} import.blk: create file {:?} failed: {}",
+                                TAG, target_path, e
+                            );
+                            errored += 1;
                         }
                     }
                 }
+                eprintln!(
+                    "{} import.blk: extraction done — extracted={} skipped={} errored={} elapsed={:?}",
+                    TAG,
+                    extracted,
+                    skipped,
+                    errored,
+                    t_extract.elapsed()
+                );
 
                 Ok(catalog)
             })
@@ -268,29 +418,47 @@ async fn import_products(
 
             // 处理 spawn_blocking 的结果
             let catalog = match parsed {
-                Ok(Ok(c)) => c,
-                Ok(Err((status, msg))) => return (status, msg).into_response(),
+                Ok(Ok(c)) => {
+                    eprintln!(
+                        "{} import: spawn_blocking returned OK, products={} images={}",
+                        TAG,
+                        c.products.len(),
+                        c.product_images.len()
+                    );
+                    c
+                }
+                Ok(Err((status, msg))) => {
+                    eprintln!("{} import: spawn_blocking returned error: {} ({})", TAG, msg, status);
+                    return (status, msg).into_response();
+                }
                 Err(e) => {
-                    eprintln!("Import task panic: {}", e);
-                    return (StatusCode::INTERNAL_SERVER_ERROR, "Internal error during import".to_string()).into_response();
+                    eprintln!("{} import: spawn_blocking PANICKED: {}", TAG, e);
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Internal error during import".to_string(),
+                    )
+                        .into_response();
                 }
             };
 
             // ── 3. 数据库写入（事务尽量短，只做 DB 操作） ──
+            let t_db = Instant::now();
             let mut tx = match state.db.begin().await {
                 Ok(tx) => tx,
                 Err(e) => {
+                    eprintln!("{} import.db: tx begin failed: {}", TAG, e);
                     return (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         format!("DB Error: {}", e),
                     )
-                        .into_response()
+                        .into_response();
                 }
             };
+            dev_log!("import.db: tx begun");
 
             // Upsert 商品数据
             let products_count = catalog.products.len();
-            for prod in &catalog.products {
+            for (idx, prod) in catalog.products.iter().enumerate() {
                 let res = query(
                     r#"
                     INSERT INTO master_products (product_code, name, default_price, category, image_url, is_active, tags)
@@ -315,18 +483,33 @@ async fn import_products(
                 .await;
 
                 if let Err(e) = res {
-                    eprintln!("Import DB Error for {}: {}", prod.product_code, e);
+                    eprintln!("{} import.db: upsert product {} failed: {}", TAG, prod.product_code, e);
                     return (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         format!("DB Write Failed: {}", e),
                     )
                         .into_response();
                 }
+                if (idx + 1) % 50 == 0 {
+                    dev_log!(
+                        "import.db: upserted {}/{} products (t={:?})",
+                        idx + 1,
+                        products_count,
+                        t_db.elapsed()
+                    );
+                }
             }
+            dev_log!(
+                "import.db: products done — {} upserts, t={:?}",
+                products_count,
+                t_db.elapsed()
+            );
 
             // Upsert AI 识别用图片（通过 product_code 关联到本地商品 id）
+            let t_img = Instant::now();
             let images_count = catalog.product_images.len();
-            for img in &catalog.product_images {
+            let mut images_skipped_no_master = 0usize;
+            for (idx, img) in catalog.product_images.iter().enumerate() {
                 let master_id: Option<(i64,)> = query_as(
                     "SELECT id FROM master_products WHERE product_code = ?",
                 )
@@ -335,7 +518,10 @@ async fn import_products(
                 .await
                 .unwrap_or(None);
 
-                let Some((mid,)) = master_id else { continue };
+                let Some((mid,)) = master_id else {
+                    images_skipped_no_master += 1;
+                    continue;
+                };
 
                 if let Err(e) = query(
                     r#"
@@ -355,23 +541,47 @@ async fn import_products(
                 .execute(&mut *tx)
                 .await
                 {
-                    eprintln!("Import image DB Error for {}: {}", img.image_url, e);
+                    eprintln!("{} import.db: upsert image {} failed: {}", TAG, img.image_url, e);
                     return (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         format!("DB Write Failed (image): {}", e),
                     )
                         .into_response();
                 }
+                if (idx + 1) % 100 == 0 {
+                    dev_log!(
+                        "import.db: upserted {}/{} images (t={:?})",
+                        idx + 1,
+                        images_count,
+                        t_img.elapsed()
+                    );
+                }
             }
+            dev_log!(
+                "import.db: images done — {} processed ({} skipped: no matching product_code), t={:?}",
+                images_count,
+                images_skipped_no_master,
+                t_img.elapsed()
+            );
 
             // 提交事务
+            let t_commit = Instant::now();
             if let Err(e) = tx.commit().await {
+                eprintln!("{} import.db: commit failed: {}", TAG, e);
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     format!("Commit Failed: {}", e),
                 )
                     .into_response();
             }
+            eprintln!(
+                "{} import: done — products={} images={} (commit took {:?}, total {:?})",
+                TAG,
+                products_count,
+                images_count,
+                t_commit.elapsed(),
+                t0.elapsed()
+            );
 
             return (
                 StatusCode::OK,
@@ -385,5 +595,10 @@ async fn import_products(
         }
     }
 
+    eprintln!(
+        "{} import: no 'file' field found in multipart body (t={:?})",
+        TAG,
+        t0.elapsed()
+    );
     (StatusCode::BAD_REQUEST, "No file found in request").into_response()
 }
