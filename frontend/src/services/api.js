@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { fetch } from '@tauri-apps/plugin-http'
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 
 import router from '@/router'
 import {
@@ -17,6 +17,21 @@ const baseURL = isTauri ? `http://127.0.0.1:${API_PORT}/api` : '/api'
 console.log('%c[Config] Environment Init', 'background: #333; color: #bada55')
 console.log(`[Config] isTauri: ${isTauri}`)
 console.log(`[Config] BaseURL: ${baseURL}`)
+
+// localhost 请求走 WebView 原生 fetch（绕开 Tauri IPC 序列化大 body 时的 ~1.5 MB/s 瓶颈）；
+// 真正跨域请求（GitHub API 等）保留 plugin-http 以获得 CORS bypass 能力。
+const isLocalhostUrl = (u) => {
+  try {
+    const x = new URL(u)
+    return (
+      x.hostname === '127.0.0.1' ||
+      x.hostname === 'localhost' ||
+      x.hostname === '::1'
+    )
+  } catch {
+    return false
+  }
+}
 
 const tauriAdapter = async (config) => {
   const reqId = Math.floor(Math.random() * 10000)
@@ -64,7 +79,11 @@ const tauriAdapter = async (config) => {
       }
     }
 
-    const response = await fetch(fullUrl, {
+    // localhost → 原生 fetch（直接走 WebView 网络栈，无 IPC 序列化）
+    // 其它 → plugin-http（保留跨域能力）
+    const useNativeFetch = isLocalhostUrl(fullUrl)
+    const fetchFn = useNativeFetch ? window.fetch.bind(window) : tauriFetch
+    const response = await fetchFn(fullUrl, {
       method: config.method?.toUpperCase(),
       headers,
       body,
@@ -88,7 +107,7 @@ const tauriAdapter = async (config) => {
 
     const duration = (performance.now() - startTime).toFixed(2)
     console.log(
-      `[Req #${reqId}] ${config.method?.toUpperCase()} ${fullUrl} -> ${response.status} (${duration}ms)`
+      `[Req #${reqId}] ${config.method?.toUpperCase()} ${fullUrl} -> ${response.status} (${duration}ms) [${useNativeFetch ? 'native' : 'plugin-http'}]`
     )
 
     const axiosResponse = {

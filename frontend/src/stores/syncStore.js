@@ -163,10 +163,6 @@ export const useSyncStore = defineStore('sync', () => {
 
   // 走 raw endpoint：把整个 zip 当字节流直接当 HTTP body 发出去。
   //
-  // 这避开了 Tauri plugin-http 在传 FormData 时的 IPC 序列化阻塞问题
-  // （详见 docs，原症状是 71MB 文件让主线程冻 30 秒）。
-  // raw endpoint 不需要 multipart 解析、不需要 base64 跨 IPC，body 直接透传。
-  //
   // 注意：旧的 multipart endpoint /sync/import-products 仍然保留在后端，
   // 用于 LAN 浏览器或任何不走 Tauri webview 的客户端，向后兼容。
   function extractImportError(err, fallback = '导入失败') {
@@ -178,10 +174,21 @@ export const useSyncStore = defineStore('sync', () => {
     )
   }
 
+  // [sync-fe] 前端时序日志，对应后端的 [sync] 标签。
+  // 用 performance.now() 拿毫秒时间戳，分阶段打印帮排查"卡 30 秒"问题。
+  // 总是打印（不分 dev/release），原因和后端一样：用户是在 release 里遇到 bug。
+  function feLog(msg) {
+    // eslint-disable-next-line no-console
+    console.log(`[sync-fe] ${msg}`)
+  }
+
   async function postRawZip(uint8) {
+    const t0 = performance.now()
+    feLog(`postRawZip: about to api.post (${uint8.byteLength} bytes)`)
     const response = await api.post('/sync/import-products-raw', uint8, {
       headers: { 'Content-Type': 'application/zip' },
     })
+    feLog(`postRawZip: api.post returned in ${(performance.now() - t0).toFixed(0)}ms`)
     return response.data
   }
 
@@ -190,10 +197,28 @@ export const useSyncStore = defineStore('sync', () => {
 
     isImporting.value = true
     lastError.value = null
+    const t0 = performance.now()
+    feLog(`importProducts: start (file=${file.name}, size=${file.size}B)`)
     try {
+      const tA = performance.now()
       const buffer = await file.arrayBuffer()
-      return await postRawZip(new Uint8Array(buffer))
+      feLog(
+        `importProducts: file.arrayBuffer() took ${(performance.now() - tA).toFixed(0)}ms`
+      )
+      const tB = performance.now()
+      const u8 = new Uint8Array(buffer)
+      feLog(
+        `importProducts: new Uint8Array() took ${(performance.now() - tB).toFixed(0)}ms`
+      )
+      const result = await postRawZip(u8)
+      feLog(
+        `importProducts: success, total ${(performance.now() - t0).toFixed(0)}ms`
+      )
+      return result
     } catch (err) {
+      feLog(
+        `importProducts: error after ${(performance.now() - t0).toFixed(0)}ms — ${err?.message || err}`
+      )
       console.error(err)
       lastError.value = err
       throw new Error(extractImportError(err, '导入失败，请检查文件格式或稍后重试'))
@@ -209,12 +234,29 @@ export const useSyncStore = defineStore('sync', () => {
 
     isImporting.value = true
     lastError.value = null
+    const t0 = performance.now()
+    feLog(`importProductsFromPath: start (path=${filePath})`)
     try {
+      const tA = performance.now()
       const fsModule = await import('@tauri-apps/plugin-fs')
+      feLog(
+        `importProductsFromPath: import('@tauri-apps/plugin-fs') took ${(performance.now() - tA).toFixed(0)}ms`
+      )
+      const tB = performance.now()
       const data = await fsModule.readFile(filePath) // 已经是 Uint8Array
+      feLog(
+        `importProductsFromPath: fs.readFile() took ${(performance.now() - tB).toFixed(0)}ms (size=${data.byteLength}B)`
+      )
       // 不再包 Blob、不再包 File、不再 FormData ——直接当 body 发
-      return await postRawZip(data)
+      const result = await postRawZip(data)
+      feLog(
+        `importProductsFromPath: success, total ${(performance.now() - t0).toFixed(0)}ms`
+      )
+      return result
     } catch (err) {
+      feLog(
+        `importProductsFromPath: error after ${(performance.now() - t0).toFixed(0)}ms — ${err?.message || err}`
+      )
       console.error('[Tauri] importProductsFromPath error:', err)
       lastError.value = err
       throw new Error(extractImportError(err, '导入失败'))
