@@ -12,8 +12,8 @@
   "app": {
     "security": {
       "csp": null,
-      "capabilities": ["default"] 
-    },  
+      "capabilities": ["default", "desktop-capability"]
+    },
     "windows": [
       {
         "label": "main",
