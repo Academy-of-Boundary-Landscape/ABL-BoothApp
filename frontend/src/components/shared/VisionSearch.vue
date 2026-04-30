@@ -310,6 +310,22 @@ const frameStyle = computed(() => {
 
 async function startCamera() {
   errorMsg.value = ''
+
+  // 防御性兜底：getUserMedia 仅在 secure context（HTTPS / localhost）可用。
+  // 摊主在 LAN 浏览器首次访问 https URL 但未接受证书时，
+  // 或意外通过 http URL 进入时，给清晰提示而不是浏览器内部错误。
+  if (
+    !window.isSecureContext ||
+    !navigator.mediaDevices ||
+    typeof navigator.mediaDevices.getUserMedia !== 'function'
+  ) {
+    errorMsg.value =
+      '当前页面不是安全连接，浏览器禁止访问摄像头。请确认 URL 以 https 开头，' +
+      '且首次访问时已点击「高级 → 继续访问」接受证书。' +
+      '如仍无法解决，请直接在主机的摊盒桌面应用内拍照。'
+    return
+  }
+
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: currentFacing.value, width: { ideal: 1280 }, height: { ideal: 960 } },
