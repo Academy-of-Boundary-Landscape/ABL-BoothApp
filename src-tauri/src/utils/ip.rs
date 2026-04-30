@@ -71,3 +71,31 @@ pub fn get_lan_ip() -> String {
     // 保底
     "127.0.0.1".to_string()
 }
+
+/// 枚举所有非环回、非黑名单（虚拟机/Docker等）的 IPv4 网卡地址。
+/// 用于自签证书的 SAN 列表。
+pub fn get_all_lan_ipv4_addrs() -> Vec<IpAddr> {
+    let interfaces = list_afinet_netifas().unwrap_or(vec![]);
+    let blacklist = [
+        "virtual", "vmware", "vbox", "docker", "wsl", "vether", "vpn", "switch",
+    ];
+
+    let mut addrs: Vec<IpAddr> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for (name, ip) in &interfaces {
+        if let IpAddr::V4(ipv4) = ip {
+            if ipv4.is_loopback() {
+                continue;
+            }
+            let name_lower = name.to_lowercase();
+            if blacklist.iter().any(|&k| name_lower.contains(k)) {
+                continue;
+            }
+            let s = ipv4.to_string();
+            if seen.insert(s) {
+                addrs.push(IpAddr::V4(*ipv4));
+            }
+        }
+    }
+    addrs
+}
