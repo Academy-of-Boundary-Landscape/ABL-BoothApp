@@ -218,9 +218,10 @@ pub fn run() {
             // -------------------------------------------------------------
             // [优化点 2] 使用 Tauri 内置异步运行时
             // -------------------------------------------------------------
+            let app_data_dir_for_server = app_data_dir.clone();
             tauri::async_runtime::spawn(async move {
-                println!("[Booth Tool] Starting HTTP server on port 5140...");
-                server::start_server(state, 5140).await;
+                println!("[Booth Tool] Starting HTTP+HTTPS server (5140 loopback / 5141 LAN)...");
+                server::start_server(state, 5140, 5141, app_data_dir_for_server).await;
             });
 
             Ok(())

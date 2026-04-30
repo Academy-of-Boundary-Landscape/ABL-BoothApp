@@ -12,7 +12,7 @@ use tower_http::cors::{AllowHeaders, AllowOrigin, Any, CorsLayer};
 
 use crate::{api, state::AppState, web};
 
-pub async fn start_server(state: AppState, port: u16) {
+pub async fn start_server(state: AppState, http_port: u16, https_port: u16, app_data_dir: PathBuf) {
     // 复制一份 upload_dir 供 fallback 闭包使用
     let upload_dir = state.upload_dir.clone();
 
@@ -123,12 +123,55 @@ pub async fn start_server(state: AppState, port: u16) {
         )
         .with_state(state);
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    println!("[Booth Tool] HTTP Server running on http://{}", addr);
+    // 准备证书
+    let lan_ips = crate::utils::ip::get_all_lan_ipv4_addrs();
+    let (cert_pem, key_pem) =
+        match crate::utils::cert::load_or_generate_cert(&app_data_dir, &lan_ips).await {
+            Ok(pair) => pair,
+            Err(e) => {
+                eprintln!("[Booth Tool] FATAL: cert load/generate failed: {}", e);
+                return;
+            }
+        };
+    let tls_cfg = match axum_server::tls_rustls::RustlsConfig::from_pem(cert_pem, key_pem).await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[Booth Tool] FATAL: RustlsConfig::from_pem failed: {}", e);
+            return;
+        }
+    };
 
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .expect("Failed to bind server address");
+    // HTTP listener: 仅绑回环，给 Tauri webview 用，避免 LAN 接触 HTTP
+    let http_addr = SocketAddr::from(([127, 0, 0, 1], http_port));
+    println!("[Booth Tool] HTTP server (loopback only)  http://{}", http_addr);
 
-    axum::serve(listener, app).await.expect("Server crashed");
+    // HTTPS listener: 绑 0.0.0.0，所有 LAN 设备走这里
+    let https_addr = SocketAddr::from(([0, 0, 0, 0], https_port));
+    println!("[Booth Tool] HTTPS server (LAN)           https://{}", https_addr);
+
+    let app_for_http = app.clone();
+    let http_task = tokio::spawn(async move {
+        let listener = match tokio::net::TcpListener::bind(http_addr).await {
+            Ok(l) => l,
+            Err(e) => {
+                eprintln!("[Booth Tool] FATAL: bind {} failed: {}", http_addr, e);
+                return;
+            }
+        };
+        if let Err(e) = axum::serve(listener, app_for_http).await {
+            eprintln!("[Booth Tool] HTTP server crashed: {}", e);
+        }
+    });
+
+    let https_task = tokio::spawn(async move {
+        if let Err(e) = axum_server::bind_rustls(https_addr, tls_cfg)
+            .serve(app.into_make_service())
+            .await
+        {
+            eprintln!("[Booth Tool] HTTPS server crashed: {}", e);
+        }
+    });
+
+    // 任一退出 → 整体退出
+    let _ = tokio::try_join!(http_task, https_task);
 }
