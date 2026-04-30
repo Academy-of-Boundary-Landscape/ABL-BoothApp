@@ -52,7 +52,7 @@
             ref="importFileInputRef"
             type="file"
             class="hidden-input"
-            accept=".boothpack,.zip"
+            accept=".boothpack,.zip,application/zip,application/octet-stream,application/x-zip-compressed"
             @change="handleImportFile"
           />
         </div>
