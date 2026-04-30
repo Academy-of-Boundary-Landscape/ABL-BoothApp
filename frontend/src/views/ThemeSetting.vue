@@ -31,10 +31,24 @@
                 <span class="title">商品图比例</span>
                 <span class="desc">商品网格展示 + 上传裁剪默认比例</span>
               </div>
-              <n-radio-group v-model:value="themeStore.productImageAspect" size="small">
-                <n-radio-button value="3:4">3 : 4（竖版）</n-radio-button>
-                <n-radio-button value="1:1">1 : 1（方形）</n-radio-button>
-              </n-radio-group>
+              <n-switch
+                :value="themeStore.productImageAspect === '3:4'"
+                @update:value="(v) => themeStore.productImageAspect = v ? '3:4' : '1:1'"
+                size="large"
+              >
+                <template #checked>
+                  <span class="aspect-rail">
+                    <span class="aspect-preview aspect-preview--3-4"></span>
+                    3 : 4 竖版
+                  </span>
+                </template>
+                <template #unchecked>
+                  <span class="aspect-rail">
+                    <span class="aspect-preview aspect-preview--1-1"></span>
+                    1 : 1 方形
+                  </span>
+                </template>
+              </n-switch>
             </div>
 
             <n-divider />
@@ -131,7 +145,6 @@
 import {
   NCard, NSpace, NSwitch, NDivider, NButton, NColorPicker,
   NGrid, NGridItem, NIcon, NTag, NInput, NAlert, NTooltip,
-  NRadioGroup, NRadioButton
 } from 'naive-ui'
 import { Sunny, Moon, Checkmark } from '@vicons/ionicons5'
 import { useThemeStore } from '@/stores/themeStore'
@@ -164,6 +177,48 @@ const isDefaultColor = (swatch) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 16px;
+}
+
+/* 标题 + 描述纵向排列；之前两个 span 默认 inline 会挤成一行 */
+.label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Switch 内显示当前比例：小色块 + 文字标签水平居中对齐。
+   颜色跟主题走（浅色主题黑字、深色主题白字）——naive-ui 默认给 rail 文字白色，
+   在浅色主题 + 灰色 rail 上糊成一片。:deep + !important 是为了胜过 naive 的内联色。*/
+.aspect-rail {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--primary-text-color) !important;
+}
+:deep(.n-switch__checked) .aspect-rail,
+:deep(.n-switch__unchecked) .aspect-rail {
+  color: var(--primary-text-color) !important;
+}
+.aspect-preview {
+  display: inline-block;
+  background: currentColor;
+  opacity: 0.85;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.aspect-preview--3-4 {
+  width: 9px;
+  height: 12px;
+}
+.aspect-preview--1-1 {
+  width: 11px;
+  height: 11px;
 }
 
 .setting-item-vertical {
