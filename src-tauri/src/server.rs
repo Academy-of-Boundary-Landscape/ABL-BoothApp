@@ -130,6 +130,11 @@ pub async fn start_server(state: AppState, http_port: u16, https_port: u16, app_
         )
         .with_state(state);
 
+    // rustls 0.23 拒绝在没有显式 crypto provider 的情况下工作。
+    // 我们没直接拉 rustls 的 provider feature（axum-server 和 sqlx 都拉了 rustls 但都未启用 provider），
+    // 所以这里手动安装 ring provider 一次。install_default 是幂等的：已安装会返回 Err，忽略即可。
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     // 准备证书
     let lan_ips = crate::utils::ip::get_all_lan_ipv4_addrs();
     let (cert_pem, key_pem) =
