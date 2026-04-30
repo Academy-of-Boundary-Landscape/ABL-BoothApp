@@ -187,6 +187,40 @@ function formatPrice(price) {
 .product-grid.card-size-medium { --min-col: 150px; }
 .product-grid.card-size-large  { --min-col: 220px; }
 
+/* 小号卡片：缩字、缩按钮、缩内边距 —— 否则在 3:4 + 110px 宽时
+   bottom-row 的 ¥15.00 会被 32px 加号按钮挤到省略号 (15...) */
+.card-size-small .info-box {
+  padding: 8px 8px;
+  gap: 4px;
+}
+.card-size-small .title {
+  font-size: clamp(11px, 1.4vw, 13px);
+  line-height: 1.25;
+  font-weight: 600;
+}
+.card-size-small .bottom-row {
+  gap: 6px;
+}
+.card-size-small .currency {
+  font-size: 10px;
+}
+.card-size-small .value {
+  font-size: 15px;
+  font-weight: 800;
+}
+.card-size-small .action-icon {
+  width: 26px;
+  height: 26px;
+}
+.card-size-small .action-icon::before {
+  width: 11px;
+  height: 2px;
+}
+.card-size-small .action-icon::after {
+  width: 2px;
+  height: 11px;
+}
+
 .product-card {
   border-radius: var(--pg-radius);
   transition: transform 0.2s, box-shadow 0.2s;
