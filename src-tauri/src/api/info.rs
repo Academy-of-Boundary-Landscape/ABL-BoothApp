@@ -1,6 +1,6 @@
 // src/api/info.rs
 
-use crate::{state::AppState, utils::ip::get_lan_ip};
+use crate::{server::HTTPS_PORT, state::AppState, utils::ip::get_lan_ip};
 use axum::{routing::get, Json, Router};
 use serde_json::{json, Value};
 
@@ -10,7 +10,7 @@ pub fn router() -> Router<AppState> {
 
 async fn server_info_handler() -> Json<Value> {
     let ip = get_lan_ip();
-    let https_port = 5141;
+    let https_port = HTTPS_PORT;
 
     // 给 LAN 设备的 URL 都用 HTTPS（指向 0.0.0.0:5141 listener），
     // 这样浏览器才会把页面当作 secure context，getUserMedia / clipboard 等 API 才可用。

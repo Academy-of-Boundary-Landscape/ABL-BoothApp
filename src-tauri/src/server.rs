@@ -12,6 +12,13 @@ use tower_http::cors::{AllowHeaders, AllowOrigin, Any, CorsLayer};
 
 use crate::{api, state::AppState, web};
 
+/// HTTP 端口（仅 127.0.0.1 回环，给 Tauri webview 用）。
+/// 改这里时 lib.rs 的调用方 自动生效，无需同步修改。
+pub const HTTP_PORT: u16 = 5140;
+/// HTTPS 端口（0.0.0.0，给所有 LAN 设备用）。
+/// 改这里时 api/info.rs 必须同步改：那里的 server_info 端点会把这个端口拼到 QR 码 URL 里。
+pub const HTTPS_PORT: u16 = 5141;
+
 pub async fn start_server(state: AppState, http_port: u16, https_port: u16, app_data_dir: PathBuf) {
     // 复制一份 upload_dir 供 fallback 闭包使用
     let upload_dir = state.upload_dir.clone();
@@ -150,28 +157,44 @@ pub async fn start_server(state: AppState, http_port: u16, https_port: u16, app_
     println!("[Booth Tool] HTTPS server (LAN)           https://{}", https_addr);
 
     let app_for_http = app.clone();
-    let http_task = tokio::spawn(async move {
-        let listener = match tokio::net::TcpListener::bind(http_addr).await {
-            Ok(l) => l,
-            Err(e) => {
+    // 让闭包返回 io::Result：bind/serve 任一失败必须冒泡到 try_join 才能让用户看到，
+    // 不能让 HTTPS 端默默死掉而 HTTP 还在跑（那样 QR 码全部指向死端口，摊主完全察觉不到）。
+    let http_task: tokio::task::JoinHandle<std::io::Result<()>> =
+        tokio::spawn(async move {
+            let listener = tokio::net::TcpListener::bind(http_addr).await.map_err(|e| {
                 eprintln!("[Booth Tool] FATAL: bind {} failed: {}", http_addr, e);
-                return;
-            }
-        };
-        if let Err(e) = axum::serve(listener, app_for_http).await {
-            eprintln!("[Booth Tool] HTTP server crashed: {}", e);
-        }
-    });
+                e
+            })?;
+            axum::serve(listener, app_for_http).await.map_err(|e| {
+                eprintln!("[Booth Tool] HTTP server crashed: {}", e);
+                e
+            })?;
+            Ok(())
+        });
 
-    let https_task = tokio::spawn(async move {
-        if let Err(e) = axum_server::bind_rustls(https_addr, tls_cfg)
+    let https_task: tokio::task::JoinHandle<std::io::Result<()>> = tokio::spawn(async move {
+        axum_server::bind_rustls(https_addr, tls_cfg)
             .serve(app.into_make_service())
             .await
-        {
-            eprintln!("[Booth Tool] HTTPS server crashed: {}", e);
-        }
+            .map_err(|e| {
+                eprintln!("[Booth Tool] HTTPS server crashed: {}", e);
+                e
+            })?;
+        Ok(())
     });
 
-    // 任一退出 → 整体退出
-    let _ = tokio::try_join!(http_task, https_task);
+    // 任一 task 出错或 panic → 整体退出，让外层 tauri 进程能感知到
+    match tokio::try_join!(http_task, https_task) {
+        Ok((http_res, https_res)) => {
+            if let Err(e) = http_res {
+                eprintln!("[Booth Tool] HTTP listener exited with error: {}", e);
+            }
+            if let Err(e) = https_res {
+                eprintln!("[Booth Tool] HTTPS listener exited with error: {}", e);
+            }
+        }
+        Err(join_err) => {
+            eprintln!("[Booth Tool] server task panicked: {}", join_err);
+        }
+    }
 }

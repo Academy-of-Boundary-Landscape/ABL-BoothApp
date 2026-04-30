@@ -90,8 +90,9 @@
                     <summary>扫码后无法连接？点击展开排障</summary>
                     <ul class="lan-guide__faq-list">
                       <li>确认两台设备连的是<strong>同一个 WiFi 名称</strong>（会场常有多个相近名字，别选错）</li>
-                      <li>主机的<strong>防火墙</strong>需要放行 <code>5140</code> 端口（Windows 首次运行会弹出询问，选"允许专用/公用网络"）</li>
-                      <li>主机 IP 会在换网后变化 → 点下方「<strong>获取局域网二维码</strong>」刷新</li>
+                      <li>主机的<strong>防火墙</strong>需要放行 <code>5141</code> 端口（Windows 首次运行会弹出询问，选"允许专用/公用网络"）<br /><span class="lan-guide__warn">5140 是仅本机使用的回环端口，无需放行。</span></li>
+                      <li>首次扫码会看到<strong>"您的连接不是私密连接"红屏警告</strong>——这是局域网自签证书的预期行为，点"高级 → 继续访问"即可，每台设备只需操作一次。详见 <code>docs/guide/lan-https.md</code>。</li>
+                      <li>主机 IP 会在换网后变化 → 点下方「<strong>获取局域网二维码</strong>」刷新（变换 IP 后已接受过证书的设备会再警告一次）</li>
                       <li>部分校园网 / 酒店 WiFi 有"AP 隔离"禁止设备互通，换用手机热点</li>
                     </ul>
                   </details>

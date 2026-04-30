@@ -92,7 +92,12 @@ fn cert_meta_still_valid(meta: &CertMeta, current_ips: &[IpAddr]) -> bool {
     if now >= renew_deadline {
         return false;
     }
-    // 当前所有 LAN IP 都必须在 SAN 里；否则换网络后旧证书覆盖不到，需要重生成
+    // 当前所有 LAN IP 都必须在 SAN 里；否则换网络后旧证书覆盖不到，需要重生成。
+    //
+    // 故意不对称：SAN 里残留了已断开网卡的旧 IP **不**触发重生成。理由：
+    // 浏览器仅校验"它连的那个 IP 是否在 SAN 列表中"——多余的 SAN 不会让任何客户端报错；
+    // 而每次重生成都会让所有已接受过证书的设备再看一次安全警告，体验糟糕。
+    // 所以"宁多勿少"是正确的策略，请勿误改成对称比较。
     let san_set: std::collections::HashSet<&str> =
         meta.sans.iter().map(|s| s.as_str()).collect();
     for ip in current_ips {

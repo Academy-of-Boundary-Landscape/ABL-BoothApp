@@ -220,8 +220,18 @@ pub fn run() {
             // -------------------------------------------------------------
             let app_data_dir_for_server = app_data_dir.clone();
             tauri::async_runtime::spawn(async move {
-                println!("[Booth Tool] Starting HTTP+HTTPS server (5140 loopback / 5141 LAN)...");
-                server::start_server(state, 5140, 5141, app_data_dir_for_server).await;
+                println!(
+                    "[Booth Tool] Starting HTTP+HTTPS server ({} loopback / {} LAN)...",
+                    server::HTTP_PORT,
+                    server::HTTPS_PORT
+                );
+                server::start_server(
+                    state,
+                    server::HTTP_PORT,
+                    server::HTTPS_PORT,
+                    app_data_dir_for_server,
+                )
+                .await;
             });
 
             Ok(())
