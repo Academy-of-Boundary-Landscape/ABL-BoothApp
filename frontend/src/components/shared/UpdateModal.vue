@@ -31,9 +31,16 @@
     <div v-else-if="error" class="state-container">
       <n-result status="warning" title="检查失败" :description="error">
         <template #footer>
-          <n-button @click="retry">重试</n-button>
+          <n-space justify="center">
+            <n-button @click="retry">重试</n-button>
+            <n-button type="primary" @click="handleDownload">前往发布页手动下载</n-button>
+          </n-space>
         </template>
       </n-result>
+      <p class="error-hint">
+        若反复失败，可能是网络问题或本版本暂未配置自动更新清单。
+        点击「前往发布页」直接到 GitHub 看最新版本。
+      </p>
     </div>
 
     <!-- 状态 3: 已经是最新版 -->
@@ -121,7 +128,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useUpdateCheck } from '@/composables/useUpdateCheck';
 import {
   NModal, NSpin, NResult, NButton, NTag, NDivider, NScrollbar,
-  NAlert, NProgress, useDialog,
+  NAlert, NProgress, NSpace, useDialog,
 } from 'naive-ui';
 
 const props = defineProps<{ show: boolean }>();
@@ -315,5 +322,14 @@ const formatBytes = (bytes: number) => {
 }
 .installed-hint {
   margin-top: 1rem;
+}
+
+.error-hint {
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+  text-align: center;
+  margin-top: 1rem;
+  padding: 0.5rem 1rem;
+  line-height: 1.5;
 }
 </style>
