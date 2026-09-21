@@ -77,3 +77,32 @@ pub fn create_jwt(
     )
     .map_err(|_| AuthError::TokenCreation)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hash_then_verify_roundtrip() {
+        let h = hash_password("admin123");
+        assert!(verify_password("admin123", &h));
+    }
+
+    #[test]
+    fn verify_rejects_wrong_password() {
+        let h = hash_password("admin123");
+        assert!(!verify_password("admin124", &h));
+    }
+
+    #[test]
+    fn same_plaintext_hashes_differently() {
+        // bcrypt 每次用新的 salt，两次哈希不该相同
+        assert_ne!(hash_password("same"), hash_password("same"));
+    }
+
+    #[test]
+    fn verify_rejects_malformed_hash() {
+        // verify 内部是 unwrap_or(false)，畸形 hash 不能 panic
+        assert!(!verify_password("anything", "not-a-bcrypt-hash"));
+    }
+}

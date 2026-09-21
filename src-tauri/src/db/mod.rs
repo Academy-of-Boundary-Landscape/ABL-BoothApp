@@ -40,40 +40,38 @@ pub async fn init_db(app_data_dir: &PathBuf) -> Result<SqlitePool, sqlx::Error> 
     // 5. 运行迁移 (使用运行时方式避免编译时需要 DATABASE_URL)
     sqlx::migrate!().run(&pool).await?;
 
-    // ================== 新增逻辑 ==================
-    // 6. 检查并初始化默认管理员密码
-    // 假设默认密码是 "admin123" (生产环境应强制用户首次登录修改，这里为了演示简化)
-    let admin_exists: (i64,) =
-        sqlx::query_as("SELECT count(*) FROM settings WHERE key = 'admin_password'")
-            .fetch_one(&pool)
-            .await?;
-
-    if admin_exists.0 == 0 {
-        let password_hash = hash_password("admin123");
-        sqlx::query("INSERT INTO settings (key, value) VALUES ('admin_password', ?)")
-            .bind(password_hash)
-            .execute(&pool)
-            .await?;
-        println!("Initialized default admin password.");
-    }
-
-    // 7. 检查并初始化默认摊主密码
-    // 假设默认密码是 "vendor123"
-    let vendor_exists: (i64,) =
-        sqlx::query_as("SELECT count(*) FROM settings WHERE key = 'vendor_password'")
-            .fetch_one(&pool)
-            .await?;
-
-    if vendor_exists.0 == 0 {
-        let password_hash = hash_password("vendor123");
-        sqlx::query("INSERT INTO settings (key, value) VALUES ('vendor_password', ?)")
-            .bind(password_hash)
-            .execute(&pool)
-            .await?;
-        println!("Initialized default vendor password.");
-    }
+    // 6. 检查并初始化默认管理员/摊主密码
+    seed_defaults(&pool).await?;
 
     Ok(pool)
+}
+
+/// 种入默认的管理员 / 摊主密码。已存在则跳过。
+/// 从 init_db 拆出来，让测试夹具能用同一份逻辑建库，避免两处漂移。
+pub async fn seed_defaults(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    let admin_exists: (i64,) =
+        sqlx::query_as("SELECT count(*) FROM settings WHERE key = 'admin_password'")
+            .fetch_one(pool)
+            .await?;
+    if admin_exists.0 == 0 {
+        sqlx::query("INSERT INTO settings (key, value) VALUES ('admin_password', ?)")
+            .bind(hash_password("admin123"))
+            .execute(pool)
+            .await?;
+    }
+
+    let vendor_exists: (i64,) =
+        sqlx::query_as("SELECT count(*) FROM settings WHERE key = 'vendor_password'")
+            .fetch_one(pool)
+            .await?;
+    if vendor_exists.0 == 0 {
+        sqlx::query("INSERT INTO settings (key, value) VALUES ('vendor_password', ?)")
+            .bind(hash_password("vendor123"))
+            .execute(pool)
+            .await?;
+    }
+
+    Ok(())
 }
 
 /// 完全重置数据库：删除所有数据并重新初始化

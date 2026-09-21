@@ -8,6 +8,8 @@ mod api;
 mod db;
 mod server;
 mod state;
+#[cfg(test)]
+mod test_support;
 mod utils;
 mod vision;
 mod web;

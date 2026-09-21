@@ -529,3 +529,54 @@ async fn delete_event(
 
     (StatusCode::OK, Json(json!({"message": "Event deleted"}))).into_response()
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::test_support::test_router;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt; // for oneshot
+
+    #[tokio::test]
+    async fn list_events_returns_empty_array_on_fresh_db() {
+        let (router, _dir) = test_router().await;
+
+        let res = router
+            .oneshot(
+                Request::builder()
+                    .uri("/api/events")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json.as_array().map(|a| a.len()), Some(0));
+    }
+
+    #[tokio::test]
+    async fn admin_only_route_rejects_request_without_token() {
+        // 证明 guard.rs 的 AdminOnly 提取器确实挂在链路上
+        let (router, _dir) = test_router().await;
+
+        let res = router
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/api/events/1/status")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"status":"active"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+}

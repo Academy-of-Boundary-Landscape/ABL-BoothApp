@@ -153,3 +153,48 @@ pub fn get_all_lan_ipv4_addrs() -> Vec<IpAddr> {
     }
     addrs
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hotspot_adapter_is_included_despite_blacklist() {
+        // "Microsoft Wi-Fi Direct Virtual Adapter" 同时含 "virtual"（黑名单）
+        // 和 "wi-fi direct"（热点关键字），热点判断必须先生效。
+        assert!(should_include_iface(
+            "Microsoft Wi-Fi Direct Virtual Adapter #2"
+        ));
+    }
+
+    #[test]
+    fn virtual_adapters_are_excluded() {
+        for name in [
+            "VMware Network Adapter VMnet8",
+            "docker0",
+            "tailscale0",
+            "vEthernet (WSL)",
+        ] {
+            assert!(!should_include_iface(name), "{name} 应被排除");
+        }
+    }
+
+    #[test]
+    fn physical_adapters_are_included() {
+        for name in ["wlan0", "eth0", "Wi-Fi", "以太网 Ethernet"] {
+            assert!(should_include_iface(name), "{name} 应被包含");
+        }
+    }
+
+    #[test]
+    fn windows_hotspot_subnet_detection() {
+        use std::net::Ipv4Addr;
+        assert!(is_windows_hotspot_subnet(&Ipv4Addr::new(192, 168, 137, 1)));
+        assert!(!is_windows_hotspot_subnet(&Ipv4Addr::new(192, 168, 1, 1)));
+    }
+
+    #[test]
+    fn name_matching_is_case_insensitive() {
+        assert!(name_matches("DOCKER0", &["docker"]));
+    }
+}
