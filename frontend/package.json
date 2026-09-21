@@ -12,9 +12,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@headlessui/vue": "^1.7.23",
     "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.3",
+    "@tauri-apps/plugin-fs": "^2.5.2",
+    "@tauri-apps/plugin-http": "^2.6.1",
+    "@tauri-apps/plugin-os": "^2.3.2",
     "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-shell": "^2.3.6",
     "@tauri-apps/plugin-updater": "^2.12.0",
     "@vicons/ionicons5": "^0.13.0",
     "@vueuse/core": "^14.1.0",
@@ -24,9 +28,9 @@
     "pinia": "^2.1.7",
     "qrcode.vue": "^3.6.0",
     "socket.io-client": "^4.8.1",
-    "vicons": "^0.0.1",
     "vue": "^3.5.18",
-    "vue-router": "^4.5.1"
+    "vue-router": "^4.5.1",
+    "vuedraggable": "^4.1.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.54.1",

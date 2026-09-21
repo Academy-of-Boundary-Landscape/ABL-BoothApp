@@ -156,6 +156,7 @@ import StatFilters from '@/components/stats/StatFilters.vue';
 import { NButton, NSpin, NAlert, NCard, NTable } from 'naive-ui';
 import HelpBubble from '@/components/shared/HelpBubble.vue';
 import CollapsibleSection from '@/components/shared/CollapsibleSection.vue';
+import { toAbsoluteApiUrl } from '@/services/url';
 
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
@@ -220,14 +221,6 @@ async function applyFilters() {
     intervalMinutes: intervalMinutes.value,
   });
 }
-const API_ORIGIN = 'http://127.0.0.1:5140';
-function toAbsoluteApiUrl(url) {
-  if (!url) return url;
-  if (url.startsWith('http://') || url.startsWith('https://')) return url;
-  if (url.startsWith('/')) return `${API_ORIGIN}${url}`;
-  return `${API_ORIGIN}/${url}`;
-}
-
 async function downloadReport() {
   if (!statStore.stats || !statStore.stats.summary?.length) return;
 

@@ -45,9 +45,6 @@ const props = defineProps({
 });
 defineEmits(['complete', 'cancel']);
 
-// 【新增】定义后端 URL 以便正确加载图片
-const backendUrl = 'http://127.0.0.1:5140';
-
 const formattedTime = computed(() => {
   return formatTimestamp(props.order.timestamp);
 });

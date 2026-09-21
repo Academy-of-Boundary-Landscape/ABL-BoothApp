@@ -135,9 +135,6 @@ router.beforeEach((to, from, next) => {
   const requiresAuth = to.meta.requiresAuth;
   const requiredRole = to.meta.role;
 
-  // 【临时调试】在守卫的入口打印状态
-  // console.log(`--- Router Guard: Navigating to ${to.path}. Requires auth? ${!!requiresAuth}. Current user role:`, authStore.user?.role);
-
   if (requiresAuth) {
     let hasPermission = false;
     if (requiredRole === 'admin' && authStore.isAdmin) {
@@ -152,11 +149,9 @@ router.beforeEach((to, from, next) => {
     }
 
     if (hasPermission) {
-      // console.log('--- Router Guard: Permission GRANTED. Calling next().');
       next(); // 权限通过，放行
     } else {
-      //  console.log('--- Router Guard: Permission DENIED. Redirecting to login.');
-      next({ 
+      next({
         name: 'login', 
         params: { role: requiredRole || 'vendor' }, // 提供一个默认角色
         query: { redirect: to.fullPath, eventId: to.params.id }

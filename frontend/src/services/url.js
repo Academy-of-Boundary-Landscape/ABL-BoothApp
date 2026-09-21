@@ -6,7 +6,21 @@ const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== 
 const API_PORT = 5140;
 
 // 注意：图片不在 /api 下，而在根路径的 /uploads 下
-const SERVER_ORIGIN = `http://127.0.0.1:${API_PORT}`;
+export const SERVER_ORIGIN = `http://127.0.0.1:${API_PORT}`;
+
+/**
+ * 把后端返回的相对地址补成绝对地址。
+ * 和 getImageUrl 的区别：这个不判断 Tauri 环境，任何相对路径都补全，
+ * 用于 fetch / 下载链接这类必须拿到绝对地址的场景。
+ * @param {string} url
+ * @returns {string}
+ */
+export function toAbsoluteApiUrl(url) {
+  if (!url) return url;
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  if (url.startsWith('/')) return `${SERVER_ORIGIN}${url}`;
+  return `${SERVER_ORIGIN}/${url}`;
+}
 
 /**
  * 将数据库存储的相对路径转换为完整的 URL
@@ -25,7 +39,6 @@ export function getImageUrl(path) {
 
   // 关键：Tauri 里前端不是 http origin，必须拼绝对地址指向你的 axum server
   if (isTauri) {
-    console.log(`[getImageUrl] Tauri detected, converting to absolute URL: ${SERVER_ORIGIN}${cleanPath}`);
     return `${SERVER_ORIGIN}${cleanPath}`;
   }
 
