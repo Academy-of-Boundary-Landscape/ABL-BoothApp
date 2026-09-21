@@ -9,6 +9,9 @@
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs"
   },
+  "_notes": {
+    "vite / @vitejs/plugin-vue": "仓库根没有 vite 项目（没有 index.html / vite.config.* / src/），这两个包疑似死依赖——vitepress 自带独立的 vite 副本（node_modules/vitepress/node_modules/vite@5.4.x），不吃根这两个包。版本号刻意保持和 package-lock.json 里锁的一致（^5.2.1 / ^6.0.3），不要跟着 frontend/ 的新版本走：2026-09-22 Task 4（1.2-dev 分支）曾把它俩对齐到 vite@7 / plugin-vue@6，但没同步重建 package-lock.json，导致根 `npm ci` 报 EUSAGE 失败（deploy-docs.yml 跑的正是这条命令，若这个改动合到 main 会直接打断文档站发布），Task 6 fix round 2 已回退。真要清理这两个死依赖，先单独评估删除的影响，不要顺手改版本号了事。"
+  },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-fs": "^2.5.2",
@@ -25,9 +28,9 @@
     "@tauri-apps/cli": "^2.11.5",
     "@tauri-apps/plugin-dialog": "^2.7.3",
     "@vicons/ionicons5": "^0.13.0",
-    "@vitejs/plugin-vue": "^6.0.1",
+    "@vitejs/plugin-vue": "^5.2.1",
     "naive-ui": "^2.43.2",
-    "vite": "^7.0.6",
+    "vite": "^6.0.3",
     "vitepress": "^1.6.4",
     "vue": "^3.5.26"
   }
