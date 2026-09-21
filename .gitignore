@@ -69,9 +69,15 @@ coverage/
 **/*.rs.bk
 
 # --- Tauri ---
-# 忽略 Tauri 的构建产物
-src-tauri/gen/android/
+# schemas 是构建产物，忽略
 src-tauri/gen/schemas/
+# src-tauri/gen/android/ 不再整体忽略：Tauri 官方约定是提交 Android 工程源码
+# （MainActivity.kt 的 enableEdgeToEdge()、app 图标、res/、file_paths.xml 等都是手写定制，
+#  重新 init 会丢失）。构建产物由 src-tauri/gen/android/.gitignore 负责忽略。
+# 仅排除本地产物与签名材料：
+src-tauri/gen/android/keystore.properties
+src-tauri/gen/android/local.properties
+src-tauri/gen/android/app/src/main/jniLibs/
 
 secret-key.txt
 
