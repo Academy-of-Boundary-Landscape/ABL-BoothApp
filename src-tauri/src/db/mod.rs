@@ -254,8 +254,19 @@ mod tests {
             .await
             .unwrap();
 
-        // 第二批：在第一个基础上追加一条必炸的迁移（语法错误，任何 sqlite 版本都会报错）。
-        std::fs::write(migrations_dir.join("2_boom.sql"), "THIS IS NOT VALID SQL;").unwrap();
+        // 第二批：在第一个基础上追加一条「先破坏数据、再失败」的迁移。
+        //
+        // 关键是 `-- no-transaction`（sqlx 从 sql 内容首行识别的指令，见
+        // sqlx-core-0.9.0/src/migrate/source.rs 的 `sql.starts_with("-- no-transaction")`）：
+        // 没有它，整条迁移脚本会被包在一个事务里跑，DELETE 会随着后面的报错一起回滚，
+        // 探针数据照样活着——那样这条测试就算把 restore() 整个删掉也会通过，没有判别力。
+        // 加了它之后 DELETE 单独提交（sqlite 默认逐语句自动提交），后一条语句再报错，
+        // 「探针数据还在」就只能由 restore() 解释。
+        std::fs::write(
+            migrations_dir.join("2_boom.sql"),
+            "-- no-transaction\nDELETE FROM probe;\nSELECT no_such_column_here FROM probe;",
+        )
+        .unwrap();
         let migrator_v2 = Migrator::new(migrations_dir.as_path()).await.unwrap();
 
         let result = migrate_with_snapshot(&pool, &db_path, true, &migrator_v2).await;
@@ -282,5 +293,36 @@ mod tests {
                 .contains(".bak-premigrate-")
         });
         assert!(has_snapshot, "应该留下迁移前快照文件");
+    }
+
+    /// F1 的核心行为：`_sqlx_migrations` 表读不到时必须 fail-safe（判不出就快照），
+    /// 而不是像原来的 `has_pending` 那样 fail-open（判不出就当作不用快照）。
+    /// 顺带用「已是最新」这一步守住反方向——不该快照的时候也别多落。
+    #[tokio::test]
+    async fn should_snapshot_before_migrate_is_fail_safe_when_tracking_table_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("sale_system.db");
+        let pool = empty_wal_db(&db_path).await;
+
+        // 用项目真实的迁移集把库跑到最新版本。
+        let migrator = sqlx::migrate!();
+        migrator.run(&pool).await.unwrap();
+
+        // 已是最新：不该判定需要快照。
+        assert!(
+            !should_snapshot_before_migrate(&pool, &migrator).await,
+            "库已是最新版本时不该判定需要快照"
+        );
+
+        // 迁移追踪表本身没了（库损坏 / 被手工改过 / 从旧备份还原回来）：判不出，必须 fail-safe。
+        sqlx::query("DROP TABLE _sqlx_migrations")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        assert!(
+            should_snapshot_before_migrate(&pool, &migrator).await,
+            "迁移追踪表缺失时必须 fail-safe，判定需要快照"
+        );
     }
 }
