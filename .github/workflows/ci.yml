@@ -32,8 +32,11 @@ jobs:
             libayatana-appindicator3-dev \
             patchelf
 
-      # rust-toolchain.toml 钉了 1.98.1，这里不指定版本，让它读文件
-      - uses: dtolnay/rust-toolchain@stable
+      # 钉死版本号，和 rust-toolchain.toml 的 channel 对齐（改一处要记得改另一处，
+      # 两个文件里都留了指回对方的注释）。不用 @stable：那样会额外装一套用不上的
+      # stable 工具链——src-tauri/ 下的 cargo 调用照样会被 rust-toolchain.toml
+      # 的 override 切到 1.98.1，@stable 装的那套等于白下。
+      - uses: dtolnay/rust-toolchain@1.98.1
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -91,7 +94,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      # 钉死版本号，和 rust-toolchain.toml 的 channel 对齐——理由同 rust job 那一步。
+      - uses: dtolnay/rust-toolchain@1.98.1
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -107,13 +111,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android
+      # 钉死版本号，和 rust-toolchain.toml 的 channel 对齐——理由同 rust job 那一步。
+      # 故意不在这里用 `with: targets:` 装 aarch64-linux-android：rust-toolchain.toml
+      # 不再列 targets（见该文件注释），target 安装挪到下面单独一步，显式装在
+      # cargo check 实际会用到的那个工具链（1.98.1）上，不依赖「这个 action 装的
+      # 版本号字符串恰好和 override 解析出来的一样」这种隐式巧合。
+      - uses: dtolnay/rust-toolchain@1.98.1
 
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+
+      # cargo check 跑在 src-tauri/ 下，会被 rust-toolchain.toml 的 override 切到
+      # 1.98.1（channel 版本号，见该文件），target 必须装在这个具体工具链上——
+      # 显式 --toolchain，不依赖 cwd 恰好命中 override 的隐式行为。
+      - name: Add Android target
+        run: rustup target add --toolchain 1.98.1 aarch64-linux-android
 
       # GitHub 的 ubuntu-latest runner 预装 Android SDK/NDK，ANDROID_NDK_HOME 是运行器自带的
       # 系统环境变量（不是 workflow env context，所以这里用 shell 变量而不是 ${{ env.X }} 取）。

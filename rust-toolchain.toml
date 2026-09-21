@@ -2,12 +2,14 @@
 channel = "1.98.1"
 components = ["rustfmt", "clippy"]
 # 钉版本会让 rustup 新建独立工具链，stable 上装好的 target 不继承。
-# 不在这里列全，build-windows.sh / build-android.sh 会炸在「target 未安装」。
-targets = [
-    "x86_64-unknown-linux-gnu",
-    "x86_64-pc-windows-msvc",
-    "aarch64-linux-android",
-    "armv7-linux-androideabi",
-    "i686-linux-android",
-    "x86_64-linux-android",
-]
+#
+# targets 故意不写在这里：rustup 认到这个文件就会把列出的每个 target 全部
+# 急切下载（不管当前机器用不用得上，见 rustup issue #4027），而
+# .github/workflows/ci.yml 的 rust/windows/android 三个 job 各自只用得上其中
+# 一个——写在这里会让每个 job 都白下 5 个不需要的 target（1.98.1 六个 target
+# 合计 168.7 MB）。换机器 / 新 clone 需要的本机 target 由
+# scripts/setup-dev.sh 里的 `rustup target add` 负责；CI 里需要非宿主 target
+# 的 job（目前只有 android）自己在 workflow 里加一步 `rustup target add`。
+#
+# 改这里的版本号时记得同步改 .github/workflows/ci.yml 里 `dtolnay/rust-toolchain@1.98.1`
+# 那三处 @ref（rust / windows / android 三个 job）。

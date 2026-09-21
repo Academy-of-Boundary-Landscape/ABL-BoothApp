@@ -27,12 +27,29 @@ need_cmd npm    "跟 node 一起装。"
 need_cmd curl   "系统包管理器装一下。"
 need_cmd unzip  "系统包管理器装一下。"
 need_cmd python3 "脚本用它读 tauri.conf.json。"
+need_cmd rustup "装 Rust 工具链：https://rustup.rs"
 ok "node $(node -v) / npm $(npm -v)"
 
 info "安装 npm 依赖（根 + frontend）"
 npm ci --no-audit --no-fund
 npm ci --no-audit --no-fund --prefix frontend
 ok "依赖安装完成"
+
+# --- Rust 交叉编译 target --------------------------------------------------
+# rust-toolchain.toml 只钉 channel（1.98.1），故意不列 targets（见该文件注释：
+# 写在 toml 里会让 rustup 每次认到它就把全部 target 急切下载一遍，CI 里三个 job
+# 各自只用得上其中一个，会白下几百 MB）。target 安装挪到这里，只在真正需要
+# 交叉编译的本机上跑一次。显式 --toolchain 1.98.1，不依赖 cwd 命中 override
+# （虽然上面已经 `cd "$REPO_ROOT"`，这里有 rust-toolchain.toml，两者本该一致，
+# 显式指定更保险，也和这段命令改版本号时要同步改的地方对齐）。
+info "安装非宿主 Rust target（Windows / Android 交叉编译用）"
+rustup target add --toolchain 1.98.1 \
+  x86_64-pc-windows-msvc \
+  aarch64-linux-android \
+  armv7-linux-androideabi \
+  i686-linux-android \
+  x86_64-linux-android
+ok "target 就位"
 
 # --- ONNX Runtime 原生库 ------------------------------------------------------
 # 三个文件都在 .gitignore 里，迁移机器时不会跟着 git 过来，必须重新下载。
