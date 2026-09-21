@@ -7,6 +7,7 @@
 #
 # 产物：dist/BoothKernel-<版本>-arm64-release.apk
 #
+# --apk 在 CLI 2.11 是布尔开关；2.9.x 时它要求显式写 --apk true。别乱改。
 # 只出 arm64-v8a：gradle.properties 已经把 abiList/archList/targetList 都限死了。
 # 真机调试这台服务器插不了 USB，只能 adb connect 走局域网，或者把 APK 拷到手机上装。
 
@@ -37,10 +38,10 @@ fi
 
 info "构建 Android APK（$MODE，版本 $VERSION）"
 if [ "$MODE" = debug ]; then
-  tauri-env android npx tauri android build --apk true --target aarch64 --debug
+  tauri-env android npx tauri android build --apk --target aarch64 --debug
   OUT_DIR="$ANDROID_DIR/app/build/outputs/apk/universal/debug"
 else
-  tauri-env android npx tauri android build --apk true --target aarch64
+  tauri-env android npx tauri android build --apk --target aarch64
   OUT_DIR="$ANDROID_DIR/app/build/outputs/apk/universal/release"
 fi
 

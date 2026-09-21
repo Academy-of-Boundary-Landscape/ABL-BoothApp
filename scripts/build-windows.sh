@@ -38,17 +38,20 @@ export XWIN_CACHE_DIR="${XWIN_CACHE_DIR:-$HOME/.cache/cargo-xwin}"
 NSIS_PLUGIN_DIR="$XDG_CACHE_HOME/tauri/NSIS/Plugins/x86-unicode/additional"
 NSIS_PLUGIN="$NSIS_PLUGIN_DIR/nsis_tauri_utils.dll"
 
-if [ ! -f "$NSIS_PLUGIN" ]; then
-  CLI_NODE="$REPO_ROOT/node_modules/@tauri-apps/cli-linux-x64-gnu/cli.linux-x64-gnu.node"
-  [ -f "$CLI_NODE" ] || die "找不到 tauri CLI 原生模块，先跑 ./scripts/setup-dev.sh"
-  # 直接从 CLI 二进制里读它写死的插件版本，免得 CLI 升级后这里对不上
-  PLUGIN_TAG="$(strings "$CLI_NODE" | grep -o 'nsis_tauri_utils-v[0-9.]*' | sort -u | head -1)"
-  [ -n "$PLUGIN_TAG" ] || die "没能从 tauri CLI 里解析出 nsis_tauri_utils 版本"
+# 每次都从 CLI 二进制里读它写死的插件版本 —— CLI 一升级要的版本就变，光判断「文件在不在」
+# 会拿旧版本糊弄过去，结果还是 mis-hash。用一个 .version 边车文件记住缓存里躺的是哪一版。
+CLI_NODE="$REPO_ROOT/node_modules/@tauri-apps/cli-linux-x64-gnu/cli.linux-x64-gnu.node"
+[ -f "$CLI_NODE" ] || die "找不到 tauri CLI 原生模块，先跑 ./scripts/setup-dev.sh"
+PLUGIN_TAG="$(strings "$CLI_NODE" | grep -o 'nsis_tauri_utils-v[0-9.]*' | sort -u | head -1)"
+[ -n "$PLUGIN_TAG" ] || die "没能从 tauri CLI 里解析出 nsis_tauri_utils 版本"
+
+if [ ! -f "$NSIS_PLUGIN" ] || [ "$(cat "$NSIS_PLUGIN.version" 2>/dev/null)" != "$PLUGIN_TAG" ]; then
   info "预置 NSIS 插件 $PLUGIN_TAG（本项目专属缓存）"
   mkdir -p "$NSIS_PLUGIN_DIR"
   curl -fsSL --retry 3 -o "$NSIS_PLUGIN" \
     "https://github.com/tauri-apps/nsis-tauri-utils/releases/download/${PLUGIN_TAG}/nsis_tauri_utils.dll" \
     || die "NSIS 插件下载失败"
+  printf '%s' "$PLUGIN_TAG" > "$NSIS_PLUGIN.version"
   ok "已放到 $NSIS_PLUGIN"
 fi
 
@@ -73,9 +76,10 @@ else
 fi
 
 info "交叉编译 Windows x64（版本 $VERSION）"
-# 注意：这里**不加** --bundles nsis。CLI 2.9.6 的 --bundles 只接受宿主平台（linux）的取值，
-# 打包目标由 tauri.conf.json 的 bundle.targets 决定，已经是 ["nsis"]。
-tauri-env win npx tauri build --runner cargo-xwin --target "$TARGET" "${EXTRA_ARGS[@]}"
+# --bundles nsis 需要 CLI >= 2.11：更早的版本（如 2.9.6）只接受宿主平台（linux）的取值，
+# 给 Windows 目标传 nsis 会被 clap 拒掉。真要回退 CLI 的话，去掉这个参数即可 ——
+# 打包目标 tauri.conf.json 的 bundle.targets 里也写了 ["nsis"]。
+tauri-env win npx tauri build --runner cargo-xwin --target "$TARGET" --bundles nsis "${EXTRA_ARGS[@]}"
 
 # --- 收拢产物 ------------------------------------------------------------------
 BUNDLE_DIR="$REPO_ROOT/src-tauri/target/$TARGET/release/bundle/nsis"

@@ -68,7 +68,10 @@ tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2.6.0"
 zip = "0.6"
 walkdir = "2" 
-tauri-plugin-http = "2"
+# 钉在 2.6：npm 侧的 @tauri-apps/plugin-http 只发到 2.6.1，crate 已经到 2.7.0。
+# tauri CLI 2.11+ 会校验 JS 包和 Rust crate 的 major/minor 必须一致，放开就构建失败。
+# 等 npm 发出 2.7 再解开。
+tauri-plugin-http = "2.6"
 tauri-plugin-os = "2"
 dirs = "6.0.0"
 tauri-plugin-app = "2.0.0-alpha.2" # 注意：尚无稳定版，仅 alpha 可用
