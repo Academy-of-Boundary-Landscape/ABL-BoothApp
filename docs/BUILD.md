@@ -1,5 +1,18 @@
 # 构建与打包指南
 
+> **在 Linux 开发机上构建？** 这台机器已经配好 Windows 交叉编译和 Android 工具链，
+> 所有步骤都封装成了脚本，不用手抄下面的命令：
+>
+> ```bash
+> ./scripts/setup-dev.sh          # 新 clone / 换机器后跑一次
+> ./scripts/build-windows.sh      # Windows NSIS 安装包（含 .sig）
+> ./scripts/build-android.sh      # Android release APK
+> ./scripts/make-latest-json.sh   # 自动更新清单
+> ```
+>
+> 本机特有的坑（NSIS 插件缓存冲突、代理、`--bundles` 不可用等）见仓库根 `CLAUDE.md`。
+> 下面这一篇讲的是**原理和手工步骤**，两边内容一致，脚本只是把它自动化了。
+
 ## 前置要求
 
 **通用：**
@@ -16,6 +29,8 @@
 - JDK 17+
 
 ## ONNX Runtime 动态库
+
+> 三个文件都可以用 `./scripts/setup-dev.sh` 带 sha256 校验地自动下载，下面是手工步骤。
 
 Vision 功能依赖 ONNX Runtime 动态库。**版本必须是 1.23.x**（与 ort-sys 2.0.0-rc.11 匹配），版本不一致会导致运行时 crash。
 
@@ -157,34 +172,29 @@ npx tauri android build --apk true --aab true -t aarch64
 
 从 v1.1.1 起，客户端会从 GitHub Releases 拉取 `latest.json` 清单判断更新。每次发布需要把三个 artifact 一起传上去：安装器、签名文件、清单。
 
-### 一次性准备：生成 updater 签名密钥
+### updater 签名密钥（已生成，不要重新生成）
 
-当前 `src-tauri/tauri.conf.json` 的 `plugins.updater.pubkey` 字段是 **`TODO_REPLACE_WITH_GENERATED_PUBKEY_...`** 占位。**在发布第一个带更新功能的版本之前必须替换掉。**
+密钥对在 v1.1.1 发布时就已经定下来了：
 
-```powershell
-cd E:\Tauri\booth-tool
-npx @tauri-apps/cli signer generate -w src-tauri\updater-key.key
+- `src-tauri/tauri.conf.json` 的 `plugins.updater.pubkey` 内联的是 key ID **`C56CE43C94863207`**
+  的公钥，和仓库里的 `src-tauri/updater-key.key.pub` 一致。
+- 配对的私钥是 `src-tauri/updater-key.key`（加密，**绝不进 git**），密码在密码管理器里；
+  Linux 开发机上另存了一份在仓库根 `.env.local`（已 gitignore）。
+
+> ⚠️ **不要重新跑 `signer generate`。** 换了密钥对，所有已经装了旧版的用户点「检查更新」
+> 都会永久失败——客户端校验的是内嵌在**旧版安装包**里的那个公钥，改 config 追不回来。
+> 唯一的补救是让用户手动重新下载安装。
+
+换机器之后想确认手上这把私钥是不是对的，签个探针文件比对 key ID：
+
+```bash
+npx tauri signer sign -f "$PWD/src-tauri/updater-key.key" -p "<密码>" /tmp/probe.txt
 ```
 
-- 它会弹出一个密码提示。**选一个强密码，存进密码管理器。** 密码丢了 = 密钥没法再用，下次发布签不出合法签名。
-- 生成两个文件：
-  - `src-tauri/updater-key.key` —— 加密的**私钥**（绝对不进 git）
-  - `src-tauri/updater-key.key.pub` —— **公钥**（可以进 git，也可以直接内联到 config）
+把 `/tmp/probe.txt.sig` 和 `src-tauri/updater-key.key.pub` 都 base64 解开，取第二行 base64 的
+第 3~10 字节（小端序）就是 key ID，两边必须都是 `C56CE43C94863207`。
 
-打开 `updater-key.key.pub`，你会看到：
-
-```
-untrusted comment: minisign public key XXXXXXXX
-RWR<一长串base64字符>
-```
-
-把 **只有 `RWR...` 那一行**（不含 comment 行）复制到 `src-tauri/tauri.conf.json`：
-
-```json
-"pubkey": "RWR..."
-```
-
-把私钥安全地放好。仓库根 `secret-key.txt` 可以用作一个备份位置（已在 `.gitignore`）。
+**私钥和密码务必在仓库之外另存备份。** 丢了就等于永久失去给老用户推更新的能力。
 
 ### 每次发布
 
@@ -193,21 +203,31 @@ RWR<一长串base64字符>
    - `frontend/package.json` → `"version"`
    - 追加 `CHANGELOG-v1.x.md`
 
-2. 设置签名环境变量（PowerShell）：
+2. 设置签名环境变量。
+
+   **Linux 开发机**：密码放在仓库根 `.env.local`（已 gitignore），
+   `scripts/build-windows.sh` 会自己读私钥和密码，这一步不用手动做。
+
+   **Windows（PowerShell）**：
 
 ```powershell
-$env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content E:\Tauri\booth-tool\src-tauri\updater-key.key -Raw)
+$env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content src-tauri\updater-key.key -Raw)
 $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "<生成密钥时设置的那个密码>"
 ```
 
-3. 构建：
+3. 构建。
+
+   **Linux 开发机**：
+
+```bash
+./scripts/build-windows.sh      # 前端 dist 由 beforeBuildCommand 自动构建
+./scripts/build-android.sh
+```
+
+   **Windows**：
 
 ```powershell
-cd E:\Tauri\booth-tool\frontend
-npm run build
-
-cd E:\Tauri\booth-tool
-npm run tauri build
+npm run tauri build             # beforeBuildCommand 会先构建 frontend/dist
 ```
 
 产出物在 `src-tauri/target/release/bundle/nsis/`：
@@ -230,7 +250,9 @@ npm run tauri build
 }
 ```
 
-一个 PowerShell one-liner 可以帮你生成 `signature` 字段（输出需要再塞到 JSON 字符串里）：
+Linux 开发机上直接 `./scripts/make-latest-json.sh "更新说明"`，产物在 `dist/latest.json`。
+
+Windows 上手工做的话，这个 PowerShell one-liner 可以生成 `signature` 字段（输出需要再塞到 JSON 字符串里）：
 
 ```powershell
 (Get-Content "src-tauri/target/release/bundle/nsis/摊盒_1.1.1_x64-setup.exe.sig" -Raw) -replace "`r`n", "\n"
