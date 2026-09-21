@@ -5,23 +5,18 @@
     移动端：仅作为逻辑容器，内容通过 fixed 定位跳出
   -->
   <div class="shopping-cart-root">
-    
     <!-- ✅ 移动端遮罩层 (点击关闭) -->
     <transition name="fade">
-      <div 
-        v-if="isMobile && expanded" 
-        class="cart-backdrop"
-        @click="toggleCart"
-      ></div>
+      <div v-if="isMobile && expanded" class="cart-backdrop" @click="toggleCart"></div>
     </transition>
 
     <!-- 购物车主体 -->
     <div
       class="cart-container"
-      :class="{ 
-        'is-mobile': isMobile, 
+      :class="{
+        'is-mobile': isMobile,
         'is-expanded': expanded,
-        'is-desktop': !isMobile
+        'is-desktop': !isMobile,
       }"
     >
       <!-- 1. 顶部/手机底部 触发栏 -->
@@ -31,7 +26,7 @@
           <span class="header-title">购物车</span>
           <span class="count-badge" v-if="cartCount > 0">{{ cartCount }}</span>
         </div>
-        
+
         <div class="header-right">
           <span class="total-price">¥{{ total.toFixed(2) }}</span>
           <!-- 手机端箭头 -->
@@ -63,15 +58,11 @@
               </div>
 
               <div class="item-controls">
-                <button 
-                  class="ctrl-btn minus"
-                  @click.stop="$emit('removeFromCart', item.id)"
-                >-</button>
+                <button class="ctrl-btn minus" @click.stop="$emit('removeFromCart', item.id)">
+                  -
+                </button>
                 <span class="qty">{{ item.quantity }}</span>
-                <button 
-                  class="ctrl-btn plus"
-                  @click.stop="$emit('addToCart', item)"
-                >+</button>
+                <button class="ctrl-btn plus" @click.stop="$emit('addToCart', item)">+</button>
               </div>
             </li>
           </ul>
@@ -115,7 +106,7 @@ import { NButton } from 'naive-ui'
 const props = defineProps({
   cart: { type: Array, required: true },
   total: { type: Number, required: true },
-  isCheckingOut: { type: Boolean, default: false }
+  isCheckingOut: { type: Boolean, default: false },
 })
 
 defineEmits(['addToCart', 'removeFromCart', 'checkout'])
@@ -130,7 +121,7 @@ function checkMobile() {
   isMobile.value = window.innerWidth <= 768
   if (!isMobile.value) {
     // 桌面端默认永远展开，expanded 状态仅用于移动端
-    expanded.value = true 
+    expanded.value = true
   } else {
     expanded.value = false
   }
@@ -357,7 +348,7 @@ watch(
   color: white;
 }
 .ctrl-btn:active {
-  transform: scale(0.90);
+  transform: scale(0.9);
 }
 .qty {
   font-weight: 800;
@@ -485,10 +476,12 @@ watch(
 }
 
 /* 动画 */
-.fade-enter-active, .fade-leave-active {
+.fade-enter-active,
+.fade-leave-active {
   transition: opacity 0.3s;
 }
-.fade-enter-from, .fade-leave-to {
+.fade-enter-from,
+.fade-leave-to {
   opacity: 0;
 }
 

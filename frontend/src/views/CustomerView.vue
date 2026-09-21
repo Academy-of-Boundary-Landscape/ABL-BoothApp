@@ -43,14 +43,18 @@
               class="cat-chip"
               :class="{ active: selectedCategory === '' }"
               @click="selectedCategory = ''"
-            >全部</div>
+            >
+              全部
+            </div>
             <div
               v-for="cat in categoryOptions"
               :key="cat"
               class="cat-chip"
               :class="{ active: selectedCategory === cat }"
               @click="selectedCategory = cat"
-            >{{ cat }}</div>
+            >
+              {{ cat }}
+            </div>
           </div>
 
           <div class="toolbar-row">
@@ -75,12 +79,16 @@
                   class="mode-btn"
                   :class="{ active: !isVisionMode }"
                   @click="isVisionMode = false"
-                >商品列表</button>
+                >
+                  商品列表
+                </button>
                 <button
                   class="mode-btn"
                   :class="{ active: isVisionMode }"
                   @click="isVisionMode = true"
-                >拍照识别</button>
+                >
+                  拍照识别
+                </button>
               </div>
             </div>
 
@@ -100,7 +108,9 @@
                 :class="{ active: showAdminControls }"
                 @click="toggleAdminControls"
                 title="展开/折叠管理控件"
-              >⚙</button>
+              >
+                ⚙
+              </button>
             </div>
           </div>
 
@@ -159,12 +169,16 @@
                 class="mode-btn"
                 :class="{ active: !isVisionMode }"
                 @click="isVisionMode = false"
-              >商品列表</button>
+              >
+                商品列表
+              </button>
               <button
                 class="mode-btn"
                 :class="{ active: isVisionMode }"
                 @click="isVisionMode = true"
-              >拍照识别</button>
+              >
+                拍照识别
+              </button>
             </div>
           </div>
           <div class="toolbar-right"></div>
@@ -301,9 +315,7 @@ watch(isVisionMode, () => {
 
 function onVisionSelect(hit) {
   const { showError } = useAlert()
-  const product = (store.products || []).find(
-    (p) => p.master_product_id === hit.master_product_id
-  )
+  const product = (store.products || []).find((p) => p.master_product_id === hit.master_product_id)
   if (!product) {
     showError(`未找到商品「${hit.name}」，可能不在本场展会中`)
     return
@@ -333,7 +345,9 @@ function toggleAdminControls() {
 const cardSizeIndex = ref(1)
 const userTouchedCardSize = ref(false)
 const cardSize = computed(() => ['small', 'medium', 'large'][cardSizeIndex.value] || 'medium')
-function onCardSizeUserChange() { userTouchedCardSize.value = true }
+function onCardSizeUserChange() {
+  userTouchedCardSize.value = true
+}
 
 const isMobile = ref(false)
 function syncLayout() {
@@ -346,27 +360,30 @@ onMounted(() => {
   store.setupStoreForEvent(props.id)
   syncLayout()
   window.addEventListener('resize', syncLayout)
-  ACTIVITY_EVENTS.forEach(e => window.addEventListener(e, onUserActivity, { passive: true }))
+  ACTIVITY_EVENTS.forEach((e) => window.addEventListener(e, onUserActivity, { passive: true }))
 })
 onUnmounted(() => {
   window.removeEventListener('resize', syncLayout)
-  ACTIVITY_EVENTS.forEach(e => window.removeEventListener(e, onUserActivity))
+  ACTIVITY_EVENTS.forEach((e) => window.removeEventListener(e, onUserActivity))
   clearTimeout(idleTimer)
   clearTimeout(guideTimer)
 })
 
 const categoryOptions = computed(() => {
-  const cats = (store.products || []).map(p => p.category).filter(c => c && c.trim())
+  const cats = (store.products || []).map((p) => p.category).filter((c) => c && c.trim())
   return [...new Set(cats)]
 })
 
 const allTags = computed(() => {
   const counts = new Map()
-  ;(store.products || []).forEach(p => {
-    ;(p.tags || '').split(',').filter(t => t.trim()).forEach(tag => {
-      const t = tag.trim()
-      counts.set(t, (counts.get(t) || 0) + 1)
-    })
+  ;(store.products || []).forEach((p) => {
+    ;(p.tags || '')
+      .split(',')
+      .filter((t) => t.trim())
+      .forEach((tag) => {
+        const t = tag.trim()
+        counts.set(t, (counts.get(t) || 0) + 1)
+      })
   })
   return [...counts.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
@@ -383,7 +400,9 @@ function readSavedIds() {
     const raw = localStorage.getItem(STORAGE_KEY.value)
     const ids = JSON.parse(raw || '[]')
     return Array.isArray(ids) ? ids : []
-  } catch { return [] }
+  } catch {
+    return []
+  }
 }
 
 function applySavedOrder(list, savedIds) {
@@ -407,15 +426,13 @@ watch(
   [baseOrderedProducts, selectedCategory, selectedTag],
   ([base, cat, tag]) => {
     if (isEditMode.value) return
-    let subset = cat ? base.filter(p => p.category === cat) : base
+    let subset = cat ? base.filter((p) => p.category === cat) : base
     if (tag) {
-      subset = subset.filter(p =>
-        (p.tags || '').split(',').some(t => t.trim() === tag)
-      )
+      subset = subset.filter((p) => (p.tags || '').split(',').some((t) => t.trim() === tag))
     }
     // 售罄商品自动置底，有货的保持原有排序
-    const inStock = subset.filter(p => p.current_stock > 0)
-    const soldOut = subset.filter(p => p.current_stock <= 0)
+    const inStock = subset.filter((p) => p.current_stock > 0)
+    const soldOut = subset.filter((p) => p.current_stock <= 0)
     mutableProducts.value = [...inStock, ...soldOut]
   },
   { immediate: true }
@@ -429,20 +446,23 @@ function toggleEditMode() {
 function saveOrderToLocal() {
   const cat = selectedCategory.value
   const fullBase = baseOrderedProducts.value
-  const draggedSubsetIds = mutableProducts.value.map(p => p.id)
+  const draggedSubsetIds = mutableProducts.value.map((p) => p.id)
 
   let mergedIds
   if (!cat) {
     mergedIds = draggedSubsetIds
   } else {
     const subsetIdSet = new Set(draggedSubsetIds)
-    const baseIds = fullBase.map(p => p.id)
+    const baseIds = fullBase.map((p) => p.id)
     const queue = [...draggedSubsetIds]
-    mergedIds = baseIds.map(id => (subsetIdSet.has(id) ? queue.shift() : id))
+    mergedIds = baseIds.map((id) => (subsetIdSet.has(id) ? queue.shift() : id))
   }
 
-  try { localStorage.setItem(STORAGE_KEY.value, JSON.stringify(mergedIds)) }
-  catch (e) { console.error('保存顺序失败', e) }
+  try {
+    localStorage.setItem(STORAGE_KEY.value, JSON.stringify(mergedIds))
+  } catch (e) {
+    console.error('保存顺序失败', e)
+  }
 }
 
 // ===================== 闲置吸引屏 =====================
@@ -478,7 +498,9 @@ let guideTimer = null
 function triggerGuide() {
   showGuideBar.value = true
   clearTimeout(guideTimer)
-  guideTimer = setTimeout(() => { showGuideBar.value = false }, 8000)
+  guideTimer = setTimeout(() => {
+    showGuideBar.value = false
+  }, 8000)
 }
 
 // 监听任何交互事件来重置闲置计时器
@@ -490,9 +512,12 @@ function onUserActivity() {
 }
 
 // 首次加购时关闭引导条
-watch(() => store.cart.length, (newLen, oldLen) => {
-  if (newLen > oldLen && showGuideBar.value) showGuideBar.value = false
-})
+watch(
+  () => store.cart.length,
+  (newLen, oldLen) => {
+    if (newLen > oldLen && showGuideBar.value) showGuideBar.value = false
+  }
+)
 
 // ===== 下单 =====
 async function handleCheckout() {
@@ -569,7 +594,10 @@ function closePaymentModal() {
   border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
 }
-.sidebar-scroll { flex: 1; min-height: 0; }
+.sidebar-scroll {
+  flex: 1;
+  min-height: 0;
+}
 
 :deep(.sidebar-content) {
   display: flex;
@@ -661,11 +689,22 @@ function closePaymentModal() {
   border-radius: var(--radius-pill);
   border: 1px solid var(--border-color);
 }
-.toolbar-label { font-size: var(--font-sm); color: var(--text-muted); }
-.slider-wrap { width: 72px; }
+.toolbar-label {
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+}
+.slider-wrap {
+  width: 72px;
+}
 
-.toolbar-center { flex-shrink: 0; }
-.toolbar-right { display: flex; align-items: center; gap: 8px; }
+.toolbar-center {
+  flex-shrink: 0;
+}
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 
 .admin-toggle-btn {
   width: 32px;
@@ -744,7 +783,9 @@ function closePaymentModal() {
   flex-shrink: 0;
   scrollbar-width: none;
 }
-.tag-filter-bar::-webkit-scrollbar { display: none; }
+.tag-filter-bar::-webkit-scrollbar {
+  display: none;
+}
 
 .tag-chip {
   flex-shrink: 0;
@@ -791,7 +832,10 @@ function closePaymentModal() {
   justify-content: center;
   color: var(--text-muted);
 }
-.empty-emoji { font-size: 3rem; margin-bottom: 10px; }
+.empty-emoji {
+  font-size: 3rem;
+  margin-bottom: 10px;
+}
 
 /* ===== Vision 面板 body ===== */
 .vision-panel__body {
@@ -825,10 +869,7 @@ function closePaymentModal() {
   overflow: hidden;
   background: var(--bg-color);
   /* iPhone X+ 刘海/底部横条安全区 */
-  padding:
-    env(safe-area-inset-top)
-    env(safe-area-inset-right)
-    env(safe-area-inset-bottom)
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
     env(safe-area-inset-left);
   box-sizing: border-box;
 }
@@ -911,12 +952,20 @@ function closePaymentModal() {
   letter-spacing: 0.05em;
   cursor: pointer;
 }
-.attract-sub:hover { opacity: 0.8; }
+.attract-sub:hover {
+  opacity: 0.8;
+}
 
-.attract-fade-enter-active { transition: opacity 0.3s; }
-.attract-fade-leave-active { transition: opacity 0.5s; }
+.attract-fade-enter-active {
+  transition: opacity 0.3s;
+}
+.attract-fade-leave-active {
+  transition: opacity 0.5s;
+}
 .attract-fade-enter-from,
-.attract-fade-leave-to { opacity: 0; }
+.attract-fade-leave-to {
+  opacity: 0;
+}
 
 /* ===================== 引导条 ===================== */
 .guide-toast {
@@ -930,7 +979,7 @@ function closePaymentModal() {
   background: var(--card-bg-color);
   border: 1.5px solid var(--border-color);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0,0,0,0.15));
+  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.15));
   cursor: pointer;
   user-select: none;
   display: flex;
@@ -988,10 +1037,24 @@ function closePaymentModal() {
   font-size: 16px;
 }
 
-.guide-toast-enter-active { transition: transform 0.3s ease, opacity 0.3s ease; }
-.guide-toast-leave-active { transition: transform 0.25s ease, opacity 0.25s ease; }
-.guide-toast-enter-from { transform: translateX(-50%) translateY(24px); opacity: 0; }
-.guide-toast-leave-to { transform: translateX(-50%) translateY(12px); opacity: 0; }
+.guide-toast-enter-active {
+  transition:
+    transform 0.3s ease,
+    opacity 0.3s ease;
+}
+.guide-toast-leave-active {
+  transition:
+    transform 0.25s ease,
+    opacity 0.25s ease;
+}
+.guide-toast-enter-from {
+  transform: translateX(-50%) translateY(24px);
+  opacity: 0;
+}
+.guide-toast-leave-to {
+  transform: translateX(-50%) translateY(12px);
+  opacity: 0;
+}
 
 /* ===================== 断连横幅 ===================== */
 .disconnect-bar {
@@ -1010,8 +1073,13 @@ function closePaymentModal() {
   animation: disconnect-pulse 2s ease-in-out infinite;
 }
 @keyframes disconnect-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.8; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.8;
+  }
 }
 
 /* ===================== Mobile ===================== */
@@ -1035,7 +1103,9 @@ function closePaymentModal() {
     padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
   }
 
-  .toolbar-left .slider-wrap { width: 60px; }
+  .toolbar-left .slider-wrap {
+    width: 60px;
+  }
 
   .toolbar-right :deep(.n-button) {
     padding: 0 8px;

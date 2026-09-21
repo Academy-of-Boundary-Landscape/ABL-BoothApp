@@ -2,7 +2,11 @@
   <n-modal
     :show="show"
     :mask-closable="true"
-    @update:show="val => { if (!val) handleClose() }"
+    @update:show="
+      (val) => {
+        if (!val) handleClose()
+      }
+    "
   >
     <n-card :bordered="true" size="medium" class="edit-modal-card">
       <template #header>
@@ -36,7 +40,7 @@
                         :precision="2"
                         :show-button="false"
                         required
-                        style="width: 100%;"
+                        style="width: 100%"
                       />
                     </div>
                     <div class="form-group">
@@ -51,7 +55,7 @@
                       />
                     </div>
 
-                    <div class="form-group" style="grid-column: 1 / -1;">
+                    <div class="form-group" style="grid-column: 1 / -1">
                       <label>标签:</label>
                       <n-select
                         v-model:value="localProduct.tags"
@@ -92,13 +96,15 @@
                 class="gallery-hint"
               >
                 <strong>⚠ 尚未激活 AI 视觉模型。</strong>
-                现在上传的图片会暂存但无法生成识别向量（状态为"未嵌入"）。
-                请先到「控制台 → AI 视觉识别」下载并激活一个模型，之后再回来构建索引。
+                现在上传的图片会暂存但无法生成识别向量（状态为"未嵌入"）。 请先到「控制台 → AI
+                视觉识别」下载并激活一个模型，之后再回来构建索引。
               </n-alert>
               <n-alert :bordered="false" type="info" class="gallery-hint">
                 上传商品不同角度的照片，系统会用这些图片学习识别该商品。
-                <br /><strong>建议：</strong>每个商品上传 <strong>1~3 张</strong>不同角度的接近正方形的照片（商品居中、背景简洁）。
-                <br /><strong>📐 上传时会依次弹出裁剪框</strong>（多选时每张单独处理）——把商品框进 1:1 方框里识别更准；不想裁剪可以点"跳过（使用原图）"。
+                <br /><strong>建议：</strong>每个商品上传
+                <strong>1~3 张</strong>不同角度的接近正方形的照片（商品居中、背景简洁）。
+                <br /><strong>📐 上传时会依次弹出裁剪框</strong>（多选时每张单独处理）——把商品框进
+                1:1 方框里识别更准；不想裁剪可以点"跳过（使用原图）"。
               </n-alert>
 
               <!-- 加载中 -->
@@ -109,11 +115,7 @@
               <template v-else>
                 <!-- 图片网格 -->
                 <div class="gallery-grid">
-                  <div
-                    v-for="img in galleryImages"
-                    :key="img.id"
-                    class="gallery-item"
-                  >
+                  <div v-for="img in galleryImages" :key="img.id" class="gallery-item">
                     <div class="gallery-thumb">
                       <n-image
                         :src="resolveUrl(img.image_url)"
@@ -166,13 +168,12 @@
 
                 <!-- 空状态（仅在没有任何图片时） -->
                 <div v-if="galleryImages.length === 0" class="gallery-empty">
-                  还没有识别用图片。点击上方 "+" 添加商品照片，或在「基本信息」中上传预览图后会自动同步过来。
+                  还没有识别用图片。点击上方 "+"
+                  添加商品照片，或在「基本信息」中上传预览图后会自动同步过来。
                 </div>
 
                 <!-- 图片数量提示 -->
-                <div v-else class="gallery-count">
-                  已有 {{ galleryImages.length }} 张识别用图片
-                </div>
+                <div v-else class="gallery-count">已有 {{ galleryImages.length }} 张识别用图片</div>
               </template>
 
               <input
@@ -218,11 +219,7 @@
             >
               {{ isUpdating ? '保存中...' : '保存更改' }}
             </n-button>
-            <n-button
-              v-else-if="activeTab === 'gallery'"
-              type="primary"
-              @click="handleClose"
-            >
+            <n-button v-else-if="activeTab === 'gallery'" type="primary" @click="handleClose">
               保存并退出
             </n-button>
           </n-space>
@@ -235,8 +232,19 @@
 <script setup>
 import { ref, watch } from 'vue'
 import {
-  NModal, NCard, NButton, NInput, NInputNumber, NSelect,
-  NSpace, NTabs, NTabPane, NAlert, NTag, NImage, NSpin,
+  NModal,
+  NCard,
+  NButton,
+  NInput,
+  NInputNumber,
+  NSelect,
+  NSpace,
+  NTabs,
+  NTabPane,
+  NAlert,
+  NTag,
+  NImage,
+  NSpin,
 } from 'naive-ui'
 
 import ImageUploader from '@/components/shared/ImageUploader.vue'
@@ -320,9 +328,15 @@ watch(
   }
 )
 
-function handleInvalidFile(message) { editError.value = message }
-function handleImageRemoval() { isImageRemovedForEdit.value = true }
-function handleClose() { emit('close') }
+function handleInvalidFile(message) {
+  editError.value = message
+}
+function handleImageRemoval() {
+  isImageRemovedForEdit.value = true
+}
+function handleClose() {
+  emit('close')
+}
 
 async function handleUpdate() {
   if (!localProduct.value || isUpdating.value) return
@@ -381,7 +395,9 @@ async function checkVisionModelReady() {
   }
 }
 
-function resolveUrl(url) { return getImageUrl(url) }
+function resolveUrl(url) {
+  return getImageUrl(url)
+}
 
 function kindLabel(kind) {
   const map = {
@@ -480,16 +496,24 @@ function resolveGalleryCropper(value) {
     galleryCropperResolve = null
   }
 }
-function onGalleryCropConfirm(croppedFile) { resolveGalleryCropper(croppedFile) }
-function onGalleryCropSkip(originalFile) { resolveGalleryCropper(originalFile) }
-function onGalleryCropClose() { resolveGalleryCropper(null) }
+function onGalleryCropConfirm(croppedFile) {
+  resolveGalleryCropper(croppedFile)
+}
+function onGalleryCropSkip(originalFile) {
+  resolveGalleryCropper(originalFile)
+}
+function onGalleryCropClose() {
+  resolveGalleryCropper(null)
+}
 
 async function handleDeleteImage(img) {
   if (!localProduct.value) return
 
   // 如果是主图同步过来的，给个提示
   if (img.kind === 'legacy_main') {
-    const ok = confirm('这是从商品预览图自动同步的图片。删除后如需恢复，请在「基本信息」中重新上传预览图。确认删除？')
+    const ok = confirm(
+      '这是从商品预览图自动同步的图片。删除后如需恢复，请在「基本信息」中重新上传预览图。确认删除？'
+    )
     if (!ok) return
   }
 
@@ -517,7 +541,9 @@ async function handleDeleteImage(img) {
   justify-content: space-between;
   align-items: center;
 }
-.modal-title { margin: 0; }
+.modal-title {
+  margin: 0;
+}
 
 .modal-body {
   padding: 0.5rem 0;
@@ -528,7 +554,9 @@ async function handleDeleteImage(img) {
   padding-top: 0.75rem;
 }
 
-.hidden-input { display: none; }
+.hidden-input {
+  display: none;
+}
 
 /* ===== 基本信息 Tab ===== */
 .edit-form {
@@ -632,7 +660,9 @@ label {
   cursor: pointer;
   border: 2px dashed var(--border-color);
   background: transparent;
-  transition: border-color 0.15s, background-color 0.15s;
+  transition:
+    border-color 0.15s,
+    background-color 0.15s;
   min-height: 120px;
   display: flex;
   align-items: center;

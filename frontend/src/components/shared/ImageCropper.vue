@@ -5,7 +5,7 @@
     :close-on-esc="true"
     transform-origin="center"
     @esc="handleClose"
-    @update:show="v => !v && handleClose()"
+    @update:show="(v) => !v && handleClose()"
   >
     <div class="cropper-root">
       <!-- 顶部标题栏 -->
@@ -42,11 +42,7 @@
             <div class="mask mask-right" :style="maskRightStyle"></div>
 
             <!-- 裁剪框 -->
-            <div
-              class="crop-box"
-              :style="cropBoxStyle"
-              @pointerdown="startMove"
-            >
+            <div class="crop-box" :style="cropBoxStyle" @pointerdown="startMove">
               <!-- 3x3 辅助网格线 -->
               <div class="crop-grid">
                 <span class="grid-line v1"></span>
@@ -238,11 +234,15 @@ const cropBoxStyle = computed(() => ({
 }))
 
 const maskTopStyle = computed(() => ({
-  top: 0, left: 0, right: 0,
+  top: 0,
+  left: 0,
+  right: 0,
   height: cropPct.value.y * 100 + '%',
 }))
 const maskBottomStyle = computed(() => ({
-  bottom: 0, left: 0, right: 0,
+  bottom: 0,
+  left: 0,
+  right: 0,
   top: (cropPct.value.y + cropPct.value.h) * 100 + '%',
 }))
 const maskLeftStyle = computed(() => ({
@@ -342,10 +342,19 @@ function resizeBox(start, corner, dx, dy) {
   const anchorY = corner.includes('n') ? bottom : top
 
   // 根据 corner 哪个点在动
-  if (corner === 'nw') { left = start.x + dx; top = start.y + dy }
-  else if (corner === 'ne') { right = start.x + start.w + dx; top = start.y + dy }
-  else if (corner === 'sw') { left = start.x + dx; bottom = start.y + start.h + dy }
-  else if (corner === 'se') { right = start.x + start.w + dx; bottom = start.y + start.h + dy }
+  if (corner === 'nw') {
+    left = start.x + dx
+    top = start.y + dy
+  } else if (corner === 'ne') {
+    right = start.x + start.w + dx
+    top = start.y + dy
+  } else if (corner === 'sw') {
+    left = start.x + dx
+    bottom = start.y + start.h + dy
+  } else if (corner === 'se') {
+    right = start.x + start.w + dx
+    bottom = start.y + start.h + dy
+  }
 
   // 最小尺寸限制
   const minPct = 0.05
@@ -573,12 +582,30 @@ function handleClose() {
   position: absolute;
   background: rgba(255, 255, 255, 0.4);
 }
-.grid-line.v1, .grid-line.v2 { top: 0; bottom: 0; width: 1px; }
-.grid-line.v1 { left: 33.33%; }
-.grid-line.v2 { left: 66.67%; }
-.grid-line.h1, .grid-line.h2 { left: 0; right: 0; height: 1px; }
-.grid-line.h1 { top: 33.33%; }
-.grid-line.h2 { top: 66.67%; }
+.grid-line.v1,
+.grid-line.v2 {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+.grid-line.v1 {
+  left: 33.33%;
+}
+.grid-line.v2 {
+  left: 66.67%;
+}
+.grid-line.h1,
+.grid-line.h2 {
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+.grid-line.h1 {
+  top: 33.33%;
+}
+.grid-line.h2 {
+  top: 66.67%;
+}
 
 /* 四角手柄 */
 .handle {
@@ -596,10 +623,26 @@ function handleClose() {
   position: absolute;
   inset: -14px;
 }
-.handle-nw { top: -10px; left: -10px; cursor: nwse-resize; }
-.handle-ne { top: -10px; right: -10px; cursor: nesw-resize; }
-.handle-sw { bottom: -10px; left: -10px; cursor: nesw-resize; }
-.handle-se { bottom: -10px; right: -10px; cursor: nwse-resize; }
+.handle-nw {
+  top: -10px;
+  left: -10px;
+  cursor: nwse-resize;
+}
+.handle-ne {
+  top: -10px;
+  right: -10px;
+  cursor: nesw-resize;
+}
+.handle-sw {
+  bottom: -10px;
+  left: -10px;
+  cursor: nesw-resize;
+}
+.handle-se {
+  bottom: -10px;
+  right: -10px;
+  cursor: nwse-resize;
+}
 
 /* 比例切换 */
 .cropper-ratios {
@@ -652,15 +695,43 @@ function handleClose() {
     max-height: none;
     border-radius: 0;
   }
-  .cropper-header { padding: 10px 14px; }
-  .cropper-ratios { padding: 8px 10px; gap: 6px; }
-  .ratio-btn { padding: 5px 12px; font-size: 12px; }
-  .cropper-footer { padding: 10px 14px; gap: 8px; }
-  .cropper-footer :deep(.n-button) { flex: 1; }
-  .handle { width: 20px; height: 20px; }
-  .handle-nw { top: -12px; left: -12px; }
-  .handle-ne { top: -12px; right: -12px; }
-  .handle-sw { bottom: -12px; left: -12px; }
-  .handle-se { bottom: -12px; right: -12px; }
+  .cropper-header {
+    padding: 10px 14px;
+  }
+  .cropper-ratios {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+  .ratio-btn {
+    padding: 5px 12px;
+    font-size: 12px;
+  }
+  .cropper-footer {
+    padding: 10px 14px;
+    gap: 8px;
+  }
+  .cropper-footer :deep(.n-button) {
+    flex: 1;
+  }
+  .handle {
+    width: 20px;
+    height: 20px;
+  }
+  .handle-nw {
+    top: -12px;
+    left: -12px;
+  }
+  .handle-ne {
+    top: -12px;
+    right: -12px;
+  }
+  .handle-sw {
+    bottom: -12px;
+    left: -12px;
+  }
+  .handle-se {
+    bottom: -12px;
+    right: -12px;
+  }
 }
 </style>

@@ -17,13 +17,7 @@
         <div class="sidebar-header" :style="{ padding: isSidebarCollapsed ? '1rem 0' : '1.5rem' }">
           <h2 v-if="!isSidebarCollapsed" class="logo-text">管理后台</h2>
 
-          <n-button
-            v-if="!isMobile"
-            circle
-            size="small"
-            @click="toggleSidebar"
-            class="toggle-btn"
-          >
+          <n-button v-if="!isMobile" circle size="small" @click="toggleSidebar" class="toggle-btn">
             <template #icon>
               <span v-if="isSidebarCollapsed">»</span>
               <span v-else>«</span>
@@ -98,18 +92,8 @@
       </div>
     </n-layout-sider>
 
-    <n-layout-content
-      class="main-content"
-      content-style="padding: 24px;"
-      :native-scrollbar="false"
-    >
-      <n-button
-        v-if="isMobile"
-        circle
-        type="primary"
-        class="mobile-fab"
-        @click="toggleSidebar"
-      >
+    <n-layout-content class="main-content" content-style="padding: 24px;" :native-scrollbar="false">
+      <n-button v-if="isMobile" circle type="primary" class="mobile-fab" @click="toggleSidebar">
         <template #icon>{{ isSidebarCollapsed ? '☰' : '✕' }}</template>
       </n-button>
 
@@ -139,17 +123,23 @@
 
 <script setup>
 import { computed, ref, onMounted, onUnmounted, h } from 'vue'
-import { RouterLink, useRouter, useRoute } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 import {
-  NLayout, NLayoutSider, NLayoutContent, NButton,
-  NMenu, NDivider, NSpace, NIcon, NModal
+  NLayout,
+  NLayoutSider,
+  NLayoutContent,
+  NButton,
+  NMenu,
+  NDivider,
+  NSpace,
+  NIcon,
+  NModal,
 } from 'naive-ui'
 import { useEventStore } from '@/stores/eventStore'
 import ThemeSetting from '@/views/ThemeSetting.vue'
 import UpdateModal from '@/components/shared/UpdateModal.vue'
 
 const route = useRoute()
-const router = useRouter()
 const eventStore = useEventStore()
 
 const isSidebarCollapsed = ref(false)
@@ -160,44 +150,101 @@ const showUpdateModal = ref(false)
 const activeKey = computed(() => route.path)
 
 const ExternalIcon = () =>
-  h('svg', { xmlns: 'http://www.w3.org/2000/svg', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: '2' }, [
-    h('path', { d: 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6' }),
-    h('polyline', { points: '15 3 21 3 21 9' }),
-    h('line', { x1: '10', y1: '14', x2: '21', y2: '3' })
-  ])
+  h(
+    'svg',
+    {
+      xmlns: 'http://www.w3.org/2000/svg',
+      viewBox: '0 0 24 24',
+      fill: 'none',
+      stroke: 'currentColor',
+      strokeWidth: '2',
+    },
+    [
+      h('path', { d: 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6' }),
+      h('polyline', { points: '15 3 21 3 21 9' }),
+      h('line', { x1: '10', y1: '14', x2: '21', y2: '3' }),
+    ]
+  )
 
 const event = computed(() => {
   const eventId = route.params.id
   if (!eventId) return null
-  return eventStore.events.find(e => e.id === parseInt(eventId, 10)) || { name: '加载中...', id: eventId }
+  return (
+    eventStore.events.find((e) => e.id === parseInt(eventId, 10)) || {
+      name: '加载中...',
+      id: eventId,
+    }
+  )
 })
 
 const ongoingEvents = computed(() => {
   const events = Array.isArray(eventStore.events) ? eventStore.events : []
-  return events.filter(e => e.status === '进行中').slice(0, 3)
+  return events.filter((e) => e.status === '进行中').slice(0, 3)
 })
 
 const menuOptions = computed(() => {
   const baseOptions = [
     { label: () => h(RouterLink, { to: '/admin' }, { default: () => '控制台' }), key: '/admin' },
-    { label: () => h(RouterLink, { to: '/admin/events' }, { default: () => '展会管理' }), key: '/admin/events' },
-    { label: () => h(RouterLink, { to: '/admin/master-products' }, { default: () => '全局商品库' }), key: '/admin/master-products' },
-    { label: () => h(RouterLink, { to: '/admin/help' }, { default: () => '使用教程' }), key: '/admin/help' },
-    { label: () => h('div', { onClick: () => (showThemeModal.value = true), style: { cursor: 'pointer' } }, '主题设置'), key: '/admin/theme-setting' }
+    {
+      label: () => h(RouterLink, { to: '/admin/events' }, { default: () => '展会管理' }),
+      key: '/admin/events',
+    },
+    {
+      label: () => h(RouterLink, { to: '/admin/master-products' }, { default: () => '全局商品库' }),
+      key: '/admin/master-products',
+    },
+    {
+      label: () => h(RouterLink, { to: '/admin/help' }, { default: () => '使用教程' }),
+      key: '/admin/help',
+    },
+    {
+      label: () =>
+        h(
+          'div',
+          { onClick: () => (showThemeModal.value = true), style: { cursor: 'pointer' } },
+          '主题设置'
+        ),
+      key: '/admin/theme-setting',
+    },
   ]
 
   if (event.value) {
     baseOptions.push(
       { type: 'divider', key: 'd1' },
       {
-        label: () => h('div', { class: 'menu-event-name', title: event.value.name }, event.value.name),
+        label: () =>
+          h('div', { class: 'menu-event-name', title: event.value.name }, event.value.name),
         key: 'event-group',
         type: 'group',
         children: [
-          { label: () => h(RouterLink, { to: `/admin/events/${event.value.id}/products` }, { default: () => '商品管理' }), key: `/admin/events/${event.value.id}/products` },
-          { label: () => h(RouterLink, { to: `/admin/events/${event.value.id}/orders` }, { default: () => '订单管理' }), key: `/admin/events/${event.value.id}/orders` },
-          { label: () => h(RouterLink, { to: `/admin/events/${event.value.id}/stats` }, { default: () => '销售统计' }), key: `/admin/events/${event.value.id}/stats` }
-        ]
+          {
+            label: () =>
+              h(
+                RouterLink,
+                { to: `/admin/events/${event.value.id}/products` },
+                { default: () => '商品管理' }
+              ),
+            key: `/admin/events/${event.value.id}/products`,
+          },
+          {
+            label: () =>
+              h(
+                RouterLink,
+                { to: `/admin/events/${event.value.id}/orders` },
+                { default: () => '订单管理' }
+              ),
+            key: `/admin/events/${event.value.id}/orders`,
+          },
+          {
+            label: () =>
+              h(
+                RouterLink,
+                { to: `/admin/events/${event.value.id}/stats` },
+                { default: () => '销售统计' }
+              ),
+            key: `/admin/events/${event.value.id}/stats`,
+          },
+        ],
       }
     )
   }

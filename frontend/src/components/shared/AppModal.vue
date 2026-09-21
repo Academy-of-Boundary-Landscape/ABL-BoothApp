@@ -1,10 +1,14 @@
 <template>
-  <n-modal 
-    :show="show" 
+  <n-modal
+    :show="show"
     :mask-closable="true"
-    @update:show="val => { if (!val) $emit('close') }"
+    @update:show="
+      (val) => {
+        if (!val) $emit('close')
+      }
+    "
   >
-    <n-card :bordered="true" size="medium" style="width: 500px; max-width: 90%;">
+    <n-card :bordered="true" size="medium" style="width: 500px; max-width: 90%">
       <template #header>
         <div class="modal-header">
           <slot name="header">默认标题</slot>
@@ -28,15 +32,15 @@
 </template>
 
 <script setup>
-import { NModal, NCard, NButton } from 'naive-ui';
+import { NModal, NCard, NButton } from 'naive-ui'
 // 定义组件可以接收的 props 和可以触发的 events
 defineProps({
   show: {
     type: Boolean,
     required: true,
   },
-});
-defineEmits(['close']);
+})
+defineEmits(['close'])
 </script>
 
 <style scoped>

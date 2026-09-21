@@ -34,6 +34,11 @@ export default defineConfig(({ mode }) => {
     build: {
       minify: 'esbuild',
     },
+    test: {
+      environment: 'jsdom',
+      include: ['src/**/*.spec.js'],
+      globals: false,
+    },
     esbuild: {
       // 在生产环境移除 console 和 debugger
       drop: mode === 'production' ? ['console', 'debugger'] : [],

@@ -4,13 +4,17 @@
       <h4>订单 #{{ order.id }}</h4>
       <span class="order-time">{{ formattedTime }} (UTC+8)</span>
     </div>
-    
+
     <!-- 【核心改动】将 <ul> 改为 <div>，并修改内部结构 -->
     <div class="item-list">
       <div v-for="item in order.items" :key="item.id" class="order-item">
         <!-- 缩略图容器 -->
         <div class="item-thumbnail">
-          <img v-if="item.product_image_url" :src="item.product_image_url" :alt="item.product_name" />
+          <img
+            v-if="item.product_image_url"
+            :src="item.product_image_url"
+            :alt="item.product_name"
+          />
           <div v-else class="no-img-placeholder">?</div>
         </div>
         <!-- 商品信息 -->
@@ -27,7 +31,9 @@
       <span class="total-amount">总计: ¥{{ order.total_amount.toFixed(2) }}</span>
       <!-- 【修改】只有在待处理状态下才显示按钮 -->
       <div v-if="!isCompleted" class="button-group">
-        <n-button tertiary type="error" size="small" @click="$emit('cancel', order.id)">取消</n-button>
+        <n-button tertiary type="error" size="small" @click="$emit('cancel', order.id)"
+          >取消</n-button
+        >
         <n-button type="primary" @click="$emit('complete', order.id)">完成配货</n-button>
       </div>
     </div>
@@ -35,19 +41,19 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
-import { NButton } from 'naive-ui';
-import { formatTimestamp } from '@/utils/dateFormatter';
+import { computed } from 'vue'
+import { NButton } from 'naive-ui'
+import { formatTimestamp } from '@/utils/dateFormatter'
 
 const props = defineProps({
   order: { type: Object, required: true },
-  isCompleted: { type: Boolean, default: false }
-});
-defineEmits(['complete', 'cancel']);
+  isCompleted: { type: Boolean, default: false },
+})
+defineEmits(['complete', 'cancel'])
 
 const formattedTime = computed(() => {
-  return formatTimestamp(props.order.timestamp);
-});
+  return formatTimestamp(props.order.timestamp)
+})
 </script>
 
 <style scoped>
@@ -55,8 +61,13 @@ const formattedTime = computed(() => {
   border-left-color: var(--order-completed); /* 已完成的订单用灰色边框 */
   opacity: 0.8;
 }
-.button-group { display: flex; gap: 8px; }
-.btn-cancel { /* ... 危险操作的样式 ... */ }
+.button-group {
+  display: flex;
+  gap: 8px;
+}
+.btn-cancel {
+  /* ... 危险操作的样式 ... */
+}
 /* --- 整体卡片样式 --- */
 .order-card {
   background-color: var(--card-bg-color);
@@ -78,8 +89,15 @@ const formattedTime = computed(() => {
   padding-bottom: 6px;
   border-bottom: 1px solid var(--border-color);
 }
-.order-header h4 { margin: 0; font-size: var(--font-base); color: var(--primary-text-color); }
-.order-header .order-time { font-size: var(--font-sm); color: var(--text-muted); }
+.order-header h4 {
+  margin: 0;
+  font-size: var(--font-base);
+  color: var(--primary-text-color);
+}
+.order-header .order-time {
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+}
 
 /* --- 商品列表 --- */
 .item-list {
@@ -99,7 +117,8 @@ const formattedTime = computed(() => {
   flex-shrink: 0;
 }
 
-.item-thumbnail img, .no-img-placeholder {
+.item-thumbnail img,
+.no-img-placeholder {
   width: 36px;
   height: 36px;
   object-fit: cover;
@@ -174,7 +193,9 @@ const formattedTime = computed(() => {
   cursor: pointer;
   font-weight: bold;
   border: 1px solid;
-  transition: background-color 0.2s, color 0.2s;
+  transition:
+    background-color 0.2s,
+    color 0.2s;
 }
 
 /* “完成”按钮样式 */

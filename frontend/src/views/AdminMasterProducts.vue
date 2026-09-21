@@ -16,10 +16,7 @@
 
         <BoothpackSyncPanel @imported="refreshProducts('imported')" />
 
-        <MasterProductList
-          @edit="openEditModal"
-          @toggleStatus="handleToggleStatus"
-        />
+        <MasterProductList @edit="openEditModal" @toggleStatus="handleToggleStatus" />
       </n-space>
 
       <EditMasterProductModal
@@ -89,7 +86,6 @@ async function refreshProducts(reason = '') {
 onMounted(async () => {
   await store.fetchMasterProducts()
 })
-
 </script>
 
 <style scoped>

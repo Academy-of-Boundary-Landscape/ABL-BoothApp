@@ -38,8 +38,8 @@
         </template>
       </n-result>
       <p class="error-hint">
-        若反复失败，可能是网络问题或本版本暂未配置自动更新清单。
-        点击「前往发布页」直接到 GitHub 看最新版本。
+        若反复失败，可能是网络问题或本版本暂未配置自动更新清单。 点击「前往发布页」直接到 GitHub
+        看最新版本。
       </p>
     </div>
 
@@ -63,11 +63,9 @@
         <span class="date">{{ formatDate(releaseDate) }}</span>
       </div>
 
-      <div class="current-ver-tip">
-        当前版本: v{{ currentVersion }}
-      </div>
+      <div class="current-ver-tip">当前版本: v{{ currentVersion }}</div>
 
-      <n-divider title-placement="left" style="margin: 12px 0;">更新内容</n-divider>
+      <n-divider title-placement="left" style="margin: 12px 0">更新内容</n-divider>
 
       <n-scrollbar style="max-height: 200px" class="log-scroll">
         <div class="release-note">{{ releaseNote }}</div>
@@ -103,20 +101,8 @@
         </template>
         <template v-else>
           <n-button @click="close" ghost>暂不更新</n-button>
-          <n-button
-            v-if="canAuto"
-            type="primary"
-            @click="handleAutoInstall"
-          >
-            下载并安装
-          </n-button>
-          <n-button
-            v-else
-            type="primary"
-            @click="handleDownload"
-          >
-            前往下载
-          </n-button>
+          <n-button v-if="canAuto" type="primary" @click="handleAutoInstall"> 下载并安装 </n-button>
+          <n-button v-else type="primary" @click="handleDownload"> 前往下载 </n-button>
         </template>
       </div>
     </div>
@@ -124,25 +110,34 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
-import { useUpdateCheck } from '@/composables/useUpdateCheck';
+import { computed, onMounted, ref } from 'vue'
+import { useUpdateCheck } from '@/composables/useUpdateCheck'
 import {
-  NModal, NSpin, NResult, NButton, NTag, NDivider, NScrollbar,
-  NAlert, NProgress, NSpace, useDialog,
-} from 'naive-ui';
+  NModal,
+  NSpin,
+  NResult,
+  NButton,
+  NTag,
+  NDivider,
+  NScrollbar,
+  NAlert,
+  NProgress,
+  NSpace,
+  useDialog,
+} from 'naive-ui'
 
-const props = defineProps<{ show: boolean }>();
-const emit = defineEmits(['update:show']);
+const props = defineProps<{ show: boolean }>()
+const emit = defineEmits(['update:show'])
 
 const isTauriEnv = ref(
   typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined
-);
-const dialog = useDialog();
+)
+const dialog = useDialog()
 
 const showModal = computed({
   get: () => props.show,
   set: (val) => emit('update:show', val),
-});
+})
 
 const {
   loading,
@@ -162,41 +157,41 @@ const {
   restartApp,
   goToDownload,
   canAutoUpdate,
-} = useUpdateCheck();
+} = useUpdateCheck()
 
-const canAuto = ref(false);
+const canAuto = ref(false)
 
 onMounted(async () => {
   if (isTauriEnv.value) {
-    canAuto.value = await canAutoUpdate();
+    canAuto.value = await canAutoUpdate()
   }
-});
+})
 
 const handleEnter = () => {
   if (isTauriEnv.value) {
-    checkUpdate();
+    checkUpdate()
   }
-};
+}
 
 const retry = () => {
   if (isTauriEnv.value) {
-    checkUpdate();
+    checkUpdate()
   }
-};
+}
 
 const close = () => {
-  showModal.value = false;
-};
+  showModal.value = false
+}
 
 const handleDownload = () => {
-  goToDownload();
-};
+  goToDownload()
+}
 
 const handleAutoInstall = async () => {
-  await downloadAndInstall();
+  await downloadAndInstall()
   // 成功时 isInstalled 变 true，UI 自动切换到"立即重启"。
   // 失败时 error.value 已被设置；UI 会回退到错误分支让用户重试。
-};
+}
 
 const confirmRestart = () => {
   dialog.warning({
@@ -205,27 +200,27 @@ const confirmRestart = () => {
     positiveText: '确认重启',
     negativeText: '再等等',
     onPositiveClick: async () => {
-      await restartApp();
+      await restartApp()
     },
-  });
-};
+  })
+}
 
 const formatDate = (dateStr: string) => {
-  if (!dateStr) return '';
-  return new Date(dateStr).toLocaleDateString();
-};
+  if (!dateStr) return ''
+  return new Date(dateStr).toLocaleDateString()
+}
 
 const formatBytes = (bytes: number) => {
-  if (!bytes || bytes < 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  let i = 0;
-  let n = bytes;
+  if (!bytes || bytes < 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  let i = 0
+  let n = bytes
   while (n >= 1024 && i < units.length - 1) {
-    n /= 1024;
-    i += 1;
+    n /= 1024
+    i += 1
   }
-  return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-};
+  return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
+}
 </script>
 
 <style scoped>
@@ -238,7 +233,7 @@ const formatBytes = (bytes: number) => {
   min-height: 220px;
 }
 
-.text-muted { 
+.text-muted {
   color: var(--text-muted);
   font-size: var(--font-base);
   margin-top: 1rem;
@@ -301,11 +296,11 @@ const formatBytes = (bytes: number) => {
     align-items: flex-start;
     gap: 0.5rem;
   }
-  
+
   .actions {
     flex-direction: column; /* 手机上按钮垂直排列更易点击 */
   }
-  
+
   .actions button {
     width: 100%;
   }

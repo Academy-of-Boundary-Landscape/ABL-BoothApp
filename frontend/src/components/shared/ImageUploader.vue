@@ -42,12 +42,7 @@
         </n-button>
       </n-upload>
 
-      <n-button
-        v-if="initialImageUrl || previewUrl"
-        type="error"
-        tertiary
-        @click="removeImage"
-      >
+      <n-button v-if="initialImageUrl || previewUrl" type="error" tertiary @click="removeImage">
         移除图片
       </n-button>
     </div>
@@ -134,9 +129,7 @@ const boxStyle = computed(() => ({
   height: `${props.maxHeight}px`,
 }))
 
-const uploadHint = computed(
-  () => `支持图片上传，单文件大小不超过 ${props.maxFileSizeMb}MB`
-)
+const uploadHint = computed(() => `支持图片上传，单文件大小不超过 ${props.maxFileSizeMb}MB`)
 
 watch(
   () => props.initialImageUrl,

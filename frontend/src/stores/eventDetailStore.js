@@ -1,120 +1,122 @@
-import { defineStore } from 'pinia';
-import { ref } from 'vue';
-import api from '@/services/api';
-import { getImageUrl } from '@/services/url';
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+import api from '@/services/api'
+import { getImageUrl } from '@/services/url'
 
 export const useEventDetailStore = defineStore('eventDetail', () => {
   // --- State ---
-  const event = ref(null); // 存储当前展会的详细信息 (暂时未使用，但可扩展)
-  const products = ref([]); // 存储该展会上架的商品列表
-  const isLoading = ref(false);
-  const error = ref(null);
-  const allOrders = ref([]);
+  const event = ref(null) // 存储当前展会的详细信息 (暂时未使用，但可扩展)
+  const products = ref([]) // 存储该展会上架的商品列表
+  const isLoading = ref(false)
+  const error = ref(null)
+  const allOrders = ref([])
 
   // 预处理订单数据，将商品图片 URL 转换为完整路径
   const processOrders = (orders) => {
-    return orders.map(order => ({
+    return orders.map((order) => ({
       ...order,
-      items: order.items.map(item => ({
+      items: order.items.map((item) => ({
         ...item,
-        product_image_url: getImageUrl(item.product_image_url)
-      }))
-    }));
-  }; 
+        product_image_url: getImageUrl(item.product_image_url),
+      })),
+    }))
+  }
 
   // --- Actions ---
   // 获取指定展会的商品列表
   async function fetchProductsForEvent(eventId) {
-    isLoading.value = true;
-    error.value = null;
+    isLoading.value = true
+    error.value = null
     try {
-      const response = await api.get(`/events/${eventId}/products`);
-      products.value = response.data.map(product => ({
+      const response = await api.get(`/events/${eventId}/products`)
+      products.value = response.data.map((product) => ({
         ...product,
-        image_url: getImageUrl(product.image_url)
-      }));
+        image_url: getImageUrl(product.image_url),
+      }))
     } catch (err) {
-      error.value = '无法加载展会商品列表。';
-      console.error(err);
+      error.value = '无法加载展会商品列表。'
+      console.error(err)
     } finally {
-      isLoading.value = false;
+      isLoading.value = false
     }
   }
 
   // 为展会添加一个商品
   async function addProductToEvent(eventId, productData) {
     try {
-      const response = await api.post(`/events/${eventId}/products`, productData);
-      const product = { ...response.data, image_url: getImageUrl(response.data.image_url) };
-      products.value.unshift(product);
-      return product;
+      const response = await api.post(`/events/${eventId}/products`, productData)
+      const product = { ...response.data, image_url: getImageUrl(response.data.image_url) }
+      products.value.unshift(product)
+      return product
     } catch (err) {
-      console.error(err);
-      throw new Error(err.response?.data?.error || '上架商品失败。');
+      console.error(err)
+      throw new Error(err.response?.data?.error || '上架商品失败。')
     }
   }
-  
+
   // 更新展会商品的库存或价格
   async function updateEventProduct(productId, productData) {
     try {
-      const response = await api.put(`/products/${productId}`, productData);
-      const product = { ...response.data, image_url: getImageUrl(response.data.image_url) };
-      const index = products.value.findIndex(p => p.id === productId);
+      const response = await api.put(`/products/${productId}`, productData)
+      const product = { ...response.data, image_url: getImageUrl(response.data.image_url) }
+      const index = products.value.findIndex((p) => p.id === productId)
       if (index !== -1) {
-        products.value[index] = product;
+        products.value[index] = product
       }
-      return product;
+      return product
     } catch (err) {
-      console.error(err);
-      throw new Error(err.response?.data?.error || '更新商品失败。');
+      console.error(err)
+      throw new Error(err.response?.data?.error || '更新商品失败。')
     }
   }
 
   // 从展会中移除一个商品
   async function deleteEventProduct(productId) {
     try {
-      await api.delete(`/products/${productId}`);
-      products.value = products.value.filter(p => p.id !== productId);
+      await api.delete(`/products/${productId}`)
+      products.value = products.value.filter((p) => p.id !== productId)
     } catch (err) {
-      console.error(err);
-      throw new Error(err.response?.data?.error || '下架商品失败。');
+      console.error(err)
+      throw new Error(err.response?.data?.error || '下架商品失败。')
     }
   }
   async function fetchAllOrdersForEvent(eventId) {
-    isLoading.value = true;
-    error.value = null;
+    isLoading.value = true
+    error.value = null
     try {
       // 不带 status 参数，获取所有订单
-      const response = await api.get(`/events/${eventId}/orders`);
-      allOrders.value = processOrders(response.data);
+      const response = await api.get(`/events/${eventId}/orders`)
+      allOrders.value = processOrders(response.data)
     } catch (err) {
-      error.value = '无法加载订单列表。';
-      console.error(err);
+      error.value = '无法加载订单列表。'
+      console.error(err)
     } finally {
-      isLoading.value = false;
+      isLoading.value = false
     }
   }
   async function adminUpdateOrderStatus(eventId, orderId, newStatus) {
     try {
-      const response = await api.put(`/events/${eventId}/orders/${orderId}/status`, { status: newStatus });
+      const response = await api.put(`/events/${eventId}/orders/${orderId}/status`, {
+        status: newStatus,
+      })
       // 更新成功后，在本地 allOrders 列表中找到并更新该订单
-      const processedOrders = processOrders([response.data]);
-      const index = allOrders.value.findIndex(o => o.id === orderId);
+      const processedOrders = processOrders([response.data])
+      const index = allOrders.value.findIndex((o) => o.id === orderId)
       if (index !== -1) {
-        allOrders.value[index] = processedOrders[0];
+        allOrders.value[index] = processedOrders[0]
       }
-      return processedOrders[0];
+      return processedOrders[0]
     } catch (err) {
-      console.error(err);
-      throw new Error(err.response?.data?.error || '更新订单状态失败。');
+      console.error(err)
+      throw new Error(err.response?.data?.error || '更新订单状态失败。')
     }
   }
   // 重置状态，以便在切换不同展会详情页时清空旧数据
   function resetStore() {
-      event.value = null;
-      products.value = [];
-      error.value = null;
-      allOrders.value = [];
+    event.value = null
+    products.value = []
+    error.value = null
+    allOrders.value = []
   }
 
   return {
@@ -129,6 +131,6 @@ export const useEventDetailStore = defineStore('eventDetail', () => {
     resetStore,
     adminUpdateOrderStatus,
     fetchAllOrdersForEvent,
-    allOrders
-  };
-});
+    allOrders,
+  }
+})

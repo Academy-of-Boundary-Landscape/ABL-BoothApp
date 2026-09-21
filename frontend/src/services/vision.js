@@ -107,5 +107,7 @@ export function addProductImage(masterProductId, imageFile, kind = 'gallery') {
  * @param {number} imageId
  */
 export function deleteProductImage(masterProductId, imageId) {
-  return apiClient.delete(`/master-products/${masterProductId}/images/${imageId}`).then((r) => r.data)
+  return apiClient
+    .delete(`/master-products/${masterProductId}/images/${imageId}`)
+    .then((r) => r.data)
 }

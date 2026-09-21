@@ -21,7 +21,7 @@
         :class="{
           'out-of-stock': product.current_stock === 0,
           'low-stock': !editable && product.current_stock > 0 && product.current_stock <= 10,
-          'just-added': animatingIds.has(product.id)
+          'just-added': animatingIds.has(product.id),
         }"
         embedded
         :content-style="{ padding: 0 }"
@@ -72,7 +72,10 @@
                   <div
                     class="stock-bar-fill"
                     :class="{ critical: product.current_stock <= 3 }"
-                    :style="{ width: Math.min(product.current_stock / product.initial_stock * 100, 100) + '%' }"
+                    :style="{
+                      width:
+                        Math.min((product.current_stock / product.initial_stock) * 100, 100) + '%',
+                    }"
                   ></div>
                 </div>
               </template>
@@ -124,9 +127,9 @@ const props = defineProps({
   cardSize: {
     type: String,
     default: 'medium',
-    validator: (v) => ['small', 'medium', 'large'].includes(v)
+    validator: (v) => ['small', 'medium', 'large'].includes(v),
   },
-  editable: { type: Boolean, default: false }
+  editable: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['addToCart', 'update:products', 'order-changed'])
@@ -138,7 +141,8 @@ watch(
   () => props.products,
   (val) => {
     if (!props.editable) localList.value = Array.isArray(val) ? [...val] : []
-    if (props.editable && localList.value.length === 0) localList.value = Array.isArray(val) ? [...val] : []
+    if (props.editable && localList.value.length === 0)
+      localList.value = Array.isArray(val) ? [...val] : []
   },
   { immediate: true }
 )
@@ -183,9 +187,15 @@ function formatPrice(price) {
   align-content: start;
 }
 
-.product-grid.card-size-small  { --min-col: 110px; }
-.product-grid.card-size-medium { --min-col: 150px; }
-.product-grid.card-size-large  { --min-col: 220px; }
+.product-grid.card-size-small {
+  --min-col: 110px;
+}
+.product-grid.card-size-medium {
+  --min-col: 150px;
+}
+.product-grid.card-size-large {
+  --min-col: 220px;
+}
 
 /* 小号卡片：缩字、缩按钮、缩内边距 —— 否则在 3:4 + 110px 宽时
    bottom-row 的 ¥15.00 会被 32px 加号按钮挤到省略号 (15...) */
@@ -223,7 +233,9 @@ function formatPrice(price) {
 
 .product-card {
   border-radius: var(--pg-radius);
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
   border: 1px solid var(--pg-border);
   background-color: var(--pg-bg);
   overflow: hidden;
@@ -258,10 +270,12 @@ function formatPrice(price) {
    3:4（默认）=> 133.33%（竖向，适合立绘/明信片/海报）
    1:1        => 100%（方形，适合亚克力/徽章/周边小物）
    如果 inline style 未提供，兜底 133% 保持旧行为。 */
-.product-grid { --pg-media-pad: 133%; }
+.product-grid {
+  --pg-media-pad: 133%;
+}
 
 .media-box::before {
-  content: "";
+  content: '';
   display: block;
   padding-top: var(--pg-media-pad);
 }
@@ -328,17 +342,21 @@ function formatPrice(price) {
   inset: 0;
   background: linear-gradient(
     110deg,
-    rgba(255,255,255,0.0) 0%,
-    rgba(255,255,255,0.20) 30%,
-    rgba(255,255,255,0.0) 60%
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.2) 30%,
+    rgba(255, 255, 255, 0) 60%
   );
   transform: translateX(-60%);
   animation: shine 1.2s infinite;
 }
 
 @keyframes shine {
-  0% { transform: translateX(-60%); }
-  100% { transform: translateX(60%); }
+  0% {
+    transform: translateX(-60%);
+  }
+  100% {
+    transform: translateX(60%);
+  }
 }
 
 .media-error {
@@ -377,7 +395,7 @@ function formatPrice(price) {
   font-size: 11px;
   font-weight: 800;
   color: white;
-  background: rgba(0,0,0,0.55);
+  background: rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(6px);
 }
 .chip.stock-warning {
@@ -389,8 +407,13 @@ function formatPrice(price) {
 }
 
 @keyframes stock-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
 }
 
 /* 库存进度条：贴在图片区域底部 */
@@ -400,7 +423,7 @@ function formatPrice(price) {
   left: 0;
   right: 0;
   height: 3px;
-  background: rgba(0,0,0,0.1);
+  background: rgba(0, 0, 0, 0.1);
 }
 .stock-bar-fill {
   height: 100%;
@@ -432,7 +455,7 @@ function formatPrice(price) {
   letter-spacing: 0.06em;
   font-size: 12px;
   color: white;
-  background: rgba(20,20,20,0.86);
+  background: rgba(20, 20, 20, 0.86);
   box-shadow: var(--shadow-lg);
   transform: rotate(-6deg);
 }
@@ -481,8 +504,15 @@ function formatPrice(price) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.currency { font-size: var(--font-xs); margin-right: 1px; }
-.value { font-size: var(--font-lg); font-weight: 900; font-family: sans-serif; }
+.currency {
+  font-size: var(--font-xs);
+  margin-right: 1px;
+}
+.value {
+  font-size: var(--font-lg);
+  font-weight: 900;
+  font-family: sans-serif;
+}
 
 .action-icon {
   flex-shrink: 0;
@@ -536,7 +566,9 @@ function formatPrice(price) {
   cursor: grab;
   animation: shake 2s infinite ease-in-out;
 }
-.is-editing .product-card:active { cursor: grabbing; }
+.is-editing .product-card:active {
+  cursor: grabbing;
+}
 
 .edit-overlay {
   position: absolute;
@@ -558,10 +590,18 @@ function formatPrice(price) {
 }
 
 @keyframes shake {
-  0% { transform: rotate(0deg); }
-  25% { transform: rotate(0.5deg); }
-  75% { transform: rotate(-0.5deg); }
-  100% { transform: rotate(0deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(0.5deg);
+  }
+  75% {
+    transform: rotate(-0.5deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
 }
 
 .product-card.just-added {
@@ -569,9 +609,19 @@ function formatPrice(price) {
 }
 
 @keyframes add-pulse {
-  0% { transform: scale(1); }
-  30% { transform: scale(0.93); box-shadow: 0 0 0 3px var(--accent-color); }
-  60% { transform: scale(1.03); }
-  100% { transform: scale(1); box-shadow: none; }
+  0% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(0.93);
+    box-shadow: 0 0 0 3px var(--accent-color);
+  }
+  60% {
+    transform: scale(1.03);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: none;
+  }
 }
 </style>

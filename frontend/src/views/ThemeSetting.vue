@@ -1,12 +1,10 @@
 <template>
   <div class="theme-setting-container">
     <n-grid x-gap="24" y-gap="24" cols="1 s:1 m:2" responsive="screen">
-
       <!-- 左侧：设置面板 -->
       <n-grid-item>
         <n-card title="主题偏好" size="medium">
           <n-space vertical size="large">
-
             <!-- 1. 模式切换 -->
             <div class="setting-item">
               <div class="label">
@@ -33,7 +31,7 @@
               </div>
               <n-switch
                 :value="themeStore.productImageAspect === '3:4'"
-                @update:value="(v) => themeStore.productImageAspect = v ? '3:4' : '1:1'"
+                @update:value="(v) => (themeStore.productImageAspect = v ? '3:4' : '1:1')"
                 size="large"
               >
                 <template #checked>
@@ -64,20 +62,23 @@
 
               <!-- 预设色板 -->
               <div class="color-swatches">
-                <n-tooltip
-                  v-for="swatch in presetColors"
-                  :key="swatch.color"
-                  placement="top"
-                >
+                <n-tooltip v-for="swatch in presetColors" :key="swatch.color" placement="top">
                   <template #trigger>
                     <div
                       class="swatch"
                       :style="{ backgroundColor: swatch.color }"
-                      :class="{ active: themeStore.customPrimaryColor === swatch.color || (!themeStore.customPrimaryColor && isDefaultColor(swatch)) }"
+                      :class="{
+                        active:
+                          themeStore.customPrimaryColor === swatch.color ||
+                          (!themeStore.customPrimaryColor && isDefaultColor(swatch)),
+                      }"
                       @click="themeStore.customPrimaryColor = swatch.color"
                     >
                       <n-icon
-                        v-if="themeStore.customPrimaryColor === swatch.color || (!themeStore.customPrimaryColor && isDefaultColor(swatch))"
+                        v-if="
+                          themeStore.customPrimaryColor === swatch.color ||
+                          (!themeStore.customPrimaryColor && isDefaultColor(swatch))
+                        "
                         :component="Checkmark"
                       />
                     </div>
@@ -94,7 +95,6 @@
                 class="mt-2"
               />
             </div>
-
           </n-space>
         </n-card>
       </n-grid-item>
@@ -103,7 +103,6 @@
       <n-grid-item>
         <n-card title="效果预览" size="medium" class="preview-card">
           <n-space vertical size="large">
-
             <!-- 按钮展示 -->
             <n-space>
               <n-button type="primary">主要按钮</n-button>
@@ -133,7 +132,6 @@
               <p>这是一个使用了 CSS 变量的自定义 Div</p>
               <code>color: var(--accent-color)</code>
             </div>
-
           </n-space>
         </n-card>
       </n-grid-item>
@@ -143,8 +141,19 @@
 
 <script setup>
 import {
-  NCard, NSpace, NSwitch, NDivider, NButton, NColorPicker,
-  NGrid, NGridItem, NIcon, NTag, NInput, NAlert, NTooltip,
+  NCard,
+  NSpace,
+  NSwitch,
+  NDivider,
+  NButton,
+  NColorPicker,
+  NGrid,
+  NGridItem,
+  NIcon,
+  NTag,
+  NInput,
+  NAlert,
+  NTooltip,
 } from 'naive-ui'
 import { Sunny, Moon, Checkmark } from '@vicons/ionicons5'
 import { useThemeStore } from '@/stores/themeStore'
@@ -153,7 +162,7 @@ const themeStore = useThemeStore()
 
 // 预设主色：带名称，悬停时通过 title 展示
 const presetColors = [
-  { color: '#8B0012', label: '北大红' },   // 当前主题默认主色
+  { color: '#8B0012', label: '北大红' }, // 当前主题默认主色
   { color: '#FFA6A6', label: '少女粉' },
   { color: '#E9BA00', label: '奶龙黄' },
   { color: '#007ACC', label: 'VSCode蓝' },
@@ -260,7 +269,9 @@ const isDefaultColor = (swatch) => {
   align-items: center;
   justify-content: center;
   color: white;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
   border: 2px solid transparent;
 }
 
@@ -270,7 +281,9 @@ const isDefaultColor = (swatch) => {
 
 .swatch.active {
   transform: scale(1.1);
-  box-shadow: 0 0 0 2px var(--card-bg-color), 0 0 0 4px var(--primary-text-color);
+  box-shadow:
+    0 0 0 2px var(--card-bg-color),
+    0 0 0 4px var(--primary-text-color);
 }
 
 .mt-2 {

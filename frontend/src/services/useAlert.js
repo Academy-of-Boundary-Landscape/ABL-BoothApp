@@ -1,9 +1,9 @@
 // src/composables/useAlert.js
 
-import { useAlertStore } from '@/stores/alertStore';
+import { useAlertStore } from '@/stores/alertStore'
 
 export function useAlert() {
-  const alertStore = useAlertStore();
+  const alertStore = useAlertStore()
 
   /**
    * 触发全局弹窗的便捷函数
@@ -11,21 +11,21 @@ export function useAlert() {
    * @param {object} options - 可选配置 (title, type)
    */
   const showAlert = (message, options) => {
-    alertStore.show(message, options);
-  };
+    alertStore.show(message, options)
+  }
 
   // 你甚至可以创建一些快捷方式
   const showSuccess = (message, title = '成功') => {
-    showAlert(message, { type: 'success', title });
-  };
+    showAlert(message, { type: 'success', title })
+  }
 
   const showError = (message, title = '错误') => {
-    showAlert(message, { type: 'error', title });
-  };
+    showAlert(message, { type: 'error', title })
+  }
 
   return {
     showAlert,
     showSuccess,
     showError,
-  };
+  }
 }

@@ -1,7 +1,6 @@
 <template>
   <div class="tutorial-container">
     <n-card :bordered="false" class="main-card" size="large">
-      
       <!-- 1. 头部 Header -->
       <div class="header-section">
         <n-icon size="64" color="var(--accent-color)"><BookOutline /></n-icon>
@@ -17,13 +16,8 @@
           <n-icon size="24" color="var(--accent-color)"><PlayCircleOutline /></n-icon>
           <h2>核心流程演示</h2>
         </div>
-        
-        <n-carousel
-          show-arrow
-          dot-type="line"
-          class="tutorial-carousel"
-          draggable
-        >
+
+        <n-carousel show-arrow dot-type="line" class="tutorial-carousel" draggable>
           <div v-for="(step, index) in tutorialSteps" :key="index" class="carousel-item">
             <div class="step-image-wrapper">
               <img :src="step.imgName" :alt="step.title" class="step-image" />
@@ -38,7 +32,7 @@
       </section>
 
       <!-- 3. 快速上手 Grid -->
-       <section class="section">
+      <section class="section">
         <div class="section-header">
           <n-icon size="24" color="var(--success-color)"><RocketOutline /></n-icon>
           <h2>快速上手步骤</h2>
@@ -48,11 +42,7 @@
             <n-card class="quick-step-card" embedded :bordered="false">
               <!-- 使用 NFlex 和 NAvatar 实现完美居中对齐 -->
               <n-flex vertical align="center" justify="center" :size="12">
-                <n-avatar
-                  round
-                  :size="44"
-                  class="step-number-avatar"
-                >
+                <n-avatar round :size="44" class="step-number-avatar">
                   {{ idx + 1 }}
                 </n-avatar>
                 <div class="quick-step-text">{{ item }}</div>
@@ -65,25 +55,39 @@
       <n-divider />
 
       <!-- 4. 离散 QA (带搜索) -->
-       <section class="section qa-section">
+      <section class="section qa-section">
         <div class="section-header qa-header-flex">
           <div class="flex-center">
             <n-icon size="24" color="var(--warning-color)"><HelpCircleOutline /></n-icon>
             <h2>常见问题解答</h2>
           </div>
           <n-flex align="center">
-             <n-button size="tiny" quaternary @click="toggleAllCategories(true)">全部展开</n-button>
-             <n-button size="tiny" quaternary @click="toggleAllCategories(false)">一键收起</n-button>
-             <n-input v-model:value="searchQuery" placeholder="搜索关键词..." clearable class="qa-search">
-              <template #prefix><n-icon><SearchOutline /></n-icon></template>
+            <n-button size="tiny" quaternary @click="toggleAllCategories(true)">全部展开</n-button>
+            <n-button size="tiny" quaternary @click="toggleAllCategories(false)">一键收起</n-button>
+            <n-input
+              v-model:value="searchQuery"
+              placeholder="搜索关键词..."
+              clearable
+              class="qa-search"
+            >
+              <template #prefix
+                ><n-icon><SearchOutline /></n-icon
+              ></template>
             </n-input>
           </n-flex>
         </div>
 
         <div v-if="filteredQA.length > 0">
           <!-- 分类折叠面板 -->
-          <n-collapse :expanded-names="expandedCategories" @update:expanded-names="handleCategoryChange">
-            <n-collapse-item v-for="category in filteredQA" :key="category.category" :name="category.category">
+          <n-collapse
+            :expanded-names="expandedCategories"
+            @update:expanded-names="handleCategoryChange"
+          >
+            <n-collapse-item
+              v-for="category in filteredQA"
+              :key="category.category"
+              :name="category.category"
+            >
               <template #header>
                 <n-flex align="center" size="small">
                   <n-icon :component="category.icon" color="var(--accent-color)" />
@@ -91,14 +95,14 @@
                   <n-badge :value="category.items.length" type="info" :inverted="true" />
                 </n-flex>
               </template>
-              
+
               <!-- 具体的 QA 列表 -->
               <div class="category-inner-content">
                 <n-collapse arrow-placement="right" plain>
-                  <n-collapse-item 
-                    v-for="(item, index) in category.items" 
+                  <n-collapse-item
+                    v-for="(item, index) in category.items"
                     :key="index"
-                    :title="item.q" 
+                    :title="item.q"
                     :name="index"
                   >
                     <div class="qa-answer" v-html="item.a"></div>
@@ -108,7 +112,7 @@
             </n-collapse-item>
           </n-collapse>
         </div>
-        
+
         <n-empty v-else description="没有找到相关问题" class="mt-4" />
       </section>
 
@@ -119,39 +123,74 @@
         <n-flex justify="center" class="mt-2">
           <n-popover trigger="hover">
             <template #trigger>
-              <n-button secondary type="primary" size="small" @click="copyLink('1074201740', '用户交流群链接')">
-                <template #icon><n-icon><ChatbubblesOutline /></n-icon></template>
+              <n-button
+                secondary
+                type="primary"
+                size="small"
+                @click="copyLink('1074201740', '用户交流群链接')"
+              >
+                <template #icon
+                  ><n-icon><ChatbubblesOutline /></n-icon
+                ></template>
                 加入用户交流群
               </n-button>
             </template>
             <span>用户交流qq群链接已复制到剪贴板</span>
           </n-popover>
-          <n-button secondary type="info" size="small" @click="copyLink('contact@secret-sealing.club', '邮箱')">
-            <template #icon><n-icon><MailOutline /></n-icon></template>
+          <n-button
+            secondary
+            type="info"
+            size="small"
+            @click="copyLink('contact@secret-sealing.club', '邮箱')"
+          >
+            <template #icon
+              ><n-icon><MailOutline /></n-icon
+            ></template>
             发送反馈邮件
           </n-button>
         </n-flex>
-        <div class="copyright mt-4">
-          © 2026 境界景观学会 | Documentation
-        </div>
+        <div class="copyright mt-4">© 2026 境界景观学会 | Documentation</div>
       </section>
-
     </n-card>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { 
-  NCard, NDivider, NGrid, NGridItem, NIcon, NButton, NFlex, 
-  NCollapse, NCollapseItem, NCarousel, NInput, NEmpty, NPopover, NBadge, useMessage
+import {
+  NCard,
+  NDivider,
+  NGrid,
+  NGridItem,
+  NIcon,
+  NButton,
+  NFlex,
+  NCollapse,
+  NCollapseItem,
+  NCarousel,
+  NInput,
+  NEmpty,
+  NPopover,
+  NBadge,
+  useMessage,
 } from 'naive-ui'
 import { copyLink as copyLinkUtil } from '@/services/clipboard'
-import { 
-  BookOutline, PlayCircleOutline, RocketOutline, HelpCircleOutline, 
-  SearchOutline, ChatbubblesOutline, MailOutline, WifiOutline, 
-  WalletOutline, ShieldCheckmarkOutline, SettingsOutline, AlertCircleOutline, 
-  ImageOutline, HardwareChipOutline, LogoGithub
+import {
+  BookOutline,
+  PlayCircleOutline,
+  RocketOutline,
+  HelpCircleOutline,
+  SearchOutline,
+  ChatbubblesOutline,
+  MailOutline,
+  WifiOutline,
+  WalletOutline,
+  ShieldCheckmarkOutline,
+  SettingsOutline,
+  AlertCircleOutline,
+  ImageOutline,
+  HardwareChipOutline,
+  LogoGithub,
 } from '@vicons/ionicons5'
 
 const message = useMessage()
@@ -165,32 +204,32 @@ const tutorialSteps = [
     shortTitle: '安装录入',
     title: '第一步：准备工作',
     desc: '在一台设备上下载并安装摊盒 App，将社团的制品图、名称及价格完整录入系统。',
-    imgName: '/help/p1.png'
+    imgName: '/help/p1.png',
   },
   {
     shortTitle: '展会备货',
     title: '第二步：配置展会',
     desc: '在漫展开始前，于系统内创建新展会，并根据实际备货情况填写各制品的库存数量。',
-    imgName: '/help/p2.png'
+    imgName: '/help/p2.png',
   },
   {
     shortTitle: '局域网连接',
     title: '第三步：组建局域网',
     desc: '漫展现场，用平板开启热点（无网络也可），手机打开浏览器，扫描平板上的二维码，实现多端秒连。',
-    imgName: '/help/p3.png'
+    imgName: '/help/p3.png',
   },
   {
     shortTitle: '现场出摊',
     title: '第四步：自助点单',
     desc: '平板作为“顾客视图”摆在摊位前。顾客自助点单后，摊主手机端会立即收到配货提示。',
-    imgName: '/help/p4.png'
+    imgName: '/help/p4.png',
   },
   {
     shortTitle: '一键总结',
     title: '第五步：收摊结算',
     desc: '漫展结束后，摊主可以在统计页面轻松地一键导出全天的销售总结与财务报。',
-    imgName: '/help/p5.png'
-  }
+    imgName: '/help/p5.png',
+  },
 ]
 // 快速上手文字
 const quickSteps = ['录入制品', '建立展会', '扫码配对', '开始出摊']
@@ -202,23 +241,23 @@ const qaList = [
     category: '网络连接',
     icon: WifiOutline,
     items: [
-      { 
-        q: '手机扫码后显示“连接超时”或网页无法打开？', 
-        a: '这是最常见的问题，请按顺序排查：<br/>1. <strong>检查热点</strong>：确保主机（电脑/平板）和扫码的手机连的是同一个 Wi-Fi/热点。<br/>2. <strong>防火墙拦截</strong>：Windows 主机请检查防火墙是否允许了“摊盒”通过，或尝试暂时关闭防火墙。<br/>3. <strong>IP变动</strong>：如果重启过热点，IP 地址可能会变，请在主机端点击“重新生成二维码”。' 
+      {
+        q: '手机扫码后显示“连接超时”或网页无法打开？',
+        a: '这是最常见的问题，请按顺序排查：<br/>1. <strong>检查热点</strong>：确保主机（电脑/平板）和扫码的手机连的是同一个 Wi-Fi/热点。<br/>2. <strong>防火墙拦截</strong>：Windows 主机请检查防火墙是否允许了“摊盒”通过，或尝试暂时关闭防火墙。<br/>3. <strong>IP变动</strong>：如果重启过热点，IP 地址可能会变，请在主机端点击“重新生成二维码”。',
       },
-      { 
-        q: '没有网络/信号差能用吗？', 
-        a: '<strong>完全可以。</strong> 摊盒是“离线优先”的设计。推荐用一台设备开启<strong>手机热点</strong>组建局域网，其他设备连接它即可，不需要连接互联网，也不消耗流量。' 
+      {
+        q: '没有网络/信号差能用吗？',
+        a: '<strong>完全可以。</strong> 摊盒是“离线优先”的设计。推荐用一台设备开启<strong>手机热点</strong>组建局域网，其他设备连接它即可，不需要连接互联网，也不消耗流量。',
       },
-      { 
-        q: '我是校园网/公共 Wi-Fi，设备连不上？', 
-        a: '公共网络通常开启了“AP 隔离”功能，禁止设备间互相访问。<strong>请务必使用热点</strong>来组建网络，这是漫展现场最稳妥的方案。' 
+      {
+        q: '我是校园网/公共 Wi-Fi，设备连不上？',
+        a: '公共网络通常开启了“AP 隔离”功能，禁止设备间互相访问。<strong>请务必使用热点</strong>来组建网络，这是漫展现场最稳妥的方案。',
       },
-      { 
-        q: '中途断网了，数据会丢吗？', 
-        a: '<strong>不会。</strong> 只要主机端（App端）没有关闭，数据就一直存在。重新连接网络后，手机端刷新页面即可恢复之前的状态。' 
-      }
-    ]
+      {
+        q: '中途断网了，数据会丢吗？',
+        a: '<strong>不会。</strong> 只要主机端（App端）没有关闭，数据就一直存在。重新连接网络后，手机端刷新页面即可恢复之前的状态。',
+      },
+    ],
   },
   {
     category: '现场运营',
@@ -226,71 +265,71 @@ const qaList = [
     items: [
       {
         q: '怎么设置收款码？支持多渠道吗？',
-        a: '在“展会管理”点击“编辑”，可以<strong>分别上传微信和支付宝</strong>两张收款码。顾客结算页会自动并排显示两个码，顾客用哪个 App 扫哪个即可。只上传一张也行，这时页面单码居中显示。'
+        a: '在“展会管理”点击“编辑”，可以<strong>分别上传微信和支付宝</strong>两张收款码。顾客结算页会自动并排显示两个码，顾客用哪个 App 扫哪个即可。只上传一张也行，这时页面单码居中显示。',
       },
-      { 
-        q: '顾客付款后，系统会自动完成订单吗？', 
-        a: '<strong>不会。</strong> 为了保护隐私及规避金融风险，摊盒不接入支付接口。您听到“支付宝/微信到账”的提示后，需在摊主手机上手动点击“完成订单”来扣减库存。' 
+      {
+        q: '顾客付款后，系统会自动完成订单吗？',
+        a: '<strong>不会。</strong> 为了保护隐私及规避金融风险，摊盒不接入支付接口。您听到“支付宝/微信到账”的提示后，需在摊主手机上手动点击“完成订单”来扣减库存。',
       },
-      { 
-        q: '有新订单时会有声音提示吗？', 
-        a: '<strong>有的。</strong> 摊主手机端（连接端）在收到新下单请求时会播放提示音。请确保您的手机<strong>未处于静音模式</strong>，并调大媒体音量。' 
+      {
+        q: '有新订单时会有声音提示吗？',
+        a: '<strong>有的。</strong> 摊主手机端（连接端）在收到新下单请求时会播放提示音。请确保您的手机<strong>未处于静音模式</strong>，并调大媒体音量。',
       },
-      { 
-        q: '可以多人/多设备同时摆摊吗？', 
-        a: '支持！只要连入同一个热点，您可以放置 2 台平板作为“点单机”，并让 3 位摊主都拿着手机作为“配货机”，所有数据实时同步。' 
-      }
-    ]
+      {
+        q: '可以多人/多设备同时摆摊吗？',
+        a: '支持！只要连入同一个热点，您可以放置 2 台平板作为“点单机”，并让 3 位摊主都拿着手机作为“配货机”，所有数据实时同步。',
+      },
+    ],
   },
   {
     category: '突发状况',
     icon: AlertCircleOutline,
     items: [
-      { 
-        q: '顾客下错单/我想取消订单怎么办？', 
-        a: '在摊主配货页面，不要点“完成”，直接点击红色的<strong>“取消”</strong>按钮。该订单会被废弃，锁定的库存会自动返还。' 
+      {
+        q: '顾客下错单/我想取消订单怎么办？',
+        a: '在摊主配货页面，不要点“完成”，直接点击红色的<strong>“取消”</strong>按钮。该订单会被废弃，锁定的库存会自动返还。',
       },
-      { 
-        q: '手滑误点了“完成”，想反悔怎么办？', 
-        a: '别慌，请到主机的“订单管理”页面，找到那笔误操作的订单，将其状态修改为<strong>“已取消”</strong>。系统会重新把库存加回去，并修正销售额统计。' 
+      {
+        q: '手滑误点了“完成”，想反悔怎么办？',
+        a: '别慌，请到主机的“订单管理”页面，找到那笔误操作的订单，将其状态修改为<strong>“已取消”</strong>。系统会重新把库存加回去，并修正销售额统计。',
       },
-      { 
-        q: '主机设备突然没电/死机了怎么办？', 
-        a: '摊盒采用 SQLite 实时落盘存储。重启设备和软件后，所有的商品信息、历史订单和库存数据都会<strong>自动恢复</strong>到死机前的那一刻。但为了体验方便，请准备好<strong>备用电源</strong>，以防万一。' 
-      }
-    ]
+      {
+        q: '主机设备突然没电/死机了怎么办？',
+        a: '摊盒采用 SQLite 实时落盘存储。重启设备和软件后，所有的商品信息、历史订单和库存数据都会<strong>自动恢复</strong>到死机前的那一刻。但为了体验方便，请准备好<strong>备用电源</strong>，以防万一。',
+      },
+    ],
   },
   {
     category: '图片显示',
     icon: ImageOutline,
     items: [
-      { 
-        q: '商品图片无法显示或加载很慢？', 
-        a: '1. 请检查图片文件名是否包含特殊符号（建议使用纯数字或英文命名）。<br/>2. 局域网传输带宽有限，建议将单张图片压缩在 <strong>500KB 以内</strong>，不要直接上传 10MB 的高清原图。' 
+      {
+        q: '商品图片无法显示或加载很慢？',
+        a: '1. 请检查图片文件名是否包含特殊符号（建议使用纯数字或英文命名）。<br/>2. 局域网传输带宽有限，建议将单张图片压缩在 <strong>500KB 以内</strong>，不要直接上传 10MB 的高清原图。',
       },
-      { 
-        q: '我可以自定义界面样式吗？', 
-        a: '目前为了方便，只支持自定义亮暗与主题颜色，更细致的自定义主题功能将在未来开放。' 
-      }
-    ]
+      {
+        q: '我可以自定义界面样式吗？',
+        a: '目前为了方便，只支持自定义亮暗与主题颜色，更细致的自定义主题功能将在未来开放。',
+      },
+    ],
   },
   {
     category: '数据安全与迁移',
     icon: ShieldCheckmarkOutline,
     items: [
-      { 
-        q: '我的数据存储在哪里？安全吗？', 
-        a: '所有数据（图片、账本、库存）均存储在您<strong>主机设备的本地数据库</strong>中。我们没有任何云端服务器，您的营业额数据除了您自己没人知道。' 
+      {
+        q: '我的数据存储在哪里？安全吗？',
+        a: '所有数据（图片、账本、库存）均存储在您<strong>主机设备的本地数据库</strong>中。我们没有任何云端服务器，您的营业额数据除了您自己没人知道。',
       },
-      { 
-        q: '换了新设备，怎么迁移数据？', 
-        a: '在“全局商品库”页面，点击“导出数据包”，会将所有商品信息和图片打包下载。将该文件发送到新设备，在设置页选择“导入数据”即可。' 
+      {
+        q: '换了新设备，怎么迁移数据？',
+        a: '在“全局商品库”页面，点击“导出数据包”，会将所有商品信息和图片打包下载。将该文件发送到新设备，在设置页选择“导入数据”即可。',
       },
-      { 
-        q: '导出的 Excel 包含哪些内容？', 
-        a: '包含展会概览以及关键的<strong>商品销量统计表</strong>。您可以直接把这个表发给社团主催交差。' 
-      }
-    ]
+      {
+        q: '导出的 Excel 包含哪些内容？',
+        a: '包含展会概览以及关键的<strong>商品销量统计表</strong>。您可以直接把这个表发给社团主催交差。',
+      },
+    ],
   },
   {
     category: 'AI 拍照识别',
@@ -298,112 +337,111 @@ const qaList = [
     items: [
       {
         q: '拍照识别是什么？怎么用？',
-        a: '拍照识别让顾客对准商品拍一张照片，系统自动识别是哪件商品并加入购物车，省去在列表里翻找的时间。<br/>使用前需要在 <strong>控制台 → AI 视觉识别</strong> 面板确认模型已安装、索引已构建。'
+        a: '拍照识别让顾客对准商品拍一张照片，系统自动识别是哪件商品并加入购物车，省去在列表里翻找的时间。<br/>使用前需要在 <strong>控制台 → AI 视觉识别</strong> 面板确认模型已安装、索引已构建。',
       },
       {
         q: 'AI 识别的基本原理是什么？',
-        a: '系统将每张商品图片通过 AI 模型转化为一组"特征向量"（embedding），拍照时也对照片做同样的转化，然后<strong>比对向量相似度</strong>找到最像的商品。这不是"图片比对"，而是"语义理解"——即使角度、光线不同，只要是同一件商品就能识别。'
+        a: '系统将每张商品图片通过 AI 模型转化为一组"特征向量"（embedding），拍照时也对照片做同样的转化，然后<strong>比对向量相似度</strong>找到最像的商品。这不是"图片比对"，而是"语义理解"——即使角度、光线不同，只要是同一件商品就能识别。',
       },
       {
         q: '如何上传识别用图片？有什么建议？',
-        a: '在 <strong>全局商品库 → 编辑商品 → 识别用图片</strong> Tab 中上传。<br/><br/><strong>最佳实践：</strong><br/>• 每件商品上传 <strong>1~3 张</strong>不同角度的照片<br/>• 使用<strong>接近正方形</strong>的构图，商品居中<br/>• 背景尽量简洁，避免杂物干扰<br/>• 上传后系统自动压缩到 512×512，无需手动调整<br/>• 上传后会自动触发增量索引构建<br/><br/><strong>快速定位缺图：</strong>全局商品库列表有"识别图"列（🔴/🟡/🟢 三档），勾选"只看缺识别图的商品"可批量筛选。'
+        a: '在 <strong>全局商品库 → 编辑商品 → 识别用图片</strong> Tab 中上传。<br/><br/><strong>最佳实践：</strong><br/>• 每件商品上传 <strong>1~3 张</strong>不同角度的照片<br/>• 使用<strong>接近正方形</strong>的构图，商品居中<br/>• 背景尽量简洁，避免杂物干扰<br/>• 上传后系统自动压缩到 512×512，无需手动调整<br/>• 上传后会自动触发增量索引构建<br/><br/><strong>快速定位缺图：</strong>全局商品库列表有"识别图"列（🔴/🟡/🟢 三档），勾选"只看缺识别图的商品"可批量筛选。',
       },
       {
         q: '有几个模型可以选？该选哪个？',
-        a: 'v1.1 起共 5 个可选模型，主推两个 FP16 量化版：<br/><br/>⭐ <strong>ConvNeXt V2 Pico FP16</strong>（默认推荐，约 17MB）：体积最小、下载最快，大多数场景够用<br/>⭐ <strong>DINOv2-Small FP16</strong>（高精度推荐，约 43MB）：ViT 模型，对细节最敏感，追求识别精度时选它<br/><strong>MobileCLIP-S0</strong>（约 46MB）：CLIP 家族，擅长语义理解<br/><strong>ConvNeXt / DINOv2 的 FP32 参考版</strong>：一般选 FP16 即可<br/><br/><strong>注意：</strong>模型不再打包进安装包，首次启用需联网下载，建议展会前一天完成。'
+        a: 'v1.1 起共 5 个可选模型，主推两个 FP16 量化版：<br/><br/>⭐ <strong>ConvNeXt V2 Pico FP16</strong>（默认推荐，约 17MB）：体积最小、下载最快，大多数场景够用<br/>⭐ <strong>DINOv2-Small FP16</strong>（高精度推荐，约 43MB）：ViT 模型，对细节最敏感，追求识别精度时选它<br/><strong>MobileCLIP-S0</strong>（约 46MB）：CLIP 家族，擅长语义理解<br/><strong>ConvNeXt / DINOv2 的 FP32 参考版</strong>：一般选 FP16 即可<br/><br/><strong>注意：</strong>模型不再打包进安装包，首次启用需联网下载，建议展会前一天完成。',
       },
       {
         q: '推理设备怎么选？CPU 和 GPU 有什么区别？',
-        a: '<strong>自动模式</strong>（推荐）：系统会自动尝试 GPU 加速，不可用时降级到 CPU。<br/><strong>GPU</strong>：速度快（通常 20-50ms/张），但需要显卡支持 DirectX 12。<br/><strong>CPU</strong>：兼容性最好，速度稍慢（通常 50-200ms/张），但对识别准确率没有影响。<br/><br/>在 <strong>控制台 → AI 视觉识别</strong> 面板可以切换推理设备。'
+        a: '<strong>自动模式</strong>（推荐）：系统会自动尝试 GPU 加速，不可用时降级到 CPU。<br/><strong>GPU</strong>：速度快（通常 20-50ms/张），但需要显卡支持 DirectX 12。<br/><strong>CPU</strong>：兼容性最好，速度稍慢（通常 50-200ms/张），但对识别准确率没有影响。<br/><br/>在 <strong>控制台 → AI 视觉识别</strong> 面板可以切换推理设备。',
       },
       {
         q: '索引构建是什么？什么时候需要重建？',
-        a: '<strong>索引构建</strong>就是让 AI 模型"学习"你上传的所有商品照片。<br/><br/>以下情况需要重建索引：<br/>• 上传了新的识别用图片（系统会<strong>自动增量构建</strong>）<br/>• 切换了 AI 模型（系统会提示重建）<br/>• 如果识别不准，可以手动点击<strong>"全量重建索引"</strong>刷新所有数据'
+        a: '<strong>索引构建</strong>就是让 AI 模型"学习"你上传的所有商品照片。<br/><br/>以下情况需要重建索引：<br/>• 上传了新的识别用图片（系统会<strong>自动增量构建</strong>）<br/>• 切换了 AI 模型（系统会提示重建）<br/>• 如果识别不准，可以手动点击<strong>"全量重建索引"</strong>刷新所有数据',
       },
       {
         q: '识别不准怎么办？',
-        a: '可以尝试：<br/>1. <strong>补充图片</strong>：为识别不准的商品多上传几张不同角度的照片<br/>2. <strong>改善拍照</strong>：引导顾客将商品放在取景框中央，背景简洁<br/>3. <strong>换更大的模型</strong>：下载 MobileCLIP 或 DINOv2 试试<br/>4. <strong>全量重建</strong>：在控制台点击"全量重建索引"'
-      }
-    ]
+        a: '可以尝试：<br/>1. <strong>补充图片</strong>：为识别不准的商品多上传几张不同角度的照片<br/>2. <strong>改善拍照</strong>：引导顾客将商品放在取景框中央，背景简洁<br/>3. <strong>换更大的模型</strong>：下载 MobileCLIP 或 DINOv2 试试<br/>4. <strong>全量重建</strong>：在控制台点击"全量重建索引"',
+      },
+    ],
   },
   {
     category: '高级技巧',
     icon: SettingsOutline,
     items: [
-      { 
-        q: '如何设置打折/满减优惠？', 
-        a: '为了保持记账逻辑简单，系统暂无复杂的优惠券功能。<br/><strong>小技巧：</strong>您可以创建一个名为“优惠/抹零”的商品，价格设为 <strong>-5</strong> 元。结算时加入这个商品，总价就会自动减去 5 元。' 
+      {
+        q: '如何设置打折/满减优惠？',
+        a: '为了保持记账逻辑简单，系统暂无复杂的优惠券功能。<br/><strong>小技巧：</strong>您可以创建一个名为“优惠/抹零”的商品，价格设为 <strong>-5</strong> 元。结算时加入这个商品，总价就会自动减去 5 元。',
       },
-      { 
-        q: '支持“捆绑销售”或“套装”吗？', 
-        a: '建议直接录入一个名为“XX套装”的新商品，并设置好打包价。这样在统计销量时也能清楚地知道卖出了多少个套装。' 
+      {
+        q: '支持“捆绑销售”或“套装”吗？',
+        a: '建议直接录入一个名为“XX套装”的新商品，并设置好打包价。这样在统计销量时也能清楚地知道卖出了多少个套装。',
       },
-      { 
-        q: '我该如何处理售罄的商品？', 
-        a: '在库存不足和售罄时，顾客端会自动将该商品置灰并禁止下单。您无需手动隐藏或下架商品。' 
-      }
-    ]
+      {
+        q: '我该如何处理售罄的商品？',
+        a: '在库存不足和售罄时，顾客端会自动将该商品置灰并禁止下单。您无需手动隐藏或下架商品。',
+      },
+    ],
   },
   {
     category: '硬件建议',
     icon: HardwareChipOutline,
     items: [
-      { 
-        q: '我可以在手机上运行主机端吗？', 
-        a: '技术上可以，但<strong>强烈不推荐</strong>。主机需要长时间运行服务，手机容易因锁屏、后台杀进程或发热导致服务中断。<strong>推荐使用笔记本电脑或平板作为主机。</strong>' 
+      {
+        q: '我可以在手机上运行主机端吗？',
+        a: '技术上可以，但<strong>强烈不推荐</strong>。主机需要长时间运行服务，手机容易因锁屏、后台杀进程或发热导致服务中断。<strong>推荐使用笔记本电脑或平板作为主机。</strong>',
       },
       {
         q: '对设备性能有要求吗？',
-        a: '要求很低。任何能运行最新版 Chrome/Edge 的 Windows 电脑或 Android 8.0+ 的平板均可流畅运行（<strong>v1.1 新增 Android 支持</strong>）。老旧设备作为"顾客点单机"也是完美的废物利用方案。<br/><br/>AI 拍照识别对性能要求也不高：CPU 上每张图约 50-200ms，有 DirectX 12 GPU 或 Android NNAPI 加速可进一步提速。'
+        a: '要求很低。任何能运行最新版 Chrome/Edge 的 Windows 电脑或 Android 8.0+ 的平板均可流畅运行（<strong>v1.1 新增 Android 支持</strong>）。老旧设备作为"顾客点单机"也是完美的废物利用方案。<br/><br/>AI 拍照识别对性能要求也不高：CPU 上每张图约 50-200ms，有 DirectX 12 GPU 或 Android NNAPI 加速可进一步提速。',
       },
-      { 
-        q: '需要一直亮屏吗？', 
-        a: '主机端建议保持亮屏或在电源设置中设置为“不休眠”。顾客端和平板建议在浏览器中设置“屏幕常亮”，以免顾客点单时屏幕突然熄灭。' 
-      }
-    ]
+      {
+        q: '需要一直亮屏吗？',
+        a: '主机端建议保持亮屏或在电源设置中设置为“不休眠”。顾客端和平板建议在浏览器中设置“屏幕常亮”，以免顾客点单时屏幕突然熄灭。',
+      },
+    ],
   },
   {
     category: '社区与开源',
     icon: LogoGithub,
     items: [
-      { 
-        q: '去哪里下载最新版本？', 
-        a: '请认准唯一的官方渠道：<strong>GitHub Releases</strong> 页面。我们会在那里第一时间发布新版本。任何要求付费下载或“代部署收费”的渠道均为诈骗，请勿上当。' 
+      {
+        q: '去哪里下载最新版本？',
+        a: '请认准唯一的官方渠道：<strong>GitHub Releases</strong> 页面。我们会在那里第一时间发布新版本。任何要求付费下载或“代部署收费”的渠道均为诈骗，请勿上当。',
       },
       {
-        q: '我能自动更新吗？', 
-        a: '请点击侧边栏的“检查更新”按钮，系统会自动检测最新版本并引导您下载安装包。当前版本不支持一键自动更新，需手动下载安装包进行覆盖安装。'
+        q: '我能自动更新吗？',
+        a: '请点击侧边栏的“检查更新”按钮，系统会自动检测最新版本并引导您下载安装包。当前版本不支持一键自动更新，需手动下载安装包进行覆盖安装。',
       },
-      { 
-        q: '遇到 Bug 或有建议去哪里反馈？', 
-        a: '如果是程序报错，强烈建议您在 GitHub 仓库提交 <strong>Issue</strong>，这样能方便开发者追踪修复。如果是使用疑惑或单纯想闲聊，欢迎点击下方的按钮加入<strong>用户交流群</strong>。' 
+      {
+        q: '遇到 Bug 或有建议去哪里反馈？',
+        a: '如果是程序报错，强烈建议您在 GitHub 仓库提交 <strong>Issue</strong>，这样能方便开发者追踪修复。如果是使用疑惑或单纯想闲聊，欢迎点击下方的按钮加入<strong>用户交流群</strong>。',
       },
-      { 
-        q: '我是开发者，可以为项目贡献代码吗？', 
-        a: '<strong>非常欢迎！</strong> 这是一个开源项目，我们期待您提交 <strong>Pull Request</strong>。无论是修复一个小 Bug，还是开发一个全新的功能模块，您的贡献都将帮助到成千上万的摊主。' 
+      {
+        q: '我是开发者，可以为项目贡献代码吗？',
+        a: '<strong>非常欢迎！</strong> 这是一个开源项目，我们期待您提交 <strong>Pull Request</strong>。无论是修复一个小 Bug，还是开发一个全新的功能模块，您的贡献都将帮助到成千上万的摊主。',
       },
-      { 
-        q: '我能修改软件并重新发布（甚至售卖）吗？', 
-        a: '本项目遵循 <strong>MIT 协议</strong>，您确实拥有修改和分发的自由。但作为一款旨在“降低同人出摊门槛”的免费工具，我们<strong>强烈不推荐</strong>将其包装为商业软件进行售卖。请保留原作者信息，尊重开源精神。' 
-      }
-    ]
-  }
+      {
+        q: '我能修改软件并重新发布（甚至售卖）吗？',
+        a: '本项目遵循 <strong>MIT 协议</strong>，您确实拥有修改和分发的自由。但作为一款旨在“降低同人出摊门槛”的免费工具，我们<strong>强烈不推荐</strong>将其包装为商业软件进行售卖。请保留原作者信息，尊重开源精神。',
+      },
+    ],
+  },
 ]
 // 搜索过滤逻辑 - 支持分类结构
 const filteredQA = computed(() => {
   const query = searchQuery.value.toLowerCase().trim()
   if (!query) return qaList
-  
+
   // 过滤每个分类下的问题
   return qaList
-    .map(category => ({
+    .map((category) => ({
       ...category,
-      items: category.items.filter(item =>
-        item.q.toLowerCase().includes(query) ||
-        item.a.toLowerCase().includes(query)
-      )
+      items: category.items.filter(
+        (item) => item.q.toLowerCase().includes(query) || item.a.toLowerCase().includes(query)
+      ),
     }))
-    .filter(category => category.items.length > 0) // 只保留有匹配项的分类
+    .filter((category) => category.items.length > 0) // 只保留有匹配项的分类
 })
 // 分类展开收起逻辑
 const handleCategoryChange = (names: string[]) => {
@@ -412,7 +450,7 @@ const handleCategoryChange = (names: string[]) => {
 
 const toggleAllCategories = (expand: boolean) => {
   if (expand) {
-    expandedCategories.value = filteredQA.value.map(c => c.category)
+    expandedCategories.value = filteredQA.value.map((c) => c.category)
   } else {
     expandedCategories.value = []
   }
@@ -440,42 +478,55 @@ const copyLink = async (url: string, label: string) => {
 }
 
 /* 通用排版工具类 */
-.text-muted { color: var(--text-muted); line-height: 1.6; }
-.text-small { font-size: var(--font-sm); }
-.mb-2 { margin-bottom: 8px; }
-.mt-2 { margin-top: 16px; }
-.mt-4 { margin-top: 32px; }
+.text-muted {
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+.text-small {
+  font-size: var(--font-sm);
+}
+.mb-2 {
+  margin-bottom: 8px;
+}
+.mt-2 {
+  margin-top: 16px;
+}
+.mt-4 {
+  margin-top: 32px;
+}
 
 /* Header */
-.header-section { 
-  text-align: center; 
-  padding: 20px 0; 
+.header-section {
+  text-align: center;
+  padding: 20px 0;
 }
 .page-title {
   margin: 8px 0 4px;
-  font-size: var(--font-2xl); 
+  font-size: var(--font-2xl);
   font-weight: 800;
   letter-spacing: -0.5px;
   color: var(--primary-text-color);
 }
 .page-subtitle {
-  font-size: var(--font-lg); 
-  color: var(--secondary-text-color); 
+  font-size: var(--font-lg);
+  color: var(--secondary-text-color);
   margin-bottom: 20px;
   line-height: 1.6;
 }
 
 /* Section General */
-.section { margin-bottom: 40px; }
-.section-header { 
-  display: flex; 
-  align-items: center; 
-  gap: 10px; 
+.section {
+  margin-bottom: 40px;
+}
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin-bottom: 20px;
 }
 .section-header h2 {
   margin: 0;
-  font-size: var(--font-lg); 
+  font-size: var(--font-lg);
   font-weight: 600;
   color: var(--primary-text-color);
 }
@@ -591,14 +642,14 @@ const copyLink = async (url: string, label: string) => {
   gap: 16px;
 }
 
-.flex-center { 
-  display: flex; 
-  align-items: center; 
-  gap: 10px; 
+.flex-center {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
-.qa-search { 
-  width: 240px; 
+.qa-search {
+  width: 240px;
 }
 
 /* QA 分类样式 */
@@ -630,34 +681,34 @@ const copyLink = async (url: string, label: string) => {
   border-radius: var(--radius-lg);
 }
 
-.qa-answer { 
-  line-height: 1.6; 
+.qa-answer {
+  line-height: 1.6;
   padding: 4px 0;
   color: var(--text-muted);
 }
 
 /* Footer */
-.footer-section { 
-  text-align: center; 
-  padding-bottom: 20px; 
+.footer-section {
+  text-align: center;
+  padding-bottom: 20px;
 }
 
 .copyright {
-  font-size: var(--font-sm); 
-  color: var(--text-muted); 
+  font-size: var(--font-sm);
+  color: var(--text-muted);
   font-family: monospace;
 }
 
 /* Responsive */
 @media (max-width: 600px) {
-  .qa-search { 
-    width: 100%; 
+  .qa-search {
+    width: 100%;
   }
-  .page-title { 
-    font-size: 1.6rem; 
+  .page-title {
+    font-size: 1.6rem;
   }
-  .section-header h2 { 
-    font-size: 1.1rem; 
+  .section-header h2 {
+    font-size: 1.1rem;
   }
   .qa-header-flex {
     flex-direction: column;

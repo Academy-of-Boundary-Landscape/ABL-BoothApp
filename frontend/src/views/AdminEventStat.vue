@@ -8,29 +8,28 @@
         </div>
         <p>查看当前展会的销售数据和统计分析。</p>
       </div>
-      <div
-        v-if="statStore.stats && statStore.stats.summary.length > 0"
-        class="download-actions"
-      >
-        <n-button
-          class="download-btn"
-          type="default"
-          ghost
-          size="large"
-          @click="downloadCsv"
-        >
+      <div v-if="statStore.stats && statStore.stats.summary.length > 0" class="download-actions">
+        <n-button class="download-btn" type="default" ghost size="large" @click="downloadCsv">
           下载 CSV
         </n-button>
 
-        <n-button
-          class="download-btn"
-          type="primary"
-          ghost
-          size="large"
-          @click="downloadReport"
-        >
+        <n-button class="download-btn" type="primary" ghost size="large" @click="downloadReport">
           <template #icon>
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
           </template>
           下载 Excel 报告
         </n-button>
@@ -62,10 +61,10 @@
           :start-date="startDate"
           :end-date="endDate"
           :interval-minutes="intervalMinutes"
-          @update:selectedProduct="val => (selectedProduct = val)"
-          @update:startDate="val => (startDate = val)"
-          @update:endDate="val => (endDate = val)"
-          @update:intervalMinutes="val => (intervalMinutes = val)"
+          @update:selectedProduct="(val) => (selectedProduct = val)"
+          @update:startDate="(val) => (startDate = val)"
+          @update:endDate="(val) => (endDate = val)"
+          @update:intervalMinutes="(val) => (intervalMinutes = val)"
           @change="applyFilters"
         />
       </CollapsibleSection>
@@ -99,7 +98,9 @@
         class="chart-section"
       >
         <div class="chart-info">
-          <span v-if="statStore.stats.timeseries?.length" class="chart-subtitle">{{ chartSubtitle }}</span>
+          <span v-if="statStore.stats.timeseries?.length" class="chart-subtitle">{{
+            chartSubtitle
+          }}</span>
         </div>
         <SalesLineChart
           v-if="statStore.stats.timeseries?.length"
@@ -117,98 +118,100 @@
         v-model:collapsed="isTableCollapsed"
         class="table-section"
       >
-            <p v-if="!statStore.stats.summary.length" class="no-data">
-              // 无有效销售数据记录...
-            </p>
-            <div v-else class="table-wrapper">
-              <table class="stats-table">
-                <thead>
-                  <tr>
-                    <th>制品编号</th>
-                    <th>制品名</th>
-                    <th class="text-right">单价</th>
-                    <th class="text-center">销售量</th>
-                    <th class="text-right">销售额</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="item in statStore.stats.summary" :key="item.product_id">
-                    <td class="id-cell">#{{ item.product_code }}</td>
-                    <td>{{ item.product_name }}</td>
-                    <td class="text-right currency-cell">{{ formatCurrency(item.unit_price) }}</td>
-                    <td class="text-center quantity-cell">{{ item.total_quantity }}</td>
-                    <td class="text-right currency-cell">{{ formatCurrency(item.total_revenue_per_item) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+        <p v-if="!statStore.stats.summary.length" class="no-data">// 无有效销售数据记录...</p>
+        <div v-else class="table-wrapper">
+          <table class="stats-table">
+            <thead>
+              <tr>
+                <th>制品编号</th>
+                <th>制品名</th>
+                <th class="text-right">单价</th>
+                <th class="text-center">销售量</th>
+                <th class="text-right">销售额</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in statStore.stats.summary" :key="item.product_id">
+                <td class="id-cell">#{{ item.product_code }}</td>
+                <td>{{ item.product_name }}</td>
+                <td class="text-right currency-cell">{{ formatCurrency(item.unit_price) }}</td>
+                <td class="text-center quantity-cell">{{ item.total_quantity }}</td>
+                <td class="text-right currency-cell">
+                  {{ formatCurrency(item.total_revenue_per_item) }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </CollapsibleSection>
     </div>
   </div>
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, watch, computed, ref } from 'vue';
-import { useRoute } from 'vue-router';
-import { useEventStatStore } from '@/stores/eventStatStore';
-import SalesLineChart from '@/components/stats/SalesLineChart.vue';
-import StatFilters from '@/components/stats/StatFilters.vue';
-import { NButton, NSpin, NAlert, NCard, NTable } from 'naive-ui';
-import HelpBubble from '@/components/shared/HelpBubble.vue';
-import CollapsibleSection from '@/components/shared/CollapsibleSection.vue';
-import { toAbsoluteApiUrl } from '@/services/url';
+import { onMounted, onUnmounted, watch, computed, ref } from 'vue'
+import { useRoute } from 'vue-router'
+import { useEventStatStore } from '@/stores/eventStatStore'
+import SalesLineChart from '@/components/stats/SalesLineChart.vue'
+import StatFilters from '@/components/stats/StatFilters.vue'
+import { NButton, NSpin, NAlert } from 'naive-ui'
+import HelpBubble from '@/components/shared/HelpBubble.vue'
+import CollapsibleSection from '@/components/shared/CollapsibleSection.vue'
+import { toAbsoluteApiUrl } from '@/services/url'
 
-import { save } from '@tauri-apps/plugin-dialog';
-import { writeFile } from '@tauri-apps/plugin-fs';
-import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
+import { save } from '@tauri-apps/plugin-dialog'
+import { writeFile } from '@tauri-apps/plugin-fs'
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 
-const route = useRoute();
-const statStore = useEventStatStore();
-const selectedProduct = ref('');
-const startDate = ref('');
-const endDate = ref('');
-const intervalMinutes = ref(60);
+const route = useRoute()
+const statStore = useEventStatStore()
+const selectedProduct = ref('')
+const startDate = ref('')
+const endDate = ref('')
+const intervalMinutes = ref(60)
 const chartWidth = ref(800)
-const chartHeight = 320;
-const padding = 48;
+const chartHeight = 320
+const padding = 48
 
 function updateChartWidth() {
   const el = document.querySelector('.chart-section .cs-body')
   if (el) chartWidth.value = Math.min(el.clientWidth - padding * 2, 1200)
 }
-const isFilterCollapsed = ref(false);
-const isSummaryCollapsed = ref(false);
-const isChartCollapsed = ref(false);
-const isTableCollapsed = ref(false);
+const isFilterCollapsed = ref(false)
+const isSummaryCollapsed = ref(false)
+const isChartCollapsed = ref(false)
+const isTableCollapsed = ref(false)
 
-const pageTitle = computed(() => statStore.stats?.event_name ? `${statStore.stats.event_name} - 数据统计` : '数据统计');
-const totalItemsSold = computed(() => statStore.stats?.summary.reduce((sum, item) => sum + item.total_quantity, 0) || 0);
-const productVarietyCount = computed(() => statStore.stats?.summary.length || 0);
+const pageTitle = computed(() =>
+  statStore.stats?.event_name ? `${statStore.stats.event_name} - 数据统计` : '数据统计'
+)
+const totalItemsSold = computed(
+  () => statStore.stats?.summary.reduce((sum, item) => sum + item.total_quantity, 0) || 0
+)
+const productVarietyCount = computed(() => statStore.stats?.summary.length || 0)
 const productOptions = computed(() => {
-  const summary = statStore.stats?.summary || [];
-  const unique = new Map();
-  summary.forEach(item => {
+  const summary = statStore.stats?.summary || []
+  const unique = new Map()
+  summary.forEach((item) => {
     if (!unique.has(item.product_code)) {
-      unique.set(item.product_code, { code: item.product_code, name: item.product_name });
+      unique.set(item.product_code, { code: item.product_code, name: item.product_name })
     }
-  });
-  return Array.from(unique.values());
-});
-
+  })
+  return Array.from(unique.values())
+})
 
 const chartSubtitle = computed(() => {
-  const parts = [];
-  if (selectedProduct.value) parts.push(`制品 ${selectedProduct.value}`);
-  if (startDate.value) parts.push(`自 ${startDate.value}`);
-  if (endDate.value) parts.push(`至 ${endDate.value}`);
-  parts.push(intervalMinutes.value === 30 ? '每 30 分钟' : '每小时');
-  return parts.join(' · ');
-});
-
+  const parts = []
+  if (selectedProduct.value) parts.push(`制品 ${selectedProduct.value}`)
+  if (startDate.value) parts.push(`自 ${startDate.value}`)
+  if (endDate.value) parts.push(`至 ${endDate.value}`)
+  parts.push(intervalMinutes.value === 30 ? '每 30 分钟' : '每小时')
+  return parts.join(' · ')
+})
 
 function formatCurrency(value) {
-  if (typeof value !== 'number') return '¥ 0.00';
-  return `¥ ${value.toFixed(2)}`;
+  if (typeof value !== 'number') return '¥ 0.00'
+  return `¥ ${value.toFixed(2)}`
 }
 
 // Chart implementation moved to SalesLineChart component
@@ -219,163 +222,182 @@ async function applyFilters() {
     startDate: startDate.value,
     endDate: endDate.value,
     intervalMinutes: intervalMinutes.value,
-  });
+  })
 }
 async function downloadReport() {
-  if (!statStore.stats || !statStore.stats.summary?.length) return;
+  if (!statStore.stats || !statStore.stats.summary?.length) return
 
-  const isTauri = window.__TAURI_INTERNALS__ !== undefined;
-  const token = sessionStorage.getItem('access_token');
+  const isTauri = window.__TAURI_INTERNALS__ !== undefined
+  const token = sessionStorage.getItem('access_token')
 
-  const safeName = (statStore.stats.event_name || 'sales_report').replace(/[\\/:*?"<>|]/g, '_');
-  const fileName = `sales_report_${safeName}.xlsx`;
+  const safeName = (statStore.stats.event_name || 'sales_report').replace(/[\\/:*?"<>|]/g, '_')
+  const fileName = `sales_report_${safeName}.xlsx`
 
-  const url = toAbsoluteApiUrl(statStore.downloadUrl);
+  const url = toAbsoluteApiUrl(statStore.downloadUrl)
 
   try {
-    console.log('开始请求 Excel 报告:', url, 'isTauri:', isTauri);
+    console.log('开始请求 Excel 报告:', url, 'isTauri:', isTauri)
 
     if (isTauri) {
       const headers = {
-        Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
+        Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }
+      if (token) headers['Authorization'] = `Bearer ${token}`
 
-      const resp = await tauriFetch(url, { method: 'GET', headers });
+      const resp = await tauriFetch(url, { method: 'GET', headers })
 
       if (!resp.ok) {
-        const text = await resp.text().catch(() => '');
-        throw new Error(`下载失败: ${resp.status} ${resp.statusText} ${text.slice(0, 200)}`);
+        const text = await resp.text().catch(() => '')
+        throw new Error(`下载失败: ${resp.status} ${resp.statusText} ${text.slice(0, 200)}`)
       }
 
-      const ab = await resp.arrayBuffer();
-      const bytes = new Uint8Array(ab);
+      const ab = await resp.arrayBuffer()
+      const bytes = new Uint8Array(ab)
 
       const filePath = await save({
         defaultPath: fileName,
-        filters: [{ name: 'Excel Files', extensions: ['xlsx'] }]
-      });
-      if (!filePath) return;
+        filters: [{ name: 'Excel Files', extensions: ['xlsx'] }],
+      })
+      if (!filePath) return
 
-      await writeFile(filePath, bytes);
-      alert('导出成功');
-      return;
+      await writeFile(filePath, bytes)
+      alert('导出成功')
+      return
     }
 
     // 浏览器环境
-    const headers = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
 
     const response = await fetch(url, {
       method: 'GET',
       credentials: 'include',
-      headers
-    });
+      headers,
+    })
 
     if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      throw new Error(`下载失败: ${response.status} ${text.slice(0, 200)}`);
+      const text = await response.text().catch(() => '')
+      throw new Error(`下载失败: ${response.status} ${text.slice(0, 200)}`)
     }
 
-    const blob = await response.blob();
-    const dl = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.style.display = 'none';
-    a.href = dl;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
+    const blob = await response.blob()
+    const dl = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.style.display = 'none'
+    a.href = dl
+    a.download = fileName
+    document.body.appendChild(a)
+    a.click()
     setTimeout(() => {
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(dl);
-    }, 100);
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(dl)
+    }, 100)
   } catch (e) {
-    console.error('下载 Excel 报告失败:', e);
-    alert(e?.message || '下载失败');
+    console.error('下载 Excel 报告失败:', e)
+    alert(e?.message || '下载失败')
   }
 }
 
 function escapeCsvCell(value) {
-  const text = String(value ?? '');
+  const text = String(value ?? '')
   if (/[,"\n\r]/.test(text)) {
-    return `"${text.replace(/"/g, '""')}"`;
+    return `"${text.replace(/"/g, '""')}"`
   }
-  return text;
+  return text
 }
 
 async function downloadCsv() {
-  const summary = statStore.stats?.summary || [];
-  if (!summary.length) return;
+  const summary = statStore.stats?.summary || []
+  if (!summary.length) return
 
   try {
-    const isTauri = window.__TAURI_INTERNALS__ !== undefined;
-    const safeName = (statStore.stats.event_name || 'sales_report').replace(/[\\/:*?"<>|]/g, '_');
-    const fileName = `sales_report_${safeName}.csv`;
+    const isTauri = window.__TAURI_INTERNALS__ !== undefined
+    const safeName = (statStore.stats.event_name || 'sales_report').replace(/[\\/:*?"<>|]/g, '_')
+    const fileName = `sales_report_${safeName}.csv`
 
-    const header = ['制品编号', '制品名', '单价', '销售量', '销售额'];
-    const rows = summary.map(item => [
+    const header = ['制品编号', '制品名', '单价', '销售量', '销售额']
+    const rows = summary.map((item) => [
       item.product_code ?? '',
       item.product_name ?? '',
       typeof item.unit_price === 'number' ? item.unit_price.toFixed(2) : '0.00',
       item.total_quantity ?? 0,
-      typeof item.total_revenue_per_item === 'number' ? item.total_revenue_per_item.toFixed(2) : '0.00',
-    ]);
+      typeof item.total_revenue_per_item === 'number'
+        ? item.total_revenue_per_item.toFixed(2)
+        : '0.00',
+    ])
 
     const csvContent = [header, ...rows]
-      .map(cols => cols.map(escapeCsvCell).join(','))
-      .join('\r\n');
+      .map((cols) => cols.map(escapeCsvCell).join(','))
+      .join('\r\n')
 
     if (isTauri) {
-      const bytes = new TextEncoder().encode('\uFEFF' + csvContent);
+      const bytes = new TextEncoder().encode('\uFEFF' + csvContent)
       const filePath = await save({
         defaultPath: fileName,
-        filters: [{ name: 'CSV Files', extensions: ['csv'] }]
-      });
+        filters: [{ name: 'CSV Files', extensions: ['csv'] }],
+      })
 
-      if (!filePath) return;
+      if (!filePath) return
 
-      await writeFile(filePath, bytes);
-      alert('CSV 导出成功');
-      return;
+      await writeFile(filePath, bytes)
+      alert('CSV 导出成功')
+      return
     }
 
-    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.style.display = 'none';
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.style.display = 'none'
+    a.href = url
+    a.download = fileName
+    document.body.appendChild(a)
+    a.click()
     setTimeout(() => {
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-    }, 100);
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(url)
+    }, 100)
   } catch (error) {
-    console.error('[CSV] 导出失败:', error);
+    console.error('[CSV] 导出失败:', error)
   }
 }
 
 onMounted(() => {
-  const eventId = route.params.id;
-  if (eventId) statStore.setActiveEvent(eventId, { productCode: selectedProduct.value, startDate: startDate.value, endDate: endDate.value, intervalMinutes: intervalMinutes.value });
+  const eventId = route.params.id
+  if (eventId)
+    statStore.setActiveEvent(eventId, {
+      productCode: selectedProduct.value,
+      startDate: startDate.value,
+      endDate: endDate.value,
+      intervalMinutes: intervalMinutes.value,
+    })
   setTimeout(updateChartWidth, 100)
   window.addEventListener('resize', updateChartWidth)
-});
+})
 
 onUnmounted(() => {
   window.removeEventListener('resize', updateChartWidth)
-});
+})
 
-watch(() => route.params.id, (newEventId) => {
-  if (newEventId) statStore.setActiveEvent(newEventId, { productCode: selectedProduct.value, startDate: startDate.value, endDate: endDate.value, intervalMinutes: intervalMinutes.value });
-});
+watch(
+  () => route.params.id,
+  (newEventId) => {
+    if (newEventId)
+      statStore.setActiveEvent(newEventId, {
+        productCode: selectedProduct.value,
+        startDate: startDate.value,
+        endDate: endDate.value,
+        intervalMinutes: intervalMinutes.value,
+      })
+  }
+)
 </script>
 
 <style scoped>
 /* 主题色通过 App.vue 动态注入 */
 
-.page { max-width: 960px; }
+.page {
+  max-width: 960px;
+}
 
 .page-header {
   display: flex;
@@ -444,7 +466,8 @@ watch(() => route.params.id, (newEventId) => {
 
 /* section 外壳样式由 CollapsibleSection 统一提供 */
 
-.loading-indicator, .error-message {
+.loading-indicator,
+.error-message {
   text-align: center;
   padding: 5rem 2rem;
   color: var(--secondary-text-color);
@@ -452,10 +475,20 @@ watch(() => route.params.id, (newEventId) => {
   border-radius: var(--radius-md);
   background-color: var(--overlay-light);
 }
-.error-message p { margin: 0.5rem 0; }
-.error-message strong { color: var(--error-color); }
-.btn-secondary { background-color: var(--card-bg-color); color: var(--primary-text-color); margin-top: 1rem;}
-.btn-secondary:hover { border-color: var(--primary-text-color); }
+.error-message p {
+  margin: 0.5rem 0;
+}
+.error-message strong {
+  color: var(--error-color);
+}
+.btn-secondary {
+  background-color: var(--card-bg-color);
+  color: var(--primary-text-color);
+  margin-top: 1rem;
+}
+.btn-secondary:hover {
+  border-color: var(--primary-text-color);
+}
 
 .spinner {
   width: 40px;
@@ -467,7 +500,9 @@ watch(() => route.params.id, (newEventId) => {
   margin: 0 auto 1rem;
 }
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .summary-cards {
@@ -527,7 +562,7 @@ watch(() => route.params.id, (newEventId) => {
 }
 
 .filter-group select,
-.filter-group input[type="date"] {
+.filter-group input[type='date'] {
   background: var(--card-bg-color);
   color: var(--primary-text-color);
   border: 1px solid var(--border-color);
@@ -668,14 +703,13 @@ svg {
   color: var(--primary-text-color);
 }
 
-
-
 table {
   width: 100%;
   border-collapse: collapse;
 }
 
-th, td {
+th,
+td {
   padding: 1rem;
   text-align: left;
   border-bottom: 1px solid var(--border-color);
@@ -710,8 +744,12 @@ tbody td {
   color: var(--accent-color);
   font-weight: 500;
 }
-.text-right { text-align: right; }
-.text-center { text-align: center; }
+.text-right {
+  text-align: right;
+}
+.text-center {
+  text-align: center;
+}
 
 .no-data {
   color: var(--secondary-text-color);

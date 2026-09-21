@@ -10,17 +10,13 @@
         </header>
 
         <div class="welcome-body">
-          <p class="welcome-intro">
-            看起来这是你第一次使用。让我们开始吧：
-          </p>
+          <p class="welcome-intro">看起来这是你第一次使用。让我们开始吧：</p>
           <router-link to="/admin" class="welcome-cta">
             <span class="welcome-cta-icon">🔧</span>
             <span class="welcome-cta-text">进入管理后台开始配置</span>
             <span class="welcome-cta-arrow">→</span>
           </router-link>
-          <p class="welcome-foot">
-            配置完成后，顾客扫码访问本页即可看到你的展会。
-          </p>
+          <p class="welcome-foot">配置完成后，顾客扫码访问本页即可看到你的展会。</p>
         </div>
 
         <div class="portal-nav">
@@ -38,8 +34,13 @@
 
         <n-alert v-if="showAlert" type="warning" :bordered="false" class="version-alert">
           <div class="alert-content">
-            <span>该 App 仍处于早期版本，建议定期检查更新；初次使用请先进入"管理员页面"完成后台设置。</span>
-            <n-button text type="primary" @click="dismissAlert" class="close-btn">不再提示</n-button>
+            <span
+              >该 App
+              仍处于早期版本，建议定期检查更新；初次使用请先进入"管理员页面"完成后台设置。</span
+            >
+            <n-button text type="primary" @click="dismissAlert" class="close-btn"
+              >不再提示</n-button
+            >
           </div>
         </n-alert>
 
@@ -83,47 +84,47 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue';
-import { RouterLink } from 'vue-router';
-import { useEventStore } from '@/stores/eventStore'; // 复用我们已有的 eventStore
-import { NCard, NSpin, NAlert, NSpace, NButton } from 'naive-ui';
+import { computed, onMounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
+import { useEventStore } from '@/stores/eventStore' // 复用我们已有的 eventStore
+import { NCard, NSpin, NAlert, NSpace, NButton } from 'naive-ui'
 
-const VERSION_ALERT_KEY = 'portal_version_alert_dismissed_v1.1';
-const ADMIN_FIRST_LOGIN_KEY = 'admin_first_login_done';
+const VERSION_ALERT_KEY = 'portal_version_alert_dismissed_v1.1'
+const ADMIN_FIRST_LOGIN_KEY = 'admin_first_login_done'
 
-const eventStore = useEventStore();
+const eventStore = useEventStore()
 
 // 版本告警：用户点过"不再提示"后持久隐藏
-const showAlert = ref(!localStorage.getItem(VERSION_ALERT_KEY));
+const showAlert = ref(!localStorage.getItem(VERSION_ALERT_KEY))
 function dismissAlert() {
-  showAlert.value = false;
-  localStorage.setItem(VERSION_ALERT_KEY, '1');
+  showAlert.value = false
+  localStorage.setItem(VERSION_ALERT_KEY, '1')
 }
 
 // 筛选出"进行中"的展会
 const ongoingEvents = computed(() => {
   // 防御性检查：确保 eventStore.events 是数组
-  const events = Array.isArray(eventStore.events) ? eventStore.events : [];
+  const events = Array.isArray(eventStore.events) ? eventStore.events : []
   if (!Array.isArray(eventStore.events) && eventStore.events) {
-    console.error('❌ eventStore.events 不是数组:', eventStore.events);
+    console.error('❌ eventStore.events 不是数组:', eventStore.events)
   }
-  return events.filter(event => event.status === '进行中');
-});
+  return events.filter((event) => event.status === '进行中')
+})
 
 // 首次使用判定：加载完成 + 无任何展会 + 本设备从未有管理员成功登录过
 // 一旦条件成立，就给摊主看"欢迎配置"页；顾客不可能命中此分支（他们的设备上 admin 从未登过）
 const isFirstTimeSetup = computed(() => {
-  if (eventStore.isLoading) return false;
-  if (eventStore.error) return false;
-  const events = Array.isArray(eventStore.events) ? eventStore.events : [];
-  if (events.length > 0) return false;
-  return !localStorage.getItem(ADMIN_FIRST_LOGIN_KEY);
-});
+  if (eventStore.isLoading) return false
+  if (eventStore.error) return false
+  const events = Array.isArray(eventStore.events) ? eventStore.events : []
+  if (events.length > 0) return false
+  return !localStorage.getItem(ADMIN_FIRST_LOGIN_KEY)
+})
 
 // 组件加载时，获取所有展会数据
 onMounted(() => {
-  eventStore.fetchEvents();
-});
+  eventStore.fetchEvents()
+})
 </script>
 
 <style scoped>
@@ -280,7 +281,10 @@ header p {
   border-radius: var(--radius-md);
   font-size: var(--font-md, 16px);
   font-weight: 600;
-  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease,
+    filter 0.12s ease;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
 }
 .welcome-cta:hover {

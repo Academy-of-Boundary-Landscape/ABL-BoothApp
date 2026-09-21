@@ -31,13 +31,13 @@
 </template>
 
 <script setup>
-const props = defineProps({
+defineProps({
   productOptions: { type: Array, default: () => [] },
   selectedProduct: { type: String, default: '' },
   startDate: { type: String, default: '' },
   endDate: { type: String, default: '' },
   intervalMinutes: { type: Number, default: 60 },
-});
+})
 
 const emit = defineEmits([
   'update:selectedProduct',
@@ -45,12 +45,24 @@ const emit = defineEmits([
   'update:endDate',
   'update:intervalMinutes',
   'change',
-]);
+])
 
-function onProduct(e) { emit('update:selectedProduct', e.target.value); emit('change'); }
-function onStart(e) { emit('update:startDate', e.target.value); emit('change'); }
-function onEnd(e) { emit('update:endDate', e.target.value); emit('change'); }
-function onInterval(e) { emit('update:intervalMinutes', Number(e.target.value)); emit('change'); }
+function onProduct(e) {
+  emit('update:selectedProduct', e.target.value)
+  emit('change')
+}
+function onStart(e) {
+  emit('update:startDate', e.target.value)
+  emit('change')
+}
+function onEnd(e) {
+  emit('update:endDate', e.target.value)
+  emit('change')
+}
+function onInterval(e) {
+  emit('update:intervalMinutes', Number(e.target.value))
+  emit('change')
+}
 </script>
 
 <style scoped>
@@ -60,10 +72,17 @@ function onInterval(e) { emit('update:intervalMinutes', Number(e.target.value));
   gap: 1rem;
   margin-bottom: 1.5rem;
 }
-.filter-group { display: flex; flex-direction: column; gap: 0.5rem; }
-.filter-group label { color: var(--secondary-text-color); font-size: var(--font-base); }
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.filter-group label {
+  color: var(--secondary-text-color);
+  font-size: var(--font-base);
+}
 .filter-group select,
-.filter-group input[type="date"] {
+.filter-group input[type='date'] {
   background: var(--card-bg-color);
   color: var(--primary-text-color);
   border: 1px solid var(--border-color);

@@ -59,7 +59,7 @@ export function confirmLargeFile(fileSizeMb) {
  * @param {number} quality - JPEG 质量 0-1
  * @returns {Promise<File>}
  */
-export function resizeImageFile(file, size = 512, quality = 0.90) {
+export function resizeImageFile(file, size = 512, quality = 0.9) {
   return new Promise((resolve) => {
     const img = new Image()
     img.onload = () => {

@@ -1,168 +1,157 @@
 <template>
-  <CollapsibleSection
-    title="商品列表"
-    v-model:collapsed="isListCollapsed"
-    class="list-container"
-  >
-        <div class="search-section">
-          <div class="search-header">
-            <h3>搜索和过滤</h3>
-            <p class="search-hint">按关键词、分类或默认价格快速筛选商品</p>
-          </div>
+  <CollapsibleSection title="商品列表" v-model:collapsed="isListCollapsed" class="list-container">
+    <div class="search-section">
+      <div class="search-header">
+        <h3>搜索和过滤</h3>
+        <p class="search-hint">按关键词、分类或默认价格快速筛选商品</p>
+      </div>
 
-          <div class="search-box">
-            <n-input
-              v-model:value="store.searchTerm"
-              placeholder="搜索商品名称或编号..."
-              clearable
-              class="search-input"
-            />
-            <n-select
-              v-model:value="selectedCategory"
-              :options="store.categoryOptions"
-              clearable
-              placeholder="选择分类"
-              class="category-select"
-            />
-            <n-input-number
-              v-model:value="maxPrice"
-              :show-button="false"
-              :precision="2"
-              :min="0"
-              placeholder="最高价格"
-              class="price-filter"
-            />
-            <n-button
-              tertiary
-              class="clear-btn"
-              @click="handleClearFilters"
-              v-if="store.searchTerm || selectedCategory || maxPrice != null"
+      <div class="search-box">
+        <n-input
+          v-model:value="store.searchTerm"
+          placeholder="搜索商品名称或编号..."
+          clearable
+          class="search-input"
+        />
+        <n-select
+          v-model:value="selectedCategory"
+          :options="store.categoryOptions"
+          clearable
+          placeholder="选择分类"
+          class="category-select"
+        />
+        <n-input-number
+          v-model:value="maxPrice"
+          :show-button="false"
+          :precision="2"
+          :min="0"
+          placeholder="最高价格"
+          class="price-filter"
+        />
+        <n-button
+          tertiary
+          class="clear-btn"
+          @click="handleClearFilters"
+          v-if="store.searchTerm || selectedCategory || maxPrice != null"
+        >
+          清空
+        </n-button>
+      </div>
+    </div>
+
+    <div class="filter-options">
+      <n-checkbox
+        v-model:checked="store.showInactive"
+        @update:checked="store.fetchMasterProducts()"
+        class="show-inactive-checkbox"
+      >
+        <span class="checkbox-label">显示已停用的商品</span>
+      </n-checkbox>
+      <n-checkbox v-model:checked="onlyMissingVisionImages" class="show-inactive-checkbox">
+        <span class="checkbox-label">只看缺识别图的商品</span>
+      </n-checkbox>
+    </div>
+
+    <n-spin :show="store.isLoading">
+      <div v-if="store.error" class="error-message">{{ store.error }}</div>
+
+      <div v-else-if="filteredProducts.length" class="table-wrapper">
+        <table class="product-table">
+          <thead>
+            <tr>
+              <th>图像</th>
+              <th>编号</th>
+              <th>名称</th>
+              <th>默认价格</th>
+              <th>商品分类</th>
+              <th>标签</th>
+              <th>识别图</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            <tr
+              v-for="product in filteredProducts"
+              :key="product.id"
+              :class="{ inactive: !product.is_active }"
             >
-              清空
-            </n-button>
-          </div>
-        </div>
+              <td>
+                <n-image
+                  v-if="product.image_url"
+                  :src="product.image_url"
+                  :alt="product.name"
+                  class="preview-img"
+                  preview-disabled
+                  style="width: 80px; height: 80px"
+                  :img-props="{
+                    style: 'width: 100%; height: 100%; object-fit: contain; display: block;',
+                  }"
+                />
+                <span v-else class="no-img">无图</span>
+              </td>
 
-        <div class="filter-options">
-          <n-checkbox
-            v-model:checked="store.showInactive"
-            @update:checked="store.fetchMasterProducts()"
-            class="show-inactive-checkbox"
-          >
-            <span class="checkbox-label">显示已停用的商品</span>
-          </n-checkbox>
-          <n-checkbox
-            v-model:checked="onlyMissingVisionImages"
-            class="show-inactive-checkbox"
-          >
-            <span class="checkbox-label">只看缺识别图的商品</span>
-          </n-checkbox>
-        </div>
+              <td>{{ product.product_code }}</td>
+              <td>{{ product.name }}</td>
+              <td>¥{{ Number(product.default_price ?? 0).toFixed(2) }}</td>
+              <td>{{ product.category || '未分类' }}</td>
+              <td class="tags-cell">
+                <template v-if="product.tags">
+                  <n-tag
+                    v-for="tag in product.tags.split(',').filter(Boolean)"
+                    :key="tag"
+                    size="small"
+                    :bordered="false"
+                    type="info"
+                    style="margin: 2px"
+                  >
+                    {{ tag.trim() }}
+                  </n-tag>
+                </template>
+              </td>
 
-        <n-spin :show="store.isLoading">
-          <div v-if="store.error" class="error-message">{{ store.error }}</div>
+              <td class="vision-cell">
+                <n-tag size="small" :type="visionTagType(product.image_count)" :bordered="false">
+                  {{ visionTagLabel(product.image_count) }}
+                </n-tag>
+              </td>
 
-          <div v-else-if="filteredProducts.length" class="table-wrapper">
-            <table class="product-table">
-              <thead>
-                <tr>
-                  <th>图像</th>
-                  <th>编号</th>
-                  <th>名称</th>
-                  <th>默认价格</th>
-                  <th>商品分类</th>
-                  <th>标签</th>
-                  <th>识别图</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                <tr
-                  v-for="product in filteredProducts"
-                  :key="product.id"
-                  :class="{ inactive: !product.is_active }"
+              <td class="action-cell">
+                <n-button size="small" tertiary @click="$emit('edit', product)">编辑</n-button>
+                <n-button
+                  size="small"
+                  type="info"
+                  tertiary
+                  @click="$emit('edit', product, 'gallery')"
+                  style="margin-left: 8px"
+                  :title="'直接打开识别图 Tab'"
                 >
-                  <td>
-                    <n-image
-                      v-if="product.image_url"
-                      :src="product.image_url"
-                      :alt="product.name"
-                      class="preview-img"
-                      preview-disabled
-                      style="width: 80px; height: 80px;"
-                      :img-props="{ style: 'width: 100%; height: 100%; object-fit: contain; display: block;' }"
-                    />
-                    <span v-else class="no-img">无图</span>
-                  </td>
+                  识别图
+                </n-button>
+                <n-button
+                  size="small"
+                  :type="product.is_active ? 'error' : 'success'"
+                  tertiary
+                  @click="$emit('toggleStatus', product)"
+                  style="margin-left: 8px"
+                >
+                  {{ product.is_active ? '停用' : '启用' }}
+                </n-button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
-                  <td>{{ product.product_code }}</td>
-                  <td>{{ product.name }}</td>
-                  <td>¥{{ Number(product.default_price ?? 0).toFixed(2) }}</td>
-                  <td>{{ product.category || '未分类' }}</td>
-                  <td class="tags-cell">
-                    <template v-if="product.tags">
-                      <n-tag
-                        v-for="tag in product.tags.split(',').filter(Boolean)"
-                        :key="tag"
-                        size="small"
-                        :bordered="false"
-                        type="info"
-                        style="margin: 2px;"
-                      >
-                        {{ tag.trim() }}
-                      </n-tag>
-                    </template>
-                  </td>
-
-                  <td class="vision-cell">
-                    <n-tag
-                      size="small"
-                      :type="visionTagType(product.image_count)"
-                      :bordered="false"
-                    >
-                      {{ visionTagLabel(product.image_count) }}
-                    </n-tag>
-                  </td>
-
-                  <td class="action-cell">
-                    <n-button size="small" tertiary @click="$emit('edit', product)">编辑</n-button>
-                    <n-button
-                      size="small"
-                      type="info"
-                      tertiary
-                      @click="$emit('edit', product, 'gallery')"
-                      style="margin-left: 8px;"
-                      :title="'直接打开识别图 Tab'"
-                    >
-                      识别图
-                    </n-button>
-                    <n-button
-                      size="small"
-                      :type="product.is_active ? 'error' : 'success'"
-                      tertiary
-                      @click="$emit('toggleStatus', product)"
-                      style="margin-left: 8px;"
-                    >
-                      {{ product.is_active ? '停用' : '启用' }}
-                    </n-button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <p v-else-if="hasActiveFilters">
-            当前筛选条件下没有找到匹配的商品。
-          </p>
-          <EmptyGuide
-            v-else
-            icon="🛍️"
-            title="全局商品库为空"
-            desc="先在这里添加你的制品信息（名称、价格、图片），之后就能在每场展会中快速上架。"
-            hint="在上方表单中创建你的第一个商品"
-          />
-        </n-spin>
+      <p v-else-if="hasActiveFilters">当前筛选条件下没有找到匹配的商品。</p>
+      <EmptyGuide
+        v-else
+        icon="🛍️"
+        title="全局商品库为空"
+        desc="先在这里添加你的制品信息（名称、价格、图片），之后就能在每场展会中快速上架。"
+        hint="在上方表单中创建你的第一个商品"
+      />
+    </n-spin>
   </CollapsibleSection>
 </template>
 
@@ -187,9 +176,9 @@ const onlyMissingVisionImages = ref(false)
 const hasActiveFilters = computed(() => {
   return Boolean(
     store.searchTerm ||
-    selectedCategory.value ||
-    maxPrice.value != null ||
-    onlyMissingVisionImages.value
+      selectedCategory.value ||
+      maxPrice.value != null ||
+      onlyMissingVisionImages.value
   )
 })
 
@@ -240,7 +229,7 @@ watch(
       isListCollapsed.value = false
     }
   },
-  { immediate: true },
+  { immediate: true }
 )
 </script>
 
@@ -414,9 +403,16 @@ watch(
 }
 
 @media (max-width: 768px) {
-  .search-section { margin-bottom: 1rem; padding-bottom: 1rem; }
-  .search-header h3 { font-size: 0.95rem; }
-  .search-hint { font-size: 0.8rem; }
+  .search-section {
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+  }
+  .search-header h3 {
+    font-size: 0.95rem;
+  }
+  .search-hint {
+    font-size: 0.8rem;
+  }
   .search-box {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 8px;
@@ -425,17 +421,40 @@ watch(
     justify-self: stretch;
     grid-column: 1 / -1;
   }
-  .product-table { font-size: 0.85rem; min-width: 760px; }
-  .product-table th, .product-table td { padding: 10px 12px; }
-  .preview-img { width: 60px; height: 60px; }
-  .no-img { width: 60px; height: 60px; line-height: 60px; font-size: 0.75rem; }
+  .product-table {
+    font-size: 0.85rem;
+    min-width: 760px;
+  }
+  .product-table th,
+  .product-table td {
+    padding: 10px 12px;
+  }
+  .preview-img {
+    width: 60px;
+    height: 60px;
+  }
+  .no-img {
+    width: 60px;
+    height: 60px;
+    line-height: 60px;
+    font-size: 0.75rem;
+  }
 }
 
 @media (max-width: 480px) {
-  .list-container { margin-bottom: 1.5rem; }
-  .search-section { margin-bottom: 0.75rem; padding-bottom: 0.75rem; }
-  .search-header h3 { font-size: 0.9rem; }
-  .search-hint { font-size: 0.75rem; }
+  .list-container {
+    margin-bottom: 1.5rem;
+  }
+  .search-section {
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
+  }
+  .search-header h3 {
+    font-size: 0.9rem;
+  }
+  .search-hint {
+    font-size: 0.75rem;
+  }
   .search-box {
     grid-template-columns: 1fr;
     gap: 6px;
@@ -443,14 +462,37 @@ watch(
   .clear-btn {
     grid-column: auto;
   }
-  .filter-options { margin-top: 0.75rem; padding-top: 0.75rem; }
-  .checkbox-label { font-size: 0.85rem; }
-  .product-table { font-size: 0.75rem; min-width: 600px; }
-  .product-table th, .product-table td { padding: 8px 10px; }
-  .product-table th { font-size: 0.7rem; }
-  .preview-img { width: 50px; height: 50px; }
-  .no-img { width: 50px; height: 50px; line-height: 50px; font-size: 0.7rem; }
-  .action-cell :deep(.n-button) { font-size: 0.75rem; padding: 4px 8px; }
+  .filter-options {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+  }
+  .checkbox-label {
+    font-size: 0.85rem;
+  }
+  .product-table {
+    font-size: 0.75rem;
+    min-width: 600px;
+  }
+  .product-table th,
+  .product-table td {
+    padding: 8px 10px;
+  }
+  .product-table th {
+    font-size: 0.7rem;
+  }
+  .preview-img {
+    width: 50px;
+    height: 50px;
+  }
+  .no-img {
+    width: 50px;
+    height: 50px;
+    line-height: 50px;
+    font-size: 0.7rem;
+  }
+  .action-cell :deep(.n-button) {
+    font-size: 0.75rem;
+    padding: 4px 8px;
+  }
 }
-
 </style>

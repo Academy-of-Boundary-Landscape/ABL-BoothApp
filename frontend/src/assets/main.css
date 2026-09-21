@@ -22,7 +22,9 @@ body {
   color: var(--accent-color);
   padding: 10px 20px;
   cursor: pointer;
-  transition: background-color 0.3s, color 0.3s;
+  transition:
+    background-color 0.3s,
+    color 0.3s;
   border-radius: 4px;
   font-weight: bold;
 }

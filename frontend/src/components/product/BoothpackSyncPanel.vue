@@ -170,7 +170,10 @@ function isAllowedPackName(name) {
 
 function rejectInvalidFile(name) {
   syncError.value = '请选择 .boothpack 或 .zip 文件'
-  showUploadDialog('文件类型不支持', `文件“${name || 'unknown'}”不是有效的 .boothpack/.zip 数据包。`)
+  showUploadDialog(
+    '文件类型不支持',
+    `文件“${name || 'unknown'}”不是有效的 .boothpack/.zip 数据包。`
+  )
 }
 
 function validatePackFile(file, displayName) {
@@ -220,9 +223,7 @@ async function handleExport() {
 
 async function confirmAndImport({ kind, file, path, displayName }) {
   const name =
-    displayName ||
-    (kind === 'path' ? String(path).split(/[/\\]/).pop() : file?.name) ||
-    'unknown'
+    displayName || (kind === 'path' ? String(path).split(/[/\\]/).pop() : file?.name) || 'unknown'
 
   dialog.warning({
     title: kind === 'path' ? '检测到文件拖入' : '确认导入',
@@ -384,7 +385,9 @@ onBeforeUnmount(() => {
   border: 2px dashed var(--border-color);
   border-radius: var(--radius-md);
   padding: 1.25rem;
-  transition: border-color 0.2s ease, background-color 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease;
 }
 
 .drop-zone.is-dragging {

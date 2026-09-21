@@ -19,7 +19,9 @@
             <span class="frame-corner frame-corner--bl" />
             <span class="frame-corner frame-corner--br" />
           </div>
-          <div class="vision-camera__hint">{{ isSearching ? '识别中...' : '将商品对准取景框' }}</div>
+          <div class="vision-camera__hint">
+            {{ isSearching ? '识别中...' : '将商品对准取景框' }}
+          </div>
         </div>
 
         <!-- 拍照闪光 -->
@@ -34,11 +36,7 @@
 
       <div class="vision-camera__controls">
         <n-button tertiary size="small" @click="stopCamera">取消</n-button>
-        <button
-          class="vision-camera__shutter"
-          :disabled="isSearching"
-          @click="captureAndSearch"
-        >
+        <button class="vision-camera__shutter" :disabled="isSearching" @click="captureAndSearch">
           <span class="vision-camera__shutter-inner" />
         </button>
         <n-button tertiary size="small" @click="switchCamera">翻转</n-button>
@@ -107,13 +105,21 @@
       <div class="vision-input">
         <div
           class="vision-dropzone"
-          :class="{ 'vision-dropzone--active': isDragging, 'vision-dropzone--has-image': previewUrl }"
+          :class="{
+            'vision-dropzone--active': isDragging,
+            'vision-dropzone--has-image': previewUrl,
+          }"
           @dragover.prevent="isDragging = true"
           @dragleave.prevent="isDragging = false"
           @drop.prevent="onDrop"
           @click="triggerFileInput"
         >
-          <img v-if="previewUrl" :src="previewUrl" class="vision-dropzone__preview" alt="查询图片" />
+          <img
+            v-if="previewUrl"
+            :src="previewUrl"
+            class="vision-dropzone__preview"
+            alt="查询图片"
+          />
           <div v-else class="vision-dropzone__placeholder">
             <span class="vision-dropzone__icon">+</span>
             <span class="vision-dropzone__text">拍照 / 拖入图片</span>
@@ -128,12 +134,7 @@
           @change="onFileSelected"
         />
         <div class="vision-input-actions">
-          <n-button
-            v-if="previewUrl"
-            size="small"
-            tertiary
-            @click.stop="clearImage"
-          >
+          <n-button v-if="previewUrl" size="small" tertiary @click.stop="clearImage">
             清除
           </n-button>
         </div>
@@ -155,7 +156,11 @@
 
     <!-- 摄像头模式：悬浮弹窗 -->
     <Transition name="result-pop">
-      <div v-if="results && results.length && cameraMode && isCameraActive" class="vision-popup-backdrop" @click.self="results = []">
+      <div
+        v-if="results && results.length && cameraMode && isCameraActive"
+        class="vision-popup-backdrop"
+        @click.self="results = []"
+      >
         <div class="vision-popup">
           <div class="vision-popup__header">
             <span>匹配结果</span>
@@ -166,7 +171,7 @@
               v-for="item in results"
               :key="item.master_product_id"
               class="vision-result-item"
-              @click="onResultClick(item); results = []"
+              @click="selectResultAndClose(item)"
             >
               <div class="vision-result-item__thumb">
                 <img v-if="item.thumb_url" :src="resolveThumb(item.thumb_url)" alt="" />
@@ -176,9 +181,7 @@
                 <div class="vision-result-item__name">{{ item.name }}</div>
                 <div class="vision-result-item__code">{{ item.product_code }}</div>
               </div>
-              <div class="vision-result-item__score">
-                {{ (item.score * 100).toFixed(1) }}%
-              </div>
+              <div class="vision-result-item__score">{{ (item.score * 100).toFixed(1) }}%</div>
             </div>
           </div>
           <div class="vision-popup__footer">
@@ -209,9 +212,7 @@
           <div class="vision-result-item__name">{{ item.name }}</div>
           <div class="vision-result-item__code">{{ item.product_code }}</div>
         </div>
-        <div class="vision-result-item__score">
-          {{ (item.score * 100).toFixed(1) }}%
-        </div>
+        <div class="vision-result-item__score">{{ (item.score * 100).toFixed(1) }}%</div>
       </div>
     </div>
   </div>
@@ -377,7 +378,10 @@ function captureFrame() {
   const videoAspect = vw / vh
   const vpAspect = vpW / vpH
 
-  let srcX = 0, srcY = 0, srcW = vw, srcH = vh
+  let srcX = 0,
+    srcY = 0,
+    srcW = vw,
+    srcH = vh
   if (videoAspect > vpAspect) {
     // 视频比 viewport 更宽，左右被裁
     srcW = vh * vpAspect
@@ -419,7 +423,9 @@ const showFlash = ref(false)
 async function captureAndSearch() {
   // 闪光反馈
   showFlash.value = true
-  setTimeout(() => { showFlash.value = false }, 200)
+  setTimeout(() => {
+    showFlash.value = false
+  }, 200)
 
   const blob = await captureFrame()
   if (!blob) return
@@ -443,10 +449,10 @@ const errorMsg = ref('')
 const selectedIds = ref(new Set())
 
 const VISION_ERROR_MAP = {
-  'VISION_NOT_READY': 'AI 视觉识别尚未就绪，请先在管理后台安装模型并构建索引',
-  'VISION_REBUILDING': 'AI 索引正在构建中，请稍后再试',
-  'VISION_BUSY': '识别请求过多，请稍后再试',
-  'VISION_TIMEOUT': '识别超时，请重试',
+  VISION_NOT_READY: 'AI 视觉识别尚未就绪，请先在管理后台安装模型并构建索引',
+  VISION_REBUILDING: 'AI 索引正在构建中，请稍后再试',
+  VISION_BUSY: '识别请求过多，请稍后再试',
+  VISION_TIMEOUT: '识别超时，请重试',
 }
 
 function translateVisionError(code) {
@@ -476,8 +482,9 @@ async function doSearch() {
     emit('search-done', resp)
   } catch (err) {
     const raw = err.response?.data?.error || err.response?.data || ''
-    const msg = translateVisionError(typeof raw === 'string' ? raw : '')
-      || (err.code === 'ECONNABORTED' ? '搜索超时，请重试' : '搜索失败')
+    const msg =
+      translateVisionError(typeof raw === 'string' ? raw : '') ||
+      (err.code === 'ECONNABORTED' ? '搜索超时，请重试' : '搜索失败')
     errorMsg.value = msg
     const { showError } = useAlert()
     showError(msg)
@@ -503,6 +510,15 @@ function onResultClick(item) {
   emit('select', item)
 }
 
+// 摄像头悬浮结果弹窗专用：选中后顺带关掉弹窗。
+// 原来是内联在模板里的 `onResultClick(item); results = []`，但 prettier
+// 用 semi:false 重排多语句内联处理器时会吞掉分号，导致 Vue 编译器解析
+// 报错（构建直接失败），所以拆成命名函数，行为不变。
+function selectResultAndClose(item) {
+  onResultClick(item)
+  results.value = []
+}
+
 function resolveThumb(url) {
   return getImageUrl(url)
 }
@@ -519,7 +535,10 @@ onMounted(() => {
 
 watch(
   () => [props.mode, props.eventId, props.masterProductIds],
-  () => { results.value = []; errorMsg.value = '' }
+  () => {
+    results.value = []
+    errorMsg.value = ''
+  }
 )
 
 // viewport ref 可能在 camera 打开后才出现
@@ -532,7 +551,6 @@ onBeforeUnmount(() => {
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
   if (resizeObs) resizeObs.disconnect()
 })
-
 </script>
 
 <style scoped>
@@ -599,8 +617,12 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 @keyframes flash-fade {
-  0% { opacity: 0.85; }
-  100% { opacity: 0; }
+  0% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 /* 搜索中 loading */
@@ -625,7 +647,9 @@ onBeforeUnmount(() => {
   animation: spin 0.8s linear infinite;
 }
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 .loading-text {
   color: white;
@@ -643,25 +667,29 @@ onBeforeUnmount(() => {
 }
 
 .frame-corner--tl {
-  top: -2px; left: -2px;
+  top: -2px;
+  left: -2px;
   border-width: 4px 0 0 4px;
   border-radius: 8px 0 0 0;
 }
 
 .frame-corner--tr {
-  top: -2px; right: -2px;
+  top: -2px;
+  right: -2px;
   border-width: 4px 4px 0 0;
   border-radius: 0 8px 0 0;
 }
 
 .frame-corner--bl {
-  bottom: -2px; left: -2px;
+  bottom: -2px;
+  left: -2px;
   border-width: 0 0 4px 4px;
   border-radius: 0 0 0 8px;
 }
 
 .frame-corner--br {
-  bottom: -2px; right: -2px;
+  bottom: -2px;
+  right: -2px;
   border-width: 0 4px 4px 0;
   border-radius: 0 0 8px 0;
 }
@@ -739,7 +767,9 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   min-height: 140px;
-  transition: border-color 0.2s, background-color 0.2s;
+  transition:
+    border-color 0.2s,
+    background-color 0.2s;
   overflow: hidden;
   background: var(--bg-color);
 }
@@ -922,10 +952,24 @@ onBeforeUnmount(() => {
 }
 
 /* 弹窗动画 */
-.result-pop-enter-active { transition: opacity 0.2s, transform 0.2s; }
-.result-pop-leave-active { transition: opacity 0.15s, transform 0.15s; }
-.result-pop-enter-from { opacity: 0; transform: scale(0.95); }
-.result-pop-leave-to { opacity: 0; transform: scale(0.95); }
+.result-pop-enter-active {
+  transition:
+    opacity 0.2s,
+    transform 0.2s;
+}
+.result-pop-leave-active {
+  transition:
+    opacity 0.15s,
+    transform 0.15s;
+}
+.result-pop-enter-from {
+  opacity: 0;
+  transform: scale(0.95);
+}
+.result-pop-leave-to {
+  opacity: 0;
+  transform: scale(0.95);
+}
 
 /* ========== 相机模式未激活时的 CTA 过渡页 ========== */
 .vision-camera-cta {

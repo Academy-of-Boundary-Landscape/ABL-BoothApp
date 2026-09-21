@@ -16,12 +16,24 @@
                 <div class="form-grid">
                   <div class="form-group">
                     <label for="create-code">商品编号:</label>
-                    <n-input id="create-code" v-model:value="createFormData.product_code" placeholder="A01" clearable required />
+                    <n-input
+                      id="create-code"
+                      v-model:value="createFormData.product_code"
+                      placeholder="A01"
+                      clearable
+                      required
+                    />
                   </div>
 
                   <div class="form-group">
                     <label for="create-name">商品名称:</label>
-                    <n-input id="create-name" v-model:value="createFormData.name" placeholder="灵梦亚克力立牌" clearable required />
+                    <n-input
+                      id="create-name"
+                      v-model:value="createFormData.name"
+                      placeholder="灵梦亚克力立牌"
+                      clearable
+                      required
+                    />
                   </div>
 
                   <div class="form-group">
@@ -49,7 +61,7 @@
                     />
                   </div>
 
-                  <div class="form-group" style="grid-column: 1 / -1;">
+                  <div class="form-group" style="grid-column: 1 / -1">
                     <label for="create-tags">标签:</label>
                     <n-select
                       id="create-tags"
@@ -95,10 +107,7 @@ import { NButton, NCard, NInput, NInputNumber, NSelect } from 'naive-ui'
 import ImageUploader from '@/components/shared/ImageUploader.vue'
 import { useProductStore } from '@/stores/productStore'
 import { useThemeStore } from '@/stores/themeStore'
-import {
-  IMAGE_UPLOAD_LIMIT_MB,
-  normalizeUploadError,
-} from '@/utils/upload'
+import { IMAGE_UPLOAD_LIMIT_MB, normalizeUploadError } from '@/utils/upload'
 
 const emit = defineEmits(['created'])
 const store = useProductStore()

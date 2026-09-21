@@ -23,11 +23,7 @@ console.log(`[Config] BaseURL: ${baseURL}`)
 const isLocalhostUrl = (u) => {
   try {
     const x = new URL(u)
-    return (
-      x.hostname === '127.0.0.1' ||
-      x.hostname === 'localhost' ||
-      x.hostname === '::1'
-    )
+    return x.hostname === '127.0.0.1' || x.hostname === 'localhost' || x.hostname === '::1'
   } catch {
     return false
   }

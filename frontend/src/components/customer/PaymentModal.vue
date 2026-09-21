@@ -10,7 +10,11 @@
         <!-- 中间：二维码区域 -->
         <div class="qr-area">
           <!-- 多码并排 -->
-          <div v-if="qrCodeUrls.length > 0" class="qr-grid" :class="{ 'single': qrCodeUrls.length === 1 }">
+          <div
+            v-if="qrCodeUrls.length > 0"
+            class="qr-grid"
+            :class="{ single: qrCodeUrls.length === 1 }"
+          >
             <div v-for="(url, i) in qrCodeUrls" :key="i" class="qr-wrapper">
               <img :src="url" :alt="'收款码 ' + (i + 1)" class="qr-img" />
             </div>
@@ -24,23 +28,18 @@
 
         <!-- 底部：提示 + 关闭按钮 -->
         <div class="payment-footer">
-          <p class="scan-tip">
-            手机浏览器用户请长按二维码保存后，用微信/支付宝扫一扫
-          </p>
+          <p class="scan-tip">手机浏览器用户请长按二维码保存后，用微信/支付宝扫一扫</p>
           <div class="timer-bar">
             <div class="timer-fill" :style="{ width: progress + '%' }"></div>
           </div>
-          <n-button
-            type="primary"
-            block
-            round
-            size="large"
-            class="close-btn"
-            @click="handleClose"
-          >
+          <n-button type="primary" block round size="large" class="close-btn" @click="handleClose">
             确认已付款 · 关闭{{ countdown > 0 && countdown <= 30 ? `（${countdown}s）` : '' }}
           </n-button>
-          <button v-if="countdown > 0 && countdown <= 30" class="extend-btn" @click="resetCountdown">
+          <button
+            v-if="countdown > 0 && countdown <= 30"
+            class="extend-btn"
+            @click="resetCountdown"
+          >
             需要更多时间
           </button>
         </div>
@@ -59,7 +58,7 @@ const emit = defineEmits(['close'])
 const props = defineProps({
   show: { type: Boolean, required: true },
   total: { type: Number, required: true },
-  qrCodeUrls: { type: Array, default: () => [] }
+  qrCodeUrls: { type: Array, default: () => [] },
 })
 
 const countdown = ref(0)
@@ -92,10 +91,13 @@ function handleClose() {
   emit('close')
 }
 
-watch(() => props.show, (val) => {
-  if (val) startCountdown()
-  else stopCountdown()
-})
+watch(
+  () => props.show,
+  (val) => {
+    if (val) startCountdown()
+    else stopCountdown()
+  }
+)
 
 onUnmounted(stopCountdown)
 </script>
@@ -110,11 +112,8 @@ onUnmounted(stopCountdown)
   align-items: center;
   justify-content: center;
   /* 基础 padding + iPhone X+ 安全区偏移 */
-  padding:
-    calc(16px + env(safe-area-inset-top))
-    calc(16px + env(safe-area-inset-right))
-    calc(16px + env(safe-area-inset-bottom))
-    calc(16px + env(safe-area-inset-left));
+  padding: calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right))
+    calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
   box-sizing: border-box;
 }
 
@@ -193,7 +192,9 @@ onUnmounted(stopCountdown)
   border-radius: var(--radius-md);
   text-align: center;
 }
-.no-qr p { margin: 0.5rem 0; }
+.no-qr p {
+  margin: 0.5rem 0;
+}
 
 .payment-footer {
   flex-shrink: 0;
@@ -238,13 +239,21 @@ onUnmounted(stopCountdown)
   padding: 4px 12px;
   text-decoration: underline;
 }
-.extend-btn:hover { color: var(--accent-color); }
+.extend-btn:hover {
+  color: var(--accent-color);
+}
 
 /* 过渡动画 */
-.payment-fade-enter-active { transition: opacity 0.25s; }
-.payment-fade-leave-active { transition: opacity 0.35s; }
+.payment-fade-enter-active {
+  transition: opacity 0.25s;
+}
+.payment-fade-leave-active {
+  transition: opacity 0.35s;
+}
 .payment-fade-enter-from,
-.payment-fade-leave-to { opacity: 0; }
+.payment-fade-leave-to {
+  opacity: 0;
+}
 
 /* 竖屏手机：双码改为上下排列 */
 @media (max-width: 600px) and (orientation: portrait) {

@@ -1,17 +1,16 @@
 import { defineStore } from 'pinia'
 import api from '@/services/api'
 import { ref } from 'vue'
-import { SYNC_IMPORT_LIMIT_MB, validateFileSize } from '@/utils/upload'
 
 function detectEnv() {
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined
-  const ua = typeof navigator !== 'undefined' ? (navigator.userAgent || '') : ''
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : ''
   const isMobileUA = /android|iphone|ipad|ipod/i.test(ua)
   return {
     isTauri,
     isMobileUA,
     isTauriDesktop: isTauri && !isMobileUA,
-    isTauriMobile: isTauri && isMobileUA
+    isTauriMobile: isTauri && isMobileUA,
   }
 }
 
@@ -68,7 +67,8 @@ export const useSyncStore = defineStore('sync', () => {
     try {
       // 统一用 arraybuffer 更省心（blob/arraybuffer 在不同端差异多）
       const response = await api.get('/sync/export-products', { responseType: 'arraybuffer' })
-      const disposition = response.headers?.['content-disposition'] || response.headers?.['Content-Disposition'] || ''
+      const disposition =
+        response.headers?.['content-disposition'] || response.headers?.['Content-Disposition'] || ''
       const filename = parseFilenameFromDisposition(disposition, 'booth_catalog.boothpack')
       const blob = toBlob(response.data, 'application/zip')
 
@@ -76,12 +76,12 @@ export const useSyncStore = defineStore('sync', () => {
       if (env.isTauriDesktop) {
         const [dialogModule, fsModule] = await Promise.all([
           import('@tauri-apps/plugin-dialog'),
-          import('@tauri-apps/plugin-fs')
+          import('@tauri-apps/plugin-fs'),
         ])
 
         const filePath = await dialogModule.save({
           defaultPath: filename,
-          filters: [{ name: 'Booth Pack', extensions: ['boothpack', 'zip'] }]
+          filters: [{ name: 'Booth Pack', extensions: ['boothpack', 'zip'] }],
         })
 
         if (!filePath) {
@@ -90,7 +90,10 @@ export const useSyncStore = defineStore('sync', () => {
         }
 
         // 把 arraybuffer 写入
-        const bytes = response.data instanceof ArrayBuffer ? new Uint8Array(response.data) : new Uint8Array(await blob.arrayBuffer())
+        const bytes =
+          response.data instanceof ArrayBuffer
+            ? new Uint8Array(response.data)
+            : new Uint8Array(await blob.arrayBuffer())
         await fsModule.writeFile(filePath, bytes)
         return { filename: filePath }
       }
@@ -101,14 +104,17 @@ export const useSyncStore = defineStore('sync', () => {
         try {
           const [dialogModule, fsModule] = await Promise.all([
             import('@tauri-apps/plugin-dialog'),
-            import('@tauri-apps/plugin-fs')
+            import('@tauri-apps/plugin-fs'),
           ])
           const filePath = await dialogModule.save({
             defaultPath: filename,
-            filters: [{ name: 'Booth Pack', extensions: ['boothpack', 'zip'] }]
+            filters: [{ name: 'Booth Pack', extensions: ['boothpack', 'zip'] }],
           })
           if (filePath) {
-            const bytes = response.data instanceof ArrayBuffer ? new Uint8Array(response.data) : new Uint8Array(await blob.arrayBuffer())
+            const bytes =
+              response.data instanceof ArrayBuffer
+                ? new Uint8Array(response.data)
+                : new Uint8Array(await blob.arrayBuffer())
             await fsModule.writeFile(filePath, bytes)
             return { filename: filePath }
           }
@@ -117,14 +123,18 @@ export const useSyncStore = defineStore('sync', () => {
         } catch (e) {
           // 2) 如果移动端不支持 save/writeFile，则尝试 Web Share
           // （注意：Tauri WebView 未必支持 files share）
-          console.warn('[export] tauri mobile save/writeFile not available, fallback to share/web', e)
+          console.warn(
+            '[export] tauri mobile save/writeFile not available, fallback to share/web',
+            e
+          )
         }
       }
 
       // ✅ 浏览器 or 移动端 fallback：优先 Web Share(files) 再下载
-      const canUseShare = typeof navigator !== 'undefined'
-        && typeof navigator.share === 'function'
-        && typeof navigator.canShare === 'function'
+      const canUseShare =
+        typeof navigator !== 'undefined' &&
+        typeof navigator.share === 'function' &&
+        typeof navigator.canShare === 'function'
 
       if (canUseShare) {
         try {
@@ -133,7 +143,7 @@ export const useSyncStore = defineStore('sync', () => {
             await navigator.share({
               files: [file],
               title: 'Booth Tool 制品包',
-              text: '导出的制品包，可在设备上保存或分享'
+              text: '导出的制品包，可在设备上保存或分享',
             })
             return { filename }
           }
@@ -166,19 +176,13 @@ export const useSyncStore = defineStore('sync', () => {
   // 注意：旧的 multipart endpoint /sync/import-products 仍然保留在后端，
   // 用于 LAN 浏览器或任何不走 Tauri webview 的客户端，向后兼容。
   function extractImportError(err, fallback = '导入失败') {
-    return (
-      err?.response?.data?.error ||
-      err?.response?.data?.message ||
-      err?.message ||
-      fallback
-    )
+    return err?.response?.data?.error || err?.response?.data?.message || err?.message || fallback
   }
 
   // [sync-fe] 前端时序日志，对应后端的 [sync] 标签。
   // 用 performance.now() 拿毫秒时间戳，分阶段打印帮排查"卡 30 秒"问题。
   // 总是打印（不分 dev/release），原因和后端一样：用户是在 release 里遇到 bug。
   function feLog(msg) {
-    // eslint-disable-next-line no-console
     console.log(`[sync-fe] ${msg}`)
   }
 
@@ -202,18 +206,12 @@ export const useSyncStore = defineStore('sync', () => {
     try {
       const tA = performance.now()
       const buffer = await file.arrayBuffer()
-      feLog(
-        `importProducts: file.arrayBuffer() took ${(performance.now() - tA).toFixed(0)}ms`
-      )
+      feLog(`importProducts: file.arrayBuffer() took ${(performance.now() - tA).toFixed(0)}ms`)
       const tB = performance.now()
       const u8 = new Uint8Array(buffer)
-      feLog(
-        `importProducts: new Uint8Array() took ${(performance.now() - tB).toFixed(0)}ms`
-      )
+      feLog(`importProducts: new Uint8Array() took ${(performance.now() - tB).toFixed(0)}ms`)
       const result = await postRawZip(u8)
-      feLog(
-        `importProducts: success, total ${(performance.now() - t0).toFixed(0)}ms`
-      )
+      feLog(`importProducts: success, total ${(performance.now() - t0).toFixed(0)}ms`)
       return result
     } catch (err) {
       feLog(
@@ -249,9 +247,7 @@ export const useSyncStore = defineStore('sync', () => {
       )
       // 不再包 Blob、不再包 File、不再 FormData ——直接当 body 发
       const result = await postRawZip(data)
-      feLog(
-        `importProductsFromPath: success, total ${(performance.now() - t0).toFixed(0)}ms`
-      )
+      feLog(`importProductsFromPath: success, total ${(performance.now() - t0).toFixed(0)}ms`)
       return result
     } catch (err) {
       feLog(
@@ -271,6 +267,6 @@ export const useSyncStore = defineStore('sync', () => {
     lastError,
     exportProducts,
     importProducts,
-    importProductsFromPath
+    importProductsFromPath,
   }
 })

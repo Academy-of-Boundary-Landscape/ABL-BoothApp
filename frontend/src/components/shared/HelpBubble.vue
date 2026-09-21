@@ -1,10 +1,5 @@
 <template>
-  <n-popover
-    trigger="click"
-    placement="bottom-end"
-    :width="300"
-    class="help-popover"
-  >
+  <n-popover trigger="click" placement="bottom-end" :width="300" class="help-popover">
     <template #trigger>
       <button class="help-trigger" title="页面帮助">?</button>
     </template>

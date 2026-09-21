@@ -1,11 +1,6 @@
 <template>
   <div class="cs-wrapper">
-    <div
-      class="cs-header"
-      role="button"
-      :aria-expanded="!isCollapsed"
-      @click="toggle"
-    >
+    <div class="cs-header" role="button" :aria-expanded="!isCollapsed" @click="toggle">
       <h2 class="cs-title">
         <slot name="title">{{ title }}</slot>
         <!-- header-extra 放置在标题侧（HelpBubble、状态 tag 等）；
@@ -42,16 +37,14 @@ const props = defineProps({
 const emit = defineEmits(['update:collapsed', 'toggle'])
 
 const internalCollapsed = ref(props.defaultCollapsed)
-const isCollapsed = ref(
-  props.collapsed !== null ? props.collapsed : props.defaultCollapsed
-)
+const isCollapsed = ref(props.collapsed !== null ? props.collapsed : props.defaultCollapsed)
 
 // 外部 v-model:collapsed 变化时同步
 watch(
   () => props.collapsed,
   (v) => {
     if (v !== null) isCollapsed.value = v
-  },
+  }
 )
 
 function toggle() {
@@ -80,7 +73,9 @@ defineExpose({ isCollapsed, toggle })
   background: var(--card-bg-color);
   border: 2px solid var(--border-color);
   border-radius: var(--radius-md);
-  transition: border-color 0.2s ease, background-color 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease;
   margin-bottom: 0.5rem;
 }
 .cs-header:hover {
@@ -121,7 +116,9 @@ defineExpose({ isCollapsed, toggle })
 /* 展开/折叠动画 —— 3000px 对大型 section（统计图表、长列表）足够兜底 */
 .cs-expand-enter-active,
 .cs-expand-leave-active {
-  transition: opacity 0.25s ease, max-height 0.3s ease;
+  transition:
+    opacity 0.25s ease,
+    max-height 0.3s ease;
   overflow: hidden;
 }
 .cs-expand-enter-from,
@@ -136,8 +133,14 @@ defineExpose({ isCollapsed, toggle })
 }
 
 @media (max-width: 480px) {
-  .cs-header { padding: 0.6rem 0.75rem; }
-  .cs-title { font-size: 1.1rem; }
-  .cs-body { padding: 1rem; }
+  .cs-header {
+    padding: 0.6rem 0.75rem;
+  }
+  .cs-title {
+    font-size: 1.1rem;
+  }
+  .cs-body {
+    padding: 1rem;
+  }
 }
 </style>

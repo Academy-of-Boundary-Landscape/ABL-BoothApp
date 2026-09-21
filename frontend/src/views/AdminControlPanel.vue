@@ -23,7 +23,9 @@
             <div class="guide-progress-bar">
               <div class="guide-progress-fill" :style="{ width: guideProgress + '%' }"></div>
             </div>
-            <span class="guide-progress-text">{{ guideDoneCount }} / {{ guideTotalCount }} 完成</span>
+            <span class="guide-progress-text"
+              >{{ guideDoneCount }} / {{ guideTotalCount }} 完成</span
+            >
           </div>
 
           <div v-if="guideAllDone" class="guide-done">
@@ -39,11 +41,7 @@
             >
               <span class="guide-check">{{ step.done ? '✅' : '⬜' }}</span>
               <span class="guide-text">{{ step.label }}</span>
-              <router-link
-                v-if="!step.done && step.to"
-                :to="step.to"
-                class="guide-link"
-              >
+              <router-link v-if="!step.done && step.to" :to="step.to" class="guide-link">
                 前往 →
               </router-link>
               <span v-if="!step.done && step.hint" class="guide-hint">{{ step.hint }}</span>
@@ -76,23 +74,45 @@
 
                   <ol class="lan-guide__steps">
                     <li>
-                      <strong>所有设备连同一个 WiFi</strong>——装摊盒的主机、顾客用的平板、摊主看订单的手机，三台设备必须接入同一个无线网络。
+                      <strong>所有设备连同一个 WiFi</strong
+                      >——装摊盒的主机、顾客用的平板、摊主看订单的手机，三台设备必须接入同一个无线网络。
                     </li>
                     <li>
-                      <strong>强烈推荐用手机开热点</strong>：漫展会场 WiFi 常常拥堵或禁止设备互通，自己开个热点让主机 + 平板 + 手机都连上，稳定可控。
+                      <strong>强烈推荐用手机开热点</strong>：漫展会场 WiFi
+                      常常拥堵或禁止设备互通，自己开个热点让主机 + 平板 + 手机都连上，稳定可控。
                     </li>
                     <li>
-                      用设备<strong>自带相机或浏览器</strong>扫码，打开后加入书签 / 主屏幕快捷方式，方便下次直达。<span class="lan-guide__warn">微信/支付宝内扫可能拦截，请用系统相机。</span>
+                      用设备<strong>自带相机或浏览器</strong>扫码，打开后加入书签 /
+                      主屏幕快捷方式，方便下次直达。<span class="lan-guide__warn"
+                        >微信/支付宝内扫可能拦截，请用系统相机。</span
+                      >
                     </li>
                   </ol>
 
                   <details class="lan-guide__faq">
                     <summary>扫码后无法连接？点击展开排障</summary>
                     <ul class="lan-guide__faq-list">
-                      <li>确认两台设备连的是<strong>同一个 WiFi 名称</strong>（会场常有多个相近名字，别选错）</li>
-                      <li>主机的<strong>防火墙</strong>需要放行 <code>5141</code> 端口（Windows 首次运行会弹出询问，选"允许专用/公用网络"）<br /><span class="lan-guide__warn">5140 是仅本机使用的回环端口，无需放行。</span></li>
-                      <li>首次扫码会看到<strong>"您的连接不是私密连接"红屏警告</strong>——这是局域网自签证书的预期行为，点"高级 → 继续访问"即可，每台设备只需操作一次。详见 <code>docs/guide/lan-https.md</code>。</li>
-                      <li>主机 IP 会在换网后变化 → 点下方「<strong>获取局域网二维码</strong>」刷新（变换 IP 后已接受过证书的设备会再警告一次）</li>
+                      <li>
+                        确认两台设备连的是<strong>同一个 WiFi 名称</strong
+                        >（会场常有多个相近名字，别选错）
+                      </li>
+                      <li>
+                        主机的<strong>防火墙</strong>需要放行 <code>5141</code> 端口（Windows
+                        首次运行会弹出询问，选"允许专用/公用网络"）<br /><span
+                          class="lan-guide__warn"
+                          >5140 是仅本机使用的回环端口，无需放行。</span
+                        >
+                      </li>
+                      <li>
+                        首次扫码会看到<strong>"您的连接不是私密连接"红屏警告</strong>——这是局域网自签证书的预期行为，点"高级
+                        → 继续访问"即可，每台设备只需操作一次。详见
+                        <code>docs/guide/lan-https.md</code>。
+                      </li>
+                      <li>
+                        主机 IP 会在换网后变化 →
+                        点下方「<strong>获取局域网二维码</strong>」刷新（变换 IP
+                        后已接受过证书的设备会再警告一次）
+                      </li>
                       <li>部分校园网 / 酒店 WiFi 有"AP 隔离"禁止设备互通，换用手机热点</li>
                     </ul>
                   </details>
@@ -112,7 +132,12 @@
                       <qrcode-vue :value="entry.url" :size="180" level="M" class="qr-code" />
                     </div>
                     <div class="qr-url">{{ entry.url }}</div>
-                    <n-button type="primary" size="small" @click="handleCopy(entry.url, entry.label)" class="copy-btn">
+                    <n-button
+                      type="primary"
+                      size="small"
+                      @click="handleCopy(entry.url, entry.label)"
+                      class="copy-btn"
+                    >
                       点击复制链接
                     </n-button>
                   </div>
@@ -137,29 +162,60 @@
                   <div class="settings-title">管理员密码</div>
                   <n-form :model="adminForm" label-placement="top">
                     <n-form-item label="旧密码">
-                      <n-input v-model:value="adminForm.oldPassword" type="password" show-password-on="click" placeholder="请输入旧密码" />
+                      <n-input
+                        v-model:value="adminForm.oldPassword"
+                        type="password"
+                        show-password-on="click"
+                        placeholder="请输入旧密码"
+                      />
                     </n-form-item>
                     <n-form-item label="新密码 (至少 4 位)">
-                      <n-input v-model:value="adminForm.newPassword" type="password" show-password-on="click" placeholder="请输入新密码" />
+                      <n-input
+                        v-model:value="adminForm.newPassword"
+                        type="password"
+                        show-password-on="click"
+                        placeholder="请输入新密码"
+                      />
                     </n-form-item>
                     <n-space justify="end">
-                      <n-button type="primary" :loading="adminSaving" @click="updateAdminPassword">保存</n-button>
+                      <n-button type="primary" :loading="adminSaving" @click="updateAdminPassword"
+                        >保存</n-button
+                      >
                     </n-space>
                   </n-form>
-                  <n-alert v-if="adminMessage" :type="adminMessage.type" :bordered="false" class="mt-8">{{ adminMessage.text }}</n-alert>
+                  <n-alert
+                    v-if="adminMessage"
+                    :type="adminMessage.type"
+                    :bordered="false"
+                    class="mt-8"
+                    >{{ adminMessage.text }}</n-alert
+                  >
                 </div>
 
                 <div class="settings-card">
                   <div class="settings-title">默认摊主密码（未配置摊主密码时采用）</div>
                   <n-form :model="vendorForm" label-placement="top">
                     <n-form-item label="新密码 (至少 4 位)">
-                      <n-input v-model:value="vendorForm.newPassword" type="password" show-password-on="click" placeholder="请输入新密码" />
+                      <n-input
+                        v-model:value="vendorForm.newPassword"
+                        type="password"
+                        show-password-on="click"
+                        placeholder="请输入新密码"
+                      />
                     </n-form-item>
                     <n-space justify="end">
-                      <n-button type="primary" :loading="vendorSaving" @click="updateVendorPassword">保存</n-button>
+                      <n-button type="primary" :loading="vendorSaving" @click="updateVendorPassword"
+                        >保存</n-button
+                      >
                     </n-space>
                   </n-form>
-                  <n-alert v-if="vendorMessage" :type="vendorMessage.type" :bordered="false" class="mt-8">{{ vendorMessage.text }}</n-alert>
+                  <n-alert
+                    v-if="vendorMessage"
+                    :type="vendorMessage.type"
+                    :bordered="false"
+                    class="mt-8"
+                    >{{ vendorMessage.text }}</n-alert
+                  >
                 </div>
               </div>
             </div>
@@ -177,12 +233,11 @@
               <div class="ai-spotlight-badge">v1.1 新功能</div>
               <div class="ai-spotlight-title">试试 AI 拍照识别</div>
               <div class="ai-spotlight-desc">
-                让顾客拿手机对准商品拍张照，自动识别加入购物车。专为"帮朋友看摊 / 寄售"场景设计——不用贴条码、不用记 SKU，3 分钟就能跑起来。
+                让顾客拿手机对准商品拍张照，自动识别加入购物车。专为"帮朋友看摊 /
+                寄售"场景设计——不用贴条码、不用记 SKU，3 分钟就能跑起来。
               </div>
               <div class="ai-spotlight-actions">
-                <n-button type="primary" @click="scrollToVisionPanel">
-                  🚀 开始配置
-                </n-button>
+                <n-button type="primary" @click="scrollToVisionPanel"> 🚀 开始配置 </n-button>
                 <router-link to="/admin/help" class="ai-spotlight-link">
                   先看文档了解 →
                 </router-link>
@@ -280,12 +335,16 @@ const guideSteps = computed(() => [
   },
 ])
 
-const guideTotalCount = computed(() => guideSteps.value.filter(s => s.key !== 'vision').length) // exclude optional
-const guideDoneCount = computed(() => guideSteps.value.filter(s => s.key !== 'vision' && s.done).length)
-const guideProgress = computed(() => guideTotalCount.value > 0 ? (guideDoneCount.value / guideTotalCount.value * 100) : 0)
+const guideTotalCount = computed(() => guideSteps.value.filter((s) => s.key !== 'vision').length) // exclude optional
+const guideDoneCount = computed(
+  () => guideSteps.value.filter((s) => s.key !== 'vision' && s.done).length
+)
+const guideProgress = computed(() =>
+  guideTotalCount.value > 0 ? (guideDoneCount.value / guideTotalCount.value) * 100 : 0
+)
 
-const guideAllDone = computed(() =>
-  hasEvents.value && hasProducts.value && hasEventProducts.value && hasOngoingEvent.value
+const guideAllDone = computed(
+  () => hasEvents.value && hasProducts.value && hasEventProducts.value && hasOngoingEvent.value
 )
 
 function dismissGuide() {
@@ -304,13 +363,15 @@ async function checkSetupStatus() {
     if (eventsRes.status === 'fulfilled') {
       const events = eventsRes.value.data || []
       hasEvents.value = events.length > 0
-      hasOngoingEvent.value = events.some(e => e.status === '进行中')
+      hasOngoingEvent.value = events.some((e) => e.status === '进行中')
       // 检查是否有展会已上架商品：取第一个展会的商品列表
       if (events.length > 0) {
         try {
           const { data } = await api.get(`/events/${events[0].id}/products`)
           hasEventProducts.value = (data || []).length > 0
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
     }
 
@@ -321,7 +382,9 @@ async function checkSetupStatus() {
     if (visionRes.status === 'fulfilled') {
       visionReady.value = visionRes.value.data?.is_ready === true
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 onMounted(() => {
@@ -472,7 +535,9 @@ async function updateVendorPassword() {
   cursor: pointer;
   border-radius: 50%;
   z-index: 2;
-  transition: background-color 0.15s, color 0.15s;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
 }
 .ai-spotlight-dismiss:hover {
   background: var(--bg-secondary, rgba(0, 0, 0, 0.06));
@@ -536,10 +601,18 @@ async function updateVendorPassword() {
 }
 
 @media (max-width: 480px) {
-  .ai-spotlight { padding: 1rem; }
-  .ai-spotlight-emoji { font-size: 2rem; }
-  .ai-spotlight-body { gap: 12px; }
-  .ai-spotlight-title { font-size: var(--font-md); }
+  .ai-spotlight {
+    padding: 1rem;
+  }
+  .ai-spotlight-emoji {
+    font-size: 2rem;
+  }
+  .ai-spotlight-body {
+    gap: 12px;
+  }
+  .ai-spotlight-title {
+    font-size: var(--font-md);
+  }
 }
 
 /* ===== 快速开始引导 ===== */

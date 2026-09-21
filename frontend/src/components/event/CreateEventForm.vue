@@ -73,11 +73,7 @@ import { NButton, NDatePicker, NForm, NInput } from 'naive-ui'
 
 import ImageUploader from '@/components/shared/ImageUploader.vue'
 import { useEventStore } from '@/stores/eventStore'
-import {
-  IMAGE_UPLOAD_LIMIT_MB,
-  normalizeUploadError,
-  showUploadDialog,
-} from '@/utils/upload'
+import { IMAGE_UPLOAD_LIMIT_MB, normalizeUploadError, showUploadDialog } from '@/utils/upload'
 
 const store = useEventStore()
 const isSubmitting = ref(false)

@@ -1,7 +1,11 @@
 <template>
   <div class="error-page">
     <n-card :bordered="false" size="large">
-      <n-result status="500" title="服务器错误" description="服务器发生了意外错误，请稍后重试或返回首页。">
+      <n-result
+        status="500"
+        title="服务器错误"
+        description="服务器发生了意外错误，请稍后重试或返回首页。"
+      >
         <template #footer>
           <RouterLink to="/">
             <n-button type="primary">返回首页</n-button>
@@ -13,8 +17,8 @@
 </template>
 
 <script setup>
-import { NResult, NButton, NCard } from 'naive-ui';
-import { RouterLink } from 'vue-router';
+import { NResult, NButton, NCard } from 'naive-ui'
+import { RouterLink } from 'vue-router'
 </script>
 
 <style scoped>

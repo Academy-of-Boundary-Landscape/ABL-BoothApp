@@ -14,7 +14,6 @@
 
     <transition name="expand">
       <div v-show="!isCollapsed" class="section-body">
-
         <!-- 运行时状态 -->
         <div class="status-bar">
           <div class="status-item">
@@ -35,7 +34,10 @@
           </div>
           <div class="status-item status-item--wide">
             <span class="status-label">推理设备</span>
-            <n-tag :type="status.execution_provider?.includes('DirectML') ? 'success' : 'default'" size="small">
+            <n-tag
+              :type="status.execution_provider?.includes('DirectML') ? 'success' : 'default'"
+              size="small"
+            >
               {{ status.execution_provider || '-' }}
             </n-tag>
           </div>
@@ -116,7 +118,14 @@
           />
         </div>
 
-        <n-alert v-if="actionMsg" :type="actionMsgType" :bordered="false" closable class="action-alert" @close="actionMsg = ''">
+        <n-alert
+          v-if="actionMsg"
+          :type="actionMsgType"
+          :bordered="false"
+          closable
+          class="action-alert"
+          @close="actionMsg = ''"
+        >
           {{ actionMsg }}
         </n-alert>
 
@@ -132,18 +141,27 @@
             暂无可用模型，请检查后端服务是否正常运行
           </div>
 
-          <div v-for="m in models" :key="m.model_id" class="model-card" :class="{ 'model-card--active': m.is_active }">
+          <div
+            v-for="m in models"
+            :key="m.model_id"
+            class="model-card"
+            :class="{ 'model-card--active': m.is_active }"
+          >
             <div class="model-main">
               <div class="model-header">
                 <span class="model-name">{{ m.model_id }}</span>
                 <n-tag v-if="m.is_active" type="success" size="tiny" round>使用中</n-tag>
                 <n-tag v-if="m.tier === 'builtin'" size="tiny" :bordered="false">内嵌</n-tag>
-                <n-tag v-else-if="m.installed" type="info" size="tiny" :bordered="false">已安装</n-tag>
+                <n-tag v-else-if="m.installed" type="info" size="tiny" :bordered="false"
+                  >已安装</n-tag
+                >
                 <n-tag v-else size="tiny" type="default" :bordered="false">可下载</n-tag>
               </div>
               <div class="model-desc" v-if="m.description">{{ m.description }}</div>
               <div class="model-specs">
-                <span v-if="m.size_mb" class="spec-chip spec-chip--size">{{ formatSize(m.size_mb) }}</span>
+                <span v-if="m.size_mb" class="spec-chip spec-chip--size">{{
+                  formatSize(m.size_mb)
+                }}</span>
                 <span class="spec-chip">{{ m.dim }} 维</span>
                 <span class="spec-chip">{{ m.input_size }}×{{ m.input_size }} 输入</span>
               </div>
@@ -192,11 +210,16 @@
           <n-progress
             type="line"
             :percentage="installTask.progress"
-            :status="installTask.status === 'failed' ? 'error' : installTask.status === 'completed' ? 'success' : 'default'"
+            :status="
+              installTask.status === 'failed'
+                ? 'error'
+                : installTask.status === 'completed'
+                  ? 'success'
+                  : 'default'
+            "
           />
           <div v-if="installTask.error" class="progress-error">{{ installTask.error }}</div>
         </div>
-
       </div>
     </transition>
   </div>
@@ -246,7 +269,8 @@ async function loadEpSetting() {
       // Windows: 列出 DirectML GPU 设备
       for (const dev of data.gpu_devices) {
         const lower = dev.name.toLowerCase()
-        const isVirtual = lower.includes('virtual') || lower.includes('basic') || lower.includes('remote')
+        const isVirtual =
+          lower.includes('virtual') || lower.includes('basic') || lower.includes('remote')
         opts.push({
           label: `GPU ${dev.device_id}: ${dev.name}${isVirtual ? ' (虚拟)' : ''}`,
           value: `gpu:${dev.device_id}`,
@@ -259,7 +283,9 @@ async function loadEpSetting() {
     }
 
     epOptions.value = opts
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 async function handleEpChange(val) {
@@ -284,8 +310,8 @@ const actionMsgType = ref('success')
 const modelsLoading = ref(true)
 const loadError = ref('')
 
-const activeModel = computed(() => models.value.find(m => m.is_active))
-const hasInstalledModel = computed(() => models.value.some(m => m.installed))
+const activeModel = computed(() => models.value.find((m) => m.is_active))
+const hasInstalledModel = computed(() => models.value.some((m) => m.installed))
 
 const statusText = computed(() => {
   if (status.value.is_rebuilding) return '正在构建索引...'
@@ -421,7 +447,13 @@ async function handleInstall(modelId) {
   actionMsg.value = ''
   try {
     const resp = await installModel(modelId)
-    installTask.value = { task_id: resp.task_id, model_id: modelId, status: 'downloading', progress: 1, error: null }
+    installTask.value = {
+      task_id: resp.task_id,
+      model_id: modelId,
+      status: 'downloading',
+      progress: 1,
+      error: null,
+    }
     startInstallPoll(resp.task_id)
   } catch (err) {
     actionMsg.value = err.response?.data?.error || '安装失败'
@@ -496,8 +528,14 @@ async function handleDelete(modelId) {
 }
 
 // ===== 生命周期 =====
-onMounted(() => { refreshStatus(); loadEpSetting() })
-onBeforeUnmount(() => { stopRebuildPoll(); stopInstallPoll() })
+onMounted(() => {
+  refreshStatus()
+  loadEpSetting()
+})
+onBeforeUnmount(() => {
+  stopRebuildPoll()
+  stopInstallPoll()
+})
 </script>
 
 <style scoped>
@@ -528,7 +566,9 @@ onBeforeUnmount(() => { stopRebuildPoll(); stopInstallPoll() })
   display: inline-flex;
   align-items: center;
 }
-.toggle-btn { color: var(--accent-color); }
+.toggle-btn {
+  color: var(--accent-color);
+}
 
 .section-body {
   padding: 1rem;
@@ -571,7 +611,9 @@ onBeforeUnmount(() => { stopRebuildPoll(); stopInstallPoll() })
   gap: 10px;
   flex-wrap: wrap;
 }
-.action-alert { margin: 0; }
+.action-alert {
+  margin: 0;
+}
 
 /* 模型列表 */
 .sub-title {
@@ -600,7 +642,10 @@ onBeforeUnmount(() => { stopRebuildPoll(); stopInstallPoll() })
   border-color: var(--accent-color);
   background: color-mix(in srgb, var(--accent-color) 6%, var(--bg-color));
 }
-.model-main { flex: 1; min-width: 0; }
+.model-main {
+  flex: 1;
+  min-width: 0;
+}
 .model-header {
   display: flex;
   align-items: center;
@@ -692,9 +737,15 @@ onBeforeUnmount(() => { stopRebuildPoll(); stopInstallPoll() })
   margin-bottom: 6px;
   color: var(--primary-text-color);
 }
-.progress-status--downloading { color: var(--accent-color); }
-.progress-status--completed { color: var(--success-color); }
-.progress-status--failed { color: var(--error-color); }
+.progress-status--downloading {
+  color: var(--accent-color);
+}
+.progress-status--completed {
+  color: var(--success-color);
+}
+.progress-status--failed {
+  color: var(--error-color);
+}
 .progress-error {
   margin-top: 4px;
   font-size: var(--font-sm);

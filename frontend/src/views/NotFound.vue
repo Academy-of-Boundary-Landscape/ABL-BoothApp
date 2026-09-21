@@ -6,19 +6,18 @@
           <RouterLink to="/">
             <n-button type="primary">返回首页</n-button>
           </RouterLink>
-          <RouterLink to="/login/admin" style="margin-left: 8px;">
+          <RouterLink to="/login/admin" style="margin-left: 8px">
             <n-button tertiary>管理员入口</n-button>
           </RouterLink>
         </template>
       </n-result>
     </n-card>
   </div>
-  
 </template>
 
 <script setup>
-import { NResult, NButton, NCard } from 'naive-ui';
-import { RouterLink } from 'vue-router';
+import { NResult, NButton, NCard } from 'naive-ui'
+import { RouterLink } from 'vue-router'
 </script>
 
 <style scoped>

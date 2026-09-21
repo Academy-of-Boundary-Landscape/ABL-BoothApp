@@ -43,41 +43,41 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
-import { useRouter, RouterLink } from 'vue-router';
-import { useEventStore } from '@/stores/eventStore';
-import { NCard, NSpin, NAlert, NSpace, NButton } from 'naive-ui';
+import { computed, onMounted } from 'vue'
+import { useRouter, RouterLink } from 'vue-router'
+import { useEventStore } from '@/stores/eventStore'
+import { NCard, NSpin, NAlert, NSpace, NButton } from 'naive-ui'
 
-const eventStore = useEventStore();
-const router = useRouter();
+const eventStore = useEventStore()
+const router = useRouter()
 
 // 计算属性，只筛选出“进行中”的展会
 const ongoingEvents = computed(() => {
   // 防御性检查：确保 eventStore.events 是数组
-  const events = Array.isArray(eventStore.events) ? eventStore.events : [];
+  const events = Array.isArray(eventStore.events) ? eventStore.events : []
   if (!Array.isArray(eventStore.events) && eventStore.events) {
-    console.error('❌ eventStore.events 不是数组:', eventStore.events);
+    console.error('❌ eventStore.events 不是数组:', eventStore.events)
   }
-  return events.filter(event => event.status === '进行中');
-});
+  return events.filter((event) => event.status === '进行中')
+})
 
 function selectEvent(event) {
   // 当用户选择一个展会时，跳转到该展会的摊主登录页面
   router.push({
     name: 'login',
     params: { role: 'vendor' },
-    query: { 
+    query: {
       eventId: event.id,
       // 登录成功后，我们希望他跳转到这个展会的摊主页面
-      redirect: `/vendor/${event.id}` 
-    }
-  });
+      redirect: `/vendor/${event.id}`,
+    },
+  })
 }
 
 onMounted(() => {
   // 页面加载时，获取所有展会列表
-  eventStore.fetchEvents();
-});
+  eventStore.fetchEvents()
+})
 </script>
 
 <style scoped>
@@ -112,5 +112,7 @@ onMounted(() => {
   margin-top: 2rem;
   font-size: var(--font-base);
 }
-.admin-login-link a { text-decoration: none; }
+.admin-login-link a {
+  text-decoration: none;
+}
 </style>

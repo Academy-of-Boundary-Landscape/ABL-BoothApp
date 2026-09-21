@@ -53,11 +53,7 @@
 
         <!-- 详情模式：进度条列表 -->
         <div v-else class="stock-list">
-          <div
-            v-for="product in eventDetailStore.products"
-            :key="product.id"
-            class="stock-item"
-          >
+          <div v-for="product in eventDetailStore.products" :key="product.id" class="stock-item">
             <span class="product-name">{{ product.name }}</span>
             <n-progress
               type="line"
@@ -296,8 +292,17 @@ onUnmounted(() => {
   font-size: var(--font-sm);
 }
 
-.stock-value.level-ok { color: var(--primary-text-color); }
-.stock-value.level-low { color: var(--warning-color); }
-.stock-value.level-critical { color: var(--error-color); font-weight: 700; }
-.stock-value.level-out { color: var(--text-disabled); }
+.stock-value.level-ok {
+  color: var(--primary-text-color);
+}
+.stock-value.level-low {
+  color: var(--warning-color);
+}
+.stock-value.level-critical {
+  color: var(--error-color);
+  font-weight: 700;
+}
+.stock-value.level-out {
+  color: var(--text-disabled);
+}
 </style>

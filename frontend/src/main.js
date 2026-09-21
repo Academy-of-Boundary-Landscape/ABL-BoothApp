@@ -13,7 +13,7 @@ import './assets/main.css'
 const app = createApp(App)
 
 // 5. 使用 Pinia 和路由
-app.use(createPinia()) 
+app.use(createPinia())
 app.use(router)
 
 // 6. 挂载应用

@@ -18,9 +18,9 @@
 </template>
 
 <script setup>
-import { useAlertStore } from '@/stores/alertStore';
+import { useAlertStore } from '@/stores/alertStore'
 
-const alertStore = useAlertStore();
+const alertStore = useAlertStore()
 </script>
 
 <style scoped>
@@ -49,9 +49,15 @@ const alertStore = useAlertStore();
 }
 
 /* 根据类型改变边框颜色 */
-.alert-box.alert-success { border-top-color: var(--alert-success); }
-.alert-box.alert-warning { border-top-color: var(--alert-warning); }
-.alert-box.alert-error { border-top-color: var(--alert-error); }
+.alert-box.alert-success {
+  border-top-color: var(--alert-success);
+}
+.alert-box.alert-warning {
+  border-top-color: var(--alert-warning);
+}
+.alert-box.alert-error {
+  border-top-color: var(--alert-error);
+}
 
 .alert-header {
   padding: 1rem 1.5rem;
@@ -104,12 +110,24 @@ const alertStore = useAlertStore();
 }
 
 /* 根据类型改变按钮颜色 */
-.alert-success .ok-btn { background-color: var(--alert-success); }
-.alert-success .ok-btn:hover { background-color: var(--success-color-hover); }
-.alert-warning .ok-btn { background-color: var(--alert-warning); }
-.alert-warning .ok-btn:hover { background-color: var(--warning-color-hover); }
-.alert-error .ok-btn { background-color: var(--alert-error); }
-.alert-error .ok-btn:hover { background-color: var(--error-color-hover); }
+.alert-success .ok-btn {
+  background-color: var(--alert-success);
+}
+.alert-success .ok-btn:hover {
+  background-color: var(--success-color-hover);
+}
+.alert-warning .ok-btn {
+  background-color: var(--alert-warning);
+}
+.alert-warning .ok-btn:hover {
+  background-color: var(--warning-color-hover);
+}
+.alert-error .ok-btn {
+  background-color: var(--alert-error);
+}
+.alert-error .ok-btn:hover {
+  background-color: var(--error-color-hover);
+}
 
 /* 过渡动画 */
 .alert-fade-enter-active,

@@ -61,12 +61,7 @@
       </button>
     </header>
 
-    <button
-      v-if="isCollapsed"
-      class="restore-toggle"
-      @click="toggleCollapse"
-      aria-label="展开导航"
-    >
+    <button v-if="isCollapsed" class="restore-toggle" @click="toggleCollapse" aria-label="展开导航">
       <NIcon class="chevron-icon restore">
         <ChevronDown />
       </NIcon>
@@ -75,32 +70,27 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
-import { RouterLink } from 'vue-router';
-import { NIcon } from 'naive-ui';
-import { 
-  ChevronDown, 
-  PersonOutline, 
-  StorefrontOutline, 
-  SettingsOutline 
-} from '@vicons/ionicons5';
+import { ref } from 'vue'
+import { RouterLink } from 'vue-router'
+import { NIcon } from 'naive-ui'
+import { ChevronDown, PersonOutline, StorefrontOutline, SettingsOutline } from '@vicons/ionicons5'
 
-const isOpen = ref(false);
-const isCollapsed = ref(localStorage.getItem('header_collapsed') === 'true');
+const isOpen = ref(false)
+const isCollapsed = ref(localStorage.getItem('header_collapsed') === 'true')
 
 const closeIfMobile = () => {
   if (window.innerWidth <= 768) {
-    isOpen.value = false;
+    isOpen.value = false
   }
-};
+}
 
 const toggleCollapse = () => {
-  isCollapsed.value = !isCollapsed.value;
-  localStorage.setItem('header_collapsed', isCollapsed.value);
+  isCollapsed.value = !isCollapsed.value
+  localStorage.setItem('header_collapsed', isCollapsed.value)
   if (isCollapsed.value) {
-    isOpen.value = false;
+    isOpen.value = false
   }
-};
+}
 </script>
 
 <style scoped>
@@ -210,7 +200,9 @@ const toggleCollapse = () => {
   width: 16px;
   height: 2px;
   background: var(--primary-text-color);
-  transition: transform 0.2s ease, opacity 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    opacity 0.2s ease;
 }
 
 .menu-icon::before,
@@ -220,12 +212,22 @@ const toggleCollapse = () => {
   left: 0;
 }
 
-.menu-icon::before { top: -5px; }
-.menu-icon::after { top: 5px; }
+.menu-icon::before {
+  top: -5px;
+}
+.menu-icon::after {
+  top: 5px;
+}
 
-.menu-icon.open { transform: rotate(45deg); }
-.menu-icon.open::before { transform: rotate(-90deg) translate(-5px, 0); }
-.menu-icon.open::after { opacity: 0; }
+.menu-icon.open {
+  transform: rotate(45deg);
+}
+.menu-icon.open::before {
+  transform: rotate(-90deg) translate(-5px, 0);
+}
+.menu-icon.open::after {
+  opacity: 0;
+}
 
 /* 导航链接 */
 .app-header-nav {
@@ -242,7 +244,9 @@ const toggleCollapse = () => {
   font-size: 13px;
   color: var(--secondary-text-color);
   text-decoration: none;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .nav-link:hover {
@@ -323,7 +327,7 @@ const toggleCollapse = () => {
     border: 1px solid transparent;
     transition: all 0.2s;
   }
-  
+
   /* 如果你使用汉字，可以在这里调整字体 */
   /* .shortcut-btn span { font-size: 14px; font-weight: bold; } */
 
@@ -344,7 +348,9 @@ const toggleCollapse = () => {
     gap: 4px;
     max-height: 0;
     overflow: hidden;
-    transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), margin-top 0.3s ease;
+    transition:
+      max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+      margin-top 0.3s ease;
     margin-top: 0;
   }
 

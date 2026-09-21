@@ -29,9 +29,7 @@
         placeholder="留空则保持原密码不变"
         show-password-on="click"
       />
-      <small class="helper-text">
-        输入新密码会覆盖旧密码，留空则不修改。
-      </small>
+      <small class="helper-text"> 输入新密码会覆盖旧密码，留空则不修改。 </small>
     </div>
 
     <div class="qr-upload-row">

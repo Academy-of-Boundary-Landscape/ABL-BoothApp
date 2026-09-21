@@ -54,7 +54,11 @@ defineProps({
 }
 
 @media (max-width: 480px) {
-  .empty-guide { padding: 2rem 1rem; }
-  .empty-guide-icon { font-size: 2.5rem; }
+  .empty-guide {
+    padding: 2rem 1rem;
+  }
+  .empty-guide-icon {
+    font-size: 2.5rem;
+  }
 }
 </style>
