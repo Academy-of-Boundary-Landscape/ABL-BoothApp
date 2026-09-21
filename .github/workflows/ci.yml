@@ -88,6 +88,43 @@ jobs:
       - name: Build
         run: npm run build --prefix frontend
 
+  docs:
+    name: Docs site (root npm ci / docs:build / version check)
+    runs-on: ubuntu-latest
+    # 这个 job 守的是两次真实事故：
+    #   1. 某次改动动了仓库根 package.json 的 version，却没重建根
+    #      package-lock.json，导致根 `npm ci` 报 EUSAGE 失败——而
+    #      .github/workflows/deploy-docs.yml 第一步就是根 `npm ci`，线上文档站
+    #      发布流水线因此被弄坏，且没人第一时间发现。
+    #   2. `npm run docs:build`（vitepress）在 main 上挂了一天多才被人肉逮住。
+    # deploy-docs.yml 带 `paths: ['docs/**', ...]` 过滤，只改根 package.json /
+    # package-lock.json 而不碰 docs/ 时它根本不会触发，所以根 npm ci 和
+    # docs:build 必须在这里（PR 门禁）单独兜底，不能指望那条 workflow 自己发现。
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          # 注意：这是仓库根的 package-lock.json，和 frontend job 用的
+          # frontend/package-lock.json 不是同一份。
+          cache-dependency-path: package-lock.json
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Docs build
+        run: npm run docs:build
+
+      # ./scripts/set-version.sh 不带参数就是检查模式：比对
+      # src-tauri/tauri.conf.json / src-tauri/Cargo.toml / frontend/package.json /
+      # 根 package.json 四处版本号是否一致，一致才 exit 0。CLAUDE.md 里写的硬约束，
+      # 之前没有任何门禁守它。纯 python3 + 文件读写，不依赖 tauri-env 等本机专有工具，
+      # 可以直接在 CI 跑。
+      - name: Version consistency check
+        run: ./scripts/set-version.sh
+
   windows:
     name: Windows target check
     runs-on: windows-latest

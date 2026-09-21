@@ -43,6 +43,11 @@ ok "依赖安装完成"
 # （虽然上面已经 `cd "$REPO_ROOT"`，这里有 rust-toolchain.toml，两者本该一致，
 # 显式指定更保险，也和这段命令改版本号时要同步改的地方对齐）。
 info "安装非宿主 Rust target（Windows / Android 交叉编译用）"
+# 显式先装工具链本体：`rustup target add --toolchain <未安装的版本>` 目前会自动
+# 补装该工具链，但已经打出 `warn: auto-installation is deprecated for most
+# rustup commands`——这个隐式行为将来会被移除，届时新克隆的机器就装不起来了。
+# 幂等：已装的话这一步只会说 up to date。
+rustup toolchain install 1.98.1
 rustup target add --toolchain 1.98.1 \
   x86_64-pc-windows-msvc \
   aarch64-linux-android \

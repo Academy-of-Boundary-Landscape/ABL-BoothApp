@@ -11,5 +11,10 @@ components = ["rustfmt", "clippy"]
 # scripts/setup-dev.sh 里的 `rustup target add` 负责；CI 里需要非宿主 target
 # 的 job（目前只有 android）自己在 workflow 里加一步 `rustup target add`。
 #
-# 改这里的版本号时记得同步改 .github/workflows/ci.yml 里 `dtolnay/rust-toolchain@1.98.1`
-# 那三处 @ref（rust / windows / android 三个 job）。
+# 改这里的版本号时记得同步改其余处：`grep -rn "1\.98\.1" --include=*.toml
+# --include=*.yml --include=*.sh .` 目前能数出 7 处非注释代码行（含这一行本身）——
+# .github/workflows/ci.yml 里 rust / windows / android 三个 job 各一处
+# `dtolnay/rust-toolchain@1.98.1` @ref，android job 里另一处
+# `rustup target add --toolchain 1.98.1`，以及 scripts/setup-dev.sh 里的
+# `rustup toolchain install 1.98.1` 和 `rustup target add --toolchain 1.98.1`
+# 两行。行号会漂，改的时候重新 grep 一遍最准，别只改这一处。
