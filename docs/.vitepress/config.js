@@ -3,7 +3,12 @@ import { defineConfig } from 'vitepress'
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
   base: '/',
-  
+
+  // docs/superpowers/ 放的是内部工程 spec/plan，不是面向用户的文档，
+  // 不该出现在文档站里；而且正文里的 <日期> <i64> <PathBuf> 这类尖括号内容
+  // 会被 Vue 编译器当成未闭合的 HTML 标签，导致 docs:build 直接失败。
+  srcExclude: ['**/superpowers/**'],
+
   locales: {
     root: {
       label: '简体中文',

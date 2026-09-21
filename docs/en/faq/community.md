@@ -13,8 +13,9 @@ Any channel that requires payment for download or charges for "deployment servic
 
 ## Can I update automatically?
 
-Please click the "Check for Updates" button in the sidebar. The system will automatically detect the latest version and guide you to download the installer.  
-The current version does not support one-click automatic updates; you need to manually download the installer and perform an overwrite installation.
+The Windows version has supported one-click automatic updates since v1.1.1: the app checks for new versions itself, then downloads and installs after you confirm.
+
+The Android version still requires manually downloading and installing the APK, due to platform restrictions.
 
 ## Where should I report bugs or suggestions?
 
