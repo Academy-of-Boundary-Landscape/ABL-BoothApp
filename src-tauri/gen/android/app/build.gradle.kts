@@ -8,6 +8,15 @@ plugins {
     id("rust")
 }
 
+// release 签名材料。文件不入库，迁移机器时必须手动带过来（换签名 = 老用户必须卸载重装）。
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val hasReleaseKeystore = keystorePropertiesFile.exists()
+val keystoreProperties = Properties().apply {
+    if (hasReleaseKeystore) {
+        FileInputStream(keystorePropertiesFile).use { load(it) }
+    }
+}
+
 val tauriProperties = Properties().apply {
     val propFile = file("tauri.properties")
     if (propFile.exists()) {
@@ -34,20 +43,16 @@ android {
     }
 
     signingConfigs {
-        create("release") {
-            val keystorePropertiesFile = rootProject.file("keystore.properties")
-            val keystoreProperties = Properties()
-
-            if (keystorePropertiesFile.exists()) {
-                keystoreProperties.load(FileInputStream(keystorePropertiesFile))
-            } else {
-                throw GradleException("keystore.properties not found at: ${keystorePropertiesFile.absolutePath}")
+        // keystore.properties 不入库（见仓库根 .gitignore）。缺失时不在 configure 阶段
+        // 直接抛异常——否则连 debug 构建和全新 clone 都跑不起来。真正打 release 包时
+        // 由下面的 assemble*Release 守卫失败，并把该补什么讲清楚。
+        if (hasReleaseKeystore) {
+            create("release") {
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                storeFile = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
             }
-
-            keyAlias = keystoreProperties["keyAlias"] as String
-            keyPassword = keystoreProperties["keyPassword"] as String
-            storeFile = file(keystoreProperties["storeFile"] as String)
-            storePassword = keystoreProperties["storePassword"] as String
         }
     }
 
@@ -64,7 +69,7 @@ android {
 
         getByName("release") {
             isMinifyEnabled = true
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = signingConfigs.findByName("release")
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }
                     .plus(getDefaultProguardFile("proguard-android-optimize.txt"))
@@ -108,6 +113,31 @@ androidComponents {
         variant.outputs.forEach { output ->
             (output as VariantOutputImpl).outputFileName =
                 "${appName}-${version}-${variantSlug}.apk"
+        }
+    }
+}
+
+// 没有 keystore.properties 时，release 产物会是未签名的 APK/AAB——那种包装不上、
+// 也覆盖不了线上版本。与其悄悄产出废包，不如在构建入口直接失败。
+if (!hasReleaseKeystore) {
+    tasks.matching {
+        (it.name.startsWith("assemble") || it.name.startsWith("bundle")) && it.name.endsWith("Release")
+    }.configureEach {
+        doFirst {
+            throw GradleException(
+                """
+                |缺少 release 签名材料：${keystorePropertiesFile.absolutePath}
+                |
+                |新建该文件，内容为：
+                |  storeFile=/abs/path/to/boothkernel-upload.keystore
+                |  storePassword=<store 密码>
+                |  keyAlias=<alias>
+                |  keyPassword=<key 密码>
+                |
+                |必须是签过历史版本（v1.0.0 起）的那把 keystore，换密钥会导致老用户无法覆盖安装。
+                |该文件已在 .gitignore，不要入库。
+                """.trimMargin()
+            )
         }
     }
 }

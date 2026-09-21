@@ -115,6 +115,8 @@ model-releases
 
 # --- 本地/个人文件 ---
 .claude/
+# 开发机构建笔记：含本机路径，不入库（内容见 docs/BUILD.md 的通用部分）
+/CLAUDE.md
 dxdiag.txt
 src-tauri/note*.md
 src-tauri/planv*.md
