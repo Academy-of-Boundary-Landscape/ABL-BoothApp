@@ -40,51 +40,61 @@ pub struct GpuDevice {
 
 /// 探测系统 GPU 列表（通过 DXGI 枚举，与 DirectML device_id 顺序完全一致）
 pub fn probe_gpu_devices() -> Vec<GpuDevice> {
-    GPU_DEVICES.get_or_init(|| {
-        let mut devices = Vec::new();
+    GPU_DEVICES
+        .get_or_init(|| {
+            let devices = Vec::new();
 
-        #[cfg(target_os = "windows")]
-        {
-            use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIFactory1};
+            #[cfg(target_os = "windows")]
+            {
+                use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIFactory1};
 
-            let factory: Result<IDXGIFactory1, _> = unsafe { CreateDXGIFactory1() };
-            if let Ok(factory) = factory {
-                let mut idx = 0u32;
-                loop {
-                    match unsafe { factory.EnumAdapters1(idx) } {
-                        Ok(adapter) => {
-                            if let Ok(desc) = unsafe { adapter.GetDesc1() } {
-                                // desc.Description 是 [u16; 128]，转成 String
-                                let name_len = desc.Description.iter().position(|&c| c == 0).unwrap_or(128);
-                                let name = String::from_utf16_lossy(&desc.Description[..name_len]);
-                                devices.push(GpuDevice {
-                                    device_id: idx as i32,
-                                    name,
-                                });
+                let factory: Result<IDXGIFactory1, _> = unsafe { CreateDXGIFactory1() };
+                if let Ok(factory) = factory {
+                    let mut idx = 0u32;
+                    loop {
+                        match unsafe { factory.EnumAdapters1(idx) } {
+                            Ok(adapter) => {
+                                if let Ok(desc) = unsafe { adapter.GetDesc1() } {
+                                    // desc.Description 是 [u16; 128]，转成 String
+                                    let name_len = desc
+                                        .Description
+                                        .iter()
+                                        .position(|&c| c == 0)
+                                        .unwrap_or(128);
+                                    let name =
+                                        String::from_utf16_lossy(&desc.Description[..name_len]);
+                                    devices.push(GpuDevice {
+                                        device_id: idx as i32,
+                                        name,
+                                    });
+                                }
+                                idx += 1;
                             }
-                            idx += 1;
+                            Err(_) => break, // 枚举完毕
                         }
-                        Err(_) => break, // 枚举完毕
+                    }
+                }
+
+                if devices.is_empty() {
+                    println!("[Vision] No DXGI adapters found");
+                } else {
+                    for d in &devices {
+                        println!("[Vision] DXGI adapter {}: {}", d.device_id, d.name);
                     }
                 }
             }
 
-            if devices.is_empty() {
-                println!("[Vision] No DXGI adapters found");
-            } else {
-                for d in &devices {
-                    println!("[Vision] DXGI adapter {}: {}", d.device_id, d.name);
-                }
-            }
-        }
-
-        devices
-    }).clone()
+            devices
+        })
+        .clone()
 }
 
 /// 获取当前推理设备名称
 pub fn get_active_ep_name() -> String {
-    ACTIVE_EP_NAME.read().map(|s| s.clone()).unwrap_or_else(|_| "unknown".to_string())
+    ACTIVE_EP_NAME
+        .read()
+        .map(|s| s.clone())
+        .unwrap_or_else(|_| "unknown".to_string())
 }
 
 fn set_active_ep_name(name: &str) {
@@ -97,7 +107,11 @@ impl OnnxSession {
     /// 从文件加载 ONNX 模型
     ///
     /// ep_pref: "auto" | "cpu" | "gpu:0" | "gpu:1" ... | "nnapi"
-    pub fn load(model_path: &Path, manifest: &ModelManifest, ep_pref: &str) -> Result<Self, String> {
+    pub fn load(
+        model_path: &Path,
+        manifest: &ModelManifest,
+        ep_pref: &str,
+    ) -> Result<Self, String> {
         let t0 = Instant::now();
 
         let (session, ep_name) = match ep_pref {
@@ -108,26 +122,27 @@ impl OnnxSession {
             #[cfg(target_os = "windows")]
             pref if pref.starts_with("gpu:") => {
                 let device_id: i32 = pref.trim_start_matches("gpu:").parse().unwrap_or(0);
-                Self::try_load_gpu_device(model_path, device_id)
-                    .or_else(|e| {
-                        println!("[Vision] GPU device {} failed, falling back to CPU: {}", device_id, e);
-                        Self::load_cpu_only(model_path).map(|s| (s, "CPU (fallback)".to_string()))
-                    })?
+                Self::try_load_gpu_device(model_path, device_id).or_else(|e| {
+                    println!(
+                        "[Vision] GPU device {} failed, falling back to CPU: {}",
+                        device_id, e
+                    );
+                    Self::load_cpu_only(model_path).map(|s| (s, "CPU (fallback)".to_string()))
+                })?
             }
-            "nnapi" => {
-                Self::try_load_nnapi(model_path)
-                    .or_else(|e| {
-                        println!("[Vision] NNAPI failed, falling back to CPU: {}", e);
-                        Self::load_cpu_only(model_path).map(|s| (s, "CPU (fallback)".to_string()))
-                    })?
-            }
+            "nnapi" => Self::try_load_nnapi(model_path).or_else(|e| {
+                println!("[Vision] NNAPI failed, falling back to CPU: {}", e);
+                Self::load_cpu_only(model_path).map(|s| (s, "CPU (fallback)".to_string()))
+            })?,
             _ => {
                 // "auto": 平台自适应加速 → CPU fallback
-                Self::try_load_accelerated(model_path)
-                    .or_else(|e| {
-                        println!("[Vision] Accelerated load failed, falling back to CPU: {}", e);
-                        Self::load_cpu_only(model_path).map(|s| (s, "CPU".to_string()))
-                    })?
+                Self::try_load_accelerated(model_path).or_else(|e| {
+                    println!(
+                        "[Vision] Accelerated load failed, falling back to CPU: {}",
+                        e
+                    );
+                    Self::load_cpu_only(model_path).map(|s| (s, "CPU".to_string()))
+                })?
             }
         };
 
@@ -153,12 +168,23 @@ impl OnnxSession {
     }
 
     /// 尝试指定 device_id 的 GPU
-    fn try_load_gpu_device(model_path: &Path, device_id: i32) -> Result<(Session, String), String> {
+    ///
+    /// 调用方（本文件里的 load() 和 try_load_accelerated()）都用
+    /// `#[cfg(target_os = "windows")]` 包住了调用点，所以在非 Windows target 上编译时
+    /// 这个函数确实没人调用——不是真的死代码，只在非 Windows 平台上是。用 cfg_attr
+    /// 精确限定，而不是无差别 allow。
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    fn try_load_gpu_device(
+        _model_path: &Path,
+        _device_id: i32,
+    ) -> Result<(Session, String), String> {
         #[cfg(target_os = "windows")]
         {
             use ort::execution_providers::ExecutionProvider;
             let mut builder = Session::builder()
-                .and_then(|b| b.with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3))
+                .and_then(|b| {
+                    b.with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3)
+                })
                 .and_then(|b| b.with_intra_threads(4))
                 .map_err(|e| e.to_string())?;
 
@@ -166,7 +192,9 @@ impl OnnxSession {
                 .with_device_id(device_id);
             dml.register(&mut builder).map_err(|e| e.to_string())?;
 
-            let session = builder.commit_from_file(model_path).map_err(|e| e.to_string())?;
+            let session = builder
+                .commit_from_file(model_path)
+                .map_err(|e| e.to_string())?;
             // 查找设备名称
             let dev_name = probe_gpu_devices()
                 .iter()
@@ -186,7 +214,7 @@ impl OnnxSession {
     /// Windows: DirectML (遍历 GPU) → 失败返回 Err
     /// Android: NNAPI → 失败返回 Err
     /// 其他平台: 直接返回 Err（由调用方 fallback 到 CPU）
-    fn try_load_accelerated(model_path: &Path) -> Result<(Session, String), String> {
+    fn try_load_accelerated(_model_path: &Path) -> Result<(Session, String), String> {
         // Windows: 遍历 DirectML GPU 设备
         #[cfg(target_os = "windows")]
         {
@@ -196,14 +224,24 @@ impl OnnxSession {
             }
             for dev in &devices {
                 let lower = dev.name.to_lowercase();
-                if lower.contains("virtual") || lower.contains("basic") || lower.contains("remote") || lower.contains("microsoft") {
-                    println!("[Vision] Skipping virtual adapter {}: {}", dev.device_id, dev.name);
+                if lower.contains("virtual")
+                    || lower.contains("basic")
+                    || lower.contains("remote")
+                    || lower.contains("microsoft")
+                {
+                    println!(
+                        "[Vision] Skipping virtual adapter {}: {}",
+                        dev.device_id, dev.name
+                    );
                     continue;
                 }
                 match Self::try_load_gpu_device(model_path, dev.device_id) {
                     Ok(result) => return Ok(result),
                     Err(e) => {
-                        println!("[Vision] DirectML device {} ({}) failed: {}", dev.device_id, dev.name, e);
+                        println!(
+                            "[Vision] DirectML device {} ({}) failed: {}",
+                            dev.device_id, dev.name, e
+                        );
                     }
                 }
             }
@@ -222,23 +260,26 @@ impl OnnxSession {
     }
 
     /// 尝试 NNAPI 加速（Android NPU/GPU/DSP）
-    fn try_load_nnapi(model_path: &Path) -> Result<(Session, String), String> {
+    fn try_load_nnapi(_model_path: &Path) -> Result<(Session, String), String> {
         #[cfg(target_os = "android")]
         {
             use ort::execution_providers::ExecutionProvider;
             let mut builder = Session::builder()
-                .and_then(|b| b.with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3))
+                .and_then(|b| {
+                    b.with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3)
+                })
                 .and_then(|b| b.with_intra_threads(4))
                 .map_err(|e| e.to_string())?;
 
-            match ort::execution_providers::NNAPIExecutionProvider::default()
-                .register(&mut builder)
+            match ort::execution_providers::NNAPIExecutionProvider::default().register(&mut builder)
             {
                 Ok(_) => println!("[Vision] NNAPI EP registered"),
                 Err(e) => return Err(format!("NNAPI registration failed: {}", e)),
             }
 
-            let session = builder.commit_from_file(model_path).map_err(|e| e.to_string())?;
+            let session = builder
+                .commit_from_file(model_path)
+                .map_err(|e| e.to_string())?;
             let ep_name = "NNAPI (NPU/GPU)".to_string();
             println!("[Vision] {} — loaded successfully", ep_name);
             return Ok((session, ep_name));
@@ -281,12 +322,17 @@ impl OnnxSession {
 
         // 用 shape + raw data 构造 ort Tensor，避免 ndarray 版本不匹配
         let shape = vec![1_i64, 3, size as i64, size as i64];
-        let input_value = ort::value::Value::from_array(
-            (shape, input_array.into_raw_vec_and_offset().0.into_boxed_slice())
-        ).map_err(|e| format!("Failed to create input value: {}", e))?;
+        let input_value = ort::value::Value::from_array((
+            shape,
+            input_array.into_raw_vec_and_offset().0.into_boxed_slice(),
+        ))
+        .map_err(|e| format!("Failed to create input value: {}", e))?;
 
         let t1 = Instant::now();
-        let mut session = self.session.lock().map_err(|e| format!("Session lock poisoned: {}", e))?;
+        let mut session = self
+            .session
+            .lock()
+            .map_err(|e| format!("Session lock poisoned: {}", e))?;
         let outputs = session
             .run(ort::inputs!["image" => input_value])
             .map_err(|e| format!("Inference failed: {}", e))?;
@@ -306,7 +352,8 @@ impl OnnxSession {
         if out.len() < self.manifest.embed_dim {
             return Err(format!(
                 "Output dim {} < expected {}. Wrong model file?",
-                out.len(), self.manifest.embed_dim
+                out.len(),
+                self.manifest.embed_dim
             ));
         }
         if out.len() > self.manifest.embed_dim {
@@ -315,12 +362,19 @@ impl OnnxSession {
 
         let total_us = t0.elapsed().as_micros() as u64;
         let count = self.inference_count.fetch_add(1, Ordering::Relaxed) + 1;
-        let cumulative = self.inference_total_us.fetch_add(total_us, Ordering::Relaxed) + total_us;
+        let cumulative = self
+            .inference_total_us
+            .fetch_add(total_us, Ordering::Relaxed)
+            + total_us;
         let avg_ms = (cumulative as f64 / count as f64) / 1000.0;
 
         println!(
             "[Vision] Embed #{}: preprocess={}us, inference={}us, total={}ms (avg={:.1}ms)",
-            count, preprocess_us, inference_us, total_us / 1000, avg_ms,
+            count,
+            preprocess_us,
+            inference_us,
+            total_us / 1000,
+            avg_ms,
         );
 
         Ok(crate::vision::model::l2_normalize(out))
@@ -339,6 +393,10 @@ impl SessionCache {
         }
     }
 
+    // 不校验 model_id/version 是否匹配的简化版，实际调用方全部用下面带校验的
+    // get_or_load_with_check（模型切换时需要判断缓存是否已经过期）。这个简化版暂时
+    // 没人用，留着给以后"确定只有一个模型、不需要热切换"的场景（比如测试）用。
+    #[allow(dead_code)]
     pub async fn get_or_load(
         &self,
         loader: impl FnOnce() -> Result<OnnxSession, String>,

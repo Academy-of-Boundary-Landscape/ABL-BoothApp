@@ -98,8 +98,7 @@ fn cert_meta_still_valid(meta: &CertMeta, current_ips: &[IpAddr]) -> bool {
     // 浏览器仅校验"它连的那个 IP 是否在 SAN 列表中"——多余的 SAN 不会让任何客户端报错；
     // 而每次重生成都会让所有已接受过证书的设备再看一次安全警告，体验糟糕。
     // 所以"宁多勿少"是正确的策略，请勿误改成对称比较。
-    let san_set: std::collections::HashSet<&str> =
-        meta.sans.iter().map(|s| s.as_str()).collect();
+    let san_set: std::collections::HashSet<&str> = meta.sans.iter().map(|s| s.as_str()).collect();
     for ip in current_ips {
         let ip_str = ip.to_string();
         if !san_set.contains(ip_str.as_str()) {
@@ -109,9 +108,7 @@ fn cert_meta_still_valid(meta: &CertMeta, current_ips: &[IpAddr]) -> bool {
     true
 }
 
-fn generate_self_signed(
-    lan_ips: &[IpAddr],
-) -> Result<(Vec<u8>, Vec<u8>, CertMeta), CertError> {
+fn generate_self_signed(lan_ips: &[IpAddr]) -> Result<(Vec<u8>, Vec<u8>, CertMeta), CertError> {
     // 收集 SAN：传入的 LAN IP + 标准 loopback + DNS 名
     let mut sans: Vec<SanType> = Vec::new();
     let mut sans_strs: Vec<String> = Vec::new();
@@ -133,8 +130,8 @@ fn generate_self_signed(
         sans_strs.push(s);
     }
 
-    let localhost_dns = Ia5String::try_from("localhost".to_string())
-        .expect("'localhost' is valid IA5");
+    let localhost_dns =
+        Ia5String::try_from("localhost".to_string()).expect("'localhost' is valid IA5");
     sans.push(SanType::DnsName(localhost_dns));
     sans_strs.push("localhost".to_string());
 

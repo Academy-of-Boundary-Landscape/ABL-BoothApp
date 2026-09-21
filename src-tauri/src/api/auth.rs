@@ -1,5 +1,4 @@
 use axum::body::Bytes;
-use axum::extract::rejection::JsonRejection;
 use axum::{
     async_trait,
     extract::State,
@@ -20,7 +19,7 @@ fn deserialize_i64_from_str<'de, D>(deserializer: D) -> Result<Option<i64>, D::E
 where
     D: serde::Deserializer<'de>,
 {
-    use serde::de::{self, Deserialize, Deserializer};
+    use serde::de::{self, Deserialize};
 
     #[derive(Deserialize)]
     #[serde(untagged)]
@@ -290,10 +289,9 @@ fn build_success_response(
             return (StatusCode::INTERNAL_SERVER_ERROR, "Invalid cookie value").into_response()
         }
     };
-    response.headers_mut().insert(
-        header::SET_COOKIE,
-        cookie_val,
-    );
+    response
+        .headers_mut()
+        .insert(header::SET_COOKIE, cookie_val);
 
     response
 }

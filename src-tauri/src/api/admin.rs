@@ -14,8 +14,8 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::json;
-use tokio::fs;
 use sqlx::AssertSqlSafe;
+use tokio::fs;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -95,7 +95,7 @@ async fn update_admin_password(
             //eprintln!("[DEBUG] Admin password updated successfully");
             (StatusCode::OK, Json(json!({"message": "管理员密码已更新"}))).into_response()
         }
-        Err(e) => {
+        Err(_e) => {
             //eprintln!("[DEBUG] Failed to update admin password: {:?}", e);
             (StatusCode::INTERNAL_SERVER_ERROR, "Database Error").into_response()
         }
@@ -146,7 +146,7 @@ async fn update_vendor_default_password(
             )
                 .into_response()
         }
-        Err(e) => {
+        Err(_e) => {
             //eprintln!("[DEBUG] Failed to update vendor password: {:?}", e);
             (StatusCode::INTERNAL_SERVER_ERROR, "Database Error").into_response()
         }
@@ -169,7 +169,7 @@ async fn reset_database_handler(State(state): State<AppState>, _: AdminOnly) -> 
         match fs::remove_dir_all(uploads_dir).await {
             Ok(_) => {
                 // 重新创建空目录
-                if let Err(e) = fs::create_dir_all(uploads_dir).await {
+                if let Err(_e) = fs::create_dir_all(uploads_dir).await {
                     //eprintln!("[ERROR] Failed to recreate uploads directory: {:?}", e);
                     return (
                         StatusCode::INTERNAL_SERVER_ERROR,
@@ -178,7 +178,7 @@ async fn reset_database_handler(State(state): State<AppState>, _: AdminOnly) -> 
                         .into_response();
                 }
             }
-            Err(e) => {
+            Err(_e) => {
                 //eprintln!("[ERROR] Failed to delete uploads directory: {:?}", e);
                 // 这里可以选择报错返回，或者仅仅打印日志继续清除数据库
             }
@@ -192,7 +192,7 @@ async fn reset_database_handler(State(state): State<AppState>, _: AdminOnly) -> 
     // 开启一个事务
     let mut tx = match state.db.begin().await {
         Ok(tx) => tx,
-        Err(e) => {
+        Err(_e) => {
             //eprintln!("[ERROR] Failed to start transaction: {:?}", e);
             return (StatusCode::INTERNAL_SERVER_ERROR, "Database Error").into_response();
         }
@@ -214,7 +214,7 @@ async fn reset_database_handler(State(state): State<AppState>, _: AdminOnly) -> 
         let query = format!("DELETE FROM {}", table);
         // 已审计：table 只可能取自上面写死的 tables_to_clear 字面量，不含任何用户输入。
         // 表名无法用 bind 参数化，只能拼接。
-        if let Err(e) = sqlx::query(AssertSqlSafe(query)).execute(&mut *tx).await {
+        if let Err(_e) = sqlx::query(AssertSqlSafe(query)).execute(&mut *tx).await {
             //eprintln!("[ERROR] Failed to clear table {}: {:?}", table, e);
             let _ = tx.rollback().await;
             return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to clear data").into_response();
@@ -223,7 +223,7 @@ async fn reset_database_handler(State(state): State<AppState>, _: AdminOnly) -> 
     }
 
     // 重置自增ID（可选，让下次插入数据从1开始）
-    if let Err(e) = sqlx::query("DELETE FROM sqlite_sequence")
+    if let Err(_e) = sqlx::query("DELETE FROM sqlite_sequence")
         .execute(&mut *tx)
         .await
     {
@@ -233,7 +233,7 @@ async fn reset_database_handler(State(state): State<AppState>, _: AdminOnly) -> 
 
     // 特殊处理 settings 表：重置为默认密码
     // 删除所有设置，然后重新插入默认密码
-    if let Err(e) = sqlx::query("DELETE FROM settings").execute(&mut *tx).await {
+    if let Err(_e) = sqlx::query("DELETE FROM settings").execute(&mut *tx).await {
         //eprintln!("[ERROR] Failed to clear settings: {:?}", e);
         let _ = tx.rollback().await;
         return (
@@ -249,7 +249,7 @@ async fn reset_database_handler(State(state): State<AppState>, _: AdminOnly) -> 
     let admin_hash = hash_password("admin123");
     let vendor_hash = hash_password("vendor123");
 
-    if let Err(e) = sqlx::query(
+    if let Err(_e) = sqlx::query(
         "INSERT INTO settings (key, value) VALUES ('admin_password', ?), ('vendor_password', ?)",
     )
     .bind(&admin_hash)
@@ -284,7 +284,7 @@ async fn reset_database_handler(State(state): State<AppState>, _: AdminOnly) -> 
                 })),
             ).into_response()
         }
-        Err(e) => {
+        Err(_e) => {
             //eprintln!("[ERROR] Failed to commit transaction: {:?}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,

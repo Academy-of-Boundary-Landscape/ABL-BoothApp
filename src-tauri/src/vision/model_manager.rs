@@ -199,8 +199,13 @@ impl ModelManager {
             });
 
             match download::download_model_with_progress(
-                &app_data_dir, &manifest, &pref, Some(on_progress),
-            ).await {
+                &app_data_dir,
+                &manifest,
+                &pref,
+                Some(on_progress),
+            )
+            .await
+            {
                 Ok(_) => {
                     let mut tasks = install_tasks.write().await;
                     if let Some(task) = tasks.get_mut(&task_id) {

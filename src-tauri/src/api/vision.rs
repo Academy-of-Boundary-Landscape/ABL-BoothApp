@@ -122,12 +122,17 @@ struct RebuildRequest {
 
 #[derive(Debug)]
 struct SearchRequestContext {
+    // 上传后保存的相对路径；已解析校验，暂未回传给调用方或落库，留给以后做「查询历史」
+    // /「按图溯源」时用。
+    #[allow(dead_code)]
     image_url: String,
     image_bytes: Vec<u8>,
     top_k: i64,
     mode: Option<String>,
     master_product_ids: Option<Vec<i64>>,
     event_id: Option<i64>,
+    // 已用 validate_roi 校验格式，但裁剪逻辑还没接进实际的向量检索里；roi 功能上线前留着。
+    #[allow(dead_code)]
     roi: Option<String>,
 }
 
@@ -258,10 +263,8 @@ async fn parse_search_request(
             "event_id" => {
                 event_id = value.parse::<i64>().ok();
             }
-            "roi" => {
-                if !value.is_empty() {
-                    roi = Some(value);
-                }
+            "roi" if !value.is_empty() => {
+                roi = Some(value);
             }
             _ => {}
         }
@@ -795,7 +798,9 @@ async fn set_ep_setting(
     // 触发模型重新加载（用新的 EP 配置）
     let reload_result = async {
         let snapshot = state.vision_runtime.snapshot().await;
-        let manifest = state.vision_runtime.model_manager
+        let manifest = state
+            .vision_runtime
+            .model_manager
             .get_manifest_for_model(&snapshot.model_id)
             .await
             .ok_or_else(|| "active model not found".to_string())?;
@@ -810,17 +815,14 @@ async fn set_ep_setting(
 
         let model_id = manifest.model_id.clone();
         let model_version = manifest.model_version.clone();
-        state.vision_runtime.session_cache
-            .get_or_load_with_check(
-                &model_id,
-                &model_version,
-                &model_path,
-                manifest,
-                ep.clone(),
-            )
+        state
+            .vision_runtime
+            .session_cache
+            .get_or_load_with_check(&model_id, &model_version, &model_path, manifest, ep.clone())
             .await
             .map(|_| ())
-    }.await;
+    }
+    .await;
 
     let active = crate::vision::session::get_active_ep_name();
 
@@ -833,7 +835,8 @@ async fn set_ep_setting(
                 "active": active,
                 "message": "设备已切换并重新加载模型"
             })),
-        ).into_response(),
+        )
+            .into_response(),
         Err(e) => (
             StatusCode::OK,
             Json(json!({
@@ -842,6 +845,7 @@ async fn set_ep_setting(
                 "active": active,
                 "message": format!("配置已保存，但重新加载失败: {}", e)
             })),
-        ).into_response(),
+        )
+            .into_response(),
     }
 }

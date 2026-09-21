@@ -21,15 +21,6 @@ default = ["vision", "devtools"]
 vision = ["dep:ort", "dep:ndarray", "dep:image", "dep:reqwest", "dep:sha2", "dep:futures-util"]
 devtools = ["tauri/devtools"]
 
-# 日常开发时静音"无害但吵闹"的警告，减少编译输出干扰
-# 保留可能暴露真实 bug 的警告（unused_must_use, unreachable_code 等）
-[lints.rust]
-unused_variables = "allow"
-unused_imports = "allow"
-unused_mut = "allow"
-unused_assignments = "allow"
-dead_code = "allow"
-
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"

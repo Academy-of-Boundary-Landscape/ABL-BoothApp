@@ -105,6 +105,10 @@ async fn create_order(
         #[derive(sqlx::FromRow)]
         struct ProductRow {
             id: i64,
+            // 对应 products.current_stock 列；实际扣库存靠下面的原子 UPDATE 语句里的
+            // WHERE current_stock >= ? 判断，这里查出来暂时没读，留着给未来做「库存不足」
+            // 更友好提示（当前只报 "Insufficient stock"）时用。
+            #[allow(dead_code)]
             current_stock: i64,
             price: f64,
             name: String,
@@ -408,19 +412,24 @@ async fn update_order_status(
 
         let Some(s) = current_status else {
             // 订单不存在或不属于该展会
-            return (StatusCode::NOT_FOUND, Json(json!({"error": "Order not found in this event"}))).into_response();
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"error": "Order not found in this event"})),
+            )
+                .into_response();
         };
 
         {
             match s.as_str() {
                 "cancelled" => {
                     // 已取消过，直接返回当前订单数据
-                    let order = query_as::<_, Order>("SELECT * FROM orders WHERE id = ? AND event_id = ?")
-                        .bind(order_id)
-                        .bind(event_id)
-                        .fetch_optional(&state.db)
-                        .await
-                        .unwrap_or(None);
+                    let order =
+                        query_as::<_, Order>("SELECT * FROM orders WHERE id = ? AND event_id = ?")
+                            .bind(order_id)
+                            .bind(event_id)
+                            .fetch_optional(&state.db)
+                            .await
+                            .unwrap_or(None);
 
                     return if let Some(o) = order {
                         (StatusCode::OK, Json(o)).into_response()
@@ -457,7 +466,10 @@ async fn update_order_status(
                         .execute(&mut *tx)
                         .await
                         {
-                            eprintln!("Failed to restore stock for product {}: {}", item.product_id, e);
+                            eprintln!(
+                                "Failed to restore stock for product {}: {}",
+                                item.product_id, e
+                            );
                             return (
                                 StatusCode::INTERNAL_SERVER_ERROR,
                                 Json(json!({"error": format!("Failed to restore stock: {}", e)})),
@@ -471,11 +483,12 @@ async fn update_order_status(
         }
 
         // 4. 更新状态 (同时校验 event_id 防止越权)
-        if let Err(e) = sqlx::query("UPDATE orders SET status = 'cancelled' WHERE id = ? AND event_id = ?")
-            .bind(order_id)
-            .bind(event_id)
-            .execute(&mut *tx)
-            .await
+        if let Err(e) =
+            sqlx::query("UPDATE orders SET status = 'cancelled' WHERE id = ? AND event_id = ?")
+                .bind(order_id)
+                .bind(event_id)
+                .execute(&mut *tx)
+                .await
         {
             eprintln!("Failed to update order status to cancelled: {}", e);
             return (
@@ -535,7 +548,10 @@ async fn update_order_status(
                         .unwrap_or(None);
 
                 return if current.is_none() {
-                    (StatusCode::NOT_FOUND, Json(json!({"error": "Order not found"})))
+                    (
+                        StatusCode::NOT_FOUND,
+                        Json(json!({"error": "Order not found"})),
+                    )
                         .into_response()
                 } else {
                     (

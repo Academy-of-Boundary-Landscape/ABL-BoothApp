@@ -242,9 +242,13 @@ async fn update_product(
 
         match r {
             Ok(ref qr) if qr.rows_affected() == 0 => {
-                return (StatusCode::BAD_REQUEST, Json(json!({
-                    "error": "Cannot reduce initial stock below the number already sold"
-                }))).into_response();
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({
+                        "error": "Cannot reduce initial stock below the number already sold"
+                    })),
+                )
+                    .into_response();
             }
             other => other,
         }
@@ -275,7 +279,11 @@ async fn update_product(
                 Ok(product) => (StatusCode::OK, Json(product)).into_response(),
                 Err(e) => {
                     eprintln!("Fetch updated product error: {:?}", e);
-                    (StatusCode::INTERNAL_SERVER_ERROR, "Failed to fetch updated product").into_response()
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Failed to fetch updated product",
+                    )
+                        .into_response()
                 }
             }
         }

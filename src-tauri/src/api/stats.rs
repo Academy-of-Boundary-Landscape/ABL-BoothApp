@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use crate::{db::models::Event, state::AppState, utils::security::Claims};
 
 use chrono::Local;
-use rust_xlsxwriter::{Color, Format, FormatAlign, FormatBorder, Workbook, Worksheet}; // 用于在Excel中显示生成时间（可选）
+use rust_xlsxwriter::{Color, Format, FormatAlign, FormatBorder, Workbook}; // 用于在Excel中显示生成时间（可选）
 use sqlx::AssertSqlSafe;
 
 pub fn router() -> Router<AppState> {
@@ -90,7 +90,7 @@ async fn get_event_stats(
     .bind(event_id)
     .fetch_one(&state.db)
     .await
-    .unwrap_or_else(|_| SummaryStats {
+    .unwrap_or(SummaryStats {
         total_revenue: 0.0,
         completed_orders_count: 0,
         total_items_sold: 0,
@@ -276,10 +276,7 @@ async fn get_sales_summary(
     let interval_minutes = params.interval_minutes.unwrap_or(60);
     let interval_val = if interval_minutes == 30 { 30 } else { 60 };
 
-    fn floor_time(
-        t: NaiveDateTime,
-        interval: u32,
-    ) -> Option<NaiveDateTime> {
+    fn floor_time(t: NaiveDateTime, interval: u32) -> Option<NaiveDateTime> {
         let floored = (t.minute() / interval) * interval;
         t.with_minute(floored).and_then(|t| t.with_second(0))
     }
@@ -302,8 +299,12 @@ async fn get_sales_summary(
     let mut timeseries: Vec<TimeseriesItem> = Vec::new();
 
     if time_points.len() >= 2 {
-        let first_time = time_points.first().and_then(|p| floor_time(p.created_at, interval_val as u32));
-        let last_time = time_points.last().and_then(|p| floor_time(p.created_at, interval_val as u32));
+        let first_time = time_points
+            .first()
+            .and_then(|p| floor_time(p.created_at, interval_val as u32));
+        let last_time = time_points
+            .last()
+            .and_then(|p| floor_time(p.created_at, interval_val as u32));
 
         if let (Some(start), Some(end)) = (first_time, last_time) {
             let mut cursor = start;

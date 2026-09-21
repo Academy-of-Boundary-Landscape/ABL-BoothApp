@@ -9,7 +9,7 @@ use serde::Deserialize;
 #[cfg(feature = "vision")]
 use serde::Serialize;
 use serde_json::json;
-use sqlx::{query, query_as};
+use sqlx::query_as;
 
 #[cfg(feature = "vision")]
 use crate::vision::store::VisionStore;
@@ -199,10 +199,7 @@ async fn create_product(
     .await;
 
     match result {
-        Ok(product) => {
-
-            (StatusCode::CREATED, Json(product)).into_response()
-        }
+        Ok(product) => (StatusCode::CREATED, Json(product)).into_response(),
         Err(e) => {
             let error_msg = e.to_string();
             if error_msg.contains("UNIQUE constraint failed") {
@@ -268,10 +265,8 @@ async fn update_product(
                 }
                 "category" => category = if value.is_empty() { None } else { Some(value) },
                 "tags" => tags = value,
-                "remove_image" => {
-                    if value == "true" {
-                        should_remove_image = true;
-                    }
+                "remove_image" if value == "true" => {
+                    should_remove_image = true;
                 }
                 _ => {}
             }
@@ -304,10 +299,7 @@ async fn update_product(
     .await;
 
     match result {
-        Ok(product) => {
-
-            (StatusCode::OK, Json(product)).into_response()
-        }
+        Ok(product) => (StatusCode::OK, Json(product)).into_response(),
         Err(e) => {
             let error_msg = e.to_string();
             if error_msg.contains("UNIQUE constraint failed") {

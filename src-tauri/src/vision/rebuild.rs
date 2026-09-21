@@ -14,6 +14,11 @@ use crate::vision::store::VisionStore;
 
 /// 重建执行器
 pub struct RebuildExecutor {
+    // 存了但重建逻辑目前只用 upload_dir 和 db；new_for_task 那条路径甚至拿 upload_dir
+    // 顶替填充它（不是真的 app_data_dir），说明这个字段已经名不副实。留着不删是因为
+    // 字段名暗示"本该用于定位模型/数据目录"，删掉之前想先确认 new() 那条构造路径
+    // （VisionRuntime::new 里传的是真的 app_data_dir）是否还有隐藏依赖。
+    #[allow(dead_code)]
     app_data_dir: PathBuf,
     upload_dir: PathBuf,
     db: SqlitePool,
@@ -98,7 +103,10 @@ impl RebuildExecutor {
                     embedded_count += 1;
                 }
                 Err(e) => {
-                    eprintln!("[Vision Rebuild] embed failed for image_id={}: {}", row.image_id, e);
+                    eprintln!(
+                        "[Vision Rebuild] embed failed for image_id={}: {}",
+                        row.image_id, e
+                    );
                 }
             }
 

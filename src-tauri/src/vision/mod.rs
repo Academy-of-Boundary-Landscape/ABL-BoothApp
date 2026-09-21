@@ -28,9 +28,9 @@ use tokio::sync::Semaphore;
 #[cfg(feature = "vision")]
 pub use model_manager::ModelManager;
 #[cfg(feature = "vision")]
-pub use rebuild::{RebuildExecutor, RebuildResult};
+pub use rebuild::RebuildExecutor;
 #[cfg(feature = "vision")]
-pub use session::{OnnxSession, SessionCache};
+pub use session::SessionCache;
 #[cfg(feature = "vision")]
 pub use state::{ModelInstallTaskSnapshot, StateManager, VisionStatusSnapshot};
 
@@ -39,6 +39,11 @@ pub struct VisionRuntime {
     pub state: Arc<StateManager>,
     pub session_cache: Arc<SessionCache>,
     pub model_manager: Arc<ModelManager>,
+    // 构造时创建好存着，但实际重建任务走的是各调用点临时 new_for_task 出来的实例
+    // （见本文件里 RebuildExecutor::new_for_task 的调用），这个共享实例目前没被读。
+    // 留着是因为字段一删就要连带改构造函数和调用方，风险大于收益；后续如果统一改成
+    // 复用这个共享实例，再顺手清掉 new_for_task 那条路径。
+    #[allow(dead_code)]
     pub rebuild_executor: Arc<RebuildExecutor>,
     pub semaphore: Arc<Semaphore>,
 }
@@ -100,8 +105,12 @@ impl VisionRuntime {
 
             // 预加载模型到缓存，避免首次搜索冷启动
             let model_path = download::model_abs_path(self.model_manager.app_data_dir(), &manifest);
-            let ep_pref = self.model_manager.get_runtime_config().await
-                .map(|c| c.execution_provider).unwrap_or_else(|| "auto".to_string());
+            let ep_pref = self
+                .model_manager
+                .get_runtime_config()
+                .await
+                .map(|c| c.execution_provider)
+                .unwrap_or_else(|| "auto".to_string());
             if model_path.exists() {
                 match self
                     .session_cache
@@ -190,8 +199,12 @@ impl VisionRuntime {
             return Err(format!("model file not found: {}", model_path.display()));
         }
 
-        let ep_pref = self.model_manager.get_runtime_config().await
-            .map(|c| c.execution_provider).unwrap_or_else(|| "auto".to_string());
+        let ep_pref = self
+            .model_manager
+            .get_runtime_config()
+            .await
+            .map(|c| c.execution_provider)
+            .unwrap_or_else(|| "auto".to_string());
         let session = self
             .session_cache
             .get_or_load_with_check(
@@ -251,8 +264,11 @@ impl VisionRuntime {
                 return;
             }
 
-            let ep_pref = model_manager.get_runtime_config().await
-                .map(|c| c.execution_provider).unwrap_or_else(|| "auto".to_string());
+            let ep_pref = model_manager
+                .get_runtime_config()
+                .await
+                .map(|c| c.execution_provider)
+                .unwrap_or_else(|| "auto".to_string());
             let session = match session_cache
                 .get_or_load_with_check(
                     &manifest.model_id,

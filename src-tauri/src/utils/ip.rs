@@ -11,13 +11,25 @@ use std::net::IpAddr;
 // 但我们在 should_include_iface 里**先**判热点关键字、**再**判黑名单，热点能豁免。
 const NIC_BLACKLIST: &[&str] = &[
     // 虚拟机/容器
-    "virtual", "vmware", "vmnet", "virtualbox", "vbox", "docker", "wsl", "vether",
+    "virtual",
+    "vmware",
+    "vmnet",
+    "virtualbox",
+    "vbox",
+    "docker",
+    "wsl",
+    "vether",
     // VPN / 隧道
-    "vpn", "tunnel", "tap-windows", "tap-",
+    "vpn",
+    "tunnel",
+    "tap-windows",
+    "tap-",
     // Overlay 网络
-    "tailscale", "zerotier",
+    "tailscale",
+    "zerotier",
     // Hyper-V 等其它伪接口
-    "switch", "loopback pseudo",
+    "switch",
+    "loopback pseudo",
 ];
 
 // 真实物理网卡白名单

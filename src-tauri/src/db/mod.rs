@@ -78,6 +78,12 @@ pub async fn init_db(app_data_dir: &PathBuf) -> Result<SqlitePool, sqlx::Error> 
 
 /// 完全重置数据库：删除所有数据并重新初始化
 /// 警告：这是一个危险操作，会清空所有数据！
+///
+/// 目前没有调用方——api/admin.rs 的 `/reset-database` 路由走的是另一条「原地 DELETE +
+/// 重建默认数据」的路径，没有用这个「删库文件重新 migrate」的版本。留着是因为两种重置
+/// 语义不完全等价（这个版本连 schema 迁移都会重跑），后续如果要做「出厂重置」之类更彻底
+/// 的功能可能用得上。
+#[allow(dead_code)]
 pub async fn reset_database(app_data_dir: &PathBuf) -> Result<SqlitePool, sqlx::Error> {
     use sqlx::migrate::MigrateDatabase;
 

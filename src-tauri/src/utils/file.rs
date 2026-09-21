@@ -1,12 +1,12 @@
 // src/utils/file.rs
 
 use axum::extract::multipart::Field;
-use std::path::PathBuf;
+use std::path::Path;
 use tokio::fs;
 use uuid::Uuid;
 
 pub async fn save_upload_bytes(
-    base_dir: &PathBuf,
+    base_dir: &Path,
     data: &[u8],
     original_file_name: Option<&str>,
     sub_folder: Option<&str>,
@@ -18,7 +18,7 @@ pub async fn save_upload_bytes(
 
     let new_filename = format!("{}.{}", Uuid::new_v4(), ext);
 
-    let mut file_path = base_dir.clone();
+    let mut file_path = base_dir.to_path_buf();
     let mut relative_path_str = String::new();
 
     if let Some(folder) = sub_folder {
@@ -50,7 +50,7 @@ pub async fn save_upload_bytes(
 ///
 /// 返回: Result<可直接访问的完整路径 (包含 /uploads/ 前缀), 错误信息>
 pub async fn save_upload_file(
-    base_dir: &PathBuf,
+    base_dir: &Path,
     field: Field<'_>,
     sub_folder: Option<&str>,
 ) -> Result<String, String> {
@@ -62,7 +62,7 @@ pub async fn save_upload_file(
 /// 删除文件
 ///
 /// - `relative_path`: 完整路径，如 "uploads/products/xxx.jpg"
-pub async fn delete_file(base_dir: &PathBuf, relative_path: &str) -> std::io::Result<()> {
+pub async fn delete_file(base_dir: &Path, relative_path: &str) -> std::io::Result<()> {
     if relative_path.is_empty() {
         return Ok(());
     }

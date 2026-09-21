@@ -2,11 +2,17 @@ use std::sync::atomic::{AtomicI64, Ordering};
 
 use std::collections::HashMap;
 
+// 内存里的原子计数器，实际的索引元数据（含 size 语义相关的 index_version）现在走
+// vision/store.rs 里 DB 支撑的 VisionIndexMeta，这个结构体暂时没有调用方构造它。
+// 留着是因为它比 VisionIndexMeta 更轻量，未来如果要做「进程内快速判空」之类不想打
+// DB 的场景可能会用到。
+#[allow(dead_code)]
 #[derive(Debug, Default)]
 pub struct VisionIndex {
     size: AtomicI64,
 }
 
+#[allow(dead_code)]
 impl VisionIndex {
     pub fn new() -> Self {
         Self {
@@ -52,7 +58,7 @@ pub fn decode_embedding_blob(blob: &[u8], dim: i32) -> Option<Vec<f32>> {
     }
 
     let mut vec = Vec::with_capacity(dim as usize);
-    for chunk in blob.chunks_exact(4) {
+    for chunk in blob.as_chunks::<4>().0 {
         vec.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
     }
     Some(super::model::l2_normalize(vec))

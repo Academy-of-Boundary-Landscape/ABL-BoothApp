@@ -19,7 +19,7 @@ pub async fn static_file_handler(uri: Uri, _upload_dir: std::path::PathBuf) -> R
     println!(">>> 收到请求路径: '{}'", path);
 
     // 1. 打印当前环境诊断信息 (只在请求 index.html 或根路径时打印)
-    if path == "" || path == "index.html" {
+    if path.is_empty() || path == "index.html" {
         println!(">>> [环境诊断] 正在运行诊断...");
 
         match env::current_dir() {
@@ -62,7 +62,7 @@ pub async fn static_file_handler(uri: Uri, _upload_dir: std::path::PathBuf) -> R
 
     // include_dir 的 get_file 需要准确的路径
     // 如果请求的是空路径，默认映射到 index.html (Axum通常会把 / 变成 empty path)
-    let search_path = if path == "" { "index.html" } else { path };
+    let search_path = if path.is_empty() { "index.html" } else { path };
 
     // A. 尝试直接获取文件
     if let Some(file) = FRONTEND_ASSETS.get_file(search_path) {

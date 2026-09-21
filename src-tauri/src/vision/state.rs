@@ -105,6 +105,11 @@ impl StateManager {
     }
 
     /// 设置就绪状态
+    ///
+    /// 目前没有调用方——is_ready 的实际更新路径在别处（bootstrap/模型切换流程），没有
+    /// 走这个方法。留着是因为它和同结构体里已在用的 set_rebuilding/set_rebuild_progress
+    /// 是同一组状态更新 API，接口形状看起来是配套设计的，删掉这一个不对称。
+    #[allow(dead_code)]
     pub async fn set_ready(&self, is_ready: bool, reason: Option<String>) {
         let mut status = self.status.write().await;
         status.is_ready = is_ready;

@@ -7,6 +7,10 @@ use sqlx::AssertSqlSafe;
 pub struct VisionIndexMeta {
     pub model_version: String,
     pub index_version: i64,
+    // 对应 vision_index_meta.built_at 列；SELECT 里带出来了但目前没有代码读它
+    // （前端展示用的是 updated_at）。留着因为它和 updated_at 语义不同（首次构建 vs
+    // 最近一次更新），后续做索引状态面板大概率要用。
+    #[allow(dead_code)]
     pub built_at: String,
     pub updated_at: String,
 }
@@ -75,6 +79,10 @@ impl VisionStore {
         Ok(meta)
     }
 
+    // 只更新 model_version/index_version，没有调用方——实际写入路径都走下面的
+    // bump_index_meta_for_model（自增 index_version，且顺带做了 ensure_index_meta 那套
+    // 初始化）。留着是因为这个版本允许调用方显式指定 index_version，bump 那个不行。
+    #[allow(dead_code)]
     pub async fn update_index_meta(
         &self,
         model_version: &str,
@@ -164,6 +172,10 @@ impl VisionStore {
         Ok(row.0)
     }
 
+    // insert_master_product_image 的幂等版本（先查是否已存在同 URL 的图，存在就复用 id），
+    // 目前调用方都是直接调用 insert_master_product_image。留着是因为图片上传路径的幂等性
+    // 是个真实需求，②/③a 重做 master_product 图片管理时大概率会切到这个版本。
+    #[allow(dead_code)]
     pub async fn insert_master_product_image_if_absent(
         &self,
         master_product_id: i64,
@@ -280,6 +292,10 @@ impl VisionStore {
         Ok(())
     }
 
+    // delete_embeddings_by_image_id（单条）的批量版本，目前调用方都是逐条删。留着是因为
+    // 批量删除多张图对应 embedding 的场景（比如一次删除多张商品图）迟早会需要，届时直接
+    // 换这个能省掉循环里的多次往返。
+    #[allow(dead_code)]
     pub async fn delete_embeddings_by_image_ids(
         &self,
         image_ids: &[i64],
@@ -288,7 +304,10 @@ impl VisionStore {
             return Ok(());
         }
         let placeholders = image_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let sql = format!("DELETE FROM image_embeddings WHERE image_id IN ({})", placeholders);
+        let sql = format!(
+            "DELETE FROM image_embeddings WHERE image_id IN ({})",
+            placeholders
+        );
         // 已审计：只拼按 image_ids 个数生成的占位符，id 值全走 bind。
         let mut q = sqlx::query(AssertSqlSafe(sql));
         for id in image_ids {

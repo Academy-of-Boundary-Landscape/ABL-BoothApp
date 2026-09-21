@@ -1,6 +1,6 @@
+use rand::Rng;
 use std::fs;
 use std::path::PathBuf;
-use rand::Rng;
 // [修改 1] DragDropEvent 现在直接在 tauri 模块下，WindowEvent 也建议引入
 use tauri::{DragDropEvent, Emitter, Manager, WindowEvent};
 
@@ -37,7 +37,7 @@ fn resolve_app_data_dir(default_app_data_dir: PathBuf) -> PathBuf {
             .map(|name| format!("{name}{suffix}"))
             .unwrap_or_else(|| format!("booth-tool{suffix}"));
 
-        return parent.join(dir_name);
+        parent.join(dir_name)
     }
 
     #[cfg(not(debug_assertions))]
@@ -74,20 +74,14 @@ pub fn run() {
                     // 过滤掉频繁的事件，避免日志刷屏（可选）
                     // println!("[Debug][WindowEvent] {:?}", event);
 
-                    if let WindowEvent::DragDrop(drop_event) = event {
-                        // [修改 2] v2 中变体名称由 Dropped 改为 Drop
-                        match drop_event {
-                            DragDropEvent::Drop { paths, position } => {
-                                println!(
-                                    "[Debug][FileDrop][Backend] paths: {:?} @ {:?}",
-                                    paths, position
-                                );
-                                // 将文件路径推送到前端
-                                let _ = main_clone.emit("boothpack-file-drop", paths.clone());
-                            }
-                            // 处理其他拖拽状态（如 Enter, Over, Leave）以免编译警告
-                            _ => {}
-                        }
+                    // [修改 2] v2 中变体名称由 Dropped 改为 Drop
+                    if let WindowEvent::DragDrop(DragDropEvent::Drop { paths, position }) = event {
+                        println!(
+                            "[Debug][FileDrop][Backend] paths: {:?} @ {:?}",
+                            paths, position
+                        );
+                        // 将文件路径推送到前端
+                        let _ = main_clone.emit("boothpack-file-drop", paths.clone());
                     }
                 });
             }
@@ -140,8 +134,7 @@ pub fn run() {
                         .take(64)
                         .map(char::from)
                         .collect();
-                    fs::write(&secret_path, &secret)
-                        .expect("Failed to write jwt_secret.key");
+                    fs::write(&secret_path, &secret).expect("Failed to write jwt_secret.key");
                     println!("[Config] Generated new JWT secret");
                     secret
                 }
@@ -179,7 +172,10 @@ pub fn run() {
                         std::env::set_var("ORT_DYLIB_PATH", &ort_lib_path);
                         println!("[Vision] ORT_DYLIB_PATH set to: {:?}", ort_lib_path);
                     } else {
-                        println!("[Vision] ORT library not found at: {:?}, will use system default", ort_lib_path);
+                        println!(
+                            "[Vision] ORT library not found at: {:?}, will use system default",
+                            ort_lib_path
+                        );
                     }
                 }
 
@@ -193,10 +189,10 @@ pub fn run() {
                 if let Err(e) = vision::download::ensure_default_files(&app_data_dir).await {
                     eprintln!("[Vision] ensure_default_files failed: {}", e);
                 }
-                if let Err(e) = vision::download::install_builtin_models(
-                    &app_data_dir,
-                    resource_dir.as_deref(),
-                ).await {
+                if let Err(e) =
+                    vision::download::install_builtin_models(&app_data_dir, resource_dir.as_deref())
+                        .await
+                {
                     eprintln!("[Vision] install_builtin_models failed: {}", e);
                 }
             });

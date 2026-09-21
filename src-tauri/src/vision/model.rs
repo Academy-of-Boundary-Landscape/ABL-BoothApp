@@ -45,8 +45,12 @@ pub fn preprocess(image_bytes: &[u8], manifest: &ModelManifest) -> Result<Vec<f3
 
     println!(
         "[Vision] Preprocess: decode={}us, resize={}us, normalize={}us, total={}us (input {}x{})",
-        decode_us, resize_us, norm_us, t0.elapsed().as_micros(),
-        image.width(), image.height(),
+        decode_us,
+        resize_us,
+        norm_us,
+        t0.elapsed().as_micros(),
+        image.width(),
+        image.height(),
     );
 
     Ok(chw)
@@ -86,13 +90,19 @@ fn fast_crop_resize(image: &DynamicImage, target: u32) -> image::RgbImage {
         // 大图：先 Nearest 粗缩到 2x，再 Triangle 精缩
         let intermediate = target * 2;
         let rough = cropped.resize_exact(intermediate, intermediate, FilterType::Nearest);
-        rough.resize_exact(target, target, FilterType::Triangle).to_rgb8()
+        rough
+            .resize_exact(target, target, FilterType::Triangle)
+            .to_rgb8()
     } else if short > target {
         // 中等图：直接 Triangle
-        cropped.resize_exact(target, target, FilterType::Triangle).to_rgb8()
+        cropped
+            .resize_exact(target, target, FilterType::Triangle)
+            .to_rgb8()
     } else {
         // 小图：直接用（可能需要放大）
-        cropped.resize_exact(target, target, FilterType::Triangle).to_rgb8()
+        cropped
+            .resize_exact(target, target, FilterType::Triangle)
+            .to_rgb8()
     }
 }
 

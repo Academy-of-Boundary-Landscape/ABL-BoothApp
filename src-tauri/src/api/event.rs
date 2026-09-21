@@ -77,9 +77,13 @@ impl EventResponse {
 
 /// 解析 payment_qr_code_path 原始值为路径列表（不加 /uploads/ 前缀，用于文件删除）
 fn parse_raw_qr_paths(raw: &Option<String>) -> Vec<String> {
-    let Some(raw) = raw.as_deref() else { return vec![] };
+    let Some(raw) = raw.as_deref() else {
+        return vec![];
+    };
     let raw = raw.trim();
-    if raw.is_empty() { return vec![]; }
+    if raw.is_empty() {
+        return vec![];
+    }
     if raw.starts_with('[') {
         serde_json::from_str(raw).unwrap_or_else(|_| vec![raw.to_string()])
     } else {
@@ -91,9 +95,13 @@ fn parse_raw_qr_paths(raw: &Option<String>) -> Vec<String> {
 /// - JSON 数组 `["events/a.jpg","events/b.jpg"]` → 多个 URL
 /// - 纯字符串 `"events/a.jpg"` → 单个 URL（向后兼容旧数据）
 fn parse_qr_paths(raw: &Option<String>) -> Vec<String> {
-    let Some(raw) = raw.as_deref() else { return vec![] };
+    let Some(raw) = raw.as_deref() else {
+        return vec![];
+    };
     let raw = raw.trim();
-    if raw.is_empty() { return vec![]; }
+    if raw.is_empty() {
+        return vec![];
+    }
 
     let paths: Vec<String> = if raw.starts_with('[') {
         serde_json::from_str(raw).unwrap_or_else(|_| vec![raw.to_string()])
@@ -101,10 +109,15 @@ fn parse_qr_paths(raw: &Option<String>) -> Vec<String> {
         vec![raw.to_string()]
     };
 
-    paths.into_iter()
+    paths
+        .into_iter()
         .filter(|p| !p.is_empty())
         .map(|p| {
-            if p.starts_with("/uploads/") { p } else { format!("/uploads/{}", p) }
+            if p.starts_with("/uploads/") {
+                p
+            } else {
+                format!("/uploads/{}", p)
+            }
         })
         .collect()
 }
@@ -198,10 +211,8 @@ async fn create_event(
                 "name" => name = value,
                 "date" => date = value,
                 "location" => location = value,
-                "vendor_password" => {
-                    if !value.is_empty() {
-                        vendor_password = Some(hash_password(&value));
-                    }
+                "vendor_password" if !value.is_empty() => {
+                    vendor_password = Some(hash_password(&value));
                 }
                 _ => {}
             }
@@ -303,10 +314,8 @@ async fn update_event(
                         vendor_password_hash = Some(hash_password(&value));
                     }
                 }
-                "remove_payment_qr_code" => {
-                    if value == "true" {
-                        should_remove_qr = true;
-                    }
+                "remove_payment_qr_code" if value == "true" => {
+                    should_remove_qr = true;
                 }
                 _ => {}
             }
@@ -424,7 +433,11 @@ async fn delete_event(
         .unwrap_or(None);
 
     let Some(e) = event else {
-        return (StatusCode::NOT_FOUND, Json(json!({"error": "Event not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Event not found"})),
+        )
+            .into_response();
     };
 
     // 使用事务确保级联删除的原子性
@@ -432,7 +445,11 @@ async fn delete_event(
         Ok(tx) => tx,
         Err(e) => {
             eprintln!("Failed to begin transaction: {:?}", e);
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Database error"}))).into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "Database error"})),
+            )
+                .into_response();
         }
     };
 
@@ -446,7 +463,11 @@ async fn delete_event(
     .await
     {
         eprintln!("Failed to delete order_items for event {}: {:?}", id, err);
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Failed to delete order items"}))).into_response();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": "Failed to delete order items"})),
+        )
+            .into_response();
     }
 
     if let Err(err) = sqlx::query("DELETE FROM orders WHERE event_id = ?")
@@ -455,7 +476,11 @@ async fn delete_event(
         .await
     {
         eprintln!("Failed to delete orders for event {}: {:?}", id, err);
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Failed to delete orders"}))).into_response();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": "Failed to delete orders"})),
+        )
+            .into_response();
     }
 
     if let Err(err) = sqlx::query("DELETE FROM products WHERE event_id = ?")
@@ -464,7 +489,11 @@ async fn delete_event(
         .await
     {
         eprintln!("Failed to delete products for event {}: {:?}", id, err);
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Failed to delete products"}))).into_response();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": "Failed to delete products"})),
+        )
+            .into_response();
     }
 
     if let Err(err) = query("DELETE FROM events WHERE id = ?")
@@ -473,13 +502,24 @@ async fn delete_event(
         .await
     {
         eprintln!("Failed to delete event {}: {:?}", id, err);
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Failed to delete event"}))).into_response();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": "Failed to delete event"})),
+        )
+            .into_response();
     }
 
     // 提交事务 — 失败时所有删除都会回滚
     if let Err(err) = tx.commit().await {
-        eprintln!("Transaction commit failed for delete event {}: {:?}", id, err);
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Transaction commit failed"}))).into_response();
+        eprintln!(
+            "Transaction commit failed for delete event {}: {:?}",
+            id, err
+        );
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": "Transaction commit failed"})),
+        )
+            .into_response();
     }
 
     // 事务成功后才清理物理文件 (文件删除无法回滚，所以放在事务之后)

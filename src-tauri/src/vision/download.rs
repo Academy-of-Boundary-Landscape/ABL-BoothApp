@@ -108,7 +108,9 @@ pub async fn install_builtin_models(
     app_data_dir: &Path,
     resource_dir: Option<&Path>,
 ) -> Result<(), String> {
-    let Some(res_dir) = resource_dir else { return Ok(()) };
+    let Some(res_dir) = resource_dir else {
+        return Ok(());
+    };
 
     let registry = load_registry(app_data_dir).await.unwrap_or_default();
     for model in &registry.models {
@@ -120,15 +122,23 @@ pub async fn install_builtin_models(
             continue; // 已安装，跳过
         }
         // 从资源目录复制
-        let source = res_dir.join("models").join("vision").join(&model.onnx_rel_path);
+        let source = res_dir
+            .join("models")
+            .join("vision")
+            .join(&model.onnx_rel_path);
         if source.exists() {
             if let Some(parent) = target.parent() {
-                fs::create_dir_all(parent).await.map_err(|e| e.to_string())?;
+                fs::create_dir_all(parent)
+                    .await
+                    .map_err(|e| e.to_string())?;
             }
-            fs::copy(&source, &target).await.map_err(|e| {
-                format!("copy builtin model {}: {}", model.model_id, e)
-            })?;
-            println!("[Vision] Installed builtin model: {} -> {:?}", model.model_id, target);
+            fs::copy(&source, &target)
+                .await
+                .map_err(|e| format!("copy builtin model {}: {}", model.model_id, e))?;
+            println!(
+                "[Vision] Installed builtin model: {} -> {:?}",
+                model.model_id, target
+            );
         }
     }
     Ok(())
@@ -205,6 +215,9 @@ pub fn is_model_installed(app_data_dir: &Path, manifest: &ModelManifest) -> bool
 /// 进度回调类型：参数为 (已下载字节, 总字节 Option)
 pub type ProgressCallback = Box<dyn Fn(u64, Option<u64>) + Send + Sync>;
 
+// 无进度回调的便捷封装；目前所有调用方都直接用 download_model_with_progress（带进度
+// 上报给前端），这个简化版暂时没人用，留着给以后不需要进度上报的调用场景（比如脚本/测试）。
+#[allow(dead_code)]
 pub async fn download_model(
     app_data_dir: &Path,
     manifest: &ModelManifest,
