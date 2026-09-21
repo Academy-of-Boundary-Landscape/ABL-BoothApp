@@ -15,6 +15,7 @@ use crate::{db::models::Event, state::AppState, utils::security::Claims};
 
 use chrono::Local;
 use rust_xlsxwriter::{Color, Format, FormatAlign, FormatBorder, Workbook, Worksheet}; // 用于在Excel中显示生成时间（可选）
+use sqlx::AssertSqlSafe;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -200,7 +201,9 @@ async fn get_sales_summary(
 
     // 执行动态 SQL 查询
     let summary = {
-        let mut q = sqlx::query_as::<_, ProductSalesItem>(&summary_query);
+        // 已审计：push_str 追加的全是固定片段（" AND p.product_code = ?" 之类），
+        // 用户传来的 product_code / start_date / end_date 一律走 bind。
+        let mut q = sqlx::query_as::<_, ProductSalesItem>(AssertSqlSafe(summary_query));
         // 绑定所有参数（第一个是 event_id）
         q = q.bind(&sql_params[0]);
         for param in &sql_params[1..] {
@@ -260,7 +263,8 @@ async fn get_sales_summary(
     ts_query.push_str(" ORDER BY o.created_at ASC");
 
     let time_points = {
-        let mut q = sqlx::query_as::<_, TimePoint>(&ts_query);
+        // 已审计：同上，追加的是固定片段，用户输入只经 bind 进入。
+        let mut q = sqlx::query_as::<_, TimePoint>(AssertSqlSafe(ts_query));
         q = q.bind(&ts_params[0]);
         for param in &ts_params[1..] {
             q = q.bind(param);

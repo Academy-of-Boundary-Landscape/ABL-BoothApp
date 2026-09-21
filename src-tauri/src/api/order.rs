@@ -11,6 +11,7 @@ use sqlx::{query, query_as};
 use std::collections::HashMap;
 
 use crate::{db::models::Order, state::AppState, utils::security::Claims};
+use sqlx::AssertSqlSafe;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -311,7 +312,9 @@ async fn list_orders(
         placeholders
     );
 
-    let mut query_builder = sqlx::query(&items_sql);
+    // 已审计：拼进去的只有上面按 order_ids 个数生成的 "?,?,?" 占位符，
+    // 实际 id 全部走下面的 bind。IN 列表的元素个数无法参数化，只能拼。
+    let mut query_builder = sqlx::query(AssertSqlSafe(items_sql));
     for id in order_ids {
         query_builder = query_builder.bind(id);
     }

@@ -15,6 +15,7 @@ use axum::{
 use serde::Deserialize;
 use serde_json::json;
 use tokio::fs;
+use sqlx::AssertSqlSafe;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -211,7 +212,9 @@ async fn reset_database_handler(State(state): State<AppState>, _: AdminOnly) -> 
 
     for table in &tables_to_clear {
         let query = format!("DELETE FROM {}", table);
-        if let Err(e) = sqlx::query(&query).execute(&mut *tx).await {
+        // 已审计：table 只可能取自上面写死的 tables_to_clear 字面量，不含任何用户输入。
+        // 表名无法用 bind 参数化，只能拼接。
+        if let Err(e) = sqlx::query(AssertSqlSafe(query)).execute(&mut *tx).await {
             //eprintln!("[ERROR] Failed to clear table {}: {:?}", table, e);
             let _ = tx.rollback().await;
             return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to clear data").into_response();

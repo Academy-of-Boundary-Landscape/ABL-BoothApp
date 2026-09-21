@@ -49,8 +49,11 @@ thiserror = "1.0" # 派生 Error trait
 time = "0.3" # rcgen 0.13 用 time::OffsetDateTime 表示证书有效期
 
 # 数据库 (关键)
-# runtime-tokio-rustls 确保在移动端也能正常链接
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite", "macros", "chrono"] }
+# 0.9 里 runtime-tokio-rustls 这个组合 feature 没了，拆成 runtime-tokio + 一个 tls-*。
+# 这里选 tls-none：只用 sqlite 驱动，根本不走 TLS。原来的 rustls 变体会拖进一整套
+# rustls 0.21 + rustls-webpki 0.101（三条未修的 RUSTSEC），换掉直接消失。
+# sqlite feature 在 0.9 隐含 sqlite-bundled，交叉编译不依赖目标系统的 libsqlite3。
+sqlx = { version = "0.9", features = ["runtime-tokio", "tls-none", "sqlite", "macros", "chrono"] }
 
 # 工具
 chrono = { version = "0.4", features = ["serde"] } # 时间处理

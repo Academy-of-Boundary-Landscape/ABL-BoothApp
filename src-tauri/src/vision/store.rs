@@ -1,6 +1,7 @@
 use sqlx::{FromRow, SqlitePool};
 
 use super::index::{decode_embedding_blob, EmbeddingCandidate};
+use sqlx::AssertSqlSafe;
 
 #[derive(Debug, Clone, FromRow)]
 pub struct VisionIndexMeta {
@@ -288,7 +289,8 @@ impl VisionStore {
         }
         let placeholders = image_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let sql = format!("DELETE FROM image_embeddings WHERE image_id IN ({})", placeholders);
-        let mut q = sqlx::query(&sql);
+        // 已审计：只拼按 image_ids 个数生成的占位符，id 值全走 bind。
+        let mut q = sqlx::query(AssertSqlSafe(sql));
         for id in image_ids {
             q = q.bind(*id);
         }
@@ -401,7 +403,8 @@ impl VisionStore {
         }
         sql.push_str(") ORDER BY id ASC");
 
-        let mut q = sqlx::query_as::<_, RebuildImageRow>(&sql);
+        // 已审计：sql 由固定前缀 + 按 image_ids 个数生成的占位符拼成，id 值全走 bind。
+        let mut q = sqlx::query_as::<_, RebuildImageRow>(AssertSqlSafe(sql));
         for image_id in image_ids {
             q = q.bind(*image_id);
         }
