@@ -1,4 +1,5 @@
 pub mod models;
+pub mod snapshot;
 
 use crate::utils::security::hash_password;
 use sqlx::{
@@ -22,7 +23,8 @@ pub async fn init_db(app_data_dir: &PathBuf) -> Result<SqlitePool, sqlx::Error> 
     let db_url = format!("sqlite://{}", db_path.to_string_lossy());
 
     // 3. 如果文件不存在，创建它
-    if !Sqlite::database_exists(&db_url).await.unwrap_or(false) {
+    let db_existed = Sqlite::database_exists(&db_url).await.unwrap_or(false);
+    if !db_existed {
         Sqlite::create_database(&db_url).await?;
     }
 
@@ -37,13 +39,54 @@ pub async fn init_db(app_data_dir: &PathBuf) -> Result<SqlitePool, sqlx::Error> 
         .connect_with(connect_options)
         .await?;
 
-    // 5. 运行迁移 (使用运行时方式避免编译时需要 DATABASE_URL)
-    sqlx::migrate!().run(&pool).await?;
+    // 5. 迁移前快照 —— 只在「库已存在 且 确有待跑迁移」时落，全新安装不落。
+    let migrator = sqlx::migrate!();
+    let snap = if db_existed && has_pending(&pool, &migrator).await {
+        match snapshot::take(&pool, &db_path, "premigrate").await {
+            Ok(p) => {
+                println!("[Booth Tool] pre-migration snapshot: {}", p.display());
+                Some(p)
+            }
+            Err(e) => {
+                // 快照失败不阻断启动，但要吼出来
+                eprintln!("[Booth Tool] WARNING: pre-migration snapshot failed: {e}");
+                None
+            }
+        }
+    } else {
+        None
+    };
 
-    // 6. 检查并初始化默认管理员/摊主密码
+    // 6. 运行迁移 (使用运行时方式避免编译时需要 DATABASE_URL)
+    if let Err(e) = migrator.run(&pool).await {
+        if let Some(snap) = snap {
+            eprintln!("[Booth Tool] migration failed ({e}); restoring snapshot");
+            pool.close().await;
+            if let Err(re) = snapshot::restore(&db_path, &snap) {
+                eprintln!("[Booth Tool] FATAL: restore also failed: {re}");
+            }
+        }
+        return Err(e.into());
+    }
+
+    // 7. 检查并初始化默认管理员/摊主密码
     seed_defaults(&pool).await?;
 
     Ok(pool)
+}
+
+/// 是否有尚未应用的迁移。表不存在（全新库）时返回 false——那种情况不需要快照。
+async fn has_pending(pool: &SqlitePool, migrator: &sqlx::migrate::Migrator) -> bool {
+    let applied: Option<i64> = sqlx::query_scalar("SELECT MAX(version) FROM _sqlx_migrations")
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .flatten();
+    match (applied, migrator.iter().map(|m| m.version).max()) {
+        (Some(a), Some(latest)) => latest > a,
+        _ => false,
+    }
 }
 
 /// 种入默认的管理员 / 摊主密码。已存在则跳过。
@@ -90,6 +133,20 @@ pub async fn reset_database(app_data_dir: &PathBuf) -> Result<SqlitePool, sqlx::
     // 1. 拼接数据库文件路径
     let db_path = app_data_dir.join("sale_system.db");
     let db_url = format!("sqlite://{}", db_path.to_string_lossy());
+
+    // 删库之前先落一份快照。这是全应用最危险的操作，没有第二次机会。
+    if Sqlite::database_exists(&db_url).await.unwrap_or(false) {
+        match SqlitePool::connect(&db_url).await {
+            Ok(p) => {
+                match snapshot::take(&p, &db_path, "prereset").await {
+                    Ok(s) => println!("[Booth Tool] pre-reset snapshot: {}", s.display()),
+                    Err(e) => eprintln!("[Booth Tool] WARNING: pre-reset snapshot failed: {e}"),
+                }
+                p.close().await;
+            }
+            Err(e) => eprintln!("[Booth Tool] WARNING: cannot open db for pre-reset snapshot: {e}"),
+        }
+    }
 
     // 2. 删除现有数据库文件
     if Sqlite::database_exists(&db_url).await.unwrap_or(false) {
