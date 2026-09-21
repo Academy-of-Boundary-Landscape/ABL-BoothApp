@@ -42,7 +42,10 @@ pub struct GpuDevice {
 pub fn probe_gpu_devices() -> Vec<GpuDevice> {
     GPU_DEVICES
         .get_or_init(|| {
-            let devices = Vec::new();
+            // `devices` 只在 windows 分支里被 push；非 windows 宿主上编译时这个 `mut`
+            // 确实用不到，精确限定而不是删掉——windows 分支还在用它。
+            #[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
+            let mut devices = Vec::new();
 
             #[cfg(target_os = "windows")]
             {
@@ -171,13 +174,12 @@ impl OnnxSession {
     ///
     /// 调用方（本文件里的 load() 和 try_load_accelerated()）都用
     /// `#[cfg(target_os = "windows")]` 包住了调用点，所以在非 Windows target 上编译时
-    /// 这个函数确实没人调用——不是真的死代码，只在非 Windows 平台上是。用 cfg_attr
-    /// 精确限定，而不是无差别 allow。
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-    fn try_load_gpu_device(
-        _model_path: &Path,
-        _device_id: i32,
-    ) -> Result<(Session, String), String> {
+    /// 这个函数确实没人调用——不是真的死代码，只在非 Windows 平台上是。参数在 windows
+    /// 分支里仍在用（with_device_id/commit_from_file 等），不能改名成 `_xxx`，否则
+    /// windows 编译直接 E0425 找不到标识符。用 cfg_attr 精确限定，而不是无差别 allow
+    /// 或者瞎改参数名。
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code, unused_variables))]
+    fn try_load_gpu_device(model_path: &Path, device_id: i32) -> Result<(Session, String), String> {
         #[cfg(target_os = "windows")]
         {
             use ort::execution_providers::ExecutionProvider;
@@ -214,7 +216,14 @@ impl OnnxSession {
     /// Windows: DirectML (遍历 GPU) → 失败返回 Err
     /// Android: NNAPI → 失败返回 Err
     /// 其他平台: 直接返回 Err（由调用方 fallback 到 CPU）
-    fn try_load_accelerated(_model_path: &Path) -> Result<(Session, String), String> {
+    // model_path 只在 windows/android 分支里被用到（分别传给
+    // try_load_gpu_device/try_load_nnapi）；这个函数本身在所有平台都被 load() 的
+    // "auto" 分支无条件调用，不是死代码，只是参数在其它平台上用不到。
+    #[cfg_attr(
+        not(any(target_os = "windows", target_os = "android")),
+        allow(unused_variables)
+    )]
+    fn try_load_accelerated(model_path: &Path) -> Result<(Session, String), String> {
         // Windows: 遍历 DirectML GPU 设备
         #[cfg(target_os = "windows")]
         {
@@ -260,7 +269,11 @@ impl OnnxSession {
     }
 
     /// 尝试 NNAPI 加速（Android NPU/GPU/DSP）
-    fn try_load_nnapi(_model_path: &Path) -> Result<(Session, String), String> {
+    ///
+    /// 这个函数本身在所有平台都被 load() 的 "nnapi" 分支无条件调用，不是死代码；
+    /// model_path 只在 android 分支里的 commit_from_file 用到，其它平台上确实用不到。
+    #[cfg_attr(not(target_os = "android"), allow(unused_variables))]
+    fn try_load_nnapi(model_path: &Path) -> Result<(Session, String), String> {
         #[cfg(target_os = "android")]
         {
             use ort::execution_providers::ExecutionProvider;
