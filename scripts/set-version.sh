@@ -70,9 +70,10 @@ if new is None:
     for name, v in before.items():
         print(f"  {name:<{width}}  {v}")
     distinct = set(before.values())
+    consistent = len(distinct) == 1
     print()
-    print("一致 ✓" if len(distinct) == 1 else f"不一致 ✗ —— 出现了 {sorted(distinct)}")
-    sys.exit(0)
+    print("一致 ✓" if consistent else f"不一致 ✗ —— 出现了 {sorted(distinct)}")
+    sys.exit(0 if consistent else 1)
 
 for name, fn in targets:
     fn(False)
