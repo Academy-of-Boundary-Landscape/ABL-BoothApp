@@ -119,7 +119,7 @@ npm run build --prefix frontend
 
 - `async fn test_pool() -> SqlitePool` —— 连 `sqlite::memory:`，跑 `sqlx::migrate!()`。
   可行的前提是项目用的是**运行时** `migrate!()` 而非编译期 `query!` 宏，因此不需要 `DATABASE_URL`。
-- `async fn test_app() -> (Router, TempDir)` —— 用临时目录作 `upload_dir`、
+- `async fn test_state() -> (AppState, TempDir)` / `async fn test_router() -> (Router, TempDir)` —— 用临时目录作 `upload_dir`、
   上面的 pool 作 `db`，组出 `AppState` 与 `Router`。
   `VisionRuntime::new()` 不触碰 ONNX 运行时（`ort` 的 `load-dynamic` 只在真正建 session 时 `dlopen`），
   所以这条链路无需任何模型文件。
