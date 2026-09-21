@@ -130,3 +130,6 @@ src-tauri/.cargo/config.toml
 
 # --- 模型二进制（按需下载，不应提交） ---
 src-tauri/resources/models/**/*.onnx
+
+# superpowers SDD 工作区（ledger / 简报 / 评审包，纯临时）
+.superpowers/
