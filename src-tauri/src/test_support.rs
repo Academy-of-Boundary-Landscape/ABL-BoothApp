@@ -138,3 +138,74 @@ pub async fn test_router_with() -> (Router, TempDir, SqlitePool) {
         .with_state(state);
     (router, dir, pool)
 }
+
+/// 种一场「进行中」的展会 + 两个商品，各带 10 / 5 件进货，返回
+/// `(event_id, event_product_a, event_product_b)`。
+///
+/// - A 归**本社团**（id 1），单价 3000 分
+/// - B 归**代卖社团「黄昏堂」**（id 2），单价 2000 分
+///
+/// 混货主是刻意的：按货主拆分收款是新模型的核心行为之一，单货主的夹具测不出来。
+/// 直接写 SQL 而不是打 API，是因为建全局商品走的是 multipart 接口，
+/// 构造成本高且不是这些测试的被测对象。
+pub async fn seed_event_and_product(pool: &SqlitePool) -> (i64, i64, i64) {
+    sqlx::query("INSERT INTO societies (id, name, is_home) VALUES (2, '黄昏堂', 0)")
+        .execute(pool)
+        .await
+        .expect("seed society");
+    sqlx::query(
+        "INSERT INTO master_products (id, product_code, name, default_price, owner_society_id)
+         VALUES (1, 'A', '本子A', 30.0, 1), (2, 'B', '本子B', 20.0, 2)",
+    )
+    .execute(pool)
+    .await
+    .expect("seed master products");
+    sqlx::query(
+        "INSERT INTO events (id, name, event_date, status)
+         VALUES (1, 'ABC漫展', '2026-10-01', '进行中')",
+    )
+    .execute(pool)
+    .await
+    .expect("seed event");
+    sqlx::query(
+        "INSERT INTO event_products
+           (id, event_id, master_product_id, owner_society_id, product_code, name, unit_price)
+         VALUES (1, 1, 1, 1, 'A', '本子A', 3000),
+                (2, 1, 2, 2, 'B', '本子B', 2000)",
+    )
+    .execute(pool)
+    .await
+    .expect("seed event products");
+
+    // 开场带货：A 10 件、B 5 件。走账本而不是直接塞 stock_movements，
+    // 这样夹具本身也在守 post_journal 的行为。
+    let mut tx = pool.begin().await.expect("begin");
+    crate::domain::ledger::post_journal(
+        &mut tx,
+        1,
+        crate::domain::ledger::JournalKind::Restock,
+        None,
+        None,
+        Some("夹具：开场带货"),
+        &[
+            crate::domain::ledger::StockLeg {
+                event_product_id: 1,
+                from: crate::domain::ledger::Location::External,
+                to: crate::domain::ledger::Location::OnSite,
+                qty: 10,
+            },
+            crate::domain::ledger::StockLeg {
+                event_product_id: 2,
+                from: crate::domain::ledger::Location::External,
+                to: crate::domain::ledger::Location::OnSite,
+                qty: 5,
+            },
+        ],
+        &[],
+    )
+    .await
+    .expect("seed restock");
+    tx.commit().await.expect("commit");
+
+    (1, 1, 2)
+}
