@@ -210,3 +210,36 @@ pub async fn seed_event_and_product(pool: &SqlitePool) -> (i64, i64, i64) {
 
     (1, 1, 2)
 }
+
+/// 给展会加一个 Lot，返回 lot_id。`candidates` 是 `event_product_id` 列表。
+///
+/// 直接写 SQL 而不是打 API：Lot 的 CRUD 是 Task 4 才有的东西，而 Task 3 的
+/// 测试现在就要用它。
+pub async fn seed_lot(
+    pool: &SqlitePool,
+    event_id: i64,
+    name: &str,
+    pick_count: i64,
+    total_price: i64,
+    candidates: &[i64],
+) -> i64 {
+    let lot_id: i64 = sqlx::query_scalar(
+        "INSERT INTO lots (event_id, name, pick_count, total_price) VALUES (?, ?, ?, ?) RETURNING id",
+    )
+    .bind(event_id)
+    .bind(name)
+    .bind(pick_count)
+    .bind(total_price)
+    .fetch_one(pool)
+    .await
+    .expect("seed lot");
+    for c in candidates {
+        sqlx::query("INSERT INTO lot_candidates (lot_id, event_product_id) VALUES (?, ?)")
+            .bind(lot_id)
+            .bind(c)
+            .execute(pool)
+            .await
+            .expect("seed lot candidate");
+    }
+    lot_id
+}

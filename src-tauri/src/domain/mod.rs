@@ -6,4 +6,5 @@
 pub mod allocation;
 pub mod ledger;
 pub mod money;
+pub mod pricing;
 pub mod solver;
