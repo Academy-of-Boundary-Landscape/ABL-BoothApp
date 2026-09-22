@@ -61,6 +61,7 @@ pub async fn test_state() -> (AppState, TempDir) {
     let state = AppState {
         db: pool,
         upload_dir,
+        app_data_dir: dir.path().to_path_buf(),
         jwt_secret: TEST_JWT_SECRET.to_string(),
         vision_runtime,
     };

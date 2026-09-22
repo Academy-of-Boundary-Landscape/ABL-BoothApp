@@ -1,0 +1,571 @@
+// src/api/legacy.rs
+//
+// v1 历史数据的唯一出口。
+//
+// Task 2 在迁移前把老库永久备份到 `sale_system.db.v1-backup`（知情清零），
+// 但一份躺在 app data 目录里、没有任何 UI/端点能看到的数据等于不存在。
+// 这里提供状态查询和 Excel 导出两条**只读**通路。
+
+use axum::{
+    extract::State,
+    http::StatusCode,
+    response::{IntoResponse, Json, Response},
+    routing::get,
+    Router,
+};
+use rust_xlsxwriter::{Format, FormatAlign, FormatBorder, Workbook};
+use serde::Serialize;
+use sqlx::{FromRow, SqlitePool};
+use std::path::{Path, PathBuf};
+
+use crate::{api::guard::AdminOnly, state::AppState};
+
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .route("/status", get(get_legacy_status))
+        .route("/export.xlsx", get(export_legacy_xlsx))
+}
+
+/// v1 备份文件的路径。
+///
+/// 推导方式必须和 `db::init_db` / `db::backup_v1_once` 保持一致
+/// （`sale_system.db` 的扩展名替换为 `db.v1-backup`），而不是另写一个字面量：
+/// 备份文件名的唯一真相在 `db/mod.rs`，端点只是它的读者。
+fn v1_backup_path(app_data_dir: &Path) -> PathBuf {
+    app_data_dir
+        .join("sale_system.db")
+        .with_extension("db.v1-backup")
+}
+
+/// 以只读方式打开 v1 备份。
+///
+/// `mode=ro` 不是洁癖——这份文件是用户数据的最后一份副本，任何写入都不可接受。
+/// 另外 `mode=ro` 对不存在的文件会连接失败，而不是像默认模式那样顺手建一个新库，
+/// 所以「连接失败」正好可以作为「没有备份」的判据。
+async fn open_v1_backup_readonly(path: &Path) -> Result<SqlitePool, sqlx::Error> {
+    SqlitePool::connect(&format!("sqlite://{}?mode=ro", path.display())).await
+}
+
+/// `/status` 的响应。计数是给前端「有没有值得打扰用户的历史数据」判断用的。
+#[derive(Serialize)]
+struct LegacyStatus {
+    has_backup: bool,
+    event_count: i64,
+    order_count: i64,
+    item_count: i64,
+}
+
+impl LegacyStatus {
+    /// 备份不存在 / 打不开时的统一答复。
+    ///
+    /// 这不是错误：升级前就是全新安装的用户本来就没有 v1 库。
+    fn none() -> Self {
+        Self {
+            has_backup: false,
+            event_count: 0,
+            order_count: 0,
+            item_count: 0,
+        }
+    }
+}
+
+/// `SELECT COUNT(*)` 三连。老 schema 的表名（events / orders / order_items）。
+async fn count_v1_rows(pool: &SqlitePool) -> Option<(i64, i64, i64)> {
+    let event_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events")
+        .fetch_one(pool)
+        .await
+        .ok()?;
+    let order_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM orders")
+        .fetch_one(pool)
+        .await
+        .ok()?;
+    let item_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM order_items")
+        .fetch_one(pool)
+        .await
+        .ok()?;
+    Some((event_count, order_count, item_count))
+}
+
+async fn get_legacy_status(State(state): State<AppState>, _: AdminOnly) -> impl IntoResponse {
+    let path = v1_backup_path(&state.app_data_dir);
+
+    let Ok(pool) = open_v1_backup_readonly(&path).await else {
+        return Json(LegacyStatus::none());
+    };
+
+    let counts = count_v1_rows(&pool).await;
+    pool.close().await;
+
+    match counts {
+        Some((event_count, order_count, item_count)) => Json(LegacyStatus {
+            has_backup: true,
+            event_count,
+            order_count,
+            item_count,
+        }),
+        // 文件在但表/数据读不出来（损坏、不是 v1 库）：同样按「没有可用历史数据」处理。
+        None => Json(LegacyStatus::none()),
+    }
+}
+
+// ==========================================
+// 导出：备份库是 v1 的旧 schema，别按新表名查
+// ==========================================
+
+/// v1 `events`。只取导出需要的列；`location` 可空，用 COALESCE 收成 String。
+#[derive(FromRow)]
+struct LegacyEvent {
+    id: i64,
+    name: String,
+    event_date: String,
+    location: String,
+    status: String,
+}
+
+/// v1 `orders`。`total_amount` 是 REAL，**单位元**。
+#[derive(FromRow)]
+struct LegacyOrder {
+    id: i64,
+    event_id: i64,
+    total_amount: f64,
+    status: String,
+    created_at: String,
+}
+
+/// v1 `order_items`。`product_price` 是 REAL，**单位元**。
+#[derive(FromRow)]
+struct LegacyOrderItem {
+    id: i64,
+    order_id: i64,
+    product_id: i64,
+    product_name: String,
+    product_price: f64,
+    quantity: i64,
+}
+
+/// 从只读备份库里读出三张表。
+///
+/// `created_at` 在老库里是 DATETIME，可能以不同亲和类型存着；`CAST(... AS TEXT)`
+/// 保证取出来一定是文本，不会因为某份老库把它存成别的类型而整条导出失败。
+async fn read_v1_data(
+    pool: &SqlitePool,
+) -> Result<(Vec<LegacyEvent>, Vec<LegacyOrder>, Vec<LegacyOrderItem>), sqlx::Error> {
+    let events = sqlx::query_as::<_, LegacyEvent>(
+        "SELECT id, name, event_date, COALESCE(location, '') AS location, status
+         FROM events ORDER BY id",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let orders = sqlx::query_as::<_, LegacyOrder>(
+        "SELECT id, event_id, total_amount, status,
+                COALESCE(CAST(created_at AS TEXT), '') AS created_at
+         FROM orders ORDER BY id",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let items = sqlx::query_as::<_, LegacyOrderItem>(
+        "SELECT id, order_id, product_id, product_name, product_price, quantity
+         FROM order_items ORDER BY id",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok((events, orders, items))
+}
+
+/// 一个样式集合。三张表共用同一套，避免逐表重复构造。
+struct SheetFormats {
+    header: Format,
+    text: Format,
+    center: Format,
+    integer: Format,
+    money: Format,
+}
+
+impl SheetFormats {
+    fn new() -> Self {
+        Self {
+            header: Format::new()
+                .set_bold()
+                .set_background_color(rust_xlsxwriter::Color::RGB(0xDDEBF7))
+                .set_border(FormatBorder::Thin)
+                .set_align(FormatAlign::Center)
+                .set_align(FormatAlign::VerticalCenter),
+            text: Format::new()
+                .set_border(FormatBorder::Thin)
+                .set_align(FormatAlign::Left),
+            center: Format::new()
+                .set_border(FormatBorder::Thin)
+                .set_align(FormatAlign::Center),
+            integer: Format::new()
+                .set_border(FormatBorder::Thin)
+                .set_align(FormatAlign::Right),
+            money: Format::new()
+                .set_border(FormatBorder::Thin)
+                .set_align(FormatAlign::Right)
+                .set_num_format("#,##0.00"),
+        }
+    }
+}
+
+/// 写表头。三张 sheet 的列数不同，但写法一致。
+fn write_headers(worksheet: &mut rust_xlsxwriter::Worksheet, headers: &[&str], format: &Format) {
+    for (col, text) in headers.iter().enumerate() {
+        let _ = worksheet.write_string_with_format(0, col as u16, *text, format);
+    }
+}
+
+/// 把备份库里的展会 / 订单 / 明细导成三张 sheet 的 xlsx。
+///
+/// 金额**按老库的元原样写进单元格**，不换算成分——老库那一侧就是元，
+/// 中间多一次 ×100 / ÷100 只会引入浮点误差。
+async fn export_legacy_xlsx(State(state): State<AppState>, _: AdminOnly) -> Response {
+    let path = v1_backup_path(&state.app_data_dir);
+
+    if !path.exists() {
+        return (StatusCode::NOT_FOUND, "没有可导出的历史数据").into_response();
+    }
+
+    let Ok(pool) = open_v1_backup_readonly(&path).await else {
+        return (StatusCode::NOT_FOUND, "没有可导出的历史数据").into_response();
+    };
+
+    let data = read_v1_data(&pool).await;
+    pool.close().await;
+
+    let Ok((events, orders, items)) = data else {
+        // 文件在但读不出 v1 三张表，对用户而言同样是「没有可用历史数据」。
+        return (StatusCode::NOT_FOUND, "没有可导出的历史数据").into_response();
+    };
+
+    let formats = SheetFormats::new();
+
+    let mut workbook = Workbook::new();
+
+    // --- Sheet 1: 展会 ---
+    {
+        let worksheet = workbook.add_worksheet();
+        let _ = worksheet.set_name("展会");
+        write_headers(
+            worksheet,
+            &["展会ID", "展会名称", "日期", "地点", "状态"],
+            &formats.header,
+        );
+        let _ = worksheet.set_column_width(0, 10);
+        let _ = worksheet.set_column_width(1, 24);
+        let _ = worksheet.set_column_width(2, 14);
+        let _ = worksheet.set_column_width(3, 18);
+        let _ = worksheet.set_column_width(4, 10);
+
+        for (row, event) in events.iter().enumerate() {
+            let row = row as u32 + 1;
+            let _ = worksheet.write_number_with_format(row, 0, event.id as f64, &formats.integer);
+            let _ = worksheet.write_string_with_format(row, 1, &event.name, &formats.text);
+            let _ = worksheet.write_string_with_format(row, 2, &event.event_date, &formats.center);
+            let _ = worksheet.write_string_with_format(row, 3, &event.location, &formats.text);
+            let _ = worksheet.write_string_with_format(row, 4, &event.status, &formats.center);
+        }
+    }
+
+    // --- Sheet 2: 订单 ---
+    {
+        let worksheet = workbook.add_worksheet();
+        let _ = worksheet.set_name("订单");
+        write_headers(
+            worksheet,
+            &["订单ID", "展会ID", "金额(元)", "状态", "创建时间"],
+            &formats.header,
+        );
+        let _ = worksheet.set_column_width(0, 10);
+        let _ = worksheet.set_column_width(1, 10);
+        let _ = worksheet.set_column_width(2, 14);
+        let _ = worksheet.set_column_width(3, 12);
+        let _ = worksheet.set_column_width(4, 22);
+
+        for (row, order) in orders.iter().enumerate() {
+            let row = row as u32 + 1;
+            let _ = worksheet.write_number_with_format(row, 0, order.id as f64, &formats.integer);
+            let _ =
+                worksheet.write_number_with_format(row, 1, order.event_id as f64, &formats.integer);
+            // 元，原样写入。
+            let _ = worksheet.write_number_with_format(row, 2, order.total_amount, &formats.money);
+            let _ = worksheet.write_string_with_format(row, 3, &order.status, &formats.center);
+            let _ = worksheet.write_string_with_format(row, 4, &order.created_at, &formats.center);
+        }
+    }
+
+    // --- Sheet 3: 订单明细 ---
+    {
+        let worksheet = workbook.add_worksheet();
+        let _ = worksheet.set_name("订单明细");
+        write_headers(
+            worksheet,
+            &["明细ID", "订单ID", "商品ID", "商品名称", "单价(元)", "数量"],
+            &formats.header,
+        );
+        let _ = worksheet.set_column_width(0, 10);
+        let _ = worksheet.set_column_width(1, 10);
+        let _ = worksheet.set_column_width(2, 10);
+        let _ = worksheet.set_column_width(3, 24);
+        let _ = worksheet.set_column_width(4, 14);
+        let _ = worksheet.set_column_width(5, 10);
+
+        for (row, item) in items.iter().enumerate() {
+            let row = row as u32 + 1;
+            let _ = worksheet.write_number_with_format(row, 0, item.id as f64, &formats.integer);
+            let _ =
+                worksheet.write_number_with_format(row, 1, item.order_id as f64, &formats.integer);
+            let _ = worksheet.write_number_with_format(
+                row,
+                2,
+                item.product_id as f64,
+                &formats.integer,
+            );
+            let _ = worksheet.write_string_with_format(row, 3, &item.product_name, &formats.text);
+            // 元，原样写入。
+            let _ = worksheet.write_number_with_format(row, 4, item.product_price, &formats.money);
+            let _ =
+                worksheet.write_number_with_format(row, 5, item.quantity as f64, &formats.integer);
+        }
+    }
+
+    // --- 落盘、读回、走和 stats.rs 一样的响应头 ---
+    use axum::http::header::{HeaderMap, HeaderValue};
+    use std::fs;
+
+    let temp_dir = std::env::temp_dir();
+    let download_filename = "legacy_v1_export.xlsx";
+    let temp_file = temp_dir.join(format!("legacy_v1_export_{}.xlsx", std::process::id()));
+
+    match workbook.save(&temp_file) {
+        Ok(_) => match fs::read(&temp_file) {
+            Ok(buf) => {
+                let _ = fs::remove_file(&temp_file);
+                let mut headers = HeaderMap::new();
+                headers.insert(
+                    axum::http::header::CONTENT_TYPE,
+                    HeaderValue::from_static(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    ),
+                );
+                headers.insert(
+                    axum::http::header::CONTENT_DISPOSITION,
+                    HeaderValue::from_str(&format!(
+                        "attachment; filename=\"{}\"",
+                        download_filename
+                    ))
+                    .unwrap_or_else(|_| HeaderValue::from_static("attachment")),
+                );
+                (headers, buf).into_response()
+            }
+            Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Failed to read excel").into_response(),
+        },
+        Err(e) => {
+            eprintln!("Legacy excel generation error: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to generate excel",
+            )
+                .into_response()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{admin_token, json_request, read_json, test_router};
+    use axum::http::StatusCode;
+    use serde_json::json;
+    use sqlx::sqlite::SqliteConnectOptions;
+    use std::str::FromStr;
+    use tower::ServiceExt;
+
+    /// 造一份带 v1 老 schema 和几行数据的备份文件。
+    ///
+    /// 用 `create_if_missing` 的写连接现建现写，模拟 Task 2 落下的那份备份；
+    /// 建表语句抄的是 v1 的 `202601020001_init_schema.sql`（只留导出会读的列）。
+    async fn write_v1_backup(dir: &Path) -> PathBuf {
+        let path = dir.join("sale_system.db.v1-backup");
+        let opts = SqliteConnectOptions::from_str(&format!("sqlite://{}", path.display()))
+            .unwrap()
+            .create_if_missing(true);
+        let pool = sqlx::SqlitePool::connect_with(opts)
+            .await
+            .expect("create v1 backup db");
+
+        for ddl in [
+            "CREATE TABLE events (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                event_date TEXT NOT NULL,
+                location TEXT,
+                status TEXT NOT NULL
+             )",
+            "CREATE TABLE orders (
+                id INTEGER PRIMARY KEY,
+                event_id INTEGER NOT NULL,
+                total_amount REAL NOT NULL,
+                status TEXT NOT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+             )",
+            "CREATE TABLE order_items (
+                id INTEGER PRIMARY KEY,
+                order_id INTEGER NOT NULL,
+                product_id INTEGER NOT NULL,
+                product_name TEXT NOT NULL,
+                product_price REAL NOT NULL,
+                quantity INTEGER NOT NULL
+             )",
+        ] {
+            sqlx::query(ddl)
+                .execute(&pool)
+                .await
+                .expect("create v1 table");
+        }
+
+        sqlx::query(
+            "INSERT INTO events (id, name, event_date, location, status) VALUES
+                (1, '漫展A', '2026-01-01', '上海', '已结束'),
+                (2, '漫展B', '2026-02-01', NULL, '已结束')",
+        )
+        .execute(&pool)
+        .await
+        .expect("seed v1 events");
+
+        sqlx::query(
+            "INSERT INTO orders (id, event_id, total_amount, status) VALUES
+                (1, 1, 88.5, 'completed'),
+                (2, 1, 12.0, 'cancelled'),
+                (3, 2, 30.0, 'completed')",
+        )
+        .execute(&pool)
+        .await
+        .expect("seed v1 orders");
+
+        sqlx::query(
+            "INSERT INTO order_items (id, order_id, product_id, product_name, product_price, quantity) VALUES
+                (1, 1, 1, '本子', 30.0, 2),
+                (2, 1, 2, '挂件', 28.5, 1),
+                (3, 2, 1, '本子', 12.0, 1)",
+        )
+        .execute(&pool)
+        .await
+        .expect("seed v1 order items");
+
+        pool.close().await;
+        path
+    }
+
+    /// 全新安装没有 v1 备份是正常状态，不能返回 500。
+    #[tokio::test]
+    async fn status_without_backup_is_ok_and_reports_none() {
+        let (router, _dir) = test_router().await;
+
+        let res = router
+            .oneshot(json_request(
+                "GET",
+                "/api/legacy/status",
+                Some(&admin_token()),
+                json!({}),
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            res.status(),
+            StatusCode::OK,
+            "没有备份是正常状态，不能是 500"
+        );
+        let body = read_json(res).await;
+        assert_eq!(body["has_backup"], false);
+        assert_eq!(body["event_count"], 0);
+        assert_eq!(body["order_count"], 0);
+        assert_eq!(body["item_count"], 0);
+    }
+
+    /// 备份存在时三个计数要对应老库里的真实行数。
+    #[tokio::test]
+    async fn status_counts_rows_in_an_existing_v1_backup() {
+        let (router, dir) = test_router().await;
+        write_v1_backup(dir.path()).await;
+
+        let res = router
+            .oneshot(json_request(
+                "GET",
+                "/api/legacy/status",
+                Some(&admin_token()),
+                json!({}),
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = read_json(res).await;
+        assert_eq!(body["has_backup"], true);
+        assert_eq!(body["event_count"], 2);
+        assert_eq!(body["order_count"], 3);
+        assert_eq!(body["item_count"], 3);
+    }
+
+    /// 没有备份时导出是 404（「没有可导出的历史数据」），不能是 500。
+    #[tokio::test]
+    async fn export_without_backup_is_not_found() {
+        let (router, _dir) = test_router().await;
+
+        let res = router
+            .oneshot(json_request(
+                "GET",
+                "/api/legacy/export.xlsx",
+                Some(&admin_token()),
+                json!({}),
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            res.status(),
+            StatusCode::NOT_FOUND,
+            "没有备份时导出应是 404，不能是 500"
+        );
+    }
+
+    /// 导出这条路径单独持有 v1 老 schema 的 SQL，且返回的是二进制流。
+    /// 这里让 `read_v1_data` 真的跑过一份带数据的老库，守住「还认识老表名列名」：
+    /// 列名/类型写错会在这里以 5xx 或空流暴露，而不是等用户点了按钮才发现。
+    #[tokio::test]
+    async fn export_with_backup_returns_an_xlsx() {
+        let (router, dir) = test_router().await;
+        write_v1_backup(dir.path()).await;
+
+        let res = router
+            .oneshot(json_request(
+                "GET",
+                "/api/legacy/export.xlsx",
+                Some(&admin_token()),
+                json!({}),
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(
+            res.headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok()),
+            Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        );
+
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .expect("read export body");
+        assert!(!bytes.is_empty(), "xlsx 导出不能返回空流");
+        assert_eq!(
+            &bytes[0..2],
+            &b"PK"[..],
+            "xlsx 是 zip 格式，前两个字节应是 PK"
+        );
+    }
+}

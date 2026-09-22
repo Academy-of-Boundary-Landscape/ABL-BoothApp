@@ -6,6 +6,8 @@
           <RouterView />
         </main>
         <GlobalAlert />
+        <!-- 首启迁移提示：放在所有路由之外，App 挂载后由它自己探测 v1 备份 -->
+        <MigrationNotice />
       </n-dialog-provider>
     </n-message-provider>
   </n-config-provider>
@@ -15,6 +17,7 @@
 import { computed } from 'vue'
 import { RouterView } from 'vue-router'
 import GlobalAlert from '@/components/GlobalAlert.vue'
+import MigrationNotice from '@/views/MigrationNotice.vue'
 import { NConfigProvider, NMessageProvider, NDialogProvider, darkTheme } from 'naive-ui'
 import { useThemeStore } from '@/stores/themeStore'
 

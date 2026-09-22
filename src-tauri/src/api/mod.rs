@@ -6,6 +6,7 @@ mod auth;
 mod event;
 pub mod guard;
 mod info;
+mod legacy;
 mod master_product;
 mod order;
 mod product;
@@ -26,7 +27,8 @@ pub fn router() -> Router<AppState> {
         .merge(sync::router())
         .merge(info::router())
         .merge(product::router())
-        .merge(order::router());
+        .merge(order::router())
+        .nest("/legacy", legacy::router());
 
     #[cfg(feature = "vision")]
     let router = router.nest("/vision", vision::router());

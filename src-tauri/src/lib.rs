@@ -148,6 +148,7 @@ pub fn run() {
             let state = state::AppState {
                 db: db_pool.clone(),
                 upload_dir: upload_dir.clone(),
+                app_data_dir: app_data_dir.clone(),
                 jwt_secret,
                 vision_runtime: std::sync::Arc::new(vision::VisionRuntime::new(
                     app_data_dir.clone(),
