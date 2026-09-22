@@ -794,3 +794,101 @@ async fn import_products_raw(State(state): State<AppState>, _: AdminOnly, body: 
     eprintln!("{} import (raw): received {} bytes", TAG, body.len());
     process_import_bytes(state, body, t0).await
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::test_support::{admin_token, read_json, test_router_with};
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use serde_json::json;
+    use std::io::Write;
+    use tower::ServiceExt;
+
+    /// 把一个 catalog.json 打成 .boothpack（zip）字节流。
+    fn make_pack(catalog: serde_json::Value) -> Vec<u8> {
+        let mut buf = std::io::Cursor::new(Vec::new());
+        {
+            let mut zip = zip::ZipWriter::new(&mut buf);
+            zip.start_file("catalog.json", zip::write::FileOptions::default())
+                .unwrap();
+            zip.write_all(catalog.to_string().as_bytes()).unwrap();
+            zip.finish().unwrap();
+        }
+        buf.into_inner()
+    }
+
+    #[tokio::test]
+    async fn import_resolves_owner_by_society_name_and_ignores_the_id_in_the_pack() {
+        // 跨设备最脏的一个坑：包里 MasterProduct 自带的 owner_society_id 是**源设备的 id**。
+        // 直接信它，商品会挂到本机一个毫不相干、甚至根本不存在的社团上。
+        // 正确做法是按 product_owners 里的**社团名**重新解析。
+        let (router, _dir, pool) = test_router_with().await;
+
+        // 本机已有一个叫「黄昏堂」的社团，但它的 id 是 2——和包里写的 77 完全不同
+        sqlx::query("INSERT INTO societies (id, name, is_home) VALUES (2, '黄昏堂', 0)")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let pack = make_pack(json!({
+            "products": [
+                {
+                    "id": 999, "product_code": "A", "name": "本子A",
+                    "default_price": 30.0, "image_url": null, "category": null,
+                    "is_active": true, "tags": "", "image_count": null,
+                    "owner_society_id": 77          // ← 源设备的 id，必须被忽略
+                },
+                {
+                    "id": 998, "product_code": "B", "name": "本子B",
+                    "default_price": 20.0, "image_url": null, "category": null,
+                    "is_active": true, "tags": "", "image_count": null,
+                    "owner_society_id": 77
+                }
+            ],
+            "societies": ["黄昏堂", "星见社"],
+            "product_owners": [
+                ["A", "黄昏堂"],        // 本机已有 → 应解析到 id 2
+                ["B", "从未听说的社团"]  // 本机没有、也不在 societies 里 → 应回落到本社团 1
+            ]
+        }));
+
+        let res = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/sync/import-products-raw")
+                    .header("authorization", format!("Bearer {}", admin_token()))
+                    .header("content-type", "application/zip")
+                    .body(Body::from(pack))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = res.status();
+        let body = read_json(res).await;
+        assert_eq!(status, StatusCode::OK, "导入应当成功: {body:?}");
+
+        let a: i64 = sqlx::query_scalar(
+            "SELECT owner_society_id FROM master_products WHERE product_code = 'A'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(a, 2, "应按社团名解析到本机的黄昏堂(2)，而不是包里写的 77");
+
+        let b: i64 = sqlx::query_scalar(
+            "SELECT owner_society_id FROM master_products WHERE product_code = 'B'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(b, 1, "社团名在本机解析不到时必须回落到本社团(1)，不能留 77");
+
+        // 导入不能造出第二个本社团
+        let homes: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM societies WHERE is_home = 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(homes, 1, "导入新建社团时 is_home 必须恒为 0");
+    }
+}

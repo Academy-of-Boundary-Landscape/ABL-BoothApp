@@ -96,6 +96,17 @@ async fn update_society(
         if name.is_empty() {
             return Err(ApiError::BadRequest("社团名不能为空".into()));
         }
+        // 预先查重（排除自己），否则直接撞 name UNIQUE 约束会走 ApiError::Db → 500，
+        // 与 create_society 的 409 语义不一致。改成自己现在的名字不该报冲突。
+        let dup: Option<i64> =
+            sqlx::query_scalar("SELECT id FROM societies WHERE name = ? AND id <> ?")
+                .bind(name)
+                .bind(id)
+                .fetch_optional(&mut *tx)
+                .await?;
+        if dup.is_some() {
+            return Err(ApiError::Conflict(format!("社团「{name}」已存在")));
+        }
         sqlx::query("UPDATE societies SET name = ? WHERE id = ?")
             .bind(name)
             .bind(id)
@@ -144,18 +155,23 @@ async fn delete_society(
         Some(false) => {}
     }
 
-    // 被引用就不给删。硬删会让历史账里的 owner_society_id 变成悬空外键，
-    // 而 SQLite 的 FK 在这里是 NO ACTION，报出来的错对用户毫无意义。
+    // 被引用就不给删。四张表都带 owner_society_id，一张都不能漏——
+    // 漏掉的那张会让守卫放行、然后在真正 DELETE 时撞 FK 约束，
+    // 把一个本该是 409「还有东西挂着」的情况变成 500「数据库错误」。
+    // advances / settlement_adjustments 在 ②-1 里恒为空（②-3 才写数据），
+    // 但守卫现在就得覆盖它们，否则 ②-3 落地那天这个坑才会被踩到。
     let refs: i64 = sqlx::query_scalar(
-        "SELECT (SELECT COUNT(*) FROM master_products WHERE owner_society_id = ?1)
-              + (SELECT COUNT(*) FROM event_products  WHERE owner_society_id = ?1)",
+        "SELECT (SELECT COUNT(*) FROM master_products         WHERE owner_society_id = ?1)
+              + (SELECT COUNT(*) FROM event_products          WHERE owner_society_id = ?1)
+              + (SELECT COUNT(*) FROM advances                WHERE owner_society_id = ?1)
+              + (SELECT COUNT(*) FROM settlement_adjustments  WHERE owner_society_id = ?1)",
     )
     .bind(id)
     .fetch_one(&state.db)
     .await?;
     if refs > 0 {
         return Err(ApiError::Conflict(format!(
-            "还有 {refs} 个商品归属这个社团，不能删除"
+            "还有 {refs} 条记录（商品 / 垫付 / 结算调整）挂在这个社团上，不能删除"
         )));
     }
 
@@ -169,7 +185,9 @@ async fn delete_society(
 
 #[cfg(test)]
 mod tests {
-    use crate::test_support::{admin_token, json_request, read_json, test_router};
+    use crate::test_support::{
+        admin_token, json_request, read_json, test_router, test_router_with,
+    };
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use serde_json::json;
@@ -280,5 +298,51 @@ mod tests {
         // 无 token 走 Claims 提取器的 WrongCredentials → 401（不是 403，
         // 403 是「有 token 但不是 admin」）
         assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn deleting_a_society_referenced_by_an_advance_is_refused_with_409() {
+        // 守卫必须覆盖全部四张带 owner_society_id 的表。漏掉 advances /
+        // settlement_adjustments 时，守卫会放行，然后真正 DELETE 撞 FK 约束 →
+        // 500「数据库错误」，而不是干净的 409。
+        let (router, _dir, pool) = test_router_with().await;
+
+        sqlx::query("INSERT INTO societies (id, name, is_home) VALUES (2, '黄昏堂', 0)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO events (id, name, event_date, status)
+             VALUES (1, 'E', '2026-10-01', '进行中')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO journals (id, event_id, kind) VALUES (1, 1, '垫付')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO advances (event_id, owner_society_id, journal_id, label, amount)
+             VALUES (1, 2, 1, '摊位费', 40000)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let res = router
+            .oneshot(json_request(
+                "DELETE",
+                "/api/societies/2",
+                Some(&admin_token()),
+                json!({}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            res.status(),
+            StatusCode::CONFLICT,
+            "有垫付记录挂着时必须是 409，不能是 500"
+        );
     }
 }
