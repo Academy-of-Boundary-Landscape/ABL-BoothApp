@@ -202,6 +202,9 @@
       <ShoppingCart
         :cart="store.cart"
         :total="store.cartTotal"
+        :payable="store.cartSummary.payable"
+        :discounts="store.cartSummary.discounts"
+        :quote-notice="store.quoteError"
         :is-checking-out="isCheckingOut"
         @add-to-cart="store.addToCart"
         @remove-from-cart="store.removeFromCart"
@@ -213,6 +216,9 @@
       v-if="isMobile"
       :cart="store.cart"
       :total="store.cartTotal"
+      :payable="store.cartSummary.payable"
+      :discounts="store.cartSummary.discounts"
+      :quote-notice="store.quoteError"
       :is-checking-out="isCheckingOut"
       @add-to-cart="store.addToCart"
       @remove-from-cart="store.removeFromCart"
@@ -526,7 +532,7 @@ async function handleCheckout() {
   if (isCheckingOut.value) return
 
   const itemCount = store.cartItemCount
-  const totalAmount = store.cartTotal
+  const totalAmount = store.cartSummary.payable // 确认框里也该是折后价
 
   dialog.info({
     title: '确认下单',
@@ -538,7 +544,9 @@ async function handleCheckout() {
       try {
         const newOrder = await store.submitOrder()
         if (newOrder) {
-          orderTotal.value = store.cartTotal
+          // **金额取自下单响应，不是购物车的报价。** 报价只是预览，两次之间
+          // 摊主完全可能刚改过 Lot 配置——顾客扫码付的数必须是服务端落账的那个数。
+          orderTotal.value = newOrder.final_amount
           showPaymentModal.value = true
           store.clearCart()
           store.fetchProductsForEvent()

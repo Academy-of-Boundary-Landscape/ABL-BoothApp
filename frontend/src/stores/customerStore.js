@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import api from '@/services/api'
 import { useAlert } from '@/services/useAlert'
 import { getImageUrl } from '@/services/url'
+import { summarizeQuote } from '@/utils/quote'
 
 // 获取弹窗函数
 
@@ -88,6 +89,7 @@ export const useCustomerStore = defineStore('customer', () => {
         cart.value.push({ ...product, quantity: 1 })
       }
     }
+    scheduleQuote()
   }
 
   function removeFromCart(productId) {
@@ -99,10 +101,12 @@ export const useCustomerStore = defineStore('customer', () => {
         cart.value.splice(itemIndex, 1)
       }
     }
+    scheduleQuote()
   }
 
   function clearCart() {
     cart.value = []
+    scheduleQuote()
   }
 
   async function submitOrder() {
@@ -132,6 +136,47 @@ export const useCustomerStore = defineStore('customer', () => {
   const cartTotal = computed(() => {
     return cart.value.reduce((total, item) => total + item.unit_price * item.quantity, 0)
   })
+
+  // --- 报价 ---
+  // 折扣由服务端算（`domain/solver.rs`）。前端不重写一份求解器：同一套集合覆盖
+  // 两份实现，取整规则一漂移就是「显示 145 实收 150」。
+  const quote = ref(null)
+  const quoteError = ref(null)
+  let quoteSeq = 0
+  let quoteTimer = null
+
+  /**
+   * 购物车一变就重新报价。300ms debounce + 请求序号两道都需要：
+   * 顾客连点加号会发好几次，而乱序返回会让价格来回跳。
+   */
+  function scheduleQuote() {
+    if (quoteTimer) clearTimeout(quoteTimer)
+    if (!activeEventId.value || cart.value.length === 0) {
+      quoteSeq += 1 // 作废在途的请求，免得它回来给空车填上价
+      quote.value = null
+      quoteError.value = null
+      return
+    }
+    quoteTimer = setTimeout(fetchQuote, 300)
+  }
+
+  async function fetchQuote() {
+    const seq = (quoteSeq += 1)
+    const items = cart.value.map((item) => ({ product_id: item.id, quantity: item.quantity }))
+    try {
+      const response = await api.post(`/events/${activeEventId.value}/quote`, { items })
+      if (seq !== quoteSeq) return // 旧请求，结果丢掉
+      quote.value = response.data
+      quoteError.value = null
+    } catch (err) {
+      if (seq !== quoteSeq) return
+      // **不静默**：退回原价，同时明说没套用优惠。后端在超限时给的就是人话。
+      quote.value = null
+      quoteError.value = err.response?.data?.error || '优惠暂时算不出来，按原价显示'
+    }
+  }
+
+  const cartSummary = computed(() => summarizeQuote(quote.value, cartTotal.value))
 
   const cartItemCount = computed(() => {
     return cart.value.reduce((total, item) => total + item.quantity, 0)
@@ -164,6 +209,9 @@ export const useCustomerStore = defineStore('customer', () => {
     submitOrder,
     cartTotal,
     cartItemCount,
+    quote,
+    quoteError,
+    cartSummary,
     initializeEventFromUrl,
     setupStoreForEvent,
   }

@@ -28,7 +28,7 @@
         </div>
 
         <div class="header-right">
-          <span class="total-price">{{ formatYuan(total) }}</span>
+          <span class="total-price">{{ formatYuan(payable) }}</span>
           <!-- 手机端箭头 -->
           <span v-if="isMobile" class="toggle-icon">
             {{ expanded ? '▼' : '▲' }}
@@ -77,9 +77,22 @@
 
         <!-- 底部结算区 -->
         <div class="cart-footer">
+          <!-- D3：顾客端价格必须可解释。被优化过的总价必须说清楚是怎么来的，
+               否则自助点单的顾客不会信任它。 -->
+          <div v-if="payable !== total" class="footer-row subtle">
+            <span>原价</span>
+            <span class="struck">{{ formatYuan(total) }}</span>
+          </div>
+          <div v-for="d in discounts" :key="d.name" class="footer-row discount">
+            <span
+              >已应用：{{ d.name }}<template v-if="d.count > 1"> ×{{ d.count }}</template></span
+            >
+            <span>−{{ formatYuan(d.saved) }}</span>
+          </div>
+          <p v-if="quoteNotice" class="quote-notice">{{ quoteNotice }}</p>
           <div class="footer-row">
-            <span>合计</span>
-            <span class="big-total">{{ formatYuan(total) }}</span>
+            <span>应付</span>
+            <span class="big-total">{{ formatYuan(payable) }}</span>
           </div>
           <n-button
             type="primary"
@@ -106,7 +119,14 @@ import { formatYuan } from '@/utils/money'
 
 const props = defineProps({
   cart: { type: Array, required: true },
+  /** 原价合计（分） */
   total: { type: Number, required: true },
+  /** 折后应付（分）。报价失败时等于 total。 */
+  payable: { type: Number, required: true },
+  /** [{ name, saved, count }] */
+  discounts: { type: Array, default: () => [] },
+  /** 报价失败时的提示。非空就必须显示——不能让顾客以为原价就是应付价。 */
+  quoteNotice: { type: String, default: null },
   isCheckingOut: { type: Boolean, default: false },
 })
 
@@ -373,6 +393,23 @@ watch(
   margin-bottom: 12px;
   font-size: var(--font-base);
   color: var(--text-muted);
+}
+.footer-row.subtle {
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+}
+.footer-row.subtle .struck {
+  text-decoration: line-through;
+}
+.footer-row.discount {
+  color: var(--success-color);
+  font-size: var(--font-sm);
+}
+.quote-notice {
+  margin: 0.25rem 0;
+  font-size: var(--font-sm);
+  color: var(--warning-color);
+  line-height: 1.4;
 }
 .big-total {
   font-size: 1.8rem;
