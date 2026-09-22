@@ -160,6 +160,21 @@ jobs:
           npm ci --prefix frontend
           npm run build --prefix frontend
 
+      # tauri.windows.conf.json 的 bundle.resources 声明了两个 ONNX Runtime DLL，
+      # 它们是 gitignore 的原生库（由 scripts/setup-dev.sh 带 sha256 下载，各约 18MB）。
+      # tauri 的 build script 只检查路径存在、不校验内容，所以这里造空占位即可。
+      #
+      # 为什么不下载真 DLL：这个 job 的目的是抓 #[cfg(target_os = "windows")] 的
+      # 编译错误，它只做 cargo check、从不打包。占位文件完整保留这个能力。
+      # 代价：本 job 不验证「DLL 被正确声明和打进安装包」—— 那由发版前的
+      # scripts/build-windows.sh 验证（见 CLAUDE.md 的 NSIS / bundle.resources 一节）。
+      - name: Stub gitignored native DLLs (cargo check only, never bundled)
+        working-directory: src-tauri
+        run: |
+          New-Item -ItemType Directory -Force -Path resources | Out-Null
+          New-Item -ItemType File -Force -Path resources/onnxruntime.dll | Out-Null
+          New-Item -ItemType File -Force -Path resources/DirectML.dll | Out-Null
+
       # 钉死版本号，和 rust-toolchain.toml 的 channel 对齐——理由同 rust job 那一步。
       - uses: dtolnay/rust-toolchain@1.98.1
 
