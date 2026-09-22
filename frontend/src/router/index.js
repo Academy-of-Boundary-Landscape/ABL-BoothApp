@@ -6,7 +6,7 @@ import AdminDashboard from '../views/AdminDashboard.vue'
 import AdminControlPanel from '../views/AdminControlPanel.vue'
 import AdminMasterProducts from '../views/AdminMasterProducts.vue'
 import AdminEventProducts from '../views/AdminEventProducts.vue'
-import AdminEventLots from '@/views/AdminEventLots.vue'
+import AdminEventLots from '../views/AdminEventLots.vue'
 import AdminSocieties from '../views/AdminSocieties.vue'
 import VendorEventSelection from '../views/VendorEventSelection.vue' // 【新增】导入新视图
 import VendorView from '../views/VendorView.vue' // 这个现在是详情页

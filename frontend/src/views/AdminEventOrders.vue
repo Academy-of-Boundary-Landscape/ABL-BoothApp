@@ -116,10 +116,17 @@
                   <ul class="item-list">
                     <li v-for="item in order.items" :key="item.id">
                       {{ item.product_name }} x {{ item.quantity }}
+                      <!-- 同一个商品可能在一张订单里出现两行（进套装 / 散着，spec 4.5）。
+                           不标出来，摊主配货时会以为系统重复计数了。 -->
+                      <span v-if="item.lot_name" class="item-lot">{{ item.lot_name }}</span>
                     </li>
                   </ul>
                 </td>
                 <td>
+                  <!-- 只在真打折时显示删除线：加价（实收 > 原价）显示删除线会被读成「便宜了」。 -->
+                  <span v-if="order.final_amount < order.gross_amount" class="struck">
+                    {{ formatYuan(order.gross_amount) }}
+                  </span>
                   <strong>{{ formatYuan(order.final_amount) }}</strong>
                 </td>
                 <td>
@@ -464,6 +471,26 @@ onUnmounted(() => {
 .order-table td:last-child {
   text-align: right;
   padding-right: 0;
+}
+
+/* 套装归属标签：与 OrderCard.vue 保持一致，避免摊主以为系统重复计数 */
+.item-lot {
+  margin-left: 0.35rem;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  background-color: var(--accent-color-light);
+  color: var(--accent-color);
+  font-size: var(--font-xs);
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+/* 打折前的原价，只在实收低于原价时出现 */
+.struck {
+  margin-right: 0.5rem;
+  color: var(--text-disabled);
+  text-decoration: line-through;
+  font-weight: 400;
 }
 
 .column-preview {

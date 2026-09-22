@@ -32,7 +32,7 @@
 
     <div class="order-footer">
       <span class="total-amount">
-        <span v-if="order.final_amount !== order.gross_amount" class="struck">
+        <span v-if="order.final_amount < order.gross_amount" class="struck">
           {{ formatYuan(order.gross_amount) }}
         </span>
         总计: {{ formatYuan(order.final_amount) }}
