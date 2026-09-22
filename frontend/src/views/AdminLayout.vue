@@ -234,6 +234,15 @@ const menuOptions = computed(() => {
             label: () =>
               h(
                 RouterLink,
+                { to: `/admin/events/${event.value.id}/lots` },
+                { default: () => '套装与优惠' }
+              ),
+            key: `/admin/events/${event.value.id}/lots`,
+          },
+          {
+            label: () =>
+              h(
+                RouterLink,
                 { to: `/admin/events/${event.value.id}/orders` },
                 { default: () => '订单管理' }
               ),
