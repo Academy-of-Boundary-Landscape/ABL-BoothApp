@@ -4,11 +4,6 @@
 //! 这是「购物车显示的价」和「真正落账的价」不可能分叉的全部理由——它们跑的是
 //! 同一份代码，而不是两份需要人去保持同步的实现。
 
-// `domain` 是私有模块，`pub` 挡不住 `dead_code`；本模块真正的消费方（`api/lot.rs`
-// 的 `/quote` 与下单）要到后续批次才接线，在那之前只有本文件的测试引用它。
-// 按仓库既有做法显式放行，接线后应删掉这条。
-#![allow(dead_code)]
-
 use crate::domain::allocation::allocate_lot;
 use crate::domain::money::Money;
 use crate::domain::solver::{self, CartLine, LotDef, SolvedLot};
@@ -66,7 +61,12 @@ pub fn merge_items(items: &[CartItemRequest]) -> ApiResult<Vec<(i64, i64)>> {
 pub struct CartProduct {
     pub id: i64,
     pub unit_price: i64,
+    /// `/quote` 只读 id/单价，商品名由 Task 6 的下单响应消费
+    /// （`api/order.rs::create_order` 的库存不足提示）。
+    #[allow(dead_code)]
     pub name: String,
+    /// 同上，下单响应要带出商品图片（Task 6 的 `api/order.rs::create_order`）。
+    #[allow(dead_code)]
     pub image_url: Option<String>,
 }
 

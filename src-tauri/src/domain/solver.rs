@@ -15,11 +15,6 @@
 //! **三条硬上限不是优化，是安全要求。** 入口是 `POST /events/:id/quote` 和下单，
 //! 两个都是公开未鉴权端点；而 Tauri 进程和 UI 是同一个进程，CPU 打满就是界面卡死。
 
-// `domain` 是私有模块，`pub` 挡不住 `dead_code`；而本模块真正的消费方（`pricing`，
-// 再往外是 `api/lot.rs` 与下单）要到后续 task 才接线，在那之前只有本文件的测试引用它。
-// 按仓库既有做法显式放行，接线后应删掉这条。
-#![allow(dead_code)]
-
 use crate::domain::money::Money;
 use crate::error::{ApiError, ApiResult};
 use std::collections::HashMap;
