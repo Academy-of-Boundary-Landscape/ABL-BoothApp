@@ -162,6 +162,12 @@ export const useCustomerStore = defineStore('customer', () => {
       quotePending.value = false
       return
     }
+    // 同样要作废在途的请求。**少了这一句 quotePending 就形同虚设**：
+    // 上一车的请求落回来时 seq 仍等于 quoteSeq，于是它把过期报价写进 quote、
+    // 顺手把 quotePending 清掉，而新的 debounce 还没到点——购物车就会显示
+    // 「原价 ¥50 / 应付 ¥30」却一条优惠说明都没有，结算按钮还是亮的。
+    // 反复点加号就能撞上，窗口约 350ms。
+    quoteSeq += 1
     quotePending.value = true
     quoteTimer = setTimeout(fetchQuote, 300)
   }
