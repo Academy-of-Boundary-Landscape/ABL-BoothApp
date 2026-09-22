@@ -220,8 +220,16 @@ pub async fn reset_database(app_data_dir: &PathBuf) -> Result<SqlitePool, sqlx::
 /// 失败不阻断启动，但要吼出来。
 async fn backup_v1_once(pool: &SqlitePool, db_path: &Path) {
     let dest = db_path.with_extension("db.v1-backup");
+
+    // 只看 exists() 不够：见下面 v1_backup_is_readable 的说明。
     if dest.exists() {
-        return;
+        if v1_backup_is_readable(&dest).await {
+            return;
+        }
+        eprintln!(
+            "[Booth Tool] WARNING: existing v1 backup at {} is unreadable; taking a fresh one",
+            dest.display()
+        );
     }
 
     let is_v1: Result<Option<String>, sqlx::Error> = sqlx::query_scalar(
@@ -230,20 +238,63 @@ async fn backup_v1_once(pool: &SqlitePool, db_path: &Path) {
     .fetch_optional(pool)
     .await;
 
-    if !matches!(is_v1, Ok(Some(_))) {
-        return;
+    match is_v1 {
+        Ok(Some(_)) => {}   // 确认是 v1 库，继续备份
+        Ok(None) => return, // 不是 v1 库（全新安装或已迁移过），正常跳过
+        Err(e) => {
+            // 连 sqlite_master 都读不出来，说明库可能已损坏——而这正是最需要备份的情况。
+            // 但既然读不出来，VACUUM INTO 多半也会失败，所以只吼一声，不阻断启动。
+            eprintln!("[Booth Tool] WARNING: cannot determine v1 schema ({e}); skipping v1 backup");
+            return;
+        }
     }
 
     // VACUUM INTO 而不是 fs::copy：库跑在 WAL 模式下，直接拷 .db 会漏掉
     // -wal 中尚未 checkpoint 的数据。理由同 db/snapshot.rs。
-    let escaped = dest.to_string_lossy().replace('\'', "''");
+    //
+    // 先写到临时名，成功后再 rename。同一文件系统上 rename 是原子的，所以 dest
+    // 要么不存在、要么是一份完整备份，不会出现「半份」。
+    // VACUUM INTO 中途失败会留下损坏的目标文件，而 SQLite 不会自己清理它。
+    let tmp = db_path.with_extension("db.v1-backup.partial");
+    let _ = std::fs::remove_file(&tmp); // 清掉上次失败留下的残骸
+
+    let escaped = tmp.to_string_lossy().replace('\'', "''");
     match sqlx::query(sqlx::AssertSqlSafe(format!("VACUUM INTO '{escaped}'")))
         .execute(pool)
         .await
     {
-        Ok(_) => println!("[Booth Tool] v1 database preserved at {}", dest.display()),
-        Err(e) => eprintln!("[Booth Tool] WARNING: v1 backup failed: {e}"),
+        Ok(_) => match std::fs::rename(&tmp, &dest) {
+            Ok(()) => println!("[Booth Tool] v1 database preserved at {}", dest.display()),
+            Err(e) => {
+                eprintln!("[Booth Tool] WARNING: v1 backup rename failed: {e}");
+                let _ = std::fs::remove_file(&tmp);
+            }
+        },
+        Err(e) => {
+            eprintln!("[Booth Tool] WARNING: v1 backup failed: {e}");
+            let _ = std::fs::remove_file(&tmp);
+        }
     }
+}
+
+/// 已有的 v1 备份是否真的能打开、能查到 v1 的特征表。
+///
+/// 只判断文件存在是不够的：`VACUUM INTO` 中途失败（磁盘满、断电、进程被杀）会留下
+/// 一个**存在但损坏**的文件，而备份是一次性动作——不校验的话，一次失败就会让
+/// 「已备份」这个标记永久钉在一个打不开的空壳上。
+///
+/// 以只读方式打开（`mode=ro`），绝不碰用户这份数据。
+async fn v1_backup_is_readable(path: &Path) -> bool {
+    let url = format!("sqlite://{}?mode=ro", path.display());
+    let Ok(pool) = SqlitePool::connect(&url).await else {
+        return false;
+    };
+    let ok = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM products")
+        .fetch_one(&pool)
+        .await
+        .is_ok();
+    pool.close().await;
+    ok
 }
 
 #[cfg(test)]
@@ -417,5 +468,94 @@ mod tests {
             !db_path.with_extension("db.v1-backup").exists(),
             "v2 库不该产生 v1 备份"
         );
+    }
+
+    /// Critical 回归守卫：上一次 VACUUM INTO 中途失败留下的损坏文件，
+    /// 不能让「已备份」这个标记永久钉死。
+    #[tokio::test]
+    async fn backup_v1_once_replaces_a_corrupt_previous_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("sale_system.db");
+        let pool = empty_wal_db(&db_path).await;
+        sqlx::query("CREATE TABLE products (id INTEGER PRIMARY KEY, marker TEXT)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO products (marker) VALUES ('v1-data')")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // 造一个「存在但不是数据库」的残骸，模拟上次写到一半就挂了
+        let dest = db_path.with_extension("db.v1-backup");
+        std::fs::write(&dest, b"this is not a sqlite database").unwrap();
+
+        backup_v1_once(&pool, &db_path).await;
+
+        // 必须被重新备份成一份真能读的库
+        let snap = SqlitePool::connect(&format!("sqlite://{}", dest.display()))
+            .await
+            .unwrap();
+        let marker: String = sqlx::query_scalar("SELECT marker FROM products")
+            .fetch_one(&snap)
+            .await
+            .unwrap();
+        assert_eq!(marker, "v1-data", "损坏的旧备份必须被重新生成");
+        snap.close().await;
+
+        // 不能留下 .partial 残骸
+        assert!(
+            !db_path.with_extension("db.v1-backup.partial").exists(),
+            "临时文件必须被清理"
+        );
+    }
+
+    /// brief 的硬约束：备份必须在迁移**之前**跑。迁移会把 products 表删掉，
+    /// 所以「备份里查得到 v1 数据」本身就是顺序正确的证据——有人日后把调用挪到
+    /// 迁移之后，这条会立刻红。
+    ///
+    /// 注：products 必须带上 `event_id`，否则第一条老迁移里的
+    /// `CREATE INDEX idx_products_event_id ON products(event_id)` 会因缺列而失败；
+    /// 这里造的是「v1 库的业务表 + 数据」，老迁移的建表语句全部 `IF NOT EXISTS`，
+    /// 会照常补齐其余表。
+    #[tokio::test]
+    async fn init_db_backs_up_v1_before_migrating_it_away() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("sale_system.db");
+
+        // 先造一个 v1 库：products 表存在并有数据（这正是 v1 判据）
+        {
+            let pool = empty_wal_db(&db_path).await;
+            sqlx::query(
+                "CREATE TABLE products (id INTEGER PRIMARY KEY, event_id INTEGER, marker TEXT)",
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+            sqlx::query("INSERT INTO products (marker) VALUES ('legacy')")
+                .execute(&pool)
+                .await
+                .unwrap();
+            pool.close().await;
+        }
+
+        let pool = init_db(&dir.path().to_path_buf()).await.unwrap();
+        pool.close().await;
+
+        let dest = db_path.with_extension("db.v1-backup");
+        assert!(dest.exists(), "init_db 必须落 v1 备份");
+
+        let snap = SqlitePool::connect(&format!("sqlite://{}", dest.display()))
+            .await
+            .unwrap();
+        let marker: String = sqlx::query_scalar("SELECT marker FROM products")
+            .fetch_one(&snap)
+            .await
+            .unwrap();
+        assert_eq!(
+            marker, "legacy",
+            "备份里必须有 v1 数据——查不到就说明备份跑在迁移之后了"
+        );
+        snap.close().await;
     }
 }

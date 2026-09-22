@@ -92,9 +92,9 @@ CREATE TABLE orders (
     status TEXT NOT NULL DEFAULT 'pending'
         CHECK (status IN ('pending', 'completed', 'cancelled')),
     channel TEXT,                                   -- 收款渠道，完成时才有
-    gross_amount INTEGER NOT NULL,                  -- 原价合计（分）
-    solved_amount INTEGER NOT NULL,                 -- 求解器价；②-1 恒等于 gross
-    final_amount INTEGER NOT NULL,                  -- 手工覆盖后；②-1 恒等于 solved
+    gross_amount INTEGER NOT NULL CHECK (gross_amount >= 0),    -- 原价合计（分）
+    solved_amount INTEGER NOT NULL CHECK (solved_amount >= 0),  -- 求解器价；②-1 恒等于 gross
+    final_amount INTEGER NOT NULL CHECK (final_amount >= 0),    -- 手工覆盖后；②-1 恒等于 solved
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     completed_at DATETIME,
     FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
@@ -235,3 +235,15 @@ CREATE TABLE settlement_adjustments (
     FOREIGN KEY (journal_id) REFERENCES journals(id) ON DELETE CASCADE
 );
 CREATE INDEX idx_settlement_adjustments_event ON settlement_adjustments(event_id);
+
+-- ========== 外键列索引 ==========
+-- 没有这些索引时，级联删除要对子表做全表扫描（已用 EXPLAIN QUERY PLAN 实测确认）。
+-- journals 是增长最快的表（每次业务操作一条），删展会的成本会随数据积累明显上涨。
+CREATE INDEX idx_lots_event ON lots(event_id);
+CREATE INDEX idx_lot_candidates_product ON lot_candidates(event_product_id);
+CREATE INDEX idx_order_lots_lot ON order_lots(lot_id);
+CREATE INDEX idx_order_lines_product ON order_lines(event_product_id);
+CREATE INDEX idx_order_lines_lot ON order_lines(order_lot_id);
+CREATE INDEX idx_refunds_journal ON refunds(journal_id);
+CREATE INDEX idx_advances_journal ON advances(journal_id);
+CREATE INDEX idx_settlement_adjustments_journal ON settlement_adjustments(journal_id);
