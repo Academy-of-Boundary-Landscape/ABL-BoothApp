@@ -50,9 +50,14 @@ impl Money {
     /// 调用方必须处理的 Option，好过某天真的溢出时悄悄绕回负数。
     ///
     /// 消费方在 ②-2（折扣求解器算「单价 × 数量」），此前只在 test 里用。
-    #[allow(dead_code)]
     pub fn checked_mul_qty(self, qty: i64) -> Option<Self> {
         self.0.checked_mul(qty).map(Money)
+    }
+
+    /// 加法的溢出安全版本。求解器的输入来自公开端点，`Add` 的实现会在
+    /// debug 下 panic、release 下回绕，两个都不能接受。
+    pub fn checked_add_money(self, rhs: Money) -> Option<Self> {
+        self.0.checked_add(rhs.0).map(Money)
     }
 }
 
