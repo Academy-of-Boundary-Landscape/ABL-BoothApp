@@ -62,63 +62,6 @@ pub struct Event {
 }
 
 // ==========================================
-// 4. Order (订单)
-// ==========================================
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct Order {
-    pub id: i64,
-    pub event_id: i64,
-    pub total_amount: f64,
-    pub status: String, // "pending", "completed", "cancelled"
-    #[serde(rename = "timestamp")]
-    pub created_at: NaiveDateTime, // sqlx 会自动处理 SQLite 的 DATETIME
-}
-
-// 这是一个"复合结构体"，用于 API 返回包含 items 的完整订单信息
-#[allow(dead_code)]
-#[derive(Debug, Serialize)]
-pub struct OrderWithItems {
-    #[serde(flatten)] // 将 Order 的字段展开到当前 JSON 层级
-    pub order: Order,
-    pub items: Vec<OrderItem>,
-}
-
-// ==========================================
-// 5. Order Item (订单明细)
-// ==========================================
-#[allow(dead_code)]
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct OrderItem {
-    pub id: i64,
-    pub order_id: i64,
-    pub product_id: i64,
-    pub product_name: String,
-    pub product_price: f64,
-    pub quantity: i64,
-    // 如果需要显示商品图片，可能需要 JOIN 后填充这个字段
-    #[sqlx(default)]
-    pub product_image_url: Option<String>,
-}
-
-// ==========================================
-// 6. API 请求 DTO (Data Transfer Objects)
-// ==========================================
-
-// 创建订单时的请求体结构
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-pub struct CreateOrderItemDTO {
-    pub product_id: i64,
-    pub quantity: i64,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-pub struct CreateOrderDTO {
-    pub items: Vec<CreateOrderItemDTO>,
-}
-
-// ==========================================
 // 7. 统计相关 DTO
 // ==========================================
 

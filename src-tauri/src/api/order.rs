@@ -1,3 +1,11 @@
+//! 订单三条路径：下单 / 收款 / 取消，全部落到移动账本上。
+//!
+//! 旧模型里 `products.current_stock` 是唯一真相，下单扣、取消退、改价硬调三个写入方
+//! 各写各的，数字会漂。新模型下「库存」是 `stock_movements` 的聚合，下单/取消都变成
+//! 「插一条移动」。防超卖因此从「一条原子 UPDATE」变成「查余额 → 插移动」两步，
+//! 必须在同一个 `BEGIN IMMEDIATE` 事务里：默认的 deferred 事务在第一次写之前不持
+//! 写锁，两台平板同时抢最后一本会双双通过检查。
+
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -6,20 +14,30 @@ use axum::{
     Router,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::json;
-use sqlx::{query, query_as};
+use sqlx::{query, query_as, query_scalar, SqlitePool};
 use std::collections::HashMap;
 
-use crate::{db::models::Order, state::AppState, utils::security::Claims};
-use sqlx::AssertSqlSafe;
+use crate::{
+    db::models::OrderRow,
+    domain::{
+        ledger::{
+            onsite_balance, post_journal, reverse_order_journals, Account, JournalKind, Location,
+            MoneyLeg, StockLeg,
+        },
+        money::Money,
+    },
+    error::{ApiError, ApiResult},
+    state::AppState,
+    utils::security::Claims,
+};
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        // 公开：创建订单 (无需 Token，或者 Token 可选)
+        // 公开：顾客下单，无需 token
         .route("/events/:event_id/orders", post(create_order))
         // 管理员/摊主：查看订单列表
         .route("/events/:event_id/orders", get(list_orders))
-        // 管理员/摊主：更新订单状态
+        // 管理员/摊主：更新订单状态（完成 / 取消）
         .route(
             "/events/:event_id/orders/:order_id/status",
             put(update_order_status),
@@ -27,7 +45,7 @@ pub fn router() -> Router<AppState> {
 }
 
 // ==========================================
-// DTOs (数据传输对象)
+// 请求 / 响应结构
 // ==========================================
 
 #[derive(Deserialize)]
@@ -44,6 +62,7 @@ struct CreateOrderRequest {
 #[derive(Deserialize)]
 struct UpdateStatusRequest {
     status: String,
+    channel: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -51,555 +70,700 @@ struct ListOrdersQuery {
     status: Option<String>,
 }
 
-// 响应结构体：包含嵌套 Items 的订单
+/// 订单响应：`{...order, items: [...]}`。
+/// `order` 是 `OrderRow` 摊平后的字段，`created_at` 经 serde rename 成 `timestamp`
+/// （前端读的是 timestamp，见 db/models.rs 的注释，别动）。
 #[derive(Serialize)]
 struct OrderResponse {
     #[serde(flatten)]
-    order: Order,
+    order: OrderRow,
     items: Vec<OrderItemResponse>,
 }
 
 #[derive(Serialize)]
 struct OrderItemResponse {
     id: i64,
-    quantity: i64,
     product_id: i64,
+    quantity: i64,
     product_name: String,
-    product_price: f64,
-    product_image_url: Option<String>, // 必须包含此字段
+    /// 单位：分（展示端除以 100 是前端 Task 8 的事）。
+    product_price: i64,
+    product_image_url: Option<String>,
+    allocated_amount: i64,
+    paid_amount: i64,
+}
+
+/// 下单时查摊位商品用的行：id / 单价 / 名字 / 图。
+#[derive(sqlx::FromRow)]
+struct ProductRow {
+    id: i64,
+    unit_price: i64,
+    name: String,
+    image_url: Option<String>,
+}
+
+/// `order_lines JOIN event_products JOIN master_products` 的查询行。
+#[derive(sqlx::FromRow)]
+struct OrderItemRow {
+    id: i64,
+    order_id: i64,
+    event_product_id: i64,
+    qty: i64,
+    unit_price: i64,
+    allocated_amount: i64,
+    paid_amount: i64,
+    product_name: String,
+    product_image_url: Option<String>,
+}
+
+impl From<OrderItemRow> for OrderItemResponse {
+    fn from(row: OrderItemRow) -> Self {
+        OrderItemResponse {
+            id: row.id,
+            product_id: row.event_product_id,
+            quantity: row.qty,
+            product_name: row.product_name,
+            product_price: row.unit_price,
+            product_image_url: row.product_image_url,
+            allocated_amount: row.allocated_amount,
+            paid_amount: row.paid_amount,
+        }
+    }
+}
+
+const ITEMS_BY_ORDER: &str = "
+SELECT ol.id, ol.order_id, ol.event_product_id, ol.qty, ol.unit_price,
+       ol.allocated_amount, ol.paid_amount,
+       ep.name AS product_name, mp.image_url AS product_image_url
+FROM order_lines ol
+JOIN event_products ep ON ep.id = ol.event_product_id
+JOIN master_products mp ON mp.id = ep.master_product_id
+WHERE ol.order_id = ?
+ORDER BY ol.id
+";
+
+const ITEMS_BY_EVENT: &str = "
+SELECT ol.id, ol.order_id, ol.event_product_id, ol.qty, ol.unit_price,
+       ol.allocated_amount, ol.paid_amount,
+       ep.name AS product_name, mp.image_url AS product_image_url
+FROM order_lines ol
+JOIN event_products ep ON ep.id = ol.event_product_id
+JOIN master_products mp ON mp.id = ep.master_product_id
+JOIN orders o ON o.id = ol.order_id
+WHERE o.event_id = ?
+ORDER BY ol.order_id, ol.id
+";
+
+/// 读回单个订单 + 它的行，组装成响应。`update_order_status` 用。
+async fn load_order_response(pool: &SqlitePool, order_id: i64) -> ApiResult<OrderResponse> {
+    let order: OrderRow = query_as("SELECT * FROM orders WHERE id = ?")
+        .bind(order_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("订单不存在".into()))?;
+
+    let items: Vec<OrderItemResponse> = query_as::<_, OrderItemRow>(ITEMS_BY_ORDER)
+        .bind(order_id)
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(Into::into)
+        .collect();
+
+    Ok(OrderResponse { order, items })
 }
 
 // ==========================================
-// 1. 创建订单 (Public, Atomic Transaction)
+// 1. 创建订单（公开，BEGIN IMMEDIATE）
 // ==========================================
 async fn create_order(
     State(state): State<AppState>,
     Path(event_id): Path<i64>,
     Json(payload): Json<CreateOrderRequest>,
-) -> impl IntoResponse {
+) -> ApiResult<impl IntoResponse> {
     if payload.items.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "Order must have items"})),
-        )
-            .into_response();
+        return Err(ApiError::BadRequest("订单至少需要一件商品".into()));
     }
 
-    let mut tx = match state.db.begin().await {
-        Ok(tx) => tx,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": e.to_string()})),
-            )
-                .into_response()
+    // 同一商品在 items 里出现多次必须先合并：否则两行各自过库存检查、合起来超卖。
+    let mut merged: Vec<(i64, i64)> = Vec::new();
+    for item in &payload.items {
+        if item.quantity <= 0 {
+            return Err(ApiError::BadRequest("数量必须为正".into()));
         }
-    };
-
-    let mut total_amount = 0.0;
-    // 临时存储：(product_id, name, price, quantity, raw_image_path)
-    let mut items_to_insert = Vec::new();
-
-    for item_req in payload.items {
-        // [修复点 1] 确保 JOIN 查询出 master_products.image_url，改用运行时 query
-        #[derive(sqlx::FromRow)]
-        struct ProductRow {
-            id: i64,
-            // 对应 products.current_stock 列；实际扣库存靠下面的原子 UPDATE 语句里的
-            // WHERE current_stock >= ? 判断，这里查出来暂时没读，留着给未来做「库存不足」
-            // 更友好提示（当前只报 "Insufficient stock"）时用。
-            #[allow(dead_code)]
-            current_stock: i64,
-            price: f64,
-            name: String,
-            image_url: Option<String>,
+        match merged.iter_mut().find(|(pid, _)| *pid == item.product_id) {
+            Some((_, qty)) => *qty += item.quantity,
+            None => merged.push((item.product_id, item.quantity)),
         }
+    }
 
-        let product_opt = sqlx::query_as::<_, ProductRow>(
-            r#"
-            SELECT p.id, p.current_stock, p.price, p.name, mp.image_url 
-            FROM products p
-            JOIN master_products mp ON p.master_product_id = mp.id
-            WHERE p.id = ? AND p.event_id = ?
-            "#,
+    // 防超卖的检查方式跟着模型变了：旧代码靠一条原子 UPDATE；新模型是
+    // 「查余额 → 插移动」两步。SQLite 单写者模型下这仍然安全，前提是两步在
+    // 同一个 BEGIN IMMEDIATE 事务里——默认的 deferred 事务在第一次写之前不持写锁。
+    let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
+
+    // resolved: (商品行, 数量, 该行金额)。行金额 = unit_price × qty，
+    // ②-1 里 allocated = paid = unit_price × qty。
+    let mut resolved: Vec<(ProductRow, i64, i64)> = Vec::with_capacity(merged.len());
+    let mut stock_legs: Vec<StockLeg> = Vec::with_capacity(merged.len());
+    let mut gross: i64 = 0;
+
+    for (product_id, qty) in &merged {
+        let row: ProductRow = query_as(
+            "SELECT ep.id, ep.unit_price, ep.name, mp.image_url
+             FROM event_products ep
+             JOIN master_products mp ON mp.id = ep.master_product_id
+             WHERE ep.id = ? AND ep.event_id = ?",
         )
-        .bind(item_req.product_id)
+        .bind(*product_id)
         .bind(event_id)
         .fetch_optional(&mut *tx)
-        .await;
+        .await?
+        .ok_or_else(|| ApiError::NotFound("商品不存在或不属于本场展会".into()))?;
 
-        match product_opt {
-            Ok(Some(prod)) => {
-                // Atomic stock deduction with race-condition safety
-                let stock_result = sqlx::query(
-                    "UPDATE products SET current_stock = current_stock - ? WHERE id = ? AND current_stock >= ?"
-                )
-                .bind(item_req.quantity)
-                .bind(prod.id)
-                .bind(item_req.quantity)
-                .execute(&mut *tx)
-                .await;
-
-                match stock_result {
-                    Ok(r) if r.rows_affected() == 0 => {
-                        return (
-                            StatusCode::NOT_ACCEPTABLE,
-                            Json(json!({
-                                "error": format!("Insufficient stock for product: {}", prod.name)
-                            })),
-                        )
-                            .into_response();
-                    }
-                    Err(_) => {
-                        return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to update stock")
-                            .into_response();
-                    }
-                    _ => {}
-                }
-
-                total_amount += prod.price * (item_req.quantity as f64);
-
-                items_to_insert.push((
-                    prod.id,
-                    prod.name,
-                    prod.price,
-                    item_req.quantity,
-                    prod.image_url, // 这是一个 Option<String> (相对路径)
-                ));
-            }
-            Ok(None) => {
-                return (
-                    StatusCode::NOT_FOUND,
-                    Json(json!({"error": "Product not found"})),
-                )
-                    .into_response()
-            }
-            Err(e) => {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({"error": e.to_string()})),
-                )
-                    .into_response()
-            }
+        let left = onsite_balance(&mut *tx, row.id).await?;
+        if left < *qty {
+            return Err(ApiError::Conflict(format!("「{}」库存不足", row.name)));
         }
+
+        let line_total = row
+            .unit_price
+            .checked_mul(*qty)
+            .ok_or_else(|| ApiError::BadRequest("金额溢出".into()))?;
+        gross = gross
+            .checked_add(line_total)
+            .ok_or_else(|| ApiError::BadRequest("金额溢出".into()))?;
+
+        stock_legs.push(StockLeg {
+            event_product_id: row.id,
+            from: Location::OnSite,
+            to: Location::Customer,
+            qty: *qty,
+        });
+        resolved.push((row, *qty, line_total));
     }
 
-    let order_row = match sqlx::query_as::<_, Order>(
-        "INSERT INTO orders (event_id, total_amount, status) VALUES (?, ?, 'pending') RETURNING *",
+    // ②-1 没有 Lot 也没有折让：gross = solved = final。
+    let solved = gross;
+    let final_amount = solved;
+
+    let order: OrderRow = query_as(
+        "INSERT INTO orders (event_id, status, gross_amount, solved_amount, final_amount)
+         VALUES (?, 'pending', ?, ?, ?) RETURNING *",
     )
     .bind(event_id)
-    .bind(total_amount)
+    .bind(gross)
+    .bind(solved)
+    .bind(final_amount)
     .fetch_one(&mut *tx)
-    .await
-    {
-        Ok(row) => row,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": e.to_string()})),
-            )
-                .into_response()
-        }
-    };
-    let order_id = order_row.id;
+    .await?;
+    let order_id = order.id;
 
-    let mut response_items = Vec::new();
-
-    for (pid, name, price, qty, raw_img_path) in items_to_insert {
-        let item_id_res = sqlx::query(r#"INSERT INTO order_items (order_id, product_id, product_name, product_price, quantity) VALUES (?, ?, ?, ?, ?) RETURNING id"#)
-            .bind(order_id)
-            .bind(pid)
-            .bind(&name)
-            .bind(price)
-            .bind(qty)
-            .fetch_one(&mut *tx)
-            .await;
-
-        match item_id_res {
-            Ok(rec) => {
-                use sqlx::Row;
-                let item_id: i64 = rec.get("id");
-                // [修复点 2] 处理图片 URL，拼接 /static/uploads/ 前缀
-                let processed_image_url =
-                    raw_img_path.map(|path| format!("/static/uploads/{}", path));
-
-                response_items.push(OrderItemResponse {
-                    id: item_id,
-                    quantity: qty,
-                    product_id: pid,
-                    product_name: name,
-                    product_price: price,
-                    product_image_url: processed_image_url, // 返回处理后的 URL
-                });
-            }
-            Err(e) => {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({"error": e.to_string()})),
-                )
-                    .into_response()
-            }
-        }
-    }
-
-    if let Err(_e) = tx.commit().await {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Transaction Commit Failed",
+    let mut items = Vec::with_capacity(resolved.len());
+    for (row, qty, line_total) in &resolved {
+        let line_id: i64 = query_scalar(
+            "INSERT INTO order_lines
+               (order_id, event_product_id, qty, unit_price, allocated_amount, paid_amount)
+             VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
         )
-            .into_response();
+        .bind(order_id)
+        .bind(row.id)
+        .bind(*qty)
+        .bind(row.unit_price)
+        .bind(*line_total)
+        .bind(*line_total)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        items.push(OrderItemResponse {
+            id: line_id,
+            product_id: row.id,
+            quantity: *qty,
+            product_name: row.name.clone(),
+            product_price: row.unit_price,
+            product_image_url: row.image_url.clone(),
+            allocated_amount: *line_total,
+            paid_amount: *line_total,
+        });
     }
 
-    let response = OrderResponse {
-        order: order_row,
-        items: response_items,
-    };
+    // 销售 journal：现场仓 → 顾客仓。每张订单必然带这条 stock 腿——
+    // 这是 Task 5 删除守卫「只查 stock_movements 不查 order_lines」仍然正确的前提。
+    post_journal(
+        &mut tx,
+        event_id,
+        JournalKind::Sale,
+        Some(order_id),
+        None,
+        Some("下单"),
+        &stock_legs,
+        &[],
+    )
+    .await?;
 
-    (StatusCode::CREATED, Json(response)).into_response()
+    tx.commit().await?;
+
+    Ok((StatusCode::CREATED, Json(OrderResponse { order, items })))
 }
+
 // ==========================================
-// 2. 查看订单列表 (Admin/Vendor Scoped)
+// 2. 查看订单列表（管理员/摊主）
 // ==========================================
 async fn list_orders(
     State(state): State<AppState>,
     claims: Claims,
     Path(event_id): Path<i64>,
     Query(params): Query<ListOrdersQuery>,
-) -> impl IntoResponse {
-    // 权限检查
-    if let Err(e) = check_read_permission(&claims, event_id) {
-        return e.into_response();
-    }
+) -> ApiResult<Json<Vec<OrderResponse>>> {
+    check_read_permission(&claims, event_id)?;
 
-    let orders_res: Result<Vec<Order>, _> = if let Some(s) = params.status {
-        query_as("SELECT * FROM orders WHERE event_id = ? AND status = ? ORDER BY id DESC")
-            .bind(event_id)
-            .bind(s)
-            .fetch_all(&state.db)
-            .await
-    } else {
-        query_as("SELECT * FROM orders WHERE event_id = ? ORDER BY id DESC")
-            .bind(event_id)
-            .fetch_all(&state.db)
-            .await
-    };
+    let status = params.status.as_deref();
 
-    let orders = match orders_res {
-        Ok(o) => o,
-        Err(e) => {
-            eprintln!("list_orders: fetch orders failed: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": "Failed to load orders"})),
-            )
-                .into_response();
+    let orders: Vec<OrderRow> = match status {
+        Some(s) => {
+            query_as("SELECT * FROM orders WHERE event_id = ? AND status = ? ORDER BY id DESC")
+                .bind(event_id)
+                .bind(s)
+                .fetch_all(&state.db)
+                .await?
+        }
+        None => {
+            query_as("SELECT * FROM orders WHERE event_id = ? ORDER BY id DESC")
+                .bind(event_id)
+                .fetch_all(&state.db)
+                .await?
         }
     };
 
     if orders.is_empty() {
-        return Json(Vec::<OrderResponse>::new()).into_response();
+        return Ok(Json(Vec::new()));
     }
 
-    // 2. 批量获取这些 Orders 的 Items
-    // 为了避免 N+1 问题，我们收集所有 order_id，一次性查出所有 items，然后在内存中组装
-    let order_ids: Vec<i64> = orders.iter().map(|o| o.id).collect();
-    // 构建 "id IN (?, ?, ?)" 字符串
-    let placeholders = order_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-    let items_sql = format!(
-        r#"
-        SELECT oi.*, mp.image_url as product_image_url
-        FROM order_items oi
-        JOIN products p ON oi.product_id = p.id
-        JOIN master_products mp ON p.master_product_id = mp.id
-        WHERE oi.order_id IN ({})
-        "#,
-        placeholders
-    );
+    // 一次查出本场全部订单的行再内存分组，避免 N+1。用 JOIN orders 过滤，
+    // 而不是拼 IN 列表（IN 的元素个数无法参数化）。行里若带本场别的订单，
+    // 只会留在 map 里不被消费，无妨。
+    let rows: Vec<OrderItemRow> = query_as(ITEMS_BY_EVENT)
+        .bind(event_id)
+        .fetch_all(&state.db)
+        .await?;
 
-    // 已审计：拼进去的只有上面按 order_ids 个数生成的 "?,?,?" 占位符，
-    // 实际 id 全部走下面的 bind。IN 列表的元素个数无法参数化，只能拼。
-    let mut query_builder = sqlx::query(AssertSqlSafe(items_sql));
-    for id in order_ids {
-        query_builder = query_builder.bind(id);
-    }
-
-    // 由于 OrderItem 结构体没有 product_image_url，我们需要一个新的临时结构体或者使用 sqlx::Row
-    // 这里我们直接用 Row 手动映射
-    let items_rows = match query_builder.fetch_all(&state.db).await {
-        Ok(rows) => rows,
-        Err(e) => {
-            eprintln!("list_orders: fetch items failed: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": "Failed to load order items"})),
-            )
-                .into_response();
-        }
-    };
-
-    // 3. 内存分组
     let mut items_map: HashMap<i64, Vec<OrderItemResponse>> = HashMap::new();
-
-    for row in items_rows {
-        use sqlx::Row;
-        let order_id: i64 = row.get("order_id");
-        let item = OrderItemResponse {
-            id: row.get("id"),
-            quantity: row.get("quantity"),
-            product_id: row.get("product_id"),
-            product_name: row.get("product_name"),
-            product_price: row.get("product_price"),
-            product_image_url: row.try_get("product_image_url").ok(),
-        };
-        items_map.entry(order_id).or_default().push(item);
+    for row in rows {
+        let oid = row.order_id;
+        items_map.entry(oid).or_default().push(row.into());
     }
 
-    // 4. 组装最终结果
-    let result: Vec<OrderResponse> = orders
+    let result = orders
         .into_iter()
-        .map(|o| {
-            let oid = o.id;
+        .map(|order| {
+            let oid = order.id;
             OrderResponse {
-                order: o,
+                order,
                 items: items_map.remove(&oid).unwrap_or_default(),
             }
         })
         .collect();
 
-    Json(result).into_response()
+    Ok(Json(result))
 }
 
 // ==========================================
-// 3. 更新订单状态 (Admin/Vendor Scoped)
+// 3. 更新订单状态（完成 / 取消）
 // ==========================================
 async fn update_order_status(
     State(state): State<AppState>,
     claims: Claims,
     Path((event_id, order_id)): Path<(i64, i64)>,
     Json(payload): Json<UpdateStatusRequest>,
-) -> impl IntoResponse {
-    // 权限检查
-    if let Err(e) = check_write_permission(&claims, event_id) {
-        return e.into_response();
+) -> ApiResult<Json<OrderResponse>> {
+    check_write_permission(&claims, event_id)?;
+
+    let target = payload.status.as_str();
+    if !matches!(target, "pending" | "completed" | "cancelled") {
+        return Err(ApiError::BadRequest(format!("未知的订单状态: {target}")));
+    }
+    // 任何状态都不能退回 pending。
+    if target == "pending" {
+        return Err(ApiError::BadRequest("不能退回待处理".into()));
     }
 
-    // 执行更新
-    // 思考：如果状态变为 cancelled，是否需要恢复库存？
-    // 通常漫展现场，取消订单意味着东西没卖出去，应该恢复。这里简单实现恢复逻辑。
+    let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
 
-    if payload.status == "cancelled" {
-        // 开启事务处理取消逻辑
-        let mut tx = match state.db.begin().await {
-            Ok(tx) => tx,
-            Err(e) => {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({"error": format!("Failed to begin transaction: {}", e)})),
-                )
-                    .into_response()
-            }
-        };
+    let current: Option<String> =
+        query_scalar("SELECT status FROM orders WHERE id = ? AND event_id = ?")
+            .bind(order_id)
+            .bind(event_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let current = current.ok_or_else(|| ApiError::NotFound("订单不存在".into()))?;
 
-        // 1. 检查订单当前状态，防止重复取消导致重复加库存
-        //    同时校验 event_id，防止越权取消其他展会的订单
-        let current_status: Option<String> =
-            sqlx::query_scalar("SELECT status FROM orders WHERE id = ? AND event_id = ?")
-                .bind(order_id)
-                .bind(event_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .unwrap_or(None);
-
-        let Some(s) = current_status else {
-            // 订单不存在或不属于该展会
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({"error": "Order not found in this event"})),
-            )
-                .into_response();
-        };
-
-        {
-            match s.as_str() {
-                "cancelled" => {
-                    // 已取消过，直接返回当前订单数据
-                    let order =
-                        query_as::<_, Order>("SELECT * FROM orders WHERE id = ? AND event_id = ?")
-                            .bind(order_id)
-                            .bind(event_id)
-                            .fetch_optional(&state.db)
-                            .await
-                            .unwrap_or(None);
-
-                    return if let Some(o) = order {
-                        (StatusCode::OK, Json(o)).into_response()
-                    } else {
-                        (StatusCode::NOT_FOUND, "Order not found").into_response()
-                    };
-                }
-                "pending" | "completed" => {
-                    // [修复] 允许 pending 和 completed 订单都可以取消并恢复库存 ✓
-                    // 这支持摊主误操作修复的场景
-                    // pending 订单扣减库存是为了防止有订单但没有货的情况出现
-
-                    // 2. 查出该订单所有商品和数量
-                    #[derive(sqlx::FromRow)]
-                    struct ItemQty {
-                        product_id: i64,
-                        quantity: i64,
-                    }
-                    let items = sqlx::query_as::<_, ItemQty>(
-                        "SELECT product_id, quantity FROM order_items WHERE order_id = ?",
-                    )
-                    .bind(order_id)
-                    .fetch_all(&mut *tx)
-                    .await
-                    .unwrap_or_default();
-
-                    // 3. 归还库存
-                    for item in items {
-                        if let Err(e) = sqlx::query(
-                            "UPDATE products SET current_stock = current_stock + ? WHERE id = ?",
-                        )
-                        .bind(item.quantity)
-                        .bind(item.product_id)
-                        .execute(&mut *tx)
-                        .await
-                        {
-                            eprintln!(
-                                "Failed to restore stock for product {}: {}",
-                                item.product_id, e
-                            );
-                            return (
-                                StatusCode::INTERNAL_SERVER_ERROR,
-                                Json(json!({"error": format!("Failed to restore stock: {}", e)})),
-                            )
-                                .into_response();
-                        }
-                    }
-                }
-                _ => {}
-            }
+    match (current.as_str(), target) {
+        // 已取消的订单不能再改状态。
+        ("cancelled", _) => {
+            return Err(ApiError::Conflict("已取消的订单不能再改状态".into()));
         }
+        ("completed", "completed") => {
+            return Err(ApiError::Conflict("订单已完成，不能重复完成".into()));
+        }
+        ("pending", "completed") => {
+            // completed 必须带 channel：钱那条腿 `社团往来 → 实收-<渠道>` 需要对手账户。
+            let channel = payload
+                .channel
+                .as_deref()
+                .map(str::trim)
+                .filter(|c| !c.is_empty())
+                .map(str::to_string)
+                .ok_or_else(|| ApiError::BadRequest("完成订单必须提供收款渠道".into()))?;
 
-        // 4. 更新状态 (同时校验 event_id 防止越权)
-        if let Err(e) =
-            sqlx::query("UPDATE orders SET status = 'cancelled' WHERE id = ? AND event_id = ?")
+            // 按货主分组，Σ 该货主各行的 allocated_amount。
+            let owner_totals: Vec<(i64, i64)> = query_as(
+                "SELECT ep.owner_society_id, SUM(ol.allocated_amount)
+                 FROM order_lines ol
+                 JOIN event_products ep ON ep.id = ol.event_product_id
+                 WHERE ol.order_id = ?
+                 GROUP BY ep.owner_society_id",
+            )
+            .bind(order_id)
+            .fetch_all(&mut *tx)
+            .await?;
+
+            // ②-2 会在这里追加一条手工折让的腿（spec 4.4）：
+            //     实收-<渠道> → 社团往来:<本社团>   金额 = solved_amount − final_amount
+            // 它整笔落在本社团头上，不按货主分摊——「我帮你卖货，我自己让的价不该由你买单」。
+            // 金额为 0 时那条腿本就不该存在，post_journal 已经会过滤掉零金额的腿。
+            // ②-1 里 solved == final，所以这里恒为 0，暂不生成。
+            let money_legs: Vec<MoneyLeg> = owner_totals
+                .into_iter()
+                .map(|(owner_id, cents)| MoneyLeg {
+                    from: Account::SocietyDue(owner_id),
+                    to: Account::Received(channel.clone()),
+                    amount: Money::from_cents(cents),
+                })
+                .filter(|leg| !leg.amount.is_zero())
+                .collect();
+
+            // 全 0 金额（全赠品订单）时没有钱可记，跳过收款 journal 而不是
+            // 让 post_journal 拒绝「空的 journal」。
+            if !money_legs.is_empty() {
+                post_journal(
+                    &mut tx,
+                    event_id,
+                    JournalKind::Receipt,
+                    Some(order_id),
+                    None,
+                    Some("收款"),
+                    &[],
+                    &money_legs,
+                )
+                .await?;
+            }
+
+            query(
+                "UPDATE orders SET status = 'completed', channel = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?",
+            )
+            .bind(&channel)
+            .bind(order_id)
+            .execute(&mut *tx)
+            .await?;
+        }
+        ("pending", "cancelled") | ("completed", "cancelled") => {
+            // 同一个调用把货和钱两个 journal 一起冲掉（货回到现场仓、钱按反方向回滚）。
+            // 不要自己遍历 journal 反向插移动——reverse_order_journals 已经处理了
+            // 「跳过已被冲正的」和「重复冲正被偏唯一索引拦住」。
+            reverse_order_journals(&mut tx, order_id, Some("取消订单")).await?;
+
+            query("UPDATE orders SET status = 'cancelled' WHERE id = ?")
                 .bind(order_id)
-                .bind(event_id)
                 .execute(&mut *tx)
-                .await
-        {
-            eprintln!("Failed to update order status to cancelled: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": format!("Failed to cancel order: {}", e)})),
-            )
-                .into_response();
+                .await?;
         }
-
-        if let Err(e) = tx.commit().await {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": format!("Transaction commit failed: {}", e)})),
-            )
-                .into_response();
-        }
-    } else {
-        // 普通状态更新：验证状态白名单
-        match payload.status.as_str() {
-            "pending" | "completed" | "cancelled" => {}
-            _ => {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({"error": format!("Invalid order status: '{}'. Must be one of: pending, completed, cancelled", payload.status)})),
-                )
-                    .into_response();
-            }
-        }
-
-        // Prevent invalid state transitions (e.g. cancelled -> pending/completed)
-        // 使用一条 UPDATE 做 CAS：只在订单存在且未被取消时更新，规避 SELECT→UPDATE 之间的 TOCTOU
-        let result = query(
-            "UPDATE orders SET status = ? WHERE id = ? AND event_id = ? AND status <> 'cancelled'",
-        )
-        .bind(&payload.status)
-        .bind(order_id)
-        .bind(event_id)
-        .execute(&state.db)
-        .await;
-
-        match result {
-            Err(e) => {
-                eprintln!("update_order_status: update failed: {}", e);
-                return (StatusCode::INTERNAL_SERVER_ERROR, "Database Error").into_response();
-            }
-            Ok(r) if r.rows_affected() == 0 => {
-                // rows_affected == 0 只可能是两种情况：
-                //   a) id/event_id 不匹配任何订单 → 404
-                //   b) 订单存在但已取消 (被 status <> 'cancelled' 过滤掉) → 400
-                // 其他 status 一定会被 UPDATE 命中；不存在第三种情况。
-                let current: Option<String> =
-                    sqlx::query_scalar("SELECT status FROM orders WHERE id = ? AND event_id = ?")
-                        .bind(order_id)
-                        .bind(event_id)
-                        .fetch_optional(&state.db)
-                        .await
-                        .unwrap_or(None);
-
-                return if current.is_none() {
-                    (
-                        StatusCode::NOT_FOUND,
-                        Json(json!({"error": "Order not found"})),
-                    )
-                        .into_response()
-                } else {
-                    (
-                        StatusCode::BAD_REQUEST,
-                        Json(json!({"error": "Cannot change status of a cancelled order. Stock has already been restored."})),
-                    )
-                        .into_response()
-                };
-            }
-            Ok(_) => {}
+        _ => {
+            return Err(ApiError::BadRequest("非法的状态转换".into()));
         }
     }
 
-    // 返回更新后的完整对象 (略，为简化起见返回成功消息，或调用 list_orders 的逻辑获取单个)
-    // 按照文档 "Response (200): Updated Order object"，最好是返回 OrderResponse。
-    // 这里偷懒返回简单的 Order 结构体，实际项目建议复用 fetch 逻辑。
-    match query_as::<_, Order>("SELECT * FROM orders WHERE id = ?")
-        .bind(order_id)
-        .fetch_one(&state.db)
-        .await
-    {
-        Ok(order) => Json(order).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": format!("Failed to fetch updated order: {}", e)})),
-        )
-            .into_response(),
-    }
+    tx.commit().await?;
+
+    let response = load_order_response(&state.db, order_id).await?;
+    Ok(Json(response))
 }
 
 // ==========================================
-// 权限检查辅助函数 (简单版)
+// 权限检查辅助函数
 // ==========================================
-fn check_read_permission(claims: &Claims, event_id: i64) -> Result<(), (StatusCode, &'static str)> {
-    if claims.role == "admin"
-        || (claims.role == "vendor"
-            && (claims.access == "all" || claims.event_id == Some(event_id)))
-    {
-        Ok(())
-    } else {
-        Err((StatusCode::FORBIDDEN, "Access denied"))
+fn check_read_permission(claims: &Claims, event_id: i64) -> Result<(), ApiError> {
+    if claims.role == "admin" {
+        return Ok(());
     }
+    if claims.role == "vendor" {
+        if claims.access == "all" {
+            return Ok(());
+        }
+        if let Some(eid) = claims.event_id {
+            if eid == event_id {
+                return Ok(());
+            }
+        }
+    }
+    Err(ApiError::Forbidden)
 }
 
-fn check_write_permission(
-    claims: &Claims,
-    event_id: i64,
-) -> Result<(), (StatusCode, &'static str)> {
-    // 读写逻辑目前一致
+fn check_write_permission(claims: &Claims, event_id: i64) -> Result<(), ApiError> {
+    // 读写权限目前一致
     check_read_permission(claims, event_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::test_support::{
+        admin_token, json_request, read_json, seed_event_and_product, test_router_with,
+    };
+    use axum::http::StatusCode;
+    use serde_json::json;
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn placing_an_order_moves_goods_out_of_the_onsite_warehouse_immediately() {
+        // spec 6.1：下单即移动，天然防超卖——货在下单那一刻就离开现场仓了
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _ep_b) = seed_event_and_product(&pool).await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None, // 下单是公开接口，顾客端没有 token
+                json!({"items": [{"product_id": ep_a, "quantity": 2}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+        let body = read_json(res).await;
+        assert_eq!(body["final_amount"], 6000, "2 × 3000 分");
+        assert_eq!(body["status"], "pending");
+
+        let left = crate::domain::ledger::onsite_balance(&pool, ep_a)
+            .await
+            .unwrap();
+        assert_eq!(left, 8, "下单即扣，不等到收款");
+    }
+
+    #[tokio::test]
+    async fn overselling_is_refused_and_leaves_no_trace() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None,
+                json!({"items": [{"product_id": ep_a, "quantity": 999}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+
+        // 事务必须整体回滚：不能留下半张订单或一条孤儿 journal
+        let orders: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM orders")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let journals: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journals")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(orders, 0);
+        assert_eq!(journals, 1, "只该有 seed 时那一条进货 journal");
+        assert_eq!(
+            crate::domain::ledger::onsite_balance(&pool, ep_a)
+                .await
+                .unwrap(),
+            10
+        );
+    }
+
+    #[tokio::test]
+    async fn completing_an_order_requires_a_channel_and_splits_money_by_owner() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, ep_b) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+
+        // ep_a 归本社团(1) 3000，ep_b 归代卖社团(2) 2000
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None,
+                json!({"items": [
+                    {"product_id": ep_a, "quantity": 2},
+                    {"product_id": ep_b, "quantity": 1}
+                ]}),
+            ))
+            .await
+            .unwrap();
+        let order_id = read_json(res).await["id"].as_i64().unwrap();
+
+        // 不带渠道必须被拒——否则钱那条腿没有对手账户（spec 6.2）
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "微信"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        use crate::domain::ledger::{account_balance, Account};
+        use crate::domain::money::Money;
+        // 我欠本社团 6000、欠代卖社团 2000，手上多了 8000
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::SocietyDue(1))
+                .await
+                .unwrap(),
+            Money::from_cents(-6000)
+        );
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::SocietyDue(2))
+                .await
+                .unwrap(),
+            Money::from_cents(-2000)
+        );
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::Received("微信".into()))
+                .await
+                .unwrap(),
+            Money::from_cents(8000)
+        );
+    }
+
+    #[tokio::test]
+    async fn cancelling_a_completed_order_reverses_both_goods_and_money() {
+        // 旧模型只退库存、不碰钱（那时也没有钱的账）。新模型下只回滚一半
+        // 正是最该防住的事故。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None,
+                json!({"items": [{"product_id": ep_a, "quantity": 2}]}),
+            ))
+            .await
+            .unwrap();
+        let order_id = read_json(res).await["id"].as_i64().unwrap();
+
+        router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "现金"}),
+            ))
+            .await
+            .unwrap();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "cancelled"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        use crate::domain::ledger::{account_balance, onsite_balance, Account};
+        use crate::domain::money::Money;
+        assert_eq!(onsite_balance(&pool, ep_a).await.unwrap(), 10, "货回来了");
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::SocietyDue(1))
+                .await
+                .unwrap(),
+            Money::ZERO,
+            "钱也回去了"
+        );
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::Received("现金".into()))
+                .await
+                .unwrap(),
+            Money::ZERO
+        );
+    }
+
+    #[tokio::test]
+    async fn cancelling_twice_does_not_refund_the_stock_twice() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None,
+                json!({"items": [{"product_id": ep_a, "quantity": 2}]}),
+            ))
+            .await
+            .unwrap();
+        let order_id = read_json(res).await["id"].as_i64().unwrap();
+
+        let uri = format!("/api/events/{event_id}/orders/{order_id}/status");
+        let r1 = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &uri,
+                Some(&token),
+                json!({"status":"cancelled"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(r1.status(), StatusCode::OK);
+        let r2 = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &uri,
+                Some(&token),
+                json!({"status":"cancelled"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(r2.status(), StatusCode::CONFLICT, "已取消的订单不能再取消");
+
+        assert_eq!(
+            crate::domain::ledger::onsite_balance(&pool, ep_a)
+                .await
+                .unwrap(),
+            10,
+            "库存只能退一次"
+        );
+    }
 }
