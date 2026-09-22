@@ -202,12 +202,26 @@ async fn reset_database_handler(State(state): State<AppState>, _: AdminOnly) -> 
     // 先删除子表，再删除父表，避免外键冲突
     // 注意：不删除 settings 表中的管理员密码
 
+    // 按外键依赖顺序清空（子表在前）。
+    // ⚠️ 加新表时必须同步这里 —— 漏一张表会让「重置」留下孤儿数据，
+    // 而 reset 是用户在「数据乱了」时的最后一根稻草。
     let tables_to_clear = vec![
-        "order_items",     // 订单明细表（子表）
-        "orders",          // 订单主表
-        "products",        // 场次库存商品表
-        "events",          // 展会场次表
-        "master_products", // 全局商品库表
+        "stock_movements",
+        "money_movements",
+        "refunds",
+        "order_lines",
+        "order_lots",
+        "advances",
+        "settlement_adjustments",
+        "journals",
+        "orders",
+        "lot_candidates",
+        "lots",
+        "event_products",
+        "events",
+        "master_products",
+        // societies 不清：本社团那一行是迁移种进去的，清掉之后
+        // owner_society_id 全部悬空，而且没有任何界面能把它建回来。
     ];
 
     for table in &tables_to_clear {

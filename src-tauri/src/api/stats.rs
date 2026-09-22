@@ -41,10 +41,13 @@ struct ProductSalesItem {
     product_id: i64,
     product_code: String,
     product_name: String,
-    unit_price: f64,
+    /// 单位：分。
+    unit_price: i64,
+    /// 「累计进货」= 从外部进到现场仓的总件数（不是当前余额）。
     initial_stock: i64,
     total_quantity: i64,
-    total_revenue_per_item: f64,
+    /// 单位：分。
+    total_revenue_per_item: i64,
 }
 
 // ==========================================
@@ -71,7 +74,8 @@ async fn get_event_stats(
 
     #[derive(Serialize, FromRow)]
     struct SummaryStats {
-        total_revenue: f64,
+        /// 单位：分。
+        total_revenue: i64,
         completed_orders_count: i64,
         total_items_sold: i64,
     }
@@ -79,11 +83,11 @@ async fn get_event_stats(
     let summary: SummaryStats = sqlx::query_as(
         r#"
         SELECT
-            COALESCE(SUM(o.total_amount), 0.0) as total_revenue,
+            COALESCE(SUM(o.final_amount), 0) as total_revenue,
             COUNT(DISTINCT o.id) as completed_orders_count,
-            COALESCE(SUM(oi.quantity), 0) as total_items_sold
+            COALESCE(SUM(ol.qty), 0) as total_items_sold
         FROM orders o
-        LEFT JOIN order_items oi ON o.id = oi.order_id
+        LEFT JOIN order_lines ol ON o.id = ol.order_id
         WHERE o.event_id = ? AND o.status != 'cancelled'
         "#,
     )
@@ -91,7 +95,7 @@ async fn get_event_stats(
     .fetch_one(&state.db)
     .await
     .unwrap_or(SummaryStats {
-        total_revenue: 0.0,
+        total_revenue: 0,
         completed_orders_count: 0,
         total_items_sold: 0,
     });
@@ -99,18 +103,22 @@ async fn get_event_stats(
     let product_details = sqlx::query_as::<_, ProductSalesItem>(
         r#"
         SELECT 
-            oi.product_id,
-            COALESCE(p.product_code, '') as product_code,
-            oi.product_name,
-            oi.product_price as unit_price,
-            COALESCE(p.initial_stock, 0) as initial_stock,
-            SUM(oi.quantity) as total_quantity,
-            SUM(oi.product_price * oi.quantity) as total_revenue_per_item
-        FROM order_items oi
-        JOIN orders o ON oi.order_id = o.id
-        LEFT JOIN products p ON oi.product_id = p.id
+            ol.event_product_id as product_id,
+            COALESCE(ep.product_code, '') as product_code,
+            ep.name as product_name,
+            ol.unit_price,
+            COALESCE((
+                SELECT SUM(sm.qty) FROM stock_movements sm
+                WHERE sm.event_product_id = ol.event_product_id
+                  AND sm.from_location = '外部' AND sm.to_location = '现场仓'
+            ), 0) as initial_stock,
+            SUM(ol.qty) as total_quantity,
+            SUM(ol.unit_price * ol.qty) as total_revenue_per_item
+        FROM order_lines ol
+        JOIN orders o ON ol.order_id = o.id
+        JOIN event_products ep ON ol.event_product_id = ep.id
         WHERE o.event_id = ? AND o.status != 'cancelled'
-        GROUP BY oi.product_id, oi.product_name, oi.product_price, p.product_code, p.initial_stock
+        GROUP BY ol.event_product_id, ep.product_code, ep.name, ol.unit_price
         ORDER BY total_revenue_per_item DESC
         "#,
     )
@@ -159,19 +167,27 @@ async fn get_sales_summary(
     };
 
     // 1. 获取商品销售详情（支持 product_code、start_date、end_date 筛选）
+    //
+    // 统计口径不变：仍是「非 cancelled 的订单」。这里故意不用账本（journals /
+    // stock_movements / money_movements）聚合——销售统计看的是订单视图（谁买了什么），
+    // 账本看的是货和钱的流向，两者都对但回答的问题不同；结算单（②-3）才是账本视图。
     let mut summary_query = String::from(
         r#"
         SELECT 
-            oi.product_id,
-            COALESCE(p.product_code, '') as product_code,
-            oi.product_name,
-            oi.product_price as unit_price,
-            COALESCE(p.initial_stock, 0) as initial_stock,
-            SUM(oi.quantity) as total_quantity,
-            SUM(oi.product_price * oi.quantity) as total_revenue_per_item
-        FROM order_items oi
-        JOIN orders o ON oi.order_id = o.id
-        LEFT JOIN products p ON oi.product_id = p.id
+            ol.event_product_id as product_id,
+            COALESCE(ep.product_code, '') as product_code,
+            ep.name as product_name,
+            ol.unit_price,
+            COALESCE((
+                SELECT SUM(sm.qty) FROM stock_movements sm
+                WHERE sm.event_product_id = ol.event_product_id
+                  AND sm.from_location = '外部' AND sm.to_location = '现场仓'
+            ), 0) as initial_stock,
+            SUM(ol.qty) as total_quantity,
+            SUM(ol.unit_price * ol.qty) as total_revenue_per_item
+        FROM order_lines ol
+        JOIN orders o ON ol.order_id = o.id
+        JOIN event_products ep ON ol.event_product_id = ep.id
         WHERE o.event_id = ? AND o.status != 'cancelled'
         "#,
     );
@@ -180,7 +196,7 @@ async fn get_sales_summary(
 
     // 条件筛选
     if let Some(ref code) = params.product_code {
-        summary_query.push_str(" AND p.product_code = ?");
+        summary_query.push_str(" AND ep.product_code = ?");
         sql_params.push(code.clone());
     }
     if let Some(ref start) = params.start_date {
@@ -194,7 +210,7 @@ async fn get_sales_summary(
 
     summary_query.push_str(
         r#"
-        GROUP BY oi.product_id, oi.product_name, oi.product_price, p.product_code, p.initial_stock
+        GROUP BY ol.event_product_id, ep.product_code, ep.name, ol.unit_price
         ORDER BY total_revenue_per_item DESC
         "#,
     );
@@ -212,25 +228,26 @@ async fn get_sales_summary(
         q.fetch_all(&state.db).await.unwrap_or_default()
     };
 
-    // 2. 获取总销售额
-    let total_revenue: (f64,) = sqlx::query_as(
-        "SELECT COALESCE(SUM(o.total_amount), 0.0) FROM orders o WHERE o.event_id = ? AND o.status != 'cancelled'"
+    // 2. 获取总销售额（单位：分）
+    let total_revenue: (i64,) = sqlx::query_as(
+        "SELECT COALESCE(SUM(o.final_amount), 0) FROM orders o WHERE o.event_id = ? AND o.status != 'cancelled'"
     )
     .bind(event_id)
     .fetch_one(&state.db)
     .await
-    .unwrap_or((0.0,));
+    .unwrap_or((0,));
 
     // 3. 获取时间序列数据（用于图表）
     #[derive(FromRow)]
     struct TimePoint {
         created_at: NaiveDateTime,
-        total_amount: f64,
+        /// 单位：分。
+        final_amount: i64,
     }
 
     let mut ts_query = String::from(
         r#"
-        SELECT o.created_at, o.total_amount
+        SELECT o.created_at, o.final_amount
         FROM orders o
         WHERE o.event_id = ? AND o.status != 'cancelled'
         "#,
@@ -243,9 +260,9 @@ async fn get_sales_summary(
         ts_query.push_str(
             r#"
             AND EXISTS (
-                SELECT 1 FROM order_items oi2
-                LEFT JOIN products p2 ON oi2.product_id = p2.id
-                WHERE oi2.order_id = o.id AND p2.product_code = ?
+                SELECT 1 FROM order_lines ol2
+                JOIN event_products ep2 ON ol2.event_product_id = ep2.id
+                WHERE ol2.order_id = o.id AND ep2.product_code = ?
             )
             "#,
         );
@@ -281,11 +298,11 @@ async fn get_sales_summary(
         t.with_minute(floored).and_then(|t| t.with_second(0))
     }
 
-    let mut bucketed: HashMap<String, f64> = HashMap::new();
+    let mut bucketed: HashMap<String, i64> = HashMap::new();
     for point in &time_points {
         if let Some(bucket_time) = floor_time(point.created_at, interval_val as u32) {
             let key = bucket_time.format("%Y-%m-%d %H:%M").to_string();
-            *bucketed.entry(key).or_insert(0.0) += point.total_amount;
+            *bucketed.entry(key).or_insert(0) += point.final_amount;
         }
     }
 
@@ -293,7 +310,8 @@ async fn get_sales_summary(
     #[derive(Serialize)]
     struct TimeseriesItem {
         date: String,
-        revenue: f64,
+        /// 单位：分。
+        revenue: i64,
     }
 
     let mut timeseries: Vec<TimeseriesItem> = Vec::new();
@@ -310,11 +328,8 @@ async fn get_sales_summary(
             let mut cursor = start;
             while cursor <= end {
                 let key = cursor.format("%Y-%m-%d %H:%M").to_string();
-                let revenue = bucketed.get(&key).copied().unwrap_or(0.0);
-                timeseries.push(TimeseriesItem {
-                    date: key,
-                    revenue: (revenue * 100.0).round() / 100.0,
-                });
+                let revenue = bucketed.get(&key).copied().unwrap_or(0);
+                timeseries.push(TimeseriesItem { date: key, revenue });
                 cursor += chrono::Duration::minutes(interval_val);
             }
         }
@@ -322,10 +337,7 @@ async fn get_sales_summary(
         // 0 或 1 个数据点：直接输出，不需要填充
         timeseries = bucketed
             .into_iter()
-            .map(|(date, revenue)| TimeseriesItem {
-                date,
-                revenue: (revenue * 100.0).round() / 100.0,
-            })
+            .map(|(date, revenue)| TimeseriesItem { date, revenue })
             .collect();
         timeseries.sort_by(|a, b| a.date.cmp(&b.date));
     }
@@ -333,14 +345,15 @@ async fn get_sales_summary(
     #[derive(Serialize)]
     struct SalesResponse {
         event_name: String,
-        total_revenue: f64,
+        /// 单位：分。
+        total_revenue: i64,
         summary: Vec<ProductSalesItem>,
         timeseries: Vec<TimeseriesItem>,
     }
 
     Json(SalesResponse {
         event_name: event.name,
-        total_revenue: (total_revenue.0 * 100.0).round() / 100.0,
+        total_revenue: total_revenue.0,
         summary,
         timeseries,
     })
@@ -371,18 +384,22 @@ async fn download_sales_summary(
     let details = sqlx::query_as::<_, ProductSalesItem>(
         r#"
         SELECT 
-            oi.product_id,
-            COALESCE(p.product_code, '') as product_code,
-            oi.product_name,
-            oi.product_price as unit_price,
-            COALESCE(p.initial_stock, 0) as initial_stock,
-            SUM(oi.quantity) as total_quantity,
-            SUM(oi.product_price * oi.quantity) as total_revenue_per_item
-        FROM order_items oi
-        JOIN orders o ON oi.order_id = o.id
-        LEFT JOIN products p ON oi.product_id = p.id
+            ol.event_product_id as product_id,
+            COALESCE(ep.product_code, '') as product_code,
+            ep.name as product_name,
+            ol.unit_price,
+            COALESCE((
+                SELECT SUM(sm.qty) FROM stock_movements sm
+                WHERE sm.event_product_id = ol.event_product_id
+                  AND sm.from_location = '外部' AND sm.to_location = '现场仓'
+            ), 0) as initial_stock,
+            SUM(ol.qty) as total_quantity,
+            SUM(ol.unit_price * ol.qty) as total_revenue_per_item
+        FROM order_lines ol
+        JOIN orders o ON ol.order_id = o.id
+        JOIN event_products ep ON ol.event_product_id = ep.id
         WHERE o.event_id = ? AND o.status != 'cancelled'
-        GROUP BY oi.product_id, oi.product_name, oi.product_price, p.product_code, p.initial_stock
+        GROUP BY ol.event_product_id, ep.product_code, ep.name, ol.unit_price
         ORDER BY total_revenue_per_item DESC
         "#,
     )
@@ -488,6 +505,8 @@ async fn download_sales_summary(
     // 5. 写入数据
     let mut start_row = header_row_idx + 1;
     let mut sum_quantity: i64 = 0;
+    // 注意：这里的金额是**元**（f64），和上面的 API 响应（分，i64）不一样是有意的——
+    // Excel 单元格是给人看的，所以单价/销售额/总计都除以 100 换算成元；API 响应保持分。
     let mut sum_revenue: f64 = 0.0;
 
     for item in details.iter() {
@@ -501,7 +520,12 @@ async fn download_sales_summary(
             item.initial_stock as f64,
             &center_format,
         );
-        let _ = worksheet.write_number_with_format(start_row, 4, item.unit_price, &currency_format);
+        let _ = worksheet.write_number_with_format(
+            start_row,
+            4,
+            item.unit_price as f64 / 100.0,
+            &currency_format,
+        );
         let _ = worksheet.write_number_with_format(
             start_row,
             5,
@@ -511,7 +535,7 @@ async fn download_sales_summary(
         let _ = worksheet.write_number_with_format(
             start_row,
             6,
-            item.total_revenue_per_item,
+            item.total_revenue_per_item as f64 / 100.0,
             &currency_format,
         );
 
@@ -519,7 +543,7 @@ async fn download_sales_summary(
         let _ = worksheet.write_blank(start_row, 3, &text_format);
 
         sum_quantity += item.total_quantity;
-        sum_revenue += item.total_revenue_per_item;
+        sum_revenue += item.total_revenue_per_item as f64 / 100.0;
         start_row += 1;
     }
 
@@ -629,4 +653,61 @@ fn check_read_permission(claims: &Claims, event_id: i64) -> Result<(), (StatusCo
 
     // 未知角色
     Err((StatusCode::FORBIDDEN, "Access denied"))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::test_support::{
+        admin_token, json_request, read_json, seed_event_and_product, test_router_with,
+    };
+    use axum::http::StatusCode;
+    use serde_json::json;
+    use tower::ServiceExt;
+
+    /// 这条守的不是统计正确性，而是「查询还认识新 schema」。
+    /// 全仓是运行时 SQL，schema 改了编译器一个都抓不到，只会在运行时炸——
+    /// 而 stats 是没人写过测试的路径，正是最容易烂掉的地方。
+    ///
+    /// 必须让查询真的跑起来：不种事件的话 handler 会在「Event not found」提前返回，
+    /// 坏 SQL 根本不会被 prepare，这条测试就白守了。种一场展会并下一单，让
+    /// summary / time series / 进货子查询都吃进真实数据。
+    #[tokio::test]
+    async fn sales_summary_runs_against_the_new_schema() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _ep_b) = seed_event_and_product(&pool).await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None,
+                json!({"items": [{"product_id": ep_a, "quantity": 2}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+
+        let res = router
+            .oneshot(json_request(
+                "GET",
+                &format!("/api/events/{event_id}/sales_summary"),
+                Some(&admin_token()),
+                json!({}),
+            ))
+            .await
+            .unwrap();
+        assert_ne!(
+            res.status(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SQL 引用了不存在的表/列"
+        );
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let body = read_json(res).await;
+        assert_eq!(
+            body["total_revenue"], 6000,
+            "2 件 × 3000 分，API 响应保持分"
+        );
+    }
 }

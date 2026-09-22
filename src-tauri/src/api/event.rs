@@ -237,7 +237,7 @@ async fn create_event(
     let result = query_as::<_, Event>(
         r#"
         INSERT INTO events (name, event_date, location, vendor_password, payment_qr_code_path, status)
-        VALUES (?, ?, ?, ?, ?, '未进行')
+        VALUES (?, ?, ?, ?, ?, '筹备')
         RETURNING *
         "#
     )
@@ -384,7 +384,7 @@ async fn update_status(
 ) -> impl IntoResponse {
     // [修复] 验证状态值只能是允许的值 ✓
     match payload.status.as_str() {
-        "未进行" | "进行中" | "已结束" => {
+        "筹备" | "进行中" | "已结算" => {
             // 使用 RETURNING 子句原子地更新并获取完整数据
             let result = query_as::<_, Event>(
                 r#"
@@ -411,7 +411,7 @@ async fn update_status(
             // 无效的状态值
             (
                 StatusCode::BAD_REQUEST,
-                Json(json!({"error": "Invalid status. Must be one of: 未进行, 进行中, 已结束"})),
+                Json(json!({"error": "Invalid status. Must be one of: 筹备, 进行中, 已结算"})),
             )
                 .into_response()
         }
@@ -453,49 +453,10 @@ async fn delete_event(
         }
     };
 
-    // 按外键依赖顺序删除: order_items -> orders -> products -> events
-    // 每一步都检查错误，失败则回滚
-    if let Err(err) = sqlx::query(
-        "DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE event_id = ?)",
-    )
-    .bind(id)
-    .execute(&mut *tx)
-    .await
-    {
-        eprintln!("Failed to delete order_items for event {}: {:?}", id, err);
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": "Failed to delete order items"})),
-        )
-            .into_response();
-    }
-
-    if let Err(err) = sqlx::query("DELETE FROM orders WHERE event_id = ?")
-        .bind(id)
-        .execute(&mut *tx)
-        .await
-    {
-        eprintln!("Failed to delete orders for event {}: {:?}", id, err);
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": "Failed to delete orders"})),
-        )
-            .into_response();
-    }
-
-    if let Err(err) = sqlx::query("DELETE FROM products WHERE event_id = ?")
-        .bind(id)
-        .execute(&mut *tx)
-        .await
-    {
-        eprintln!("Failed to delete products for event {}: {:?}", id, err);
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": "Failed to delete products"})),
-        )
-            .into_response();
-    }
-
+    // 只删 events 这一行。新 schema 里 event_products / orders / journals / lots
+    // 对 events 都是 ON DELETE CASCADE，order_lines / order_lots 又对各自父表
+    // CASCADE，所以旧代码手工按 order_items -> orders -> products 逐表删子表已经
+    // 不需要了。保留事务是为了「要么全删、要么全留」的原子性。
     if let Err(err) = query("DELETE FROM events WHERE id = ?")
         .bind(id)
         .execute(&mut *tx)

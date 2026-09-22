@@ -62,55 +62,6 @@ pub struct Event {
 }
 
 // ==========================================
-// 7. 统计相关 DTO
-// ==========================================
-
-// 销售详情统计（对应 Python 的 summary_list）
-// api/stats.rs 里目前用的是本地私有结构体（ProductSalesItem 等），没有复用这几个共享
-// DTO；暂时没人构造。留着是因为它们的字段和命名更贴近对外 API 形状，②/③a 重做统计
-// 响应类型化时大概率会把 stats.rs 里的私有结构体换成（或对齐到）这几个。
-#[allow(dead_code)]
-#[derive(Debug, Clone, Serialize, FromRow)]
-pub struct ProductSalesDetail {
-    pub product_id: i64,
-    pub product_code: String,
-    pub product_name: String,
-    pub unit_price: f64,
-    pub initial_stock: i64,
-    pub total_quantity: i64,
-    pub total_revenue_per_item: f64,
-}
-
-// 时间序列数据点；同上，暂未被 api/stats.rs 复用，见 ProductSalesDetail 处的说明。
-#[allow(dead_code)]
-#[derive(Debug, Clone, Serialize, FromRow)]
-pub struct SalesTimeSeries {
-    pub time_bucket: String,
-    pub revenue: f64,
-}
-
-// 汇总统计；同上，暂未被 api/stats.rs 复用，见 ProductSalesDetail 处的说明。
-#[allow(dead_code)]
-#[derive(Debug, Clone, Serialize, FromRow)]
-pub struct SalesSummary {
-    pub total_revenue: f64,
-    pub completed_orders_count: i64,
-    pub total_items_sold: i64,
-}
-
-// 完整的销售报告（对应 Python 的 _get_sales_summary_data 返回值）；同上，暂未被
-// api/stats.rs 复用，见 ProductSalesDetail 处的说明。
-#[allow(dead_code)]
-#[derive(Debug, Serialize)]
-pub struct SalesReport {
-    pub event_id: i64,
-    pub event_name: String,
-    pub total_revenue: f64,
-    pub summary: Vec<ProductSalesDetail>,
-    pub timeseries: Vec<SalesTimeSeries>,
-}
-
-// ==========================================
 // 社团（货主的单位）
 // ==========================================
 // 消费方在 Task 4/5（社团/选品 handler），此前无人构造。

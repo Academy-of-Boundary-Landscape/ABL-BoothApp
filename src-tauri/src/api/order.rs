@@ -197,6 +197,23 @@ async fn create_order(
         }
     }
 
+    // 只有「进行中」的展会能下单：已结算的展会账本已冻结，往里写销售 journal
+    // 会污染一本本该冻结的账（Task 6 审查者列的 Important 敞口）。放在事务之前，
+    // 省得白拿写锁。
+    let event_status: Option<String> = query_scalar("SELECT status FROM events WHERE id = ?")
+        .bind(event_id)
+        .fetch_optional(&state.db)
+        .await?;
+    match event_status.as_deref() {
+        Some("进行中") => {}
+        Some(other) => {
+            return Err(ApiError::Conflict(format!(
+                "展会当前状态为「{other}」，仅「进行中」的展会可以下单"
+            )));
+        }
+        None => return Err(ApiError::NotFound("展会不存在".into())),
+    }
+
     // 防超卖的检查方式跟着模型变了：旧代码靠一条原子 UPDATE；新模型是
     // 「查余额 → 插移动」两步。SQLite 单写者模型下这仍然安全，前提是两步在
     // 同一个 BEGIN IMMEDIATE 事务里——默认的 deferred 事务在第一次写之前不持写锁。
@@ -912,6 +929,41 @@ mod tests {
             5,
             "货必须回来"
         );
+    }
+
+    #[tokio::test]
+    async fn creating_an_order_on_a_settled_event_is_refused() {
+        // Task 7 转来的守卫：冻结（已结算）的账本不能再写销售 journal。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+
+        sqlx::query("UPDATE events SET status = '已结算' WHERE id = ?")
+            .bind(event_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let res = router
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None,
+                json!({"items": [{"product_id": ep_a, "quantity": 1}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+
+        let body = read_json(res).await;
+        let msg = body["error"].as_str().unwrap();
+        assert!(msg.contains("已结算"), "错误消息必须说明当前状态: {msg}");
+
+        // 被拒的订单不能留下任何订单或 journal
+        let orders: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM orders")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(orders, 0);
     }
 
     #[tokio::test]

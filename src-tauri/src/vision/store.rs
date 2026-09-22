@@ -338,7 +338,7 @@ impl VisionStore {
                     FROM image_embeddings ie
                     JOIN master_product_images mpi ON mpi.id = ie.image_id
                     JOIN master_products mp ON mp.id = mpi.master_product_id
-                    JOIN products p ON p.master_product_id = mp.id
+                    JOIN event_products p ON p.master_product_id = mp.id
                     WHERE ie.model_version = ?
                       AND p.event_id = ?
                       AND mp.is_active = 1
