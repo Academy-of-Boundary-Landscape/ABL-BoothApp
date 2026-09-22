@@ -68,6 +68,12 @@ struct UpdateStatusRequest {
     /// 落点是「确认收款」这一步（spec 4.3）：现场的手势本来就是
     /// 「报个数、收钱、点完成」，拆成两步只会多一次忘记。
     final_amount: Option<i64>,
+    /// 要拆掉的套装实例（`order_lots.id`）。
+    ///
+    /// **拆 ≠ 改总价。** 改总价把差额记成手工折让、按 spec 4.4 整笔落本社团；
+    /// 而「这个套装不该套用」是纠错，钱必须回到真正的货主头上。代卖货上
+    /// 只改总价会让货主少拿钱、差额挂在本社团头上——金额总数对，归属错。
+    unapply_lot_ids: Option<Vec<i64>>,
 }
 
 #[derive(Deserialize)]
@@ -83,6 +89,7 @@ struct OrderResponse {
     #[serde(flatten)]
     order: OrderRow,
     items: Vec<OrderItemResponse>,
+    lots: Vec<OrderLotResponse>,
 }
 
 #[derive(Serialize)]
@@ -134,6 +141,45 @@ impl From<OrderItemRow> for OrderItemResponse {
     }
 }
 
+/// 订单上的一个套装**实例**。
+///
+/// `id` 是 `order_lots.id` 而不是 `lots.id`——同一个套装可以套用多次
+/// （「任选3本100」买 6 本 = 两个实例），拆的时候必须能指到具体是哪一次。
+#[derive(Serialize)]
+struct OrderLotResponse {
+    id: i64,
+    /// 原始 Lot 的 id。套装被删掉后是 null（`ON DELETE SET NULL`），名字和价格仍在。
+    lot_id: Option<i64>,
+    name: String,
+    /// 套装价（分），下单那一刻的快照。
+    price: i64,
+    /// 成分按原价的合计（分）。**摊主拆掉它时应收会回到这个数**，
+    /// 收款弹窗靠它在本地把新的应收算出来，不必多一次往返。
+    original_amount: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct OrderLotRow {
+    id: i64,
+    order_id: i64,
+    lot_id: Option<i64>,
+    name: String,
+    price: i64,
+    original_amount: i64,
+}
+
+impl From<OrderLotRow> for OrderLotResponse {
+    fn from(row: OrderLotRow) -> Self {
+        OrderLotResponse {
+            id: row.id,
+            lot_id: row.lot_id,
+            name: row.name,
+            price: row.price,
+            original_amount: row.original_amount,
+        }
+    }
+}
+
 const ITEMS_BY_ORDER: &str = "
 SELECT ol.id, ol.order_id, ol.event_product_id, ol.qty, ol.unit_price,
        ol.allocated_amount, ol.paid_amount,
@@ -161,6 +207,27 @@ WHERE o.event_id = ?
 ORDER BY ol.order_id, ol.id
 ";
 
+const LOTS_BY_ORDER: &str = "
+SELECT olo.id, olo.order_id, olo.lot_id, olo.name, olo.price,
+       COALESCE(SUM(ol.unit_price * ol.qty), 0) AS original_amount
+FROM order_lots olo
+LEFT JOIN order_lines ol ON ol.order_lot_id = olo.id
+WHERE olo.order_id = ?
+GROUP BY olo.id, olo.order_id, olo.lot_id, olo.name, olo.price
+ORDER BY olo.id
+";
+
+const LOTS_BY_EVENT: &str = "
+SELECT olo.id, olo.order_id, olo.lot_id, olo.name, olo.price,
+       COALESCE(SUM(ol.unit_price * ol.qty), 0) AS original_amount
+FROM order_lots olo
+JOIN orders o ON o.id = olo.order_id
+LEFT JOIN order_lines ol ON ol.order_lot_id = olo.id
+WHERE o.event_id = ?
+GROUP BY olo.id, olo.order_id, olo.lot_id, olo.name, olo.price
+ORDER BY olo.order_id, olo.id
+";
+
 /// 读回单个订单 + 它的行，组装成响应。`update_order_status` 用。
 async fn load_order_response(pool: &SqlitePool, order_id: i64) -> ApiResult<OrderResponse> {
     let order: OrderRow = query_as("SELECT * FROM orders WHERE id = ?")
@@ -177,7 +244,15 @@ async fn load_order_response(pool: &SqlitePool, order_id: i64) -> ApiResult<Orde
         .map(Into::into)
         .collect();
 
-    Ok(OrderResponse { order, items })
+    let lots: Vec<OrderLotResponse> = query_as::<_, OrderLotRow>(LOTS_BY_ORDER)
+        .bind(order_id)
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(Into::into)
+        .collect();
+
+    Ok(OrderResponse { order, items, lots })
 }
 
 // ==========================================
@@ -308,7 +383,33 @@ async fn create_order(
 
     tx.commit().await?;
 
-    Ok((StatusCode::CREATED, Json(OrderResponse { order, items })))
+    // 成分原价合计从 priced.lines 聚合，和分摊用的是同一组数。
+    let lots_response: Vec<OrderLotResponse> = priced
+        .lots
+        .iter()
+        .enumerate()
+        .map(|(k, lot)| OrderLotResponse {
+            id: order_lot_ids[k],
+            lot_id: Some(lot.lot_id),
+            name: lot.name.clone(),
+            price: lot.price.cents(),
+            original_amount: priced
+                .lines
+                .iter()
+                .filter(|l| l.lot_index == Some(k))
+                .map(|l| l.unit_price.cents() * l.qty)
+                .sum(),
+        })
+        .collect();
+
+    Ok((
+        StatusCode::CREATED,
+        Json(OrderResponse {
+            order,
+            items,
+            lots: lots_response,
+        }),
+    ))
 }
 
 // ==========================================
@@ -358,6 +459,16 @@ async fn list_orders(
         items_map.entry(oid).or_default().push(row.into());
     }
 
+    let lot_rows: Vec<OrderLotRow> = query_as(LOTS_BY_EVENT)
+        .bind(event_id)
+        .fetch_all(&state.db)
+        .await?;
+    let mut lots_map: HashMap<i64, Vec<OrderLotResponse>> = HashMap::new();
+    for row in lot_rows {
+        let oid = row.order_id;
+        lots_map.entry(oid).or_default().push(row.into());
+    }
+
     let result = orders
         .into_iter()
         .map(|order| {
@@ -365,6 +476,7 @@ async fn list_orders(
             OrderResponse {
                 order,
                 items: items_map.remove(&oid).unwrap_or_default(),
+                lots: lots_map.remove(&oid).unwrap_or_default(),
             }
         })
         .collect();
@@ -390,6 +502,11 @@ async fn update_order_status(
     // 任何状态都不能退回 pending。
     if target == "pending" {
         return Err(ApiError::BadRequest("不能退回待处理".into()));
+    }
+
+    // 静默忽略一个用户传了的字段是会咬人的。取消路径上拆套装没有意义。
+    if payload.unapply_lot_ids.is_some() && target != "completed" {
+        return Err(ApiError::BadRequest("只有在完成订单时才能拆套装".into()));
     }
 
     let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
@@ -419,6 +536,54 @@ async fn update_order_status(
                 .filter(|c| !c.is_empty())
                 .map(str::to_string)
                 .ok_or_else(|| ApiError::BadRequest("完成订单必须提供收款渠道".into()))?;
+
+            // 拆套装（spec 4.3 的辅助通道）。必须排在读 solved_amount 之前——
+            // 拆完 solved 会变，而手工折让是相对**新的** solved 算的。
+            if let Some(ids) = payload.unapply_lot_ids.as_deref() {
+                let mut ids = ids.to_vec();
+                ids.sort_unstable();
+                ids.dedup(); // 传重了不该变成「第二次找不到」的 400
+                for order_lot_id in &ids {
+                    let belongs: Option<i64> =
+                        query_scalar("SELECT id FROM order_lots WHERE id = ? AND order_id = ?")
+                            .bind(order_lot_id)
+                            .bind(order_id)
+                            .fetch_optional(&mut *tx)
+                            .await?;
+                    belongs
+                        .ok_or_else(|| ApiError::BadRequest("要拆的套装不属于这张订单".into()))?;
+
+                    // 成分行金额恢复成「单价 × 件数」，并解除归属。
+                    // **不重新求解**：纯拆解，结果唯一，也不依赖当前的 Lot 配置
+                    // （摊主可能刚把那个 Lot 改了或删了）。
+                    query(
+                        "UPDATE order_lines
+                         SET allocated_amount = unit_price * qty, order_lot_id = NULL
+                         WHERE order_lot_id = ?",
+                    )
+                    .bind(order_lot_id)
+                    .execute(&mut *tx)
+                    .await?;
+
+                    query("DELETE FROM order_lots WHERE id = ?")
+                        .bind(order_lot_id)
+                        .execute(&mut *tx)
+                        .await?;
+                }
+
+                // solved 重新从各行聚合。**gross 不动**——原价合计不因为拆而改变。
+                // 货那一侧同样一个字不动（spec 4.3 第一条约束）。
+                query(
+                    "UPDATE orders SET solved_amount =
+                       (SELECT COALESCE(SUM(allocated_amount), 0)
+                        FROM order_lines WHERE order_id = ?)
+                     WHERE id = ?",
+                )
+                .bind(order_id)
+                .bind(order_id)
+                .execute(&mut *tx)
+                .await?;
+            }
 
             let solved: i64 = query_scalar("SELECT solved_amount FROM orders WHERE id = ?")
                 .bind(order_id)
@@ -1474,5 +1639,293 @@ mod tests {
                 .unwrap(),
             5
         );
+    }
+
+    /// 给代卖社团（黄昏堂，id=2）的商品配一个「任选2件30」（原价 40），返回 lot_id。
+    ///
+    /// 刻意用**代卖**货：自家货上拆不拆都对得上，只有代卖货能暴露归属错位。
+    async fn seed_consignment_lot(pool: &sqlx::SqlitePool, event_id: i64, ep_b: i64) -> i64 {
+        crate::test_support::seed_lot(pool, event_id, "代卖任选2件30", 2, 3000, &[ep_b]).await
+    }
+
+    #[tokio::test]
+    async fn the_order_response_carries_its_lot_instances() {
+        // 摊主端的收款弹窗要按实例列勾选框，所以响应里必须有实例 id、名字、
+        // 套装价和成分原价合计——最后一个是「拆掉它应收会回到多少」。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _ep_a, ep_b) = seed_event_and_product(&pool).await;
+        seed_consignment_lot(&pool, event_id, ep_b).await;
+        let _order_id = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_b, "quantity": 2}]),
+        )
+        .await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "GET",
+                &format!("/api/events/{event_id}/orders?status=pending"),
+                Some(&admin_token()),
+                json!({}),
+            ))
+            .await
+            .unwrap();
+        let body = read_json(res).await;
+        let lots = body[0]["lots"].as_array().unwrap();
+        assert_eq!(lots.len(), 1);
+        assert_eq!(lots[0]["name"], "代卖任选2件30");
+        assert_eq!(lots[0]["price"], 3000);
+        assert_eq!(lots[0]["original_amount"], 4000, "拆掉它应收回到 40");
+        assert!(lots[0]["id"].as_i64().unwrap() > 0);
+    }
+
+    #[tokio::test]
+    async fn unapplying_a_lot_puts_the_money_back_on_the_real_owner() {
+        // 这是整条通道存在的理由。对照组写在断言里：只改实收不拆，
+        // 代卖社团仍然只拿 30，多出的 10 会挂在本社团头上。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _ep_a, ep_b) = seed_event_and_product(&pool).await;
+        seed_consignment_lot(&pool, event_id, ep_b).await;
+        let token = admin_token();
+        let order_id = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_b, "quantity": 2}]),
+        )
+        .await;
+
+        let lot_instance: i64 = sqlx::query_scalar("SELECT id FROM order_lots WHERE order_id = ?")
+            .bind(order_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "现金", "unapply_lot_ids": [lot_instance]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = read_json(res).await;
+        assert_eq!(body["solved_amount"], 4000, "应收回到原价");
+        assert_eq!(body["final_amount"], 4000, "没另外改实收，就跟着新的应收走");
+        assert_eq!(body["gross_amount"], 4000, "原价合计从来没变过");
+        assert_eq!(body["lots"].as_array().unwrap().len(), 0, "实例被拆掉了");
+
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::SocietyDue(2))
+                .await
+                .unwrap(),
+            Money::from_cents(-4000),
+            "代卖社团拿全价——只改实收的话这里会是 -3000"
+        );
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::SocietyDue(1))
+                .await
+                .unwrap(),
+            Money::ZERO,
+            "本社团完全不该被牵连——只改实收的话这里会是 -1000"
+        );
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::Received("现金".into()))
+                .await
+                .unwrap(),
+            Money::from_cents(4000)
+        );
+
+        // 货那一侧一个字没动（spec 4.3 第一条约束）
+        assert_eq!(
+            crate::domain::ledger::onsite_balance(&pool, ep_b)
+                .await
+                .unwrap(),
+            3
+        );
+    }
+
+    #[tokio::test]
+    async fn unapplying_one_instance_leaves_the_other_alone() {
+        // 「任选2件30」买 4 件 = 两个实例。只拆一个。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _ep_a, ep_b) = seed_event_and_product(&pool).await;
+        seed_consignment_lot(&pool, event_id, ep_b).await;
+        let token = admin_token();
+        let order_id = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_b, "quantity": 4}]),
+        )
+        .await;
+
+        let instances: Vec<i64> =
+            sqlx::query_scalar("SELECT id FROM order_lots WHERE order_id = ? ORDER BY id")
+                .bind(order_id)
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(instances.len(), 2, "8000 的货套两次 30，应收 6000");
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "现金", "unapply_lot_ids": [instances[0]]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = read_json(res).await;
+        assert_eq!(
+            body["solved_amount"], 7000,
+            "一个实例回到 40，另一个还是 30"
+        );
+        assert_eq!(body["lots"].as_array().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn unapplying_a_lot_that_belongs_to_another_order_is_refused() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _ep_a, ep_b) = seed_event_and_product(&pool).await;
+        seed_consignment_lot(&pool, event_id, ep_b).await;
+        let token = admin_token();
+        let first = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_b, "quantity": 2}]),
+        )
+        .await;
+        let second = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_b, "quantity": 2}]),
+        )
+        .await;
+
+        let other: i64 = sqlx::query_scalar("SELECT id FROM order_lots WHERE order_id = ?")
+            .bind(first)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{second}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "现金", "unapply_lot_ids": [other]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+        // 整体回滚：第一张单的实例还在，第二张单也没被完成
+        let still: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM order_lots WHERE order_id = ?")
+            .bind(first)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(still, 1);
+        let status: String = sqlx::query_scalar("SELECT status FROM orders WHERE id = ?")
+            .bind(second)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(status, "pending");
+    }
+
+    #[tokio::test]
+    async fn unapplying_and_then_discounting_compose() {
+        // 拆完之后摊主还想让价：那一步才走 4.4 的「全额落本社团」。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _ep_a, ep_b) = seed_event_and_product(&pool).await;
+        seed_consignment_lot(&pool, event_id, ep_b).await;
+        let token = admin_token();
+        let order_id = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_b, "quantity": 2}]),
+        )
+        .await;
+
+        let instance: i64 = sqlx::query_scalar("SELECT id FROM order_lots WHERE order_id = ?")
+            .bind(order_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "现金",
+                   "unapply_lot_ids": [instance], "final_amount": 3500}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::SocietyDue(2))
+                .await
+                .unwrap(),
+            Money::from_cents(-4000),
+            "货主仍然按自己的定价全额入账"
+        );
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::SocietyDue(1))
+                .await
+                .unwrap(),
+            Money::from_cents(500),
+            "这 5 块是摊主自己让的，落本社团"
+        );
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::Received("现金".into()))
+                .await
+                .unwrap(),
+            Money::from_cents(3500)
+        );
+    }
+
+    #[tokio::test]
+    async fn unapply_is_refused_on_a_cancellation() {
+        // 静默忽略一个字段是会咬人的：取消路径上拆套装没有意义，明确拒绝。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _ep_a, ep_b) = seed_event_and_product(&pool).await;
+        seed_consignment_lot(&pool, event_id, ep_b).await;
+        let token = admin_token();
+        let order_id = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_b, "quantity": 2}]),
+        )
+        .await;
+        let instance: i64 = sqlx::query_scalar("SELECT id FROM order_lots WHERE order_id = ?")
+            .bind(order_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "cancelled", "unapply_lot_ids": [instance]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     }
 }
