@@ -26,6 +26,10 @@ use crate::{
             MoneyLeg, StockLeg,
         },
         money::Money,
+        pricing::{
+            cart_lines, ensure_event_selling, load_lots, merge_items, price_cart, resolve_cart,
+            CartItemRequest,
+        },
     },
     error::{ApiError, ApiResult},
     state::AppState,
@@ -50,14 +54,8 @@ pub fn router() -> Router<AppState> {
 // ==========================================
 
 #[derive(Deserialize)]
-struct CreateOrderItemRequest {
-    product_id: i64,
-    quantity: i64,
-}
-
-#[derive(Deserialize)]
 struct CreateOrderRequest {
-    items: Vec<CreateOrderItemRequest>,
+    items: Vec<CartItemRequest>,
 }
 
 #[derive(Deserialize)]
@@ -92,15 +90,11 @@ struct OrderItemResponse {
     product_image_url: Option<String>,
     allocated_amount: i64,
     paid_amount: i64,
-}
-
-/// 下单时查摊位商品用的行：id / 单价 / 名字 / 图。
-#[derive(sqlx::FromRow)]
-struct ProductRow {
-    id: i64,
-    unit_price: i64,
-    name: String,
-    image_url: Option<String>,
+    /// 这一行进了哪个套装。`None` = 散卖。
+    ///
+    /// 同一个商品可能在一张订单里出现两次（2 件进套装、1 件散着，spec 4.5），
+    /// 摊主必须看得出哪一行是哪一种，否则配货时会以为系统重复计数了。
+    lot_name: Option<String>,
 }
 
 /// `order_lines JOIN event_products JOIN master_products` 的查询行。
@@ -115,6 +109,7 @@ struct OrderItemRow {
     paid_amount: i64,
     product_name: String,
     product_image_url: Option<String>,
+    lot_name: Option<String>,
 }
 
 impl From<OrderItemRow> for OrderItemResponse {
@@ -128,6 +123,7 @@ impl From<OrderItemRow> for OrderItemResponse {
             product_image_url: row.product_image_url,
             allocated_amount: row.allocated_amount,
             paid_amount: row.paid_amount,
+            lot_name: row.lot_name,
         }
     }
 }
@@ -135,10 +131,12 @@ impl From<OrderItemRow> for OrderItemResponse {
 const ITEMS_BY_ORDER: &str = "
 SELECT ol.id, ol.order_id, ol.event_product_id, ol.qty, ol.unit_price,
        ol.allocated_amount, ol.paid_amount,
-       ep.name AS product_name, mp.image_url AS product_image_url
+       ep.name AS product_name, mp.image_url AS product_image_url,
+       olo.name AS lot_name
 FROM order_lines ol
 JOIN event_products ep ON ep.id = ol.event_product_id
 JOIN master_products mp ON mp.id = ep.master_product_id
+LEFT JOIN order_lots olo ON olo.id = ol.order_lot_id
 WHERE ol.order_id = ?
 ORDER BY ol.id
 ";
@@ -146,10 +144,12 @@ ORDER BY ol.id
 const ITEMS_BY_EVENT: &str = "
 SELECT ol.id, ol.order_id, ol.event_product_id, ol.qty, ol.unit_price,
        ol.allocated_amount, ol.paid_amount,
-       ep.name AS product_name, mp.image_url AS product_image_url
+       ep.name AS product_name, mp.image_url AS product_image_url,
+       olo.name AS lot_name
 FROM order_lines ol
 JOIN event_products ep ON ep.id = ol.event_product_id
 JOIN master_products mp ON mp.id = ep.master_product_id
+LEFT JOIN order_lots olo ON olo.id = ol.order_lot_id
 JOIN orders o ON o.id = ol.order_id
 WHERE o.event_id = ?
 ORDER BY ol.order_id, ol.id
@@ -182,137 +182,112 @@ async fn create_order(
     Path(event_id): Path<i64>,
     Json(payload): Json<CreateOrderRequest>,
 ) -> ApiResult<impl IntoResponse> {
-    if payload.items.is_empty() {
-        return Err(ApiError::BadRequest("订单至少需要一件商品".into()));
+    let merged = merge_items(&payload.items)?;
+
+    // 展会状态放在事务之前，省得白拿写锁。
+    {
+        let mut conn = state.db.acquire().await?;
+        ensure_event_selling(&mut conn, event_id).await?;
     }
 
-    // 同一商品在 items 里出现多次必须先合并：否则两行各自过库存检查、合起来超卖。
-    let mut merged: Vec<(i64, i64)> = Vec::new();
-    for item in &payload.items {
-        if item.quantity <= 0 {
-            return Err(ApiError::BadRequest("数量必须为正".into()));
-        }
-        match merged.iter_mut().find(|(pid, _)| *pid == item.product_id) {
-            // 合并数量也必须检查溢出：这是全函数唯一一处旧式算术，而
-            // create_order 是公开未鉴权端点，release 回绕、debug 直接 panic。
-            Some((_, qty)) => {
-                *qty = qty
-                    .checked_add(item.quantity)
-                    .ok_or_else(|| ApiError::BadRequest("商品数量累加溢出".into()))?;
-            }
-            None => merged.push((item.product_id, item.quantity)),
-        }
-    }
+    // 防超卖是「查余额 → 插移动」两步，SQLite 单写者模型下仍然安全，前提是
+    // 两步在同一个 BEGIN IMMEDIATE 事务里——默认的 deferred 事务在第一次写之前不持写锁。
+    let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
+    let resolved = resolve_cart(&mut tx, event_id, &merged).await?;
 
-    // 只有「进行中」的展会能下单：已结算的展会账本已冻结，往里写销售 journal
-    // 会污染一本本该冻结的账（Task 6 审查者列的 Important 敞口）。放在事务之前，
-    // 省得白拿写锁。
-    let event_status: Option<String> = query_scalar("SELECT status FROM events WHERE id = ?")
-        .bind(event_id)
-        .fetch_optional(&state.db)
-        .await?;
-    match event_status.as_deref() {
-        Some("进行中") => {}
-        Some(other) => {
+    let mut stock_legs: Vec<StockLeg> = Vec::with_capacity(resolved.len());
+    for r in &resolved {
+        let left = onsite_balance(&mut *tx, r.product.id).await?;
+        if left < r.qty {
             return Err(ApiError::Conflict(format!(
-                "展会当前状态为「{other}」，仅「进行中」的展会可以下单"
+                "「{}」库存不足",
+                r.product.name
             )));
         }
-        None => return Err(ApiError::NotFound("展会不存在".into())),
-    }
-
-    // 防超卖的检查方式跟着模型变了：旧代码靠一条原子 UPDATE；新模型是
-    // 「查余额 → 插移动」两步。SQLite 单写者模型下这仍然安全，前提是两步在
-    // 同一个 BEGIN IMMEDIATE 事务里——默认的 deferred 事务在第一次写之前不持写锁。
-    let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
-
-    // resolved: (商品行, 数量, 该行金额)。行金额 = unit_price × qty，
-    // ②-1 里 allocated = paid = unit_price × qty。
-    let mut resolved: Vec<(ProductRow, i64, i64)> = Vec::with_capacity(merged.len());
-    let mut stock_legs: Vec<StockLeg> = Vec::with_capacity(merged.len());
-    let mut gross: i64 = 0;
-
-    for (product_id, qty) in &merged {
-        let row: ProductRow = query_as(
-            "SELECT ep.id, ep.unit_price, ep.name, mp.image_url
-             FROM event_products ep
-             JOIN master_products mp ON mp.id = ep.master_product_id
-             WHERE ep.id = ? AND ep.event_id = ?",
-        )
-        .bind(*product_id)
-        .bind(event_id)
-        .fetch_optional(&mut *tx)
-        .await?
-        .ok_or_else(|| ApiError::NotFound("商品不存在或不属于本场展会".into()))?;
-
-        let left = onsite_balance(&mut *tx, row.id).await?;
-        if left < *qty {
-            return Err(ApiError::Conflict(format!("「{}」库存不足", row.name)));
-        }
-
-        let line_total = row
-            .unit_price
-            .checked_mul(*qty)
-            .ok_or_else(|| ApiError::BadRequest("金额溢出".into()))?;
-        gross = gross
-            .checked_add(line_total)
-            .ok_or_else(|| ApiError::BadRequest("金额溢出".into()))?;
-
         stock_legs.push(StockLeg {
-            event_product_id: row.id,
+            event_product_id: r.product.id,
             from: Location::OnSite,
             to: Location::Customer,
-            qty: *qty,
+            qty: r.qty,
         });
-        resolved.push((row, *qty, line_total));
     }
 
-    // ②-1 没有 Lot 也没有折让：gross = solved = final。
-    let solved = gross;
-    let final_amount = solved;
+    // 求解 + 分摊。**下单和 /quote 走的是同一份 price_cart**，所以顾客在购物车里
+    // 看到的价和这里算出来的价不可能因为实现漂移而分叉。
+    let lots = load_lots(&mut tx, event_id).await?;
+    let priced = price_cart(&cart_lines(&resolved), &lots)?;
 
+    // 手工覆盖在「确认收款」那一步才发生（spec 4.3），所以下单时 final = solved。
     let order: OrderRow = query_as(
         "INSERT INTO orders (event_id, status, gross_amount, solved_amount, final_amount)
          VALUES (?, 'pending', ?, ?, ?) RETURNING *",
     )
     .bind(event_id)
-    .bind(gross)
-    .bind(solved)
-    .bind(final_amount)
+    .bind(priced.gross.cents())
+    .bind(priced.solved.cents())
+    .bind(priced.solved.cents())
     .fetch_one(&mut *tx)
     .await?;
     let order_id = order.id;
 
-    let mut items = Vec::with_capacity(resolved.len());
-    for (row, qty, line_total) in &resolved {
-        let line_id: i64 = query_scalar(
-            "INSERT INTO order_lines
-               (order_id, event_product_id, qty, unit_price, allocated_amount, paid_amount)
-             VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+    // Lot 实例：名字和价格在这里**快照**下来。之后摊主改 Lot 价、甚至删掉这个 Lot，
+    // 都不影响已经下了的单（`order_lots.lot_id` 是 ON DELETE SET NULL）。
+    let mut order_lot_ids: Vec<i64> = Vec::with_capacity(priced.lots.len());
+    for lot in &priced.lots {
+        let id: i64 = query_scalar(
+            "INSERT INTO order_lots (order_id, lot_id, name, price) VALUES (?, ?, ?, ?) RETURNING id",
         )
         .bind(order_id)
-        .bind(row.id)
-        .bind(*qty)
-        .bind(row.unit_price)
-        .bind(*line_total)
-        .bind(*line_total)
+        .bind(lot.lot_id)
+        .bind(&lot.name)
+        .bind(lot.price.cents())
+        .fetch_one(&mut *tx)
+        .await?;
+        order_lot_ids.push(id);
+    }
+
+    // 商品快照按 event_product_id 索引：拆出来的两行共用同一份名字和图。
+    let snapshot: HashMap<i64, &crate::domain::pricing::CartProduct> = resolved
+        .iter()
+        .map(|r| (r.product.id, &r.product))
+        .collect();
+
+    let mut items = Vec::with_capacity(priced.lines.len());
+    for line in &priced.lines {
+        let order_lot_id = line.lot_index.map(|k| order_lot_ids[k]);
+        let line_id: i64 = query_scalar(
+            "INSERT INTO order_lines
+               (order_id, event_product_id, order_lot_id, qty, unit_price, allocated_amount, paid_amount)
+             VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id",
+        )
+        .bind(order_id)
+        .bind(line.event_product_id)
+        .bind(order_lot_id)
+        .bind(line.qty)
+        .bind(line.unit_price.cents())
+        .bind(line.allocated.cents())
+        // 下单时 paid = allocated。手工折让要到「确认收款」那一步才摊进来（Task 7）。
+        .bind(line.allocated.cents())
         .fetch_one(&mut *tx)
         .await?;
 
+        let p = snapshot[&line.event_product_id];
         items.push(OrderItemResponse {
             id: line_id,
-            product_id: row.id,
-            quantity: *qty,
-            product_name: row.name.clone(),
-            product_price: row.unit_price,
-            product_image_url: row.image_url.clone(),
-            allocated_amount: *line_total,
-            paid_amount: *line_total,
+            product_id: line.event_product_id,
+            quantity: line.qty,
+            product_name: p.name.clone(),
+            product_price: line.unit_price.cents(),
+            product_image_url: p.image_url.clone(),
+            allocated_amount: line.allocated.cents(),
+            paid_amount: line.allocated.cents(),
+            lot_name: line.lot_index.map(|k| priced.lots[k].name.clone()),
         });
     }
 
-    // 销售 journal：现场仓 → 顾客仓。每张订单必然带这条 stock 腿——
-    // 这是 Task 5 删除守卫「只查 stock_movements 不查 order_lines」仍然正确的前提。
+    // 销售 journal：现场仓 → 顾客仓，**每个商品一条腿，不跟着订单行拆**。
+    // 这是 `api/product.rs` 的「有流水才禁止删除」守卫仍然完备的前提
+    // （②-1 交接段第 2 条）。
     post_journal(
         &mut tx,
         event_id,
@@ -1022,5 +997,131 @@ mod tests {
             "第一个 IMMEDIATE 事务必须立刻持有写锁，第二个应当 SQLITE_BUSY"
         );
         drop(first);
+    }
+
+    /// 给展会加一个只含 `ep` 的「任选 2 件 50」，返回 lot_id。
+    async fn seed_pair_lot(pool: &sqlx::SqlitePool, event_id: i64, ep: i64) -> i64 {
+        crate::test_support::seed_lot(pool, event_id, "任选2件50", 2, 5000, &[ep]).await
+    }
+
+    #[tokio::test]
+    async fn an_order_records_which_units_went_into_a_lot() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        let lot_id = seed_pair_lot(&pool, event_id, ep_a).await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None,
+                json!({"items": [{"product_id": ep_a, "quantity": 3}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+        let body = read_json(res).await;
+        let order_id = body["id"].as_i64().unwrap();
+
+        assert_eq!(body["gross_amount"], 9000);
+        assert_eq!(body["solved_amount"], 8000);
+        assert_eq!(body["final_amount"], 8000, "下单时 final 还等于 solved");
+
+        // 同一个商品拆成两行：2 件在套装里、1 件散着（spec 4.5）
+        let items = body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0]["lot_name"], "任选2件50");
+        assert_eq!(items[0]["quantity"], 2);
+        assert_eq!(items[0]["allocated_amount"], 5000);
+        assert!(items[1]["lot_name"].is_null());
+        assert_eq!(items[1]["allocated_amount"], 3000);
+
+        // order_lots 存的是快照
+        let (snap_lot, snap_name, snap_price): (Option<i64>, String, i64) =
+            sqlx::query_as("SELECT lot_id, name, price FROM order_lots WHERE order_id = ?")
+                .bind(order_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(snap_lot, Some(lot_id));
+        assert_eq!(snap_name, "任选2件50");
+        assert_eq!(snap_price, 5000);
+    }
+
+    #[tokio::test]
+    async fn the_goods_leg_is_unaffected_by_lots() {
+        // spec 4.3：手工覆盖和 Lot 只动钱，货该怎么移动还怎么移动。
+        // 拆行是 order_lines 的事，stock_movements 仍然是每个商品一条腿。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        seed_pair_lot(&pool, event_id, ep_a).await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None,
+                json!({"items": [{"product_id": ep_a, "quantity": 3}]}),
+            ))
+            .await
+            .unwrap();
+        let order_id = read_json(res).await["id"].as_i64().unwrap();
+
+        let legs: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM stock_movements sm JOIN journals j ON j.id = sm.journal_id
+             WHERE j.order_id = ?",
+        )
+        .bind(order_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(legs, 1, "3 件同一个商品只有一条货的腿，不跟着订单行拆");
+        assert_eq!(
+            crate::domain::ledger::onsite_balance(&pool, ep_a)
+                .await
+                .unwrap(),
+            7
+        );
+    }
+
+    #[tokio::test]
+    async fn changing_a_lot_after_the_order_does_not_change_the_order() {
+        // 价格在下单那一刻快照进 order_lots / order_lines
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        let lot_id = seed_pair_lot(&pool, event_id, ep_a).await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None,
+                json!({"items": [{"product_id": ep_a, "quantity": 2}]}),
+            ))
+            .await
+            .unwrap();
+        let order_id = read_json(res).await["id"].as_i64().unwrap();
+
+        sqlx::query("UPDATE lots SET total_price = 100 WHERE id = ?")
+            .bind(lot_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let price: i64 = sqlx::query_scalar("SELECT price FROM order_lots WHERE order_id = ?")
+            .bind(order_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let solved: i64 = sqlx::query_scalar("SELECT solved_amount FROM orders WHERE id = ?")
+            .bind(order_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(price, 5000);
+        assert_eq!(solved, 5000);
     }
 }

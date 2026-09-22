@@ -63,10 +63,8 @@ pub struct CartProduct {
     pub unit_price: i64,
     /// `/quote` 只读 id/单价，商品名由 Task 6 的下单响应消费
     /// （`api/order.rs::create_order` 的库存不足提示）。
-    #[allow(dead_code)]
     pub name: String,
     /// 同上，下单响应要带出商品图片（Task 6 的 `api/order.rs::create_order`）。
-    #[allow(dead_code)]
     pub image_url: Option<String>,
 }
 
