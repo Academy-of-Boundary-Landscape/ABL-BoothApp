@@ -83,14 +83,20 @@ async fn get_event_stats(
     let summary: SummaryStats = sqlx::query_as(
         r#"
         SELECT
-            COALESCE(SUM(o.final_amount), 0) as total_revenue,
-            COUNT(DISTINCT o.id) as completed_orders_count,
-            COALESCE(SUM(ol.qty), 0) as total_items_sold
-        FROM orders o
-        LEFT JOIN order_lines ol ON o.id = ol.order_id
-        WHERE o.event_id = ? AND o.status != 'cancelled'
+            -- 金额必须单独聚合：和 order_lines join 会把一张订单按行数复制，
+            -- SUM(o.final_amount) 就被放大成 N 倍（一张 2 行的单算两遍）。
+            -- 这个 bug 在旧 order_items 模型里就有，迁移时一并修掉。
+            COALESCE((SELECT SUM(final_amount) FROM orders
+                      WHERE event_id = ? AND status != 'cancelled'), 0) as total_revenue,
+            COALESCE((SELECT COUNT(*) FROM orders
+                      WHERE event_id = ? AND status != 'cancelled'), 0) as completed_orders_count,
+            COALESCE((SELECT SUM(ol.qty) FROM order_lines ol
+                      JOIN orders o ON o.id = ol.order_id
+                      WHERE o.event_id = ? AND o.status != 'cancelled'), 0) as total_items_sold
         "#,
     )
+    .bind(event_id)
+    .bind(event_id)
     .bind(event_id)
     .fetch_one(&state.db)
     .await
@@ -708,6 +714,135 @@ mod tests {
         assert_eq!(
             body["total_revenue"], 6000,
             "2 件 × 3000 分，API 响应保持分"
+        );
+    }
+
+    /// 两件事：① /stats 的 SQL 还认识新 schema（全仓运行时 SQL，schema 改了编译器抓不到）
+    ///        ② 多行订单的金额不能按行数重复计入——LEFT JOIN order_lines 会把一张订单
+    ///           复制成 N 行，SUM(o.final_amount) 就被放大 N 倍。
+    ///           这里刻意下一张**两行**的订单来钉死这一点。
+    #[tokio::test]
+    async fn event_stats_runs_against_the_new_schema_and_does_not_double_count() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, ep_b) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+
+        // 下一张两行订单：ep_a × 2（3000/件）+ ep_b × 1（2000/件）→ final_amount 8000 分。
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None,
+                json!({"items": [
+                    {"product_id": ep_a, "quantity": 2},
+                    {"product_id": ep_b, "quantity": 1}
+                ]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+        let order_id = read_json(res).await["id"].as_i64().unwrap();
+
+        // 完成它（带 channel）
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "微信"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let res = router
+            .oneshot(json_request(
+                "GET",
+                &format!("/api/events/{event_id}/stats"),
+                Some(&token),
+                json!({}),
+            ))
+            .await
+            .unwrap();
+        assert_ne!(
+            res.status(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SQL 引用了不存在的表/列"
+        );
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let body = read_json(res).await;
+        let summary = &body["summary"];
+        assert_eq!(
+            summary["total_revenue"], 8000,
+            "两行订单的金额只能算一遍：2 × 3000 + 1 × 2000 = 8000，不是 16000"
+        );
+        assert_eq!(summary["completed_orders_count"], 1);
+        assert_eq!(summary["total_items_sold"], 3, "2 + 1 件");
+    }
+
+    /// Excel 导出这条路由持有自己的一套 SQL，且返回的是二进制流不是 JSON。
+    /// 这里只守「SQL 还认识新 schema」这一条底线：不能 500，且返回体非空。
+    #[tokio::test]
+    async fn sales_summary_download_runs_against_the_new_schema() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, ep_b) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+
+        // 同 stats 测试：下一张两行订单 + 完成，让下载路由的明细查询吃进真实数据。
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None,
+                json!({"items": [
+                    {"product_id": ep_a, "quantity": 2},
+                    {"product_id": ep_b, "quantity": 1}
+                ]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+        let order_id = read_json(res).await["id"].as_i64().unwrap();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "微信"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let res = router
+            .oneshot(json_request(
+                "GET",
+                &format!("/api/events/{event_id}/sales_summary/download"),
+                Some(&token),
+                json!({}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            res.status(),
+            StatusCode::OK,
+            "下载路由的 SQL 也必须还认识新 schema，不能 500"
+        );
+
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .expect("read download body");
+        assert!(!bytes.is_empty(), "xlsx 导出不能返回空流");
+        assert_eq!(
+            &bytes[0..2],
+            &b"PK"[..],
+            "xlsx 是 zip 格式，前两个字节应是 PK"
         );
     }
 }

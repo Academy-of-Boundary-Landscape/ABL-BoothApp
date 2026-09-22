@@ -967,6 +967,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn creating_an_order_on_a_preparing_event_is_refused() {
+        // 守卫的 `Some(other)` 分支不该只兜住「已结算」：展会还没开场（筹备）时
+        // 同样不能下单——货还没录进现场仓，写销售 journal 一样是污染冻结前的账。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+
+        sqlx::query("UPDATE events SET status = '筹备' WHERE id = ?")
+            .bind(event_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let res = router
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None,
+                json!({"items": [{"product_id": ep_a, "quantity": 1}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+
+        let body = read_json(res).await;
+        let msg = body["error"].as_str().unwrap();
+        assert!(msg.contains("筹备"), "错误消息必须说明当前状态: {msg}");
+
+        let orders: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM orders")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(orders, 0);
+    }
+
+    #[tokio::test]
     async fn begin_immediate_actually_takes_the_write_lock_up_front() {
         // brief 整篇在强调「查余额 → 插移动」两步必须在同一个 BEGIN IMMEDIATE 事务里：
         // 默认的 deferred 事务在第一次写之前不持写锁，两台平板会双双通过库存检查。
