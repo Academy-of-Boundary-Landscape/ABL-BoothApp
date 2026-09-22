@@ -6,8 +6,13 @@ use tauri::{DragDropEvent, Emitter, Manager, WindowEvent};
 
 mod api;
 mod db;
-pub mod domain;
-pub mod error;
+// Task 1 只建基建，真正的调用点在 Task 2 接上。在那之前 Money / ApiError
+// 在非 test 构建里无人使用，会被 dead_code 拦住（clippy 带 -D warnings）。
+// **Task 2 接上真实调用点后必须删掉这两条 allow。**
+#[allow(dead_code)]
+mod domain;
+#[allow(dead_code)]
+mod error;
 mod server;
 mod state;
 #[cfg(test)]
