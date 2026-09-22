@@ -48,13 +48,15 @@
 - **不碰这两个文件**：`my-release-key.jks`、`src-tauri/updater-key.key`。
 - **不得让复式记账制造出「钱已到账」的错觉**（spec 第 11 节第 2 条）。本 plan 把「确认收款」弹窗从「只选渠道」扩成「还能改金额」，它**看起来**更像在处理真钱——`ChannelPicker.vue` 现有的那句「这只是记账。请先确认手机上真的收到了到账提示，再点确认。」必须原样保留到新弹窗里，不是可选的润色。
 - **不做**（留给 ②-3）：退货、盘点、带回、冻结、清 pending 阻断、赠品与损耗的写入路径、拆封/转换、垫付、结算调整、结算单、导出重做、自定义渠道。
-- **明确不做**（spec 第 10 节 2026-09-23 新增三行）：手工拆/改 Lot 分配、前端本地求解、预算内尽力搜的求解器。
+- **明确不做**（spec 第 10 节）：**手工指定哪几件进哪个 Lot**、前端本地求解、预算内尽力搜的求解器。
+  注意「**拆掉整个 Lot 实例**」是**要做**的（Task 8）——spec 4.3 于 2026-09-23 推翻了先前「辅助通道不做」的判定。
 - 提交信息用仓库现有的 gitmoji 风格，结尾带
   `Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>`。
 
 ### 三条本 plan 期间知情接受的状态
 
 1. **Task 6 之前，Lot 配好了也不生效。** Task 4/5 让 Lot 能配、能报价，但下单仍然按原价走（②-1 的 `create_order` 原样）。这是刻意的切法：求解器先独立可测，接线才动交易路径。
+   同理 **Task 8 之前没有「拆套装」这条出口**，摊主只能靠改实收——而那在代卖货上会把钱记错货主（Task 8 开头有完整说明）。两者之间不要发版。
 2. **`cargo test --no-default-features` 本来就是坏的**（`test_support.rs` 无条件 `use crate::vision::VisionRuntime`）。这是 ① 留下的腐烂，**不在本 plan 范围内**，不要顺手修。CI 跑的是 `--all-features`。
 3. **`events.status` 的写入守卫仍然不全。** ②-1 交接段列了 4 个「当前不查 `events.status`」的敞口留给 ②-3。本 plan 给**新增**的 Lot 写入路径补上守卫（Task 4），但不去补那 4 个既有的——那是 ②-3 的冻结语义的一部分，单独改一半反而会让 ②-3 误以为已经做过了。
 
@@ -81,7 +83,7 @@
 | `src-tauri/src/domain/mod.rs` | 挂三个新模块 |
 | `src-tauri/src/api/mod.rs` | 挂 `lot::router()` |
 | `src-tauri/src/api/guard.rs` | 收口 `check_read_permission` / `check_write_permission`（现在 `order.rs` 和 `product.rs` 各有一份一模一样的） |
-| `src-tauri/src/api/order.rs` | 删本地权限函数改用 guard；`create_order` 接求解器；`update_order_status` 接 `final_amount` |
+| `src-tauri/src/api/order.rs` | 删本地权限函数改用 guard；`create_order` 接求解器；`update_order_status` 接 `final_amount` 与 `unapply_lot_ids`；响应带上套装实例 |
 | `src-tauri/src/api/product.rs` | 删本地权限函数改用 guard |
 | `src-tauri/src/api/stats.rs` | 三处 `SUM(ol.unit_price * ol.qty)` → `SUM(ol.paid_amount)` |
 | `src-tauri/src/test_support.rs` | 加 `seed_lot()` 夹具 |
@@ -100,7 +102,7 @@
 
 | 文件 | 为什么 |
 |---|---|
-| `frontend/src/components/vendor/ChannelPicker.vue` | 被 `ReceiptModal.vue` 取代（Task 11） |
+| `frontend/src/components/vendor/ChannelPicker.vue` | 被 `ReceiptModal.vue` 取代（Task 12） |
 
 ---
 
@@ -2105,7 +2107,7 @@ EOF
 - Consumes: Task 3 的 `pricing::{merge_items, resolve_cart, cart_lines, load_lots, price_cart, CartItemRequest}`
 - Produces:
   - `POST /api/events/:event_id/quote`（**公开、无鉴权、零写入**）
-  - 响应形状（前端 Task 10 按这个写）：
+  - 响应形状（前端 Task 11 按这个写）：
     ```json
     { "gross_amount": 19000, "solved_amount": 17000,
       "lots":  [{"lot_id":3, "name":"本子任选3本100", "price":10000, "original_amount":12000,
@@ -2456,7 +2458,7 @@ EOF
 
 **Interfaces:**
 - Consumes: Task 3 的 `pricing::{merge_items, resolve_cart, cart_lines, load_lots, price_cart, ensure_event_selling, CartItemRequest}`
-- Produces: `OrderItemResponse` 多一个字段 `lot_name: Option<String>`（前端 Task 11 的 `OrderCard` 读它）
+- Produces: `OrderItemResponse` 多一个字段 `lot_name: Option<String>`（前端 Task 12 的 `OrderCard` 读它）
 
 - [ ] **Step 1: 写失败的测试**
 
@@ -2899,7 +2901,7 @@ EOF
 
     #[tokio::test]
     async fn paid_amounts_always_add_up_to_the_final_amount() {
-        // spec 4.5 的第二条不变量。Task 8 的统计口径完全押在它上面。
+        // spec 4.5 的第二条不变量。Task 9 的统计口径完全押在它上面。
         let (router, _dir, pool) = test_router_with().await;
         let (event_id, ep_a, ep_b) = seed_event_and_product(&pool).await;
         let token = admin_token();
@@ -3184,14 +3186,478 @@ EOF
 
 ---
 
-## Task 8: 统计口径改用 `paid_amount`
+## Task 8: 拆掉套装实例
+
+**Files:**
+- Modify: `src-tauri/src/api/order.rs`（`OrderResponse` 加 `lots`、`UpdateStatusRequest` 加 `unapply_lot_ids`、完成分支前置拆解、`create_order` / `load_order_response` / `list_orders` 三处响应组装）
+- Test: `src-tauri/src/api/order.rs` 的测试模块
+
+**Interfaces:**
+- Consumes: Task 6 写进 `order_lots` 的快照、Task 7 的完成分支
+- Produces:
+  ```rust
+  struct OrderLotResponse { id: i64, lot_id: Option<i64>, name: String, price: i64, original_amount: i64 }
+  // OrderResponse 多一个字段
+  struct OrderResponse { order: OrderRow, items: Vec<OrderItemResponse>, lots: Vec<OrderLotResponse> }
+  ```
+  `PUT .../orders/:order_id/status` 的 body 多一个可选字段 `unapply_lot_ids: Vec<i64>`，**装的是 `order_lots.id`（实例 id），不是 `lots.id`**——同一个套装可以套用多次，拆的时候必须能指到具体是哪一次。
+
+**为什么要有这条通道**（spec 4.3 的 2026-09-23 修正）：光靠「改总价」拆不掉套装。改总价会把差额记成**手工折让**，按 spec 4.4 整笔落本社团；而「这个套装不该套用」是**纠错**，钱必须回到真正的货主头上。代卖货上的后果是货主少拿钱、差额挂在本社团头上——**金额总数对，归属错，而且不报错**。
+
+- [ ] **Step 1: 写失败的测试**
+
+追加到 `src-tauri/src/api/order.rs` 的 `mod tests`：
+
+```rust
+    /// 给代卖社团（黄昏堂，id=2）的商品配一个「任选2件30」（原价 40），返回 lot_id。
+    ///
+    /// 刻意用**代卖**货：自家货上拆不拆都对得上，只有代卖货能暴露归属错位。
+    async fn seed_consignment_lot(pool: &sqlx::SqlitePool, event_id: i64, ep_b: i64) -> i64 {
+        crate::test_support::seed_lot(pool, event_id, "代卖任选2件30", 2, 3000, &[ep_b]).await
+    }
+
+    #[tokio::test]
+    async fn the_order_response_carries_its_lot_instances() {
+        // 摊主端的收款弹窗要按实例列勾选框，所以响应里必须有实例 id、名字、
+        // 套装价和成分原价合计——最后一个是「拆掉它应收会回到多少」。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _ep_a, ep_b) = seed_event_and_product(&pool).await;
+        seed_consignment_lot(&pool, event_id, ep_b).await;
+        let _order_id = place(&router, event_id, json!([{"product_id": ep_b, "quantity": 2}])).await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "GET",
+                &format!("/api/events/{event_id}/orders?status=pending"),
+                Some(&admin_token()),
+                json!({}),
+            ))
+            .await
+            .unwrap();
+        let body = read_json(res).await;
+        let lots = body[0]["lots"].as_array().unwrap();
+        assert_eq!(lots.len(), 1);
+        assert_eq!(lots[0]["name"], "代卖任选2件30");
+        assert_eq!(lots[0]["price"], 3000);
+        assert_eq!(lots[0]["original_amount"], 4000, "拆掉它应收回到 40");
+        assert!(lots[0]["id"].as_i64().unwrap() > 0);
+    }
+
+    #[tokio::test]
+    async fn unapplying_a_lot_puts_the_money_back_on_the_real_owner() {
+        // 这是整条通道存在的理由。对照组写在断言里：只改实收不拆，
+        // 代卖社团仍然只拿 30，多出的 10 会挂在本社团头上。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _ep_a, ep_b) = seed_event_and_product(&pool).await;
+        seed_consignment_lot(&pool, event_id, ep_b).await;
+        let token = admin_token();
+        let order_id = place(&router, event_id, json!([{"product_id": ep_b, "quantity": 2}])).await;
+
+        let lot_instance: i64 = sqlx::query_scalar("SELECT id FROM order_lots WHERE order_id = ?")
+            .bind(order_id).fetch_one(&pool).await.unwrap();
+
+        let res = router.clone().oneshot(json_request(
+            "PUT", &format!("/api/events/{event_id}/orders/{order_id}/status"), Some(&token),
+            json!({"status": "completed", "channel": "现金", "unapply_lot_ids": [lot_instance]}),
+        )).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = read_json(res).await;
+        assert_eq!(body["solved_amount"], 4000, "应收回到原价");
+        assert_eq!(body["final_amount"], 4000, "没另外改实收，就跟着新的应收走");
+        assert_eq!(body["gross_amount"], 4000, "原价合计从来没变过");
+        assert_eq!(body["lots"].as_array().unwrap().len(), 0, "实例被拆掉了");
+
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::SocietyDue(2)).await.unwrap(),
+            Money::from_cents(-4000),
+            "代卖社团拿全价——只改实收的话这里会是 -3000"
+        );
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::SocietyDue(1)).await.unwrap(),
+            Money::ZERO,
+            "本社团完全不该被牵连——只改实收的话这里会是 -1000"
+        );
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::Received("现金".into())).await.unwrap(),
+            Money::from_cents(4000)
+        );
+
+        // 货那一侧一个字没动（spec 4.3 第一条约束）
+        assert_eq!(crate::domain::ledger::onsite_balance(&pool, ep_b).await.unwrap(), 3);
+    }
+
+    #[tokio::test]
+    async fn unapplying_one_instance_leaves_the_other_alone() {
+        // 「任选2件30」买 4 件 = 两个实例。只拆一个。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _ep_a, ep_b) = seed_event_and_product(&pool).await;
+        seed_consignment_lot(&pool, event_id, ep_b).await;
+        let token = admin_token();
+        let order_id = place(&router, event_id, json!([{"product_id": ep_b, "quantity": 4}])).await;
+
+        let instances: Vec<i64> =
+            sqlx::query_scalar("SELECT id FROM order_lots WHERE order_id = ? ORDER BY id")
+                .bind(order_id).fetch_all(&pool).await.unwrap();
+        assert_eq!(instances.len(), 2, "8000 的货套两次 30，应收 6000");
+
+        let res = router.clone().oneshot(json_request(
+            "PUT", &format!("/api/events/{event_id}/orders/{order_id}/status"), Some(&token),
+            json!({"status": "completed", "channel": "现金", "unapply_lot_ids": [instances[0]]}),
+        )).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = read_json(res).await;
+        assert_eq!(body["solved_amount"], 7000, "一个实例回到 40，另一个还是 30");
+        assert_eq!(body["lots"].as_array().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn unapplying_a_lot_that_belongs_to_another_order_is_refused() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _ep_a, ep_b) = seed_event_and_product(&pool).await;
+        seed_consignment_lot(&pool, event_id, ep_b).await;
+        let token = admin_token();
+        let first = place(&router, event_id, json!([{"product_id": ep_b, "quantity": 2}])).await;
+        let second = place(&router, event_id, json!([{"product_id": ep_b, "quantity": 2}])).await;
+
+        let other: i64 = sqlx::query_scalar("SELECT id FROM order_lots WHERE order_id = ?")
+            .bind(first).fetch_one(&pool).await.unwrap();
+
+        let res = router.clone().oneshot(json_request(
+            "PUT", &format!("/api/events/{event_id}/orders/{second}/status"), Some(&token),
+            json!({"status": "completed", "channel": "现金", "unapply_lot_ids": [other]}),
+        )).await.unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+        // 整体回滚：第一张单的实例还在，第二张单也没被完成
+        let still: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM order_lots WHERE order_id = ?")
+            .bind(first).fetch_one(&pool).await.unwrap();
+        assert_eq!(still, 1);
+        let status: String = sqlx::query_scalar("SELECT status FROM orders WHERE id = ?")
+            .bind(second).fetch_one(&pool).await.unwrap();
+        assert_eq!(status, "pending");
+    }
+
+    #[tokio::test]
+    async fn unapplying_and_then_discounting_compose() {
+        // 拆完之后摊主还想让价：那一步才走 4.4 的「全额落本社团」。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _ep_a, ep_b) = seed_event_and_product(&pool).await;
+        seed_consignment_lot(&pool, event_id, ep_b).await;
+        let token = admin_token();
+        let order_id = place(&router, event_id, json!([{"product_id": ep_b, "quantity": 2}])).await;
+
+        let instance: i64 = sqlx::query_scalar("SELECT id FROM order_lots WHERE order_id = ?")
+            .bind(order_id).fetch_one(&pool).await.unwrap();
+
+        let res = router.clone().oneshot(json_request(
+            "PUT", &format!("/api/events/{event_id}/orders/{order_id}/status"), Some(&token),
+            json!({"status": "completed", "channel": "现金",
+                   "unapply_lot_ids": [instance], "final_amount": 3500}),
+        )).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::SocietyDue(2)).await.unwrap(),
+            Money::from_cents(-4000), "货主仍然按自己的定价全额入账");
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::SocietyDue(1)).await.unwrap(),
+            Money::from_cents(500), "这 5 块是摊主自己让的，落本社团");
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::Received("现金".into())).await.unwrap(),
+            Money::from_cents(3500));
+    }
+
+    #[tokio::test]
+    async fn unapply_is_refused_on_a_cancellation() {
+        // 静默忽略一个字段是会咬人的：取消路径上拆套装没有意义，明确拒绝。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _ep_a, ep_b) = seed_event_and_product(&pool).await;
+        seed_consignment_lot(&pool, event_id, ep_b).await;
+        let token = admin_token();
+        let order_id = place(&router, event_id, json!([{"product_id": ep_b, "quantity": 2}])).await;
+        let instance: i64 = sqlx::query_scalar("SELECT id FROM order_lots WHERE order_id = ?")
+            .bind(order_id).fetch_one(&pool).await.unwrap();
+
+        let res = router.clone().oneshot(json_request(
+            "PUT", &format!("/api/events/{event_id}/orders/{order_id}/status"), Some(&token),
+            json!({"status": "cancelled", "unapply_lot_ids": [instance]}),
+        )).await.unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
+```
+
+- [ ] **Step 2: 跑测试确认失败**
+
+Run: `cd src-tauri && tauri-env linux cargo test --all-features api::order`
+Expected: 六个新测试失败（响应里没有 `lots`、`unapply_lot_ids` 被 serde 忽略）。
+
+- [ ] **Step 3: 响应带上套装实例**
+
+`src-tauri/src/api/order.rs`：
+
+```rust
+/// 订单上的一个套装**实例**。
+///
+/// `id` 是 `order_lots.id` 而不是 `lots.id`——同一个套装可以套用多次
+/// （「任选3本100」买 6 本 = 两个实例），拆的时候必须能指到具体是哪一次。
+#[derive(Serialize)]
+struct OrderLotResponse {
+    id: i64,
+    /// 原始 Lot 的 id。套装被删掉后是 null（`ON DELETE SET NULL`），名字和价格仍在。
+    lot_id: Option<i64>,
+    name: String,
+    /// 套装价（分），下单那一刻的快照。
+    price: i64,
+    /// 成分按原价的合计（分）。**摊主拆掉它时应收会回到这个数**，
+    /// 收款弹窗靠它在本地把新的应收算出来，不必多一次往返。
+    original_amount: i64,
+}
+
+#[derive(Serialize)]
+struct OrderResponse {
+    #[serde(flatten)]
+    order: OrderRow,
+    items: Vec<OrderItemResponse>,
+    lots: Vec<OrderLotResponse>,
+}
+
+#[derive(sqlx::FromRow)]
+struct OrderLotRow {
+    id: i64,
+    order_id: i64,
+    lot_id: Option<i64>,
+    name: String,
+    price: i64,
+    original_amount: i64,
+}
+
+impl From<OrderLotRow> for OrderLotResponse {
+    fn from(row: OrderLotRow) -> Self {
+        OrderLotResponse {
+            id: row.id,
+            lot_id: row.lot_id,
+            name: row.name,
+            price: row.price,
+            original_amount: row.original_amount,
+        }
+    }
+}
+
+const LOTS_BY_ORDER: &str = "
+SELECT olo.id, olo.order_id, olo.lot_id, olo.name, olo.price,
+       COALESCE(SUM(ol.unit_price * ol.qty), 0) AS original_amount
+FROM order_lots olo
+LEFT JOIN order_lines ol ON ol.order_lot_id = olo.id
+WHERE olo.order_id = ?
+GROUP BY olo.id, olo.order_id, olo.lot_id, olo.name, olo.price
+ORDER BY olo.id
+";
+
+const LOTS_BY_EVENT: &str = "
+SELECT olo.id, olo.order_id, olo.lot_id, olo.name, olo.price,
+       COALESCE(SUM(ol.unit_price * ol.qty), 0) AS original_amount
+FROM order_lots olo
+JOIN orders o ON o.id = olo.order_id
+LEFT JOIN order_lines ol ON ol.order_lot_id = olo.id
+WHERE o.event_id = ?
+GROUP BY olo.id, olo.order_id, olo.lot_id, olo.name, olo.price
+ORDER BY olo.order_id, olo.id
+";
+```
+
+（`OrderResponse` 原本就是 `#[serde(flatten)]` 铺平 `OrderRow` 的，保持不变，只加 `lots` 一个字段。）
+
+三处组装都要跟着改：
+
+**`load_order_response`** 末尾：
+
+```rust
+    let lots: Vec<OrderLotResponse> = query_as::<_, OrderLotRow>(LOTS_BY_ORDER)
+        .bind(order_id)
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(Into::into)
+        .collect();
+
+    Ok(OrderResponse { order, items, lots })
+```
+
+**`list_orders`**：和 `items_map` 一样再来一份 `lots_map`：
+
+```rust
+    let lot_rows: Vec<OrderLotRow> = query_as(LOTS_BY_EVENT)
+        .bind(event_id)
+        .fetch_all(&state.db)
+        .await?;
+    let mut lots_map: HashMap<i64, Vec<OrderLotResponse>> = HashMap::new();
+    for row in lot_rows {
+        let oid = row.order_id;
+        lots_map.entry(oid).or_default().push(row.into());
+    }
+```
+组装时 `lots: lots_map.remove(&oid).unwrap_or_default()`。
+
+**`create_order`**（Task 6 写的那段）末尾，把 `OrderResponse { order, items }` 换成：
+
+```rust
+    // 成分原价合计从 priced.lines 聚合，和分摊用的是同一组数。
+    let lots_response: Vec<OrderLotResponse> = priced
+        .lots
+        .iter()
+        .enumerate()
+        .map(|(k, lot)| OrderLotResponse {
+            id: order_lot_ids[k],
+            lot_id: Some(lot.lot_id),
+            name: lot.name.clone(),
+            price: lot.price.cents(),
+            original_amount: priced
+                .lines
+                .iter()
+                .filter(|l| l.lot_index == Some(k))
+                .map(|l| l.unit_price.cents() * l.qty)
+                .sum(),
+        })
+        .collect();
+
+    Ok((
+        StatusCode::CREATED,
+        Json(OrderResponse { order, items, lots: lots_response }),
+    ))
+```
+
+- [ ] **Step 4: 加拆解逻辑**
+
+`UpdateStatusRequest` 加字段：
+
+```rust
+#[derive(Deserialize)]
+struct UpdateStatusRequest {
+    status: String,
+    channel: Option<String>,
+    final_amount: Option<i64>,
+    /// 要拆掉的套装实例（`order_lots.id`）。
+    ///
+    /// **拆 ≠ 改总价。** 改总价把差额记成手工折让、按 spec 4.4 整笔落本社团；
+    /// 而「这个套装不该套用」是纠错，钱必须回到真正的货主头上。代卖货上
+    /// 只改总价会让货主少拿钱、差额挂在本社团头上——金额总数对，归属错。
+    unapply_lot_ids: Option<Vec<i64>>,
+}
+```
+
+`update_order_status` 里，**紧跟在 `target` 校验之后、开事务之前**加一道：
+
+```rust
+    // 静默忽略一个用户传了的字段是会咬人的。取消路径上拆套装没有意义。
+    if payload.unapply_lot_ids.is_some() && target != "completed" {
+        return Err(ApiError::BadRequest(
+            "只有在完成订单时才能拆套装".into(),
+        ));
+    }
+```
+
+`("pending", "completed")` 分支里，**在读 `solved_amount` 之前**插入：
+
+```rust
+            // 拆套装（spec 4.3 的辅助通道）。必须排在读 solved_amount 之前——
+            // 拆完 solved 会变，而手工折让是相对**新的** solved 算的。
+            if let Some(ids) = payload.unapply_lot_ids.as_deref() {
+                let mut ids = ids.to_vec();
+                ids.sort_unstable();
+                ids.dedup(); // 传重了不该变成「第二次找不到」的 400
+                for order_lot_id in &ids {
+                    let belongs: Option<i64> =
+                        query_scalar("SELECT id FROM order_lots WHERE id = ? AND order_id = ?")
+                            .bind(order_lot_id)
+                            .bind(order_id)
+                            .fetch_optional(&mut *tx)
+                            .await?;
+                    belongs.ok_or_else(|| {
+                        ApiError::BadRequest("要拆的套装不属于这张订单".into())
+                    })?;
+
+                    // 成分行金额恢复成「单价 × 件数」，并解除归属。
+                    // **不重新求解**：纯拆解，结果唯一，也不依赖当前的 Lot 配置
+                    // （摊主可能刚把那个 Lot 改了或删了）。
+                    query(
+                        "UPDATE order_lines
+                         SET allocated_amount = unit_price * qty, order_lot_id = NULL
+                         WHERE order_lot_id = ?",
+                    )
+                    .bind(order_lot_id)
+                    .execute(&mut *tx)
+                    .await?;
+
+                    query("DELETE FROM order_lots WHERE id = ?")
+                        .bind(order_lot_id)
+                        .execute(&mut *tx)
+                        .await?;
+                }
+
+                // solved 重新从各行聚合。**gross 不动**——原价合计不因为拆而改变。
+                // 货那一侧同样一个字不动（spec 4.3 第一条约束）。
+                query(
+                    "UPDATE orders SET solved_amount =
+                       (SELECT COALESCE(SUM(allocated_amount), 0)
+                        FROM order_lines WHERE order_id = ?)
+                     WHERE id = ?",
+                )
+                .bind(order_id)
+                .bind(order_id)
+                .execute(&mut *tx)
+                .await?;
+            }
+```
+
+后面 Task 7 写的 `let solved: i64 = query_scalar("SELECT solved_amount ...")` 一个字都不用改——它读到的已经是拆完之后的值。
+
+- [ ] **Step 5: 跑测试确认通过**
+
+Run: `cd src-tauri && tauri-env linux cargo test --all-features api::order`
+Expected: 全绿。Task 6 / Task 7 的测试也要跟着过——它们不传 `unapply_lot_ids`，行为完全不变。
+
+- [ ] **Step 6: 过门禁并提交**
+
+```bash
+cd src-tauri
+tauri-env linux cargo fmt --all
+tauri-env linux cargo clippy --all-targets --all-features -- -D warnings
+tauri-env linux cargo test --all-features
+cd ..
+git add src-tauri/src/api/order.rs
+git commit -m "$(cat <<'EOF'
+feat: :sparkles: 收款时可以拆掉套装——让钱回到真正的货主头上
+
+spec 4.3 的辅助通道，2026-09-23 修正后确定要做。
+
+光靠「改总价」拆不掉套装：改总价把差额记成手工折让、按 4.4 整笔落本社团，
+而「这个套装不该套用」是**纠错**，钱必须回到真正的货主头上。代卖货上的后果是
+B 的三本漫画（原价 120）被套装算成 100、摊主改回 120，账上 B 仍然只拿 100，
+多出的 20 挂在本社团头上——金额总数对，归属错，而且不报错。
+
+拆是纯拆解不是重新求解：成分行金额恢复成「单价 × 件数」、实例删掉、应收重新
+聚合。因此结果唯一，也不依赖当前的 Lot 配置（摊主可能刚把那个 Lot 改了或删了）。
+gross 和货那一侧都不动。
+
+响应带上套装实例（含成分原价合计），收款弹窗靠它在本地算出「拆掉之后应收是多少」，
+不必多一次往返。
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
+## Task 9: 统计口径改用 `paid_amount`
 
 **Files:**
 - Modify: `src-tauri/src/api/stats.rs:122`、`:193`、`:403`
 - Test: `src-tauri/src/api/stats.rs` 的测试模块
 
 **Interfaces:**
-- Consumes: Task 7 的不变量「同一订单 Σ paid = final_amount」
+- Consumes: Task 7 / Task 8 的不变量「同一订单 Σ paid = final_amount」
 - Produces: 无新接口。`ProductSalesItem::total_revenue_per_item` 的**含义**从「原价合计」变成「顾客实付合计」。
 
 **为什么必须改**（②-1 交接段第 4 条）：`unit_price × qty` 是折让**前**的原价。Lot 和手工折让一落地，仪表盘 / 趋势图 / CSV / xlsx 的单品销售额全部虚高，而同页的 `SUM(orders.final_amount)` 仍然正确——于是「总额」和「按商品汇总之和」对不上，摊主会当成 bug 报回来。
@@ -3310,7 +3776,7 @@ EOF
 
 ---
 
-## Task 9: 套装配置页（前端）
+## Task 10: 套装配置页（前端）
 
 **Files:**
 - Create: `frontend/src/stores/lotStore.js`、`frontend/src/views/AdminEventLots.vue`
@@ -3725,7 +4191,7 @@ EOF
 
 ---
 
-## Task 10: 顾客购物车接上报价
+## Task 11: 顾客购物车接上报价
 
 **Files:**
 - Create: `frontend/src/utils/quote.js`、`frontend/src/utils/quote.spec.js`
@@ -4036,7 +4502,7 @@ EOF
 
 ---
 
-## Task 11: 收款确认弹窗（前端）
+## Task 12: 收款确认弹窗（前端）
 
 **Files:**
 - Create: `frontend/src/components/vendor/ReceiptModal.vue`
@@ -4044,8 +4510,8 @@ EOF
 - Modify: `frontend/src/stores/orderStore.js:83-105`、`frontend/src/views/VendorView.vue:81-85`、`:167-190`、`frontend/src/components/order/OrderCard.vue`
 
 **Interfaces:**
-- Consumes: Task 6 的 `OrderItemResponse::lot_name`、Task 7 的 `final_amount` 入参
-- Produces: `ReceiptModal` 的 `@confirm` 载荷是 `{ channel: String, finalAmount: Number }`（`finalAmount` 单位分）
+- Consumes: Task 6 的 `OrderItemResponse::lot_name`、Task 7 的 `final_amount` 入参、Task 8 的 `OrderResponse::lots` 与 `unapply_lot_ids` 入参
+- Produces: `ReceiptModal` 的 `@confirm` 载荷是 `{ channel: String, finalAmount: Number, unapplyLotIds: Number[] }`（`finalAmount` 单位分，`unapplyLotIds` 是 `order_lots.id`）
 
 - [ ] **Step 1: 建 `ReceiptModal.vue`**
 
@@ -4055,18 +4521,29 @@ EOF
     <template #header><h3>确认收款</h3></template>
     <template #body>
       <div class="price-block">
-        <div v-if="grossAmount !== solvedAmount" class="price-row subtle">
+        <div v-if="grossAmount !== effectiveSolved" class="price-row subtle">
           <span>原价</span>
           <span class="struck">{{ formatYuan(grossAmount) }}</span>
         </div>
-        <div v-for="name in lotNames" :key="name" class="price-row subtle">
-          <span>已套用</span>
-          <span>{{ name }}</span>
-        </div>
         <div class="price-row total">
           <span>应收</span>
-          <span>{{ formatYuan(solvedAmount) }}</span>
+          <span>{{ formatYuan(effectiveSolved) }}</span>
         </div>
+      </div>
+
+      <!-- 已套用的套装，逐个可拆。取消勾选 = 这一单不套用它，成分回到原价。
+           这和「直接改实收」不是一回事：改实收把差额记成手工折让、整笔落本社团，
+           而拆套装是纠错，钱回到真正的货主头上（spec 4.3 的 2026-09-23 修正）。 -->
+      <div v-if="lots.length" class="lot-block">
+        <p class="lot-title">已套用的套装</p>
+        <label v-for="lot in lots" :key="lot.id" class="lot-row">
+          <n-checkbox :checked="!unapplied.includes(lot.id)" @update:checked="toggle(lot.id)" />
+          <span class="lot-name">{{ lot.name }}</span>
+          <span class="lot-saved">−{{ formatYuan(lot.original_amount - lot.price) }}</span>
+        </label>
+        <p v-if="unapplied.length" class="lot-note">
+          已拆掉 {{ unapplied.length }} 个套装，这些商品按原价计算。
+        </p>
       </div>
 
       <label class="field">
@@ -4086,7 +4563,8 @@ EOF
 
       <!-- spec 第 11 节的不可破坏项：不得让复式记账制造出「钱已到账」的错觉。
            系统始终不知道顾客有没有真付，摊主点的是「我看到到账提示了」。
-           这个弹窗现在还能改金额，**看起来**更像在处理真钱——所以这句话比以前更不能删。 -->
+           这个弹窗现在还能改金额、还能拆套装，**看起来**更像在处理真钱——
+           所以这句话比以前更不能删。 -->
       <p class="disclosure">这只是记账。请先确认手机上真的收到了到账提示，再点确认。</p>
     </template>
     <template #footer>
@@ -4100,7 +4578,7 @@ EOF
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { NRadioGroup, NRadio, NSpace, NButton, NInputNumber } from 'naive-ui'
+import { NRadioGroup, NRadio, NSpace, NButton, NInputNumber, NCheckbox } from 'naive-ui'
 import AppModal from '@/components/shared/AppModal.vue'
 import { formatYuan, toCents, fromCents } from '@/utils/money'
 
@@ -4112,32 +4590,64 @@ const props = defineProps({
   show: { type: Boolean, default: false },
   /** 原价合计（分） */
   grossAmount: { type: Number, default: 0 },
-  /** 求解器价，也是「实收」的默认值（分） */
+  /** 服务端算出的应收（分） */
   solvedAmount: { type: Number, default: 0 },
-  /** 这一单套用了哪些套装，去重后的名字 */
-  lotNames: { type: Array, default: () => [] },
+  /** 这一单套用的套装实例：[{ id, name, price, original_amount }] */
+  lots: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['confirm', 'cancel'])
 
 const channel = ref('微信')
 const finalYuan = ref(0)
+/** 被取消勾选的套装实例 id */
+const unapplied = ref([])
+
+/**
+ * 拆掉几个套装之后的应收。
+ *
+ * 在本地算而不是再问一次服务端：`original_amount` 就是「这个实例的成分按原价合计」，
+ * 拆掉它应收就回到那个数。服务端在确认时会用同一套规则重算一遍，本地这个数只用于显示。
+ */
+const effectiveSolved = computed(() =>
+  props.lots.reduce(
+    (sum, lot) => (unapplied.value.includes(lot.id) ? sum + lot.original_amount - lot.price : sum),
+    props.solvedAmount
+  )
+)
+
+const adjustment = computed(() => effectiveSolved.value - toCents(finalYuan.value))
+
+function reset() {
+  const saved = localStorage.getItem(CHANNEL_STORAGE_KEY)
+  channel.value = CHANNELS.includes(saved) ? saved : '微信'
+  unapplied.value = []
+  finalYuan.value = fromCents(props.solvedAmount)
+}
 
 watch(
   () => props.show,
   (val) => {
-    if (!val) return
-    const saved = localStorage.getItem(CHANNEL_STORAGE_KEY)
-    channel.value = CHANNELS.includes(saved) ? saved : '微信'
-    // 每次打开都重置成应收：上一单改过的数字留在这里是真事故。
-    finalYuan.value = fromCents(props.solvedAmount)
+    // 每次打开都重置：上一单改过的数字或拆过的勾留在这里是真事故。
+    if (val) reset()
   }
 )
 
-const adjustment = computed(() => props.solvedAmount - toCents(finalYuan.value))
+function toggle(lotId) {
+  unapplied.value = unapplied.value.includes(lotId)
+    ? unapplied.value.filter((id) => id !== lotId)
+    : [...unapplied.value, lotId]
+  // 勾选一变就把实收拉回新的应收。摊主的手势是「先决定套不套装，再决定让不让价」，
+  // 反过来保留旧数字只会让人对着一个过期的金额点确认。
+  finalYuan.value = fromCents(effectiveSolved.value)
+}
 
 function handleConfirm() {
   localStorage.setItem(CHANNEL_STORAGE_KEY, channel.value)
-  emit('confirm', { channel: channel.value, finalAmount: toCents(finalYuan.value) })
+  emit('confirm', {
+    channel: channel.value,
+    finalAmount: toCents(finalYuan.value),
+    unapplyLotIds: [...unapplied.value],
+  })
 }
 </script>
 
@@ -4162,6 +4672,39 @@ function handleConfirm() {
   font-weight: 600;
   font-size: var(--font-lg);
 }
+
+.lot-block {
+  margin-bottom: 1rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+}
+.lot-title {
+  margin: 0 0 0.25rem;
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+}
+.lot-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 4px 0;
+  cursor: pointer;
+}
+.lot-name {
+  flex: 1;
+  min-width: 0;
+}
+.lot-saved {
+  color: var(--success-color);
+  white-space: nowrap;
+}
+.lot-note {
+  margin: 0.25rem 0 0;
+  font-size: var(--font-sm);
+  color: var(--warning-color);
+}
+
 .field {
   display: flex;
   align-items: center;
@@ -4195,12 +4738,12 @@ function handleConfirm() {
 
 然后 `git rm frontend/src/components/vendor/ChannelPicker.vue`。
 
-- [ ] **Step 2: `orderStore` 带上金额**
+- [ ] **Step 2: `orderStore` 带上金额与要拆的套装**
 
 `frontend/src/stores/orderStore.js` 的 `markOrderAsCompleted`：
 
 ```js
-  async function markOrderAsCompleted(orderId, channel, finalAmount) {
+  async function markOrderAsCompleted(orderId, channel, finalAmount, unapplyLotIds) {
     if (!activeEventId.value) return
     // 渠道是账本「钱」那条腿的对手账户，缺了后端会 400，前端先拦一道给出人话。
     if (!channel) throw new Error('请选择收款渠道')
@@ -4208,6 +4751,8 @@ function handleConfirm() {
       const payload = { status: 'completed', channel }
       // 不传就等于 solved_amount（后端决定），所以只在真拿到数字时才带上。
       if (Number.isFinite(finalAmount)) payload.final_amount = finalAmount
+      // 空数组也不传：后端对非 completed 的转换会拒绝这个字段，少传少一处可能。
+      if (unapplyLotIds?.length) payload.unapply_lot_ids = unapplyLotIds
       await api.put(`/events/${activeEventId.value}/orders/${orderId}/status`, payload)
       // 更新成功后，将该订单从 pending 移到 completed
       const completedOrder = pendingOrders.value.find((order) => order.id === orderId)
@@ -4217,24 +4762,26 @@ function handleConfirm() {
       pendingOrders.value = pendingOrders.value.filter((order) => order.id !== orderId)
     } catch (err) {
       console.error(err)
-      // 后端的错误原文比「更新订单状态失败」有用得多：实收为负、展会已结算、
-      // 订单已被别的设备处理，摊主看到原文才知道下一步该干什么。
+      // 后端的错误原文比「更新订单状态失败」有用得多：实收为负、要拆的套装不属于
+      // 这张订单、展会已结算，摊主看到原文才知道下一步该干什么。
       throw new Error(err.response?.data?.error || '更新订单状态失败。')
     }
   }
 ```
+
+**注意**：`finalAmount` 是弹窗里那个框的值，而拆套装会改变应收。弹窗已经保证了这两者一致（`toggle()` 里把实收拉回新的应收），所以这里不需要再算一遍——**服务端是权威**，它先拆再按传来的 `final_amount` 摊折让。
 
 - [ ] **Step 3: `VendorView` 换弹窗**
 
 `import ChannelPicker` → `import ReceiptModal from '@/components/vendor/ReceiptModal.vue'`，模板里：
 
 ```html
-    <!-- 完成配货前先确认收款：显示原价/应收/已套用的套装，实收可改（spec 4.3） -->
+    <!-- 完成配货前先确认收款：显示原价/应收/已套用的套装（可逐个拆），实收可改（spec 4.3） -->
     <ReceiptModal
       :show="showReceiptModal"
       :gross-amount="pendingOrder?.gross_amount ?? 0"
       :solved-amount="pendingOrder?.solved_amount ?? 0"
-      :lot-names="receiptLotNames"
+      :lots="pendingOrder?.lots ?? []"
       @confirm="onReceiptConfirm"
       @cancel="closeReceipt"
     />
@@ -4247,12 +4794,6 @@ script：
 const showReceiptModal = ref(false)
 const pendingOrder = ref(null)
 
-const receiptLotNames = computed(() => {
-  const names = (pendingOrder.value?.items || []).map((i) => i.lot_name).filter(Boolean)
-  // 同一个套装可能套用多次，名字去重——列两行一模一样的会让人以为系统算重了。
-  return [...new Set(names)]
-})
-
 function completeOrder(orderId) {
   pendingOrder.value = store.pendingOrders.find((o) => o.id === orderId) || null
   showReceiptModal.value = true
@@ -4263,12 +4804,12 @@ function closeReceipt() {
   pendingOrder.value = null
 }
 
-async function onReceiptConfirm({ channel, finalAmount }) {
+async function onReceiptConfirm({ channel, finalAmount, unapplyLotIds }) {
   const order = pendingOrder.value
   showReceiptModal.value = false
   if (!order) return
   try {
-    await store.markOrderAsCompleted(order.id, channel, finalAmount)
+    await store.markOrderAsCompleted(order.id, channel, finalAmount, unapplyLotIds)
     await eventDetailStore.fetchProductsForEvent(props.id)
     await store.fetchCompletedOrders()
     message.success('已记录收款')
@@ -4340,25 +4881,32 @@ grep -rn "ChannelPicker" frontend/src   # 必须没有任何命中
 - [ ] **Step 6: 在 VNC 上走一遍**
 
 Run: `tauri-env vnc npx tauri dev`
-手动确认：顾客下一张带套装的单 → 摊主端 `OrderCard` 上原价被划掉、套装行有标签 → 点「完成配货」弹窗显示原价/已套用/应收，实收默认等于应收 → 改成一个更低的数，提示「手工折让 xx」→ 确认后「销售统计」里总额与按商品汇总之和一致。再试一次改成更高的数，**必须成功而不是报错**。
+
+四条都要试到：
+
+1. 顾客下一张带套装的单 → 摊主端 `OrderCard` 上原价被划掉、套装行有标签。
+2. 点「完成配货」→ 弹窗列出套装、实收默认等于应收 → 改成更低的数，提示「手工折让 xx」。
+3. **改成更高的数必须成功**，提示「手工加价 xx」，不是报错。
+4. **取消勾选一个套装** → 应收当场回到原价、实收跟着变 → 确认。然后在「销售统计」里确认总额与按商品汇总之和一致。
 
 - [ ] **Step 7: 提交**
 
 ```bash
 git add -A frontend/src/components/vendor frontend/src/stores/orderStore.js frontend/src/views/VendorView.vue frontend/src/components/order/OrderCard.vue
 git commit -m "$(cat <<'EOF'
-feat: :lipstick: 收款确认弹窗——实收可改，三个价一眼看全
+feat: :lipstick: 收款确认弹窗——三个价一眼看全，套装可逐个拆
 
-spec 4.3 的手工覆盖落点。ChannelPicker 扩成 ReceiptModal：上半是原价 /
-已套用的套装 / 应收，下半是默认填应收的「实收」输入框和渠道，一次提交。
-不单开一个改价动作——现场的手势本来就是「报个数、收钱、点完成」。
+spec 4.3 的手工覆盖与辅助通道都落在这一个弹窗里。ChannelPicker 扩成
+ReceiptModal：原价 / 应收 / 已套用的套装（每个一个勾）/ 默认填应收的实收框 / 渠道，
+一次提交。不单开改价动作——现场的手势本来就是「报个数、收钱、点完成」。
+
+拆套装的应收在本地算（original_amount 就是「拆掉它应收回到多少」），不多一次
+往返；服务端在确认时用同一套规则重算，本地那个数只用于显示。勾选一变就把实收
+拉回新的应收——摊主的手势是「先决定套不套装，再决定让不让价」。
 
 那句「这只是记账。请先确认手机上真的收到了到账提示，再点确认。」原样保留。
-弹窗现在能改金额，看起来更像在处理真钱，这句话因此比以前更不能删
+弹窗现在既能改金额又能拆套装，看起来更像在处理真钱，这句话因此比以前更不能删
 （spec 第 11 节，三条不可破坏项之一）。
-
-OrderCard 的行上加套装标签：同一个商品可能出现两行（2 件进套装、1 件散着），
-不标出来摊主配货时会以为系统重复计数了。
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 EOF
@@ -4367,7 +4915,7 @@ EOF
 
 ---
 
-## Task 12: 改掉两处现在已经做不到的文档
+## Task 13: 改掉两处现在已经做不到的文档
 
 **Files:**
 - Modify: `frontend/src/views/Help.vue:373-380`、`docs/guide/workflow.md:38-45`
@@ -4438,13 +4986,16 @@ EOF
 
 - [ ] `cd src-tauri && tauri-env linux cargo fmt --all --check` 无输出
 - [ ] `tauri-env linux cargo clippy --all-targets --all-features -- -D warnings` 零警告
-- [ ] `tauri-env linux cargo test --all-features` 全绿，且**测试数从约 50 涨到约 85**
+- [ ] `tauri-env linux cargo test --all-features` 全绿，且**测试数从约 50 涨到约 92**
 - [ ] `npm run lint --prefix frontend` 零警告；`format:check` / `test:unit` / `build` 全绿
 - [ ] `npm run docs:build` 通过
 - [ ] `tauri-env vnc npx tauri dev` 起得来，且能完整走通：
       配一个「任选 2 件」的套装 → 顾客加到 3 件、购物车显示「原价 / 已应用 −xx / 应付」 →
       下单 → 摊主端看到拆成两行、套装行有标签 → 收款弹窗改实收（**一次改低、一次改高**）→
       「销售统计」里总额与按商品汇总之和一致 → 取消一单、所有资金账户回到 0
+- [ ] **拆套装那条路单独验一遍，而且必须用代卖社团的货**：给代卖社团的商品配套装 →
+      顾客下单 → 收款弹窗里取消勾选 → 应收当场回到原价 → 确认后
+      `社团往来:<代卖社团>` 的余额等于**原价**而不是套装价，`社团往来:<本社团>` 是 0
 - [ ] `grep -rn "unit_price \* ol.qty\|unit_price\*ol.qty" src-tauri/src` 零命中
 - [ ] `grep -rn "ChannelPicker" frontend/src` 零命中
 - [ ] `grep -rn "价格设为\|优惠/抹零" frontend/src docs` 零命中
@@ -4453,6 +5004,7 @@ EOF
       `同一 Lot 实例 Σ allocated = order_lots.price`、`同一订单 Σ allocated = solved_amount`、
       `同一订单 Σ paid = final_amount`、`按商品汇总之和 = SUM(orders.final_amount)`
 - [ ] 混货主 + 手工折让那条规则有测试钉住：**整单都是代卖货时，折让仍然全额落本社团**
+- [ ] 拆套装与手工折让的**区别**有测试钉住：拆 → 钱回货主；改实收 → 钱落本社团
 
 ---
 
@@ -4463,7 +5015,7 @@ EOF
 
 ### 1. 结算单用 `allocated_amount`，**不是** `paid_amount`
 
-Task 8 把 `stats.rs` 三处「按商品汇总」改成了 `paid_amount`（顾客实付），这是**仪表盘**的口径。
+Task 9 把 `stats.rs` 三处「按商品汇总」改成了 `paid_amount`（顾客实付），这是**仪表盘**的口径。
 **结算单（spec 第 7 节）必须用 `allocated_amount`**——货主该得多少不受摊主当天做了什么人情的影响，
 这正是 4.5 要存两个金额的全部理由。两个口径在同一场展会里合法地对不上，差额恰好是手工折让，
 `社团往来:<本社团>` 账户的余额就是它。
@@ -4480,14 +5032,28 @@ Task 8 把 `stats.rs` 三处「按商品汇总」改成了 `paid_amount`（顾�
 - **退货 UI** 要么允许两行分别退，要么在界面上合并显示、在写入时按行分配。前者更简单也更诚实。
 - 任何 `SELECT ... FROM order_lines WHERE event_product_id = ?` 的统计都必须 `SUM`，不能假设只有一行。
 
-### 4. 「订单是 completed」仍然不蕴含「存在收款 journal」
+### 4. 拆套装（`unapply_lot_ids`）和手工折让是两回事，别合并
+
+`PUT .../status` 上这两个字段看起来都在「改这单要多少钱」，但**记账语义完全相反**：
+
+| | 拆套装 | 改实收 |
+|---|---|---|
+| 性质 | 纠错——这个套装不该套用 | 摊主自己决定的让价 |
+| 钱归谁 | 回到**真正的货主**（`allocated` 恢复成 `unit_price × qty`） | **本社团全额承担**（spec 4.4） |
+| 动了什么 | `order_lines.allocated` / `order_lots` / `orders.solved_amount` | 只动 `order_lines.paid` 和一条资金腿 |
+
+执行顺序是**先拆后摊**，手工折让相对的是拆完之后的 `solved_amount`。
+②-3 做退货时如果要让摊主「退货的同时拆掉套装」，得按同样的顺序走，
+不能套用退货自己的那套比例。
+
+### 5. 「订单是 completed」仍然不蕴含「存在收款 journal」
 
 ②-1 交接段第 1 条原样成立，而且 ②-2 之后多了一种情形：**整单被抹成 0 元**时
 （`final_amount = 0`），各货主的腿和折让腿金额相抵，实收净入为 0——但 journal 本身存在。
 反之全赠品单（`solved = 0` 且 `final = 0`）连 journal 都没有。
 **按 `orders.status` 判定已收款订单，不要按 journal 存在性。**
 
-### 5. `events.status` 的写入守卫：新增的补了，既有的 4 个仍然敞着
+### 6. `events.status` 的写入守卫：新增的补了，既有的 4 个仍然敞着
 
 `api/lot.rs` 的四个写入口（含 `/quote`）都查了状态。但 ②-1 列出的 4 个既有敞口
 **一个都没补**，冻结语义仍然归 ②-3：
@@ -4497,21 +5063,30 @@ Task 8 把 `stats.rs` 三处「按商品汇总」改成了 `paid_amount`（顾�
 - `api/product.rs` 的 `restock_product`
 - `api/product.rs` 的 `update_product`
 
-### 6. 求解器的三条上限是硬编码常量
+### 7. 求解器的三条上限是硬编码常量
 
 `MAX_UNITS = 300` / `MAX_STATE_SPACE = 200_000` / `MAX_STEPS = 2_000_000`
 （`domain/solver.rs` 顶部）。超限返回 `400「购物车商品过多，无法自动计算优惠，请分单结算」`。
 ②-3 若做「摊主代客下大单」或批量补录，要么分单、要么先动这三个数并补一个压力测试——
 **不要改成「预算内尽力搜」**，spec 第 10 节明确把那条路砍掉了。
 
-### 7. `channel` 的约束（②-1 交接段原样成立）
+### 8. `channel` 的约束（②-1 交接段原样成立）
 
 `channel` 仍是无约束自由文本，而它会成为账户名的一部分（`实收-<渠道>`）。
 ②-3 做「自定义渠道」时必须同时做三件事：写库前规范化、长度上限、
 **给前端一个 `SELECT DISTINCT` 的已用渠道列表让摊主从已有的里挑**——第三条才是真正防
 「微信」和「微信支付」分裂成两个账户的那一条。不要加白名单。
 
-### 8. 本 plan 知情留下的三件事
+### 9. 留给 ④（外观与信息架构）的一件事：从上一场展会复制套装配置
+
+套装的作用域是展会（spec 4.1），所以每开一场新展会都要重配一遍。技术上复用是通的——
+`event_products` 带 `master_product_id`，上一场的候选集能按全局商品映射到这一场。
+
+**但不要单给套装长一个「从上一场复制」按钮。** 它会牵出「上一场的价格变了怎么提示」
+「商品这一场没上架怎么办」这类问题，而这些问题在「选品」那一步是同一批问题。
+④ 本来就要重做展会的准备流程，这两件事该一起设计。
+
+### 10. 本 plan 知情留下的三件事
 
 1. **前端仍然没有 store / 组件测试。** ②-2 只加了 `utils/quote.spec.js` 一个纯函数 spec。
    `customerStore` 的 debounce + 请求序号那段逻辑目前只靠真机验证，没有自动化覆盖。
