@@ -27,11 +27,8 @@
 import { ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/authStore'
 import api from '@/services/api'
-import { toAbsoluteApiUrl } from '@/services/url'
 import { MIGRATION_NOTICE_SEEN_KEY, shouldShowMigrationNotice } from '@/utils/migrationNotice'
-import { save } from '@tauri-apps/plugin-dialog'
-import { writeFile } from '@tauri-apps/plugin-fs'
-import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
+import { exportLegacyXlsx } from '@/utils/legacyExport'
 
 const authStore = useAuthStore()
 const visible = ref(false)
@@ -76,72 +73,14 @@ function dismiss() {
 /**
  * 下载旧数据 xlsx。
  *
- * 照抄 AdminEventStat.vue 的既有写法：手动拼绝对 URL、手动加 Authorization 头、
- * Tauri 走 tauriFetch 浏览器走 fetch。不能走 axios 实例——它在 Tauri 下用的是
- * 自定义 adapter，二进制下载不适合经过它。
+ * 实际下载逻辑在 `utils/legacyExport.js`，和 AdminControlPanel 的「历史数据（v1）」
+ * 常驻入口共用——这个弹窗只负责第一次提醒，不是唯一出口。
  */
 async function exportLegacy() {
-  const isTauri = window.__TAURI_INTERNALS__ !== undefined
-  const token = sessionStorage.getItem('access_token')
-  const fileName = 'legacy_v1_export.xlsx'
-  const url = toAbsoluteApiUrl('/api/legacy/export.xlsx')
-
   exporting.value = true
   try {
-    if (isTauri) {
-      const headers = {
-        Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      }
-      if (token) headers['Authorization'] = `Bearer ${token}`
-
-      const resp = await tauriFetch(url, { method: 'GET', headers })
-
-      if (!resp.ok) {
-        const text = await resp.text().catch(() => '')
-        throw new Error(`下载失败: ${resp.status} ${resp.statusText} ${text.slice(0, 200)}`)
-      }
-
-      const ab = await resp.arrayBuffer()
-      const bytes = new Uint8Array(ab)
-
-      const filePath = await save({
-        defaultPath: fileName,
-        filters: [{ name: 'Excel Files', extensions: ['xlsx'] }],
-      })
-      if (!filePath) return
-
-      await writeFile(filePath, bytes)
-      alert('导出成功')
-      return
-    }
-
-    // 浏览器环境
-    const headers = {}
-    if (token) headers['Authorization'] = `Bearer ${token}`
-
-    const response = await fetch(url, {
-      method: 'GET',
-      credentials: 'include',
-      headers,
-    })
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => '')
-      throw new Error(`下载失败: ${response.status} ${text.slice(0, 200)}`)
-    }
-
-    const blob = await response.blob()
-    const dl = window.URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.style.display = 'none'
-    a.href = dl
-    a.download = fileName
-    document.body.appendChild(a)
-    a.click()
-    setTimeout(() => {
-      document.body.removeChild(a)
-      window.URL.revokeObjectURL(dl)
-    }, 100)
+    const ok = await exportLegacyXlsx()
+    if (ok) alert('导出成功')
   } catch (e) {
     console.error('下载旧数据失败:', e)
     alert(e?.message || '下载失败')

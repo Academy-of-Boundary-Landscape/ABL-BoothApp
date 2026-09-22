@@ -52,6 +52,8 @@ struct LegacyStatus {
     has_backup: bool,
     event_count: i64,
     order_count: i64,
+    /// `order_items` 的**明细行数**，不是 `SUM(quantity)` 的件数——别拿它写
+    /// 「你有 N 件历史商品」这类文案。
     item_count: i64,
 }
 
@@ -337,7 +339,16 @@ async fn export_legacy_xlsx(State(state): State<AppState>, _: AdminOnly) -> Resp
 
     let temp_dir = std::env::temp_dir();
     let download_filename = "legacy_v1_export.xlsx";
-    let temp_file = temp_dir.join(format!("legacy_v1_export_{}.xlsx", std::process::id()));
+    // pid + 纳秒时间戳：同一进程内并发导出（管理员连点两下）不能共用一个路径，
+    // 否则 A 的 remove_file 可能赶在 B 的 read 之前，用户拿到半截损坏的 xlsx。
+    let temp_file = temp_dir.join(format!(
+        "legacy_v1_export_{}_{}.xlsx",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
 
     match workbook.save(&temp_file) {
         Ok(_) => match fs::read(&temp_file) {

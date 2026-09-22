@@ -297,9 +297,6 @@ pub async fn post_journal(
 /// **冲正而不是删除**，是会计的标准做法，也留下审计痕迹（弃单率随时能查）。
 /// 重复冲正由 `idx_journals_reverses` 这个偏唯一索引在 DB 层拦住——
 /// 没有它，一次网络重试就能把库存退两遍。
-///
-/// 消费方在 Task 6（取消订单/退货），此前无人调用。
-#[allow(dead_code)]
 pub async fn reverse_journal(
     tx: &mut Transaction<'_, Sqlite>,
     journal_id: i64,
@@ -369,9 +366,6 @@ pub async fn reverse_journal(
 ///
 /// 取消一个已完成的订单要同时回滚货和钱两个 journal（spec 6.1）——
 /// 只回滚一半正是旧模型反复出事的地方。返回冲正了几个。
-///
-/// 消费方在 Task 6（取消订单），此前无人调用。
-#[allow(dead_code)]
 pub async fn reverse_order_journals(
     tx: &mut Transaction<'_, Sqlite>,
     order_id: i64,
@@ -441,7 +435,7 @@ pub async fn onsite_balances(pool: &SqlitePool, event_id: i64) -> ApiResult<Hash
 ///
 /// **永远按展会过滤**：跨展会没有连续账（设备不同步，做不对）。
 ///
-/// 消费方在 Task 6 / ②-3（结算对账），此前无人调用。
+/// 消费方在 ②-3（结算对账），此前只在 test 里用。
 #[allow(dead_code)]
 pub async fn account_balance(
     pool: &SqlitePool,

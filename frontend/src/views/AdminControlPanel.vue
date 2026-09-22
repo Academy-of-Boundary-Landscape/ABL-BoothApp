@@ -222,6 +222,33 @@
           </transition>
         </section>
 
+        <!-- v1 历史数据：首启弹窗只弹一次，这里是那之后唯一的常驻导出出口 -->
+        <section v-if="legacyHasBackup">
+          <div class="section-header" @click="legacyCollapsed = !legacyCollapsed">
+            <h2>历史数据（v1）</h2>
+            <n-button text class="toggle-btn">
+              {{ legacyCollapsed ? '展开' : '折叠' }}
+            </n-button>
+          </div>
+          <transition name="expand">
+            <div v-show="!legacyCollapsed" class="section-container">
+              <p class="legacy-desc">
+                新模型没有迁移旧版的展会和订单，旧数据完整保留在
+                <code>sale_system.db.v1-backup</code>，可以随时导出为 Excel。
+              </p>
+              <n-space align="center" :wrap="true">
+                <n-button type="primary" :loading="legacyExporting" @click="handleLegacyExport">
+                  {{ legacyExporting ? '导出中…' : '导出旧数据为 Excel' }}
+                </n-button>
+                <span class="hint">
+                  备份中含 {{ legacyStatus.event_count }} 个展会 /
+                  {{ legacyStatus.order_count }} 张订单
+                </span>
+              </n-space>
+            </div>
+          </transition>
+        </section>
+
         <!-- v1.1 AI 拍照识别 推荐体验 -->
         <section v-if="showAiSpotlight" class="ai-spotlight">
           <button class="ai-spotlight-dismiss" aria-label="关闭" @click="dismissAiSpotlight">
@@ -262,6 +289,7 @@ import { copyLink } from '@/services/clipboard'
 import { useAuthStore } from '@/stores/authStore'
 import VisionModelPanel from '@/components/product/VisionModelPanel.vue'
 import HelpBubble from '@/components/shared/HelpBubble.vue'
+import { exportLegacyXlsx } from '@/utils/legacyExport'
 
 const message = useMessage()
 
@@ -389,7 +417,40 @@ async function checkSetupStatus() {
 
 onMounted(() => {
   checkSetupStatus()
+  loadLegacyStatus()
 })
+
+// ===================== v1 历史数据 =====================
+// 首启弹窗（MigrationNotice）只弹一次且立刻标记已读；若它不常驻，用户点完
+// 「知道了」这台设备就再也导不出 v1 数据。这里是有备份时的常驻出口。
+const legacyStatus = ref(null)
+const legacyExporting = ref(false)
+const legacyCollapsed = ref(false)
+
+const legacyHasBackup = computed(() => legacyStatus.value?.has_backup === true)
+
+async function loadLegacyStatus() {
+  try {
+    const { data } = await api.get('/legacy/status')
+    legacyStatus.value = data
+  } catch (e) {
+    // 读不到状态只是不显示这个 section，绝不能影响控制台主流程
+    console.warn('[AdminControlPanel] 读取历史数据状态失败', e)
+  }
+}
+
+async function handleLegacyExport() {
+  legacyExporting.value = true
+  try {
+    const ok = await exportLegacyXlsx()
+    if (ok) message.success('导出成功')
+  } catch (e) {
+    console.error('下载旧数据失败:', e)
+    message.error(e?.message || '下载失败')
+  } finally {
+    legacyExporting.value = false
+  }
+}
 
 // ===================== 局域网 =====================
 const isFetching = ref(false)
@@ -947,6 +1008,19 @@ async function updateVendorPassword() {
 }
 .mt-8 {
   margin-top: 0.5rem;
+}
+
+/* v1 历史数据 */
+.legacy-desc {
+  margin: 0 0 1rem;
+  font-size: var(--font-base);
+  line-height: 1.7;
+  color: var(--secondary-text-color, var(--text-muted));
+}
+.legacy-desc code {
+  background: var(--bg-elevated);
+  padding: 0.1rem 0.3rem;
+  border-radius: var(--radius-sm);
 }
 
 /* 折叠动画 */

@@ -64,8 +64,6 @@ pub struct Event {
 // ==========================================
 // 社团（货主的单位）
 // ==========================================
-// 消费方在 Task 4/5（社团/选品 handler），此前无人构造。
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Society {
     pub id: i64,
@@ -74,36 +72,8 @@ pub struct Society {
 }
 
 // ==========================================
-// 摊位商品
-// ==========================================
-// 注意**没有 current_stock / initial_stock**：余额是 stock_movements 的聚合，
-// 由 handler 组装进响应（见 api/product.rs 的 EventProductResponse）。
-// 消费方在 Task 4/5（选品/摊位商品 handler），此前无人构造。
-#[allow(dead_code)]
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct EventProduct {
-    pub id: i64,
-    pub event_id: i64,
-    pub master_product_id: i64,
-    pub owner_society_id: i64,
-    pub product_code: String,
-    pub name: String,
-    /// 单位：分
-    pub unit_price: i64,
-    // JOIN master_products 得到，SELECT 里没有这几列时 sqlx(default) 返回 None
-    #[sqlx(default)]
-    pub image_url: Option<String>,
-    #[sqlx(default)]
-    pub category: Option<String>,
-    #[sqlx(default)]
-    pub tags: Option<String>,
-}
-
-// ==========================================
 // 订单
 // ==========================================
-// 消费方在 Task 6（订单 handler 重写），此前无人构造。
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct OrderRow {
     pub id: i64,
@@ -120,18 +90,4 @@ pub struct OrderRow {
     #[serde(rename = "timestamp")]
     pub created_at: NaiveDateTime,
     pub completed_at: Option<NaiveDateTime>,
-}
-
-// 消费方在 Task 6（订单 handler 重写），此前无人构造。
-#[allow(dead_code)]
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct OrderLineRow {
-    pub id: i64,
-    pub order_id: i64,
-    pub event_product_id: i64,
-    pub order_lot_id: Option<i64>,
-    pub qty: i64,
-    pub unit_price: i64,
-    pub allocated_amount: i64,
-    pub paid_amount: i64,
 }

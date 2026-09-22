@@ -331,7 +331,8 @@ async function handleAddProduct() {
       return
     }
 
-    // 价格可以为负数（对应折扣），这里无需验证
+    // 价格是可选覆盖，留空则用商品库默认价。负数不再表示折扣：后端
+    // unit_price < 0 返回 400，DB 也有 CHECK (unit_price >= 0)。
 
     // 表单里用户输入的是元，接口收的是分（unit_price）。
     const dataToSend = {
@@ -379,7 +380,7 @@ async function handleUpdate() {
   try {
     const { id, price } = editableProduct.value
 
-    // 验证价格（允许负数用于折扣）
+    // 只检查非空；负数由后端 400 拒绝（不再用负数表示折扣）。
     if (price === null || price === undefined) {
       editError.value = '请输入有效的售价'
       isUpdating.value = false

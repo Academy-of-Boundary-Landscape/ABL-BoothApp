@@ -23,8 +23,7 @@ pub struct Money(i64);
 impl Money {
     pub const ZERO: Money = Money(0);
 
-    /// 从分构造金额。消费方在 Task 6（记收款/销售的钱腿），此前只在 test 里用。
-    #[allow(dead_code)]
+    /// 从分构造金额。
     pub const fn from_cents(cents: i64) -> Self {
         Money(cents)
     }

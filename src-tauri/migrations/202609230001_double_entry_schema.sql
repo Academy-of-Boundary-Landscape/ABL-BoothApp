@@ -39,8 +39,13 @@ DROP TABLE IF EXISTS products;
 DELETE FROM events;
 
 -- ========== 展会 ==========
--- 状态值从 未进行/进行中/已结束 改成 筹备/进行中/已结算（spec 6.4）。
--- events 的行刚被清空，所以这里不需要数据转换，只需要把默认值改对。
+-- 状态值从 未进行/进行中/已结束 改成 筹备/进行中/已结算（spec 6.4），
+-- events 的行刚被清空，所以不需要数据转换。
+--
+-- 注意：**默认值没有改、也不在这里改**。`events.status` 的 DEFAULT 至今仍是
+-- '未进行'，而 SQLite 改不了列默认值（要整表重建，收益不值这个风险）。
+-- 新模型的正确状态靠 handler 显式写入——全仓 3 处 INSERT 都显式给了 status，
+-- `create_event` 写的是 '筹备'。
 ALTER TABLE events ADD COLUMN stocktake_skipped INTEGER NOT NULL DEFAULT 0
     CHECK (stocktake_skipped IN (0, 1));
 

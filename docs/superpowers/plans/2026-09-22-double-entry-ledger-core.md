@@ -2967,15 +2967,29 @@ EOF
 
 ### 交给 ②-2 / ②-3 的接口契约与已知不变量
 
-②-2 只需要改这三处，其余不该动：
+不要改的边界是 `domain/ledger.rs` 的任何签名、`orders` / `order_lines` 的表结构、
+`EventProductResponse` 的字段。除此之外，②-2 需要动的是下面四处，不是「三处」：
 
 1. `api/order.rs` 的 `create_order`：把「`allocated = paid = unit_price × qty`」换成求解器 + 分摊的结果，并填 `order_lots`。
-2. `api/order.rs` 的收款 journal：在按货主分组的腿之外，追加一条 `实收-<渠道> → 社团往来:<本社团>` 的手工折让腿（金额 = `solved − final`，为 0 时跳过，`post_journal` 已经会过滤）。
+2. `api/order.rs` 的收款 journal：在按货主分组的腿之外，追加一条手工折让腿。
+   - **折让（`solved > final`）**：`实收-<渠道> → 社团往来:<本社团>`，金额 = `solved − final`（正数）。
+   - **加价（`final > solved`，spec 4.3 明确允许）**：**把方向反过来**，
+     `社团往来:<本社团> → 实收-<渠道>`，金额 = `final − solved`（正数）。
+   - 金额为 0 时跳过（`post_journal` 已经会过滤零金额腿）。
+   - ⚠️ **不能直接把 `solved − final` 当金额交给 `post_journal`**：加价时它是负数，
+     而 `post_journal` 对非正金额直接返回
+     `BadRequest("资金移动的金额必须为正——方向由 from/to 表达，不靠负数")`。
+     照「金额 = `solved − final`」写，每一张加价订单的「完成」都会 400。
+     金额恒取绝对值，方向由 `from`/`to` 表达（spec 4.4 末句）。
 3. 新增 `domain/solver.rs`（纯函数）和 `api/lot.rs`（Lot 配置 CRUD）。
+4. `api/stats.rs` 的**三处** `SUM(ol.unit_price * ol.qty) as total_revenue_per_item`
+   （`/stats` 约 :122、`/sales_summary` 约 :193、`/download` 约 :403）：
+   ②-1 里 `unit_price × qty == allocated == paid` 所以数字是对的；Lot / 手工折让一落地，
+   这三处会把「折让前的原价」当成销售额，仪表盘 / 趋势图 / CSV / xlsx 全部虚高，
+   而 `SUM(orders.final_amount)` 那条总额仍然正确——于是「总额」和「按商品汇总之和」对不上。
+   **②-2 必须明确决定改用 `allocated_amount` 还是 `paid_amount`**，并让三处保持一致。
 
-**不要改**：`domain/ledger.rs` 的任何签名、`orders` / `order_lines` 的表结构、`EventProductResponse` 的字段。
-
-### ②-3 必须知道的两条不变量（执行中发现，别让它们从注释里蒸发）
+### ②-3 必须知道的几条不变量（执行中发现，别让它们从注释里蒸发）
 
 1. **「订单是 completed」不蕴含「存在收款 journal」。**
    spec 4.6 的赠品是 0 元行，一张全赠品订单的各货主合计都是 0，所有资金腿都被滤掉，
@@ -2991,5 +3005,27 @@ EOF
    **②-2/②-3 若引入任何「只写 order_lines 不写 stock_movements」的路径（比如纯服务类商品），
    这个不变量就破了，那个删除守卫必须同步补上 `order_lines`。**
 
-3. **`events.status` 只有 `进行中` 能下单**（Task 7 加的守卫）。完整的冻结语义
-   （不能退货、不能改盘点数）仍归 ②-3。
+3. **`events.status` 只有 `进行中` 能下单**（Task 7 加的守卫）。这条守卫**只盖住了
+   `api/order.rs` 的 `create_order` 一个口子**，不要读成「已结算的展会已经被保护了」。
+   下面这些写入口**当前完全不查 `events.status`**，②-3 做冻结时必须逐个补上：
+   - `api/order.rs` 的 `update_order_status`（完成 / 取消）
+   - `api/product.rs` 的 `add_product_to_event`
+   - `api/product.rs` 的 `restock_product`
+   - `api/product.rs` 的 `update_product`
+
+   正常流程下收摊前必须清 pending 所以这些路径不可达，但冻结语义要靠守卫而不是
+   「流程上到不了」来保证；②-3 的冻结不能只测下单。完整的冻结语义（不能退货、
+   不能改盘点数）也归 ②-3。
+
+### `channel` 的约束（②-3 做自定义渠道前必读）
+
+**`channel` 目前是无约束自由文本，而它会成为账户名的一部分**（`实收-<渠道>`）。
+今天不可达（唯一生产者是只有三个值的 radio group，后端也 trim 了），
+但 ②-3 做「自定义渠道」时**必须同时**做三件事：
+
+1. 写库前规范化（trim + 内部连续空白折叠）。
+2. 长度上限。
+3. **给前端一个 `SELECT DISTINCT` 的已用渠道列表，让摊主从已有的里挑**——
+   第三条才是真正防「微信」和「微信支付」分裂成两个账户的那一条。
+
+**不要加白名单**——spec 第 5 节明写「渠道可自定义（有社团用银行转账、有的用闲鱼）」。

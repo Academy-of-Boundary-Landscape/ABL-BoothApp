@@ -192,7 +192,13 @@ async fn create_order(
             return Err(ApiError::BadRequest("数量必须为正".into()));
         }
         match merged.iter_mut().find(|(pid, _)| *pid == item.product_id) {
-            Some((_, qty)) => *qty += item.quantity,
+            // 合并数量也必须检查溢出：这是全函数唯一一处旧式算术，而
+            // create_order 是公开未鉴权端点，release 回绕、debug 直接 panic。
+            Some((_, qty)) => {
+                *qty = qty
+                    .checked_add(item.quantity)
+                    .ok_or_else(|| ApiError::BadRequest("商品数量累加溢出".into()))?;
+            }
             None => merged.push((item.product_id, item.quantity)),
         }
     }
@@ -489,6 +495,9 @@ async fn update_order_status(
             // 「跳过已被冲正的」和「重复冲正被偏唯一索引拦住」。
             reverse_order_journals(&mut tx, order_id, Some("取消订单")).await?;
 
+            // 故意**不清** channel / completed_at：保留「这单曾用什么方式收款、
+            // 何时完成」的审计痕迹。②-3 收摊对账会读 cancelled 单的 channel，
+            // 别把这里当 bug 顺手清掉。
             query("UPDATE orders SET status = 'cancelled' WHERE id = ?")
                 .bind(order_id)
                 .execute(&mut *tx)
