@@ -62,29 +62,6 @@ pub struct Event {
 }
 
 // ==========================================
-// 3. Product (场次库存商品)
-// ==========================================
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct Product {
-    pub id: i64,
-    pub event_id: i64,
-    pub master_product_id: i64,
-    pub product_code: String,
-    pub name: String,
-    pub price: f64,
-    pub initial_stock: i64,
-    pub current_stock: i64,
-    // 以下字段数据库中没有，需要通过 JOIN master_products 获取
-    // 使用 sqlx 里的 default 属性处理 JOIN 出来的 nullable 字段
-    #[sqlx(default)]
-    pub image_url: Option<String>,
-    #[sqlx(default)]
-    pub category: Option<String>,
-    #[sqlx(default)]
-    pub tags: Option<String>,
-}
-
-// ==========================================
 // 4. Order (订单)
 // ==========================================
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]

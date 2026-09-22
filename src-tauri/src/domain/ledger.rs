@@ -138,6 +138,11 @@ impl FromStr for Account {
 // journal 种类
 // ==========================================
 
+/// 除 `Restock`（Task 5 的 `api/product.rs` 构造）外，其余变体由后续 task 构造：
+/// `Sale`/`Receipt`/`Refund`/`Cancel` → Task 6（订单），`Convert` → ②-2（Lot 拆封），
+/// `Gift`/`Scrap`/`Stocktake`/`TakeBack`/`Advance`/`Adjust` → ②-3。
+/// 在那之前它们是非 test 未构造变体。
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JournalKind {
     Restock,
@@ -292,6 +297,9 @@ pub async fn post_journal(
 /// **冲正而不是删除**，是会计的标准做法，也留下审计痕迹（弃单率随时能查）。
 /// 重复冲正由 `idx_journals_reverses` 这个偏唯一索引在 DB 层拦住——
 /// 没有它，一次网络重试就能把库存退两遍。
+///
+/// 消费方在 Task 6（取消订单/退货），此前无人调用。
+#[allow(dead_code)]
 pub async fn reverse_journal(
     tx: &mut Transaction<'_, Sqlite>,
     journal_id: i64,
@@ -361,6 +369,9 @@ pub async fn reverse_journal(
 ///
 /// 取消一个已完成的订单要同时回滚货和钱两个 journal（spec 6.1）——
 /// 只回滚一半正是旧模型反复出事的地方。返回冲正了几个。
+///
+/// 消费方在 Task 6（取消订单），此前无人调用。
+#[allow(dead_code)]
 pub async fn reverse_order_journals(
     tx: &mut Transaction<'_, Sqlite>,
     order_id: i64,
@@ -429,6 +440,9 @@ pub async fn onsite_balances(pool: &SqlitePool, event_id: i64) -> ApiResult<Hash
 /// 某个资金账户在某场展会里的余额。
 ///
 /// **永远按展会过滤**：跨展会没有连续账（设备不同步，做不对）。
+///
+/// 消费方在 Task 6 / ②-3（结算对账），此前无人调用。
+#[allow(dead_code)]
 pub async fn account_balance(
     pool: &SqlitePool,
     event_id: i64,

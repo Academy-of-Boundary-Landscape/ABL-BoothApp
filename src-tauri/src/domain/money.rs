@@ -23,6 +23,8 @@ pub struct Money(i64);
 impl Money {
     pub const ZERO: Money = Money(0);
 
+    /// 从分构造金额。消费方在 Task 6（记收款/销售的钱腿），此前只在 test 里用。
+    #[allow(dead_code)]
     pub const fn from_cents(cents: i64) -> Self {
         Money(cents)
     }
@@ -39,12 +41,17 @@ impl Money {
         self.0 < 0
     }
 
+    /// 消费方在 ②-3（结算调整可负，显示时取绝对值），此前无人调用。
+    #[allow(dead_code)]
     pub fn abs(self) -> Self {
         Money(self.0.abs())
     }
 
     /// 单价 × 数量。溢出返回 None——摊位场景溢不了，但把它变成一个
     /// 调用方必须处理的 Option，好过某天真的溢出时悄悄绕回负数。
+    ///
+    /// 消费方在 ②-2（折扣求解器算「单价 × 数量」），此前只在 test 里用。
+    #[allow(dead_code)]
     pub fn checked_mul_qty(self, qty: i64) -> Option<Self> {
         self.0.checked_mul(qty).map(Money)
     }
