@@ -812,7 +812,18 @@ Expected: 24 passed。`test_pool()` 会跑全部迁移，跑不通的话所有 H
 
 - [ ] **Step 3: 在 `db/models.rs` 里删旧 model、加新 model**
 
-删掉：`Product`、`Order`、`OrderWithItems`、`OrderItem`、`CreateOrderItemDTO`、`CreateOrderDTO`、`ProductSalesDetail`、`SalesTimeSeries`、`SalesSummary`、`SalesReport`（最后四个是 `#[allow(dead_code)]` 的僵尸 DTO，`api/stats.rs` 从来没用过，注释里写着「②/③a 重做统计响应类型时大概率会把 stats.rs 里的私有结构体换成它们」——现在的结论是不换，直接删）。
+**本 task 一个旧 model 都不删，只加新的。**
+
+旧 model（`Product` / `Order` / `OrderItem` / …）只是 struct，**不在编译期引用任何表**——
+表被删了它们照样编译，只是没人能用它们查到数据。而 `api/order.rs`、`api/product.rs`、
+`api/stats.rs` 都 `use` 着它们，本 task 删掉就会让这三个文件编译失败，逼得本 task
+去改三个它不拥有的 handler、写一堆 Task 5/6/7 马上要推翻的过渡代码。
+
+所以删除权跟着重写走：**Task 5 删 `Product`，Task 6 删 `Order` / `OrderWithItems` /
+`OrderItem` / `CreateOrderItemDTO` / `CreateOrderDTO`，Task 7 删四个僵尸 DTO**
+（`ProductSalesDetail` / `SalesTimeSeries` / `SalesSummary` / `SalesReport`——
+`#[allow(dead_code)]` 的，`api/stats.rs` 从来没用过，注释里写着「②/③a 重做统计响应类型时
+大概率会把 stats.rs 里的私有结构体换成它们」，现在的结论是不换，直接删）。
 
 `MasterProduct` 加一个字段：
 ```rust
