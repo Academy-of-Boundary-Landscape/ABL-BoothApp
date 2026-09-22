@@ -6,13 +6,13 @@ title: Advanced Tips
 
 Here are some "official features may not be complex, but you can achieve them with clever tricks" methods.
 
-## How to Set Up Discounts / Spend-and-Save Promotions?
+## How to Give Customers a Discount?
 
-To keep the accounting logic simple, the system currently lacks complex coupon features.
+Two paths cover almost every case you will meet at the booth:
 
-**Trick:**  
-You can create a product named "Discount/Rounding" and set its price to **-5 yuan**.  
-Add this product to the order during checkout, and the total price will automatically be reduced by 5 yuan.
+**① Sets** — configure "pick N of these, total XX" under "Sets & Discounts". The customer's cart automatically applies the cheapest set and shows how much they saved.
+
+**② Flat amount** — when you tap "Complete fulfillment", just edit the "Actual received" amount. The difference is recorded as a manual discount and is fully borne by this society; items consigned for other societies are still settled at their own prices. Increasing the amount works too, for rounding up or for a small item you did not enter.
 
 ## Does it Support "Bundled Sales" or "Sets"?
 
