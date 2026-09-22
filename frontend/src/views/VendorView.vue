@@ -77,11 +77,14 @@
     <!-- 隐藏的音频播放器，引用 public 目录下的 notify.mp3 -->
     <audio ref="audioRef" src="/notify.mp3" preload="auto"></audio>
 
-    <!-- 完成配货前先记收款方式；标题刻意不用「收款/已收款」，见 spec 第 11 节 -->
-    <ChannelPicker
-      :show="showChannelPicker"
-      @confirm="onChannelConfirm"
-      @cancel="showChannelPicker = false"
+    <!-- 完成配货前先确认收款：显示原价/应收/已套用的套装（可逐个拆），实收可改（spec 4.3） -->
+    <ReceiptModal
+      :show="showReceiptModal"
+      :gross-amount="pendingOrder?.gross_amount ?? 0"
+      :solved-amount="pendingOrder?.solved_amount ?? 0"
+      :lots="pendingOrder?.lots ?? []"
+      @confirm="onReceiptConfirm"
+      @cancel="closeReceipt"
     />
   </div>
 </template>
@@ -94,7 +97,7 @@ import { useEventStore } from '@/stores/eventStore'
 import { useEventDetailStore } from '@/stores/eventDetailStore'
 import LiveStats from '@/components/vendor/LiveStats.vue'
 import OrderCard from '@/components/order/OrderCard.vue'
-import ChannelPicker from '@/components/vendor/ChannelPicker.vue'
+import ReceiptModal from '@/components/vendor/ReceiptModal.vue'
 import { formatYuan } from '@/utils/money'
 
 const props = defineProps({
@@ -163,28 +166,33 @@ watch(
   }
 )
 
-// 点「完成配货」先选收款方式，选完才真正调接口。
-const showChannelPicker = ref(false)
-const pendingOrderId = ref(null)
+// 点「完成配货」先确认收款，确认了才真正调接口。
+const showReceiptModal = ref(false)
+const pendingOrder = ref(null)
 
 function completeOrder(orderId) {
-  pendingOrderId.value = orderId
-  showChannelPicker.value = true
+  pendingOrder.value = store.pendingOrders.find((o) => o.id === orderId) || null
+  showReceiptModal.value = true
 }
 
-async function onChannelConfirm(channel) {
-  const orderId = pendingOrderId.value
-  showChannelPicker.value = false
-  if (!orderId) return
+function closeReceipt() {
+  showReceiptModal.value = false
+  pendingOrder.value = null
+}
+
+async function onReceiptConfirm({ channel, finalAmount, unapplyLotIds }) {
+  const order = pendingOrder.value
+  showReceiptModal.value = false
+  if (!order) return
   try {
-    await store.markOrderAsCompleted(orderId, channel)
+    await store.markOrderAsCompleted(order.id, channel, finalAmount, unapplyLotIds)
     await eventDetailStore.fetchProductsForEvent(props.id)
     await store.fetchCompletedOrders()
-    message.success('已记录收款方式')
+    message.success('已记录收款')
   } catch (error) {
     message.error(error?.message || '操作失败')
   } finally {
-    pendingOrderId.value = null
+    pendingOrder.value = null
   }
 }
 

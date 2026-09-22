@@ -149,11 +149,14 @@
       </CollapsibleSection>
     </main>
 
-    <!-- 设为「已完成」前先记收款方式；标题刻意不用「收款/已收款」，见 spec 第 11 节 -->
-    <ChannelPicker
-      :show="showChannelPicker"
-      @confirm="onChannelConfirm"
-      @cancel="showChannelPicker = false"
+    <!-- 设为「已完成」前先确认收款：显示原价/应收/已套用的套装（可逐个拆），实收可改（spec 4.3） -->
+    <ReceiptModal
+      :show="showReceiptModal"
+      :gross-amount="pendingOrder?.gross_amount ?? 0"
+      :solved-amount="pendingOrder?.solved_amount ?? 0"
+      :lots="pendingOrder?.lots ?? []"
+      @confirm="onReceiptConfirm"
+      @cancel="closeReceipt"
     />
   </div>
 </template>
@@ -177,7 +180,7 @@ import {
 import HelpBubble from '@/components/shared/HelpBubble.vue'
 import EmptyGuide from '@/components/shared/EmptyGuide.vue'
 import CollapsibleSection from '@/components/shared/CollapsibleSection.vue'
-import ChannelPicker from '@/components/vendor/ChannelPicker.vue'
+import ReceiptModal from '@/components/vendor/ReceiptModal.vue'
 import { formatTimestamp } from '@/utils/dateFormatter'
 import { formatYuan, toCents } from '@/utils/money'
 const props = defineProps({
@@ -228,15 +231,15 @@ const filteredOrders = computed(() => {
   return orders
 })
 
-const showChannelPicker = ref(false)
-const pendingOrderId = ref(null)
+const showReceiptModal = ref(false)
+const pendingOrder = ref(null)
 
 function changeStatus(orderId, newStatus) {
   if (!newStatus) return
-  // 「已完成」会记一笔真实的资金移动，必须带渠道——走渠道选择而不是普通确认框。
+  // 「已完成」会记一笔真实的资金移动，必须带渠道——走收款确认而不是普通确认框。
   if (newStatus === 'completed') {
-    pendingOrderId.value = orderId
-    showChannelPicker.value = true
+    pendingOrder.value = store.allOrders.find((o) => o.id === orderId) || null
+    showReceiptModal.value = true
     return
   }
   dialog.warning({
@@ -255,17 +258,29 @@ function changeStatus(orderId, newStatus) {
   })
 }
 
-async function onChannelConfirm(channel) {
-  const orderId = pendingOrderId.value
-  showChannelPicker.value = false
-  if (!orderId) return
+function closeReceipt() {
+  showReceiptModal.value = false
+  pendingOrder.value = null
+}
+
+async function onReceiptConfirm({ channel, finalAmount, unapplyLotIds }) {
+  const order = pendingOrder.value
+  showReceiptModal.value = false
+  if (!order) return
   try {
-    await store.adminUpdateOrderStatus(props.id, orderId, 'completed', channel)
+    await store.adminUpdateOrderStatus(
+      props.id,
+      order.id,
+      'completed',
+      channel,
+      finalAmount,
+      unapplyLotIds
+    )
     message.success('状态已更新')
   } catch (error) {
     message.error(error.message || '更新失败')
   } finally {
-    pendingOrderId.value = null
+    pendingOrder.value = null
   }
 }
 

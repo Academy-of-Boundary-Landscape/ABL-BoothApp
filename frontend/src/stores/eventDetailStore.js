@@ -112,11 +112,22 @@ export const useEventDetailStore = defineStore('eventDetail', () => {
       isLoading.value = false
     }
   }
-  async function adminUpdateOrderStatus(eventId, orderId, newStatus, channel) {
+  async function adminUpdateOrderStatus(
+    eventId,
+    orderId,
+    newStatus,
+    channel,
+    finalAmount,
+    unapplyLotIds
+  ) {
     try {
       const payload = { status: newStatus }
       // 只有「完成」才需要渠道：账本里钱那条腿得有对手账户。
       if (channel) payload.channel = channel
+      // 不传就等于 solved_amount（后端决定），所以只在真拿到数字时才带上。
+      if (Number.isFinite(finalAmount)) payload.final_amount = finalAmount
+      // 空数组也不传：后端对非 completed 的转换会拒绝这个字段，少传少一处可能。
+      if (unapplyLotIds?.length) payload.unapply_lot_ids = unapplyLotIds
       const response = await api.put(`/events/${eventId}/orders/${orderId}/status`, payload)
       // 更新成功后，在本地 allOrders 列表中找到并更新该订单
       const processedOrders = processOrders([response.data])

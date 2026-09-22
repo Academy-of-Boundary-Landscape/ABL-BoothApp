@@ -20,6 +20,9 @@
         <!-- 商品信息 -->
         <div class="item-details">
           <span class="item-name">{{ item.product_name }}</span>
+          <!-- 同一个商品可能在一张订单里出现两行（2 件进套装、1 件散着，spec 4.5）。
+               不标出来，摊主配货时会以为系统重复计数了。 -->
+          <span v-if="item.lot_name" class="item-lot">{{ item.lot_name }}</span>
           <span class="item-price">{{ formatYuan(item.product_price) }}</span>
         </div>
         <!-- 数量 -->
@@ -28,7 +31,12 @@
     </div>
 
     <div class="order-footer">
-      <span class="total-amount">总计: {{ formatYuan(order.final_amount) }}</span>
+      <span class="total-amount">
+        <span v-if="order.final_amount !== order.gross_amount" class="struck">
+          {{ formatYuan(order.gross_amount) }}
+        </span>
+        总计: {{ formatYuan(order.final_amount) }}
+      </span>
       <!-- 【修改】只有在待处理状态下才显示按钮 -->
       <div v-if="!isCompleted" class="button-group">
         <n-button tertiary type="error" size="small" @click="$emit('cancel', order.id)"
@@ -154,6 +162,16 @@ const formattedTime = computed(() => {
   text-overflow: ellipsis;
 }
 
+.item-lot {
+  align-self: flex-start;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  background-color: var(--accent-color-light);
+  color: var(--accent-color);
+  font-size: var(--font-xs);
+  line-height: 1.6;
+}
+
 .item-price {
   font-size: var(--font-sm);
   color: var(--text-muted);
@@ -180,6 +198,12 @@ const formattedTime = computed(() => {
 .total-amount strong {
   font-size: var(--font-lg);
   color: var(--accent-color);
+}
+.total-amount .struck {
+  margin-right: 0.5rem;
+  color: var(--text-disabled);
+  text-decoration: line-through;
+  font-weight: 400;
 }
 /* 【新增】按钮组容器样式 */
 .actions {

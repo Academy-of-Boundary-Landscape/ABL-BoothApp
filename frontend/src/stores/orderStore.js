@@ -80,27 +80,28 @@ export const useOrderStore = defineStore('order', () => {
     }
   }
 
-  async function markOrderAsCompleted(orderId, channel) {
+  async function markOrderAsCompleted(orderId, channel, finalAmount, unapplyLotIds) {
     if (!activeEventId.value) return
     // 渠道是账本「钱」那条腿的对手账户，缺了后端会 400，前端先拦一道给出人话。
     if (!channel) throw new Error('请选择收款渠道')
     try {
-      await api.put(`/events/${activeEventId.value}/orders/${orderId}/status`, {
-        status: 'completed',
-        channel,
-      })
+      const payload = { status: 'completed', channel }
+      // 不传就等于 solved_amount（后端决定），所以只在真拿到数字时才带上。
+      if (Number.isFinite(finalAmount)) payload.final_amount = finalAmount
+      // 空数组也不传：后端对非 completed 的转换会拒绝这个字段，少传少一处可能。
+      if (unapplyLotIds?.length) payload.unapply_lot_ids = unapplyLotIds
+      await api.put(`/events/${activeEventId.value}/orders/${orderId}/status`, payload)
       // 更新成功后，将该订单从 pending 移到 completed
       const completedOrder = pendingOrders.value.find((order) => order.id === orderId)
       if (completedOrder) {
         completedOrders.value.unshift(completedOrder)
       }
       pendingOrders.value = pendingOrders.value.filter((order) => order.id !== orderId)
-
-      // 注意：为了实时更新库存，我们可能需要重新获取商品列表
-      // (这个逻辑放在组件里更合适)
     } catch (err) {
       console.error(err)
-      throw new Error('更新订单状态失败。')
+      // 后端的错误原文比「更新订单状态失败」有用得多：实收为负、要拆的套装不属于
+      // 这张订单、展会已结算，摊主看到原文才知道下一步该干什么。
+      throw new Error(err.response?.data?.error || '更新订单状态失败。')
     }
   }
   async function fetchCompletedOrders() {
