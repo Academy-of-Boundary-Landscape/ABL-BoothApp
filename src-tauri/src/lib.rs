@@ -6,10 +6,12 @@ use tauri::{DragDropEvent, Emitter, Manager, WindowEvent};
 
 mod api;
 mod db;
+pub mod domain;
+pub mod error;
 mod server;
 mod state;
 #[cfg(test)]
-mod test_support;
+pub mod test_support;
 mod utils;
 mod vision;
 mod web;
