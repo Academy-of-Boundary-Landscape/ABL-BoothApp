@@ -75,24 +75,38 @@ pub struct ResolvedLine {
 }
 
 /// 查 `event_products`，把 `(product_id, qty)` 变成带商品快照的行，顺序与 `merged` 一致。
+///
+/// 一条 `IN (...)` 查完再按 `merged` 重排：这是公开未鉴权端点，逐个 id 发查询意味着
+/// 一个请求最多打 `MAX_CART_ITEMS` 次库。`IN` 不保证返回顺序，而
+/// `PricedCart::lines` 的顺序是契约，所以重排不是可选项。
 pub async fn resolve_cart(
     conn: &mut SqliteConnection,
     event_id: i64,
     merged: &[(i64, i64)],
 ) -> ApiResult<Vec<ResolvedLine>> {
+    if merged.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let placeholders = vec!["?"; merged.len()].join(",");
+    let sql = format!(
+        "SELECT ep.id, ep.unit_price, ep.name, mp.image_url
+         FROM event_products ep
+         JOIN master_products mp ON mp.id = ep.master_product_id
+         WHERE ep.event_id = ? AND ep.id IN ({placeholders})"
+    );
+    let mut q = sqlx::query_as::<_, CartProduct>(sqlx::AssertSqlSafe(sql)).bind(event_id);
+    for (product_id, _) in merged {
+        q = q.bind(*product_id);
+    }
+    let products = q.fetch_all(&mut *conn).await?;
+
+    let mut by_id: HashMap<i64, CartProduct> = products.into_iter().map(|p| (p.id, p)).collect();
     let mut out = Vec::with_capacity(merged.len());
     for (product_id, qty) in merged {
-        let product: CartProduct = sqlx::query_as(
-            "SELECT ep.id, ep.unit_price, ep.name, mp.image_url
-             FROM event_products ep
-             JOIN master_products mp ON mp.id = ep.master_product_id
-             WHERE ep.id = ? AND ep.event_id = ?",
-        )
-        .bind(*product_id)
-        .bind(event_id)
-        .fetch_optional(&mut *conn)
-        .await?
-        .ok_or_else(|| ApiError::NotFound("商品不存在或不属于本场展会".into()))?;
+        let product = by_id
+            .remove(product_id)
+            .ok_or_else(|| ApiError::NotFound("商品不存在或不属于本场展会".into()))?;
         out.push(ResolvedLine { product, qty: *qty });
     }
     Ok(out)

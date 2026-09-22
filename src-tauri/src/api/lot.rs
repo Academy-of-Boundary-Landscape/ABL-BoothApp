@@ -139,6 +139,11 @@ fn validate_payload(payload: &LotPayload) -> ApiResult<String> {
     if payload.total_price < 0 {
         return Err(ApiError::BadRequest("套装价格不能为负".into()));
     }
+    // 上限 100 万元（分）。求解器在 `solver::best()` 里对套装价做 checked 加法，
+    // 没有这条，一个 i64::MAX 的套装价会让那条加法溢出。
+    if payload.total_price > 100_000_000 {
+        return Err(ApiError::BadRequest("套装价格超出合理范围".into()));
+    }
     // 候选集大小**不要求** >= pick_count：「任选 3 本 100」而候选只有一种书，
     // 意思是「买 3 本同款 100」，完全合法。
     Ok(name)
@@ -162,7 +167,19 @@ async fn write_candidates(conn: &mut SqliteConnection, lot_id: i64, ids: &[i64])
 
 /// `list_lots` 那条 JOIN 的行形状。抽成别名是为了过 `clippy::type_complexity`，
 /// 语义与内联元组完全一样。
-type LotListRow = (i64, i64, String, i64, i64, i64, i64, String);
+///
+/// 后三项是 `Option`：候选商品被删后 `lot_candidates` 的行被级联删掉，LEFT JOIN
+/// 会给出 NULL。
+type LotListRow = (
+    i64,
+    i64,
+    String,
+    i64,
+    i64,
+    Option<i64>,
+    Option<i64>,
+    Option<String>,
+);
 
 async fn list_lots(
     State(state): State<AppState>,
@@ -172,13 +189,20 @@ async fn list_lots(
     check_read_permission(&claims, event_id)?;
 
     // 一条 JOIN 查完再在 Rust 里分组，靠 ORDER BY l.id 保证同一个 Lot 的候选连续。
+    //
+    // 候选那几层必须是 LEFT JOIN：`lot_candidates.event_product_id` 是
+    // `ON DELETE CASCADE`，而进货数为 0 的商品从来不会产生 stock_movements，
+    // 所以可删。把某个 Lot 的最后一个候选删掉后，如果这里是 INNER JOIN，这个
+    // Lot 会从管理页和求解器里同时消失——**界面上再也删不掉它**。
+    // （求解器那条 `pricing::load_lots` 保持 INNER JOIN：空候选的 Lot 本来就
+    // 套用不上，不该对求解器可见。）
     let rows: Vec<LotListRow> = sqlx::query_as(
         "SELECT l.id, l.event_id, l.name, l.pick_count, l.total_price,
                 lc.event_product_id, ep.owner_society_id, s.name
          FROM lots l
-         JOIN lot_candidates lc ON lc.lot_id = l.id
-         JOIN event_products ep ON ep.id = lc.event_product_id
-         JOIN societies s ON s.id = ep.owner_society_id
+         LEFT JOIN lot_candidates lc ON lc.lot_id = l.id
+         LEFT JOIN event_products ep ON ep.id = lc.event_product_id
+         LEFT JOIN societies s ON s.id = ep.owner_society_id
          WHERE l.event_id = ?
          ORDER BY l.id, lc.event_product_id",
     )
@@ -189,16 +213,20 @@ async fn list_lots(
     let mut out: Vec<LotResponse> = Vec::new();
     for (id, ev, name, pick, price, candidate, owner, owner_name) in rows {
         match out.last_mut() {
-            Some(last) if last.id == id => last.candidate_ids.push(candidate),
+            Some(last) if last.id == id => {
+                if let Some(candidate) = candidate {
+                    last.candidate_ids.push(candidate);
+                }
+            }
             _ => out.push(LotResponse {
                 id,
                 event_id: ev,
                 name,
                 pick_count: pick,
                 total_price: price,
-                candidate_ids: vec![candidate],
-                owner_society_id: owner,
-                owner_society_name: owner_name,
+                candidate_ids: candidate.into_iter().collect(),
+                owner_society_id: owner.unwrap_or(0),
+                owner_society_name: owner_name.unwrap_or_else(|| "（候选已被删除）".to_string()),
             }),
         }
     }
@@ -622,6 +650,87 @@ mod tests {
         assert_eq!(lot_ref, None, "外键置空");
         assert_eq!(name, "会被删掉的套装", "名字快照还在");
         assert_eq!(price, 2000, "价格快照还在");
+    }
+
+    #[tokio::test]
+    async fn a_lot_whose_candidates_were_all_deleted_stays_listed_and_deletable() {
+        // `lot_candidates.event_product_id` 是 ON DELETE CASCADE，而 delete_product
+        // 只在有 stock_movements 时才拒绝——进货数为 0 的商品从来不产生移动，所以可删。
+        // 删光某个 Lot 的候选后，它必须仍然出现在 GET /lots 里，否则界面上再也删不掉它。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _ep_a, _ep_b) = seed_event_and_product(&pool).await;
+        sqlx::query(
+            "INSERT INTO master_products (id, product_code, name, default_price, owner_society_id)
+             VALUES (3, 'C', '没进过货的本子', 25.0, 1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO event_products (id, event_id, master_product_id, owner_society_id, product_code, name, unit_price)
+             VALUES (3, 1, 3, 1, 'C', '没进过货的本子', 2500)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let token = admin_token();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/lots"),
+                Some(&token),
+                json!({"name": "会被删空候选的套装", "pick_count": 1, "total_price": 2000,
+                       "candidate_ids": [3]}),
+            ))
+            .await
+            .unwrap();
+        let lot_id = read_json(res).await["id"].as_i64().unwrap();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "DELETE",
+                "/api/products/3",
+                Some(&token),
+                json!({}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK, "没有移动流水的商品可删");
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "GET",
+                &format!("/api/events/{event_id}/lots"),
+                Some(&token),
+                json!({}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = read_json(res).await;
+        let lots = body.as_array().unwrap();
+        assert_eq!(lots.len(), 1, "候选被删光的 Lot 不能跟着从管理页消失");
+        assert_eq!(lots[0]["id"], lot_id);
+        assert_eq!(lots[0]["candidate_ids"], json!([]));
+        assert_eq!(lots[0]["owner_society_id"], 0);
+        assert_eq!(lots[0]["owner_society_name"], "（候选已被删除）");
+
+        // 界面上唯一能删它的入口就是这一行，所以 DELETE 必须放行。
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "DELETE",
+                &format!("/api/events/{event_id}/lots/{lot_id}"),
+                Some(&token),
+                json!({}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NO_CONTENT);
     }
 
     #[tokio::test]

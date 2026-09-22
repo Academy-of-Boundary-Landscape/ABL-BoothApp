@@ -523,9 +523,13 @@ async fn download_sales_summary(
     // 5. 写入数据
     let mut start_row = header_row_idx + 1;
     let mut sum_quantity: i64 = 0;
-    // 注意：这里的金额是**元**（f64），和上面的 API 响应（分，i64）不一样是有意的——
-    // Excel 单元格是给人看的，所以单价/销售额/总计都除以 100 换算成元；API 响应保持分。
-    let mut sum_revenue: f64 = 0.0;
+    // 注意：单元格里显示的金额是**元**，和上面的 API 响应（分，i64）不一样是有意的——
+    // Excel 是给人看的，所以单价/销售额/总计都除以 100 换算成元；API 响应保持分。
+    //
+    // 但**累加必须用整数分**：`allocate_lot` 会算出 2857/3333/3810 这种无法用二进制
+    // 精确表示的数，f64 累加会带上误差，破坏「整数分」不变量。`as f64 / 100.0`
+    // 只允许出现在写单元格的那一行。
+    let mut sum_revenue_cents: i64 = 0;
 
     for item in details.iter() {
         // 修改点：所有带 format 的都加上 _with_format
@@ -561,7 +565,7 @@ async fn download_sales_summary(
         let _ = worksheet.write_blank(start_row, 3, &text_format);
 
         sum_quantity += item.total_quantity;
-        sum_revenue += item.total_revenue_per_item as f64 / 100.0;
+        sum_revenue_cents += item.total_revenue_per_item;
         start_row += 1;
     }
 
@@ -576,7 +580,12 @@ async fn download_sales_summary(
 
     let _ =
         worksheet.write_number_with_format(start_row, 5, sum_quantity as f64, &total_row_format);
-    let _ = worksheet.write_number_with_format(start_row, 6, sum_revenue, &total_currency_format);
+    let _ = worksheet.write_number_with_format(
+        start_row,
+        6,
+        sum_revenue_cents as f64 / 100.0,
+        &total_currency_format,
+    );
 
     start_row += 1;
     // 7. 写入备注和签名窗格

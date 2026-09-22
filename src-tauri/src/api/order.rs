@@ -560,6 +560,14 @@ async fn update_order_status(
                     // 成分行金额恢复成「单价 × 件数」，并解除归属。
                     // **不重新求解**：纯拆解，结果唯一，也不依赖当前的 Lot 配置
                     // （摊主可能刚把那个 Lot 改了或删了）。
+                    //
+                    // 这里是未检查乘法，但不可达：`unit_price`/`qty` 是下单时写进
+                    // `order_lines` 的快照，下单路径上 `price_cart` 已对同一组
+                    // (unit_price, qty) 跑过 `checked_mul_qty`，件数又受 `MAX_UNITS = 300`
+                    // 约束，能走到这里就已经证明乘不爆。不要改成 checked——那会多一条永远
+                    // 走不到的错误分支。真溢出的话 SQLite 会把 INTEGER 提升成 REAL，往
+                    // INTEGER 亲和性的列里写进一个浮点，后果比报错更隐蔽，所以这层依赖必须
+                    // 随 `price_cart` 的检查位置一起复核。
                     query(
                         "UPDATE order_lines
                          SET allocated_amount = unit_price * qty, order_lot_id = NULL

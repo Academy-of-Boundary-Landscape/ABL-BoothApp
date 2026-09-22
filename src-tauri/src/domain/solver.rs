@@ -40,6 +40,15 @@ fn overflow() -> ApiError {
     ApiError::BadRequest("金额溢出".into())
 }
 
+/// 与 `api::lot::validate_payload` 的 `total_price` 上限共用同一个错误。
+///
+/// `best()` 里的加法本身用 `checked_add_money` 守住，但能走到溢出的唯一现实路径
+/// 就是一个荒谬大的套装价（`lots.total_price` 只有 `CHECK (total_price >= 0)`）。
+/// 报「套装价格超出合理范围」比「金额溢出」更贴近用户看到的东西。
+fn price_out_of_range() -> ApiError {
+    ApiError::BadRequest("套装价格超出合理范围".into())
+}
+
 /// 购物车的一行。同一商品在进来之前**必须已经合并**（`pricing::merge_items` 负责）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CartLine {
@@ -168,7 +177,9 @@ impl Search<'_> {
         let mut next = state.to_vec();
         next[first] -= 1;
         let (rest, _) = self.best(&next)?;
-        let mut best_cost = self.prices[first] + rest;
+        let mut best_cost = self.prices[first]
+            .checked_add_money(rest)
+            .ok_or_else(price_out_of_range)?;
         let mut best_choice = Choice::Single(first);
 
         // 选项 B：把这一件放进某个含它的 Lot，再从候选里凑够 pick_count − 1 件。
@@ -200,7 +211,10 @@ impl Search<'_> {
                     after[*pos] -= *n;
                 }
                 let (rest, _) = self.best(&after)?;
-                let cost = self.lots[li].total_price + rest;
+                let cost = self.lots[li]
+                    .total_price
+                    .checked_add_money(rest)
+                    .ok_or_else(price_out_of_range)?;
                 // 严格小于：并列时保留先找到的那个。遍历顺序固定 ⇒ 同输入同输出。
                 if cost < best_cost {
                     let mut picks = combo.clone();
