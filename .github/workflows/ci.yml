@@ -16,7 +16,21 @@ jobs:
     name: Rust (fmt / clippy / test)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # src-tauri/src/web/mod.rs 用 include_dir! 在编译期嵌入 frontend/dist，
+      # 而那个目录是 gitignore 的 —— 干净 checkout 下不先构建前端，cargo 连
+      # check 都过不去（proc macro panic: "../frontend/dist" is not a directory）。
+      - name: Build frontend (required by include_dir! at compile time)
+        run: |
+          npm ci --prefix frontend
+          npm run build --prefix frontend
 
       # tauri crate 需要这些系统库才能编译。
       # 注意：不需要 onnxruntime —— ort 配的是 load-dynamic，编译期不链接它。
@@ -62,7 +76,7 @@ jobs:
     name: Frontend (lint / test / build)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: actions/setup-node@v4
         with:
@@ -101,7 +115,7 @@ jobs:
     # package-lock.json 而不碰 docs/ 时它根本不会触发，所以根 npm ci 和
     # docs:build 必须在这里（PR 门禁）单独兜底，不能指望那条 workflow 自己发现。
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: actions/setup-node@v4
         with:
@@ -129,7 +143,22 @@ jobs:
     name: Windows target check
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # src-tauri/src/web/mod.rs 用 include_dir! 在编译期嵌入 frontend/dist，
+      # 而那个目录是 gitignore 的 —— 干净 checkout 下不先构建前端，cargo 连
+      # check 都过不去（proc macro panic: "../frontend/dist" is not a directory）。
+      # npm ci / npm run build 都是跨平台命令，windows-latest runner 上同样能跑。
+      - name: Build frontend (required by include_dir! at compile time)
+        run: |
+          npm ci --prefix frontend
+          npm run build --prefix frontend
 
       # 钉死版本号，和 rust-toolchain.toml 的 channel 对齐——理由同 rust job 那一步。
       - uses: dtolnay/rust-toolchain@1.98.1
@@ -146,7 +175,21 @@ jobs:
     name: Android target check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # src-tauri/src/web/mod.rs 用 include_dir! 在编译期嵌入 frontend/dist，
+      # 而那个目录是 gitignore 的 —— 干净 checkout 下不先构建前端，cargo 连
+      # check 都过不去（proc macro panic: "../frontend/dist" is not a directory）。
+      - name: Build frontend (required by include_dir! at compile time)
+        run: |
+          npm ci --prefix frontend
+          npm run build --prefix frontend
 
       # 钉死版本号，和 rust-toolchain.toml 的 channel 对齐——理由同 rust job 那一步。
       # 故意不在这里用 `with: targets:` 装 aarch64-linux-android：rust-toolchain.toml
