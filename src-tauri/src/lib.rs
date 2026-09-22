@@ -7,13 +7,11 @@ use tauri::{DragDropEvent, Emitter, Manager, WindowEvent};
 mod api;
 mod db;
 // Task 1 建的基建，真正的非 test 调用点来得比预想晚：
-//   error  → Task 4（api/society.rs 返回 ApiResult）
 //   domain → Task 5（api/product.rs 调 ledger::onsite_balances）
 // 在那之前它们在非 test 构建里无人使用，会被 dead_code 拦住（clippy 带 -D warnings）。
 // **到了对应 task 接上真实调用点后，各自删掉自己那条 allow。**
 #[allow(dead_code)]
 mod domain;
-#[allow(dead_code)]
 mod error;
 mod server;
 mod state;

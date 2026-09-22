@@ -57,6 +57,14 @@ struct CatalogExport {
     /// AI 识别用图片列表（v1.1+ 新增，导入时向后兼容缺失的情况）
     #[serde(default)]
     product_images: Vec<ProductImageExport>,
+    /// 社团名单（v1.2+）。导入时按**名字**匹配/新建，不能用 id——
+    /// 不同设备上同一个社团的 id 必然不同。
+    #[serde(default)]
+    societies: Vec<String>,
+    /// product_code → 归属社团名（v1.2+）。导入时按名字解析成本地 id，
+    /// 缺失或找不到时回落到本社团。
+    #[serde(default)]
+    product_owners: Vec<(String, String)>,
 }
 
 // ==========================================
@@ -112,10 +120,55 @@ async fn export_products(State(state): State<AppState>, _: AdminOnly) -> impl In
     };
     dev_log!("export: loaded {} product_images", product_images.len());
 
+    // 2b. 社团名单 + 每个商品的归属社团名。
+    // 归属用**名字**传递而不是 id：不同设备上同一个社团的 id 必然不同。
+    let societies: Vec<String> = match sqlx::query_scalar("SELECT name FROM societies ORDER BY id")
+        .fetch_all(&state.db)
+        .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            eprintln!("{} export: fetch societies failed: {}", TAG, e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to load societies",
+            )
+                .into_response();
+        }
+    };
+    let product_owners: Vec<(String, String)> = match sqlx::query_as(
+        r#"
+        SELECT mp.product_code, s.name
+        FROM master_products mp
+        JOIN societies s ON s.id = mp.owner_society_id
+        ORDER BY mp.id
+        "#,
+    )
+    .fetch_all(&state.db)
+    .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            eprintln!("{} export: fetch product owners failed: {}", TAG, e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to load product owners",
+            )
+                .into_response();
+        }
+    };
+    dev_log!(
+        "export: loaded {} societies, {} product_owners",
+        societies.len(),
+        product_owners.len()
+    );
+
     // 3. 构建 catalog
     let catalog = CatalogExport {
         products,
         product_images,
+        societies,
+        product_owners,
     };
 
     // 4. 创建 ZIP
@@ -329,6 +382,8 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
                 CatalogExport {
                     products,
                     product_images: vec![],
+                    societies: vec![],
+                    product_owners: vec![],
                 }
             } else {
                 // 解析失败时打印 JSON 头一段帮助定位（截断到 200 字节避免刷屏）
@@ -470,20 +525,98 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
     };
     dev_log!("import.db: tx begun");
 
+    // ── 社团归属：按名字解析成本机 id，解析不到回落到本社团 ──
+    // 包里 MasterProduct 自带的 owner_society_id 是**源设备的 id**，绝不能用：
+    // 直接 upsert 会把商品挂到本机不相干的社团上，甚至挂到不存在的 id 上。
+    // 所以下面每个商品都用 product_owners 里的社团名重新解析并**无条件覆盖**。
+    let home_society_id: i64 =
+        match sqlx::query_scalar("SELECT id FROM societies WHERE is_home = 1 LIMIT 1")
+            .fetch_one(&mut *tx)
+            .await
+        {
+            Ok(id) => id,
+            Err(e) => {
+                eprintln!("{} import.db: resolve home society failed: {}", TAG, e);
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("DB Write Failed (society): {}", e),
+                )
+                    .into_response();
+            }
+        };
+
+    // 先把包里的社团按名字补齐（已存在就复用；本社团恒为 id 1，不会被覆盖）。
+    for name in &catalog.societies {
+        let name = name.trim();
+        if name.is_empty() {
+            continue;
+        }
+        if let Err(e) = query(
+            "INSERT INTO societies (name, is_home) VALUES (?, 0)
+             ON CONFLICT(name) DO NOTHING",
+        )
+        .bind(name)
+        .execute(&mut *tx)
+        .await
+        {
+            eprintln!("{} import.db: create society {:?} failed: {}", TAG, name, e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("DB Write Failed (society): {}", e),
+            )
+                .into_response();
+        }
+    }
+
+    // name -> 本机 id 的映射（补齐之后查一次即可，顺带覆盖本就存在的同名社团）。
+    let mut society_ids: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    match sqlx::query_as::<_, (i64, String)>("SELECT id, name FROM societies")
+        .fetch_all(&mut *tx)
+        .await
+    {
+        Ok(rows) => {
+            for (id, name) in rows {
+                society_ids.insert(name, id);
+            }
+        }
+        Err(e) => {
+            eprintln!("{} import.db: load societies failed: {}", TAG, e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("DB Write Failed (society): {}", e),
+            )
+                .into_response();
+        }
+    }
+
+    // product_code -> 归属社团名。
+    let owner_by_code: std::collections::HashMap<&str, &str> = catalog
+        .product_owners
+        .iter()
+        .map(|(code, name)| (code.as_str(), name.as_str()))
+        .collect();
+
     // Upsert 商品数据
     let products_count = catalog.products.len();
     for (idx, prod) in catalog.products.iter().enumerate() {
+        // 无条件用解析结果覆盖 prod.owner_society_id（外来 id）。
+        let owner_society_id = owner_by_code
+            .get(prod.product_code.as_str())
+            .and_then(|name| society_ids.get(*name).copied())
+            .unwrap_or(home_society_id);
+
         let res = query(
                     r#"
-                    INSERT INTO master_products (product_code, name, default_price, category, image_url, is_active, tags)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO master_products (product_code, name, default_price, category, image_url, is_active, tags, owner_society_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(product_code) DO UPDATE SET
                         name = excluded.name,
                         default_price = excluded.default_price,
                         category = excluded.category,
                         image_url = excluded.image_url,
                         is_active = excluded.is_active,
-                        tags = excluded.tags
+                        tags = excluded.tags,
+                        owner_society_id = excluded.owner_society_id
                     "#,
                 )
                 .bind(&prod.product_code)
@@ -493,6 +626,7 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
                 .bind(&prod.image_url)
                 .bind(prod.is_active)
                 .bind(&prod.tags)
+                .bind(owner_society_id)
                 .execute(&mut *tx)
                 .await;
 

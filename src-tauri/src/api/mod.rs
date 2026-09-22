@@ -9,6 +9,7 @@ mod info;
 mod master_product;
 mod order;
 mod product;
+mod society;
 mod stats;
 mod sync;
 #[cfg(feature = "vision")]
@@ -20,6 +21,7 @@ pub fn router() -> Router<AppState> {
         .nest("/events", event::router())
         .nest("/events", stats::router())
         .nest("/master-products", master_product::router())
+        .nest("/societies", society::router())
         .nest("/admin", admin::router())
         .merge(sync::router())
         .merge(info::router())

@@ -27,6 +27,9 @@ pub enum ApiError {
     #[error("{0}")]
     Conflict(String),
 
+    /// 权限不足由 handler 主动返回。Task 5 的 `api/product.rs::check_write_permission`
+    /// 才会用到，在那之前它是本枚举里唯一的非 test 未构造变体。
+    #[allow(dead_code)]
     #[error("权限不足")]
     Forbidden,
 
