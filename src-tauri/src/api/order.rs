@@ -397,6 +397,10 @@ async fn create_order(
                 .lines
                 .iter()
                 .filter(|l| l.lot_index == Some(k))
+                // 这里是未检查乘法，但安全：price_cart 对**同一组** (unit_price, qty)
+                // 已经跑过 checked_mul_qty，溢出会在那一步提前返回 Err，能走到这里就已经证明乘不爆。
+                // 不要改成 checked——那会多一条永远走不到的错误分支；将来挪动 price_cart 里的检查位置时，
+                // 必须同步确认这层依赖仍然成立。
                 .map(|l| l.unit_price.cents() * l.qty)
                 .sum(),
         })
@@ -590,6 +594,9 @@ async fn update_order_status(
                 .fetch_one(&mut *tx)
                 .await?;
             let final_amount = payload.final_amount.unwrap_or(solved);
+            // 这里和 domain/allocation.rs 的 apply_manual_adjustment 里那道 final_amount < 0 检查重复，
+            // 内层在这条路径上不可达。保留 handler 这一处，它更靠前、给出的错误更便宜；两处文案要一起改。
+            // **不要删内层那道**——那是纯函数自己的前置条件，还有别的调用方会来。
             if final_amount < 0 {
                 return Err(ApiError::BadRequest("实收金额不能为负".into()));
             }
