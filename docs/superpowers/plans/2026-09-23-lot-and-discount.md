@@ -5095,3 +5095,60 @@ Task 9 把 `stats.rs` 三处「按商品汇总」改成了 `paid_amount`（顾�
    而接公网本来就违反产品定位（路线图「不能破坏的三件事」第 1 条）。
 3. **`AdminEventOrders.vue` 没改。** 它仍然只显示 `final_amount`，看不到原价和套装。
    ④ 的 IA 重设计会整体重做订单管理页，现在改一半是浪费。
+
+---
+
+## 执行后记（2026-09-23 完成）
+
+②-2 于 2026-09-23 执行完毕，`1.2-dev` 上 22 个提交（13 个 task + 3 次收口 + 6 次修复）。
+执行方式：**dsh-flash（DeepSeek）做实现者、Claude 做审查者**，2-3 个 task 一批，五批。
+Rust 测试 **64 → 123**，前端 vitest **31 → 35**。五轮 task 审查 + 一轮整支分支审查（Opus）
++ 一轮定向复审，最终 0 Critical / 0 Important 未决。
+
+### 计划本身的三处缺陷（执行中被实现者撞出来，值得记住）
+
+1. **sqlx 0.9 的 `SqlStr` 变更**：拼出来的动态 SQL 不能直接传 `query_as`，要包 `sqlx::AssertSqlSafe`。
+   plan 里 Task 4 的代码照 0.7 的写法写的，编译不过。
+2. **测试夹具撞唯一约束**：Task 4 的夹具插第二条 `event_products` 时沿用了 `master_product_id = 1`，
+   撞 `UNIQUE(event_id, master_product_id)`。
+3. **Task 12 漏了第二个消费方**：`ChannelPicker.vue` 被 `AdminEventOrders.vue` 和 `VendorView.vue`
+   两处引用，plan 的文件清单只列了后者。删掉组件而不改前者 = build 直接炸。
+   （救回来的是我自己在 Task 12 Step 5 写的 `grep -rn "ChannelPicker" frontend/src` 门禁。）
+
+另有两处是**验收标准**的缺陷，不是代码问题：完成标准里的
+`grep -rn "unit_price \* ol.qty" src-tauri/src` 会误伤 `api/order.rs` 的 `LOTS_BY_*`
+（那是 `original_amount` 的有意口径），应限定到 `api/stats.rs`；
+而每个前端 Task 的「在 VNC 上看一眼」那一步是给人留的，被 headless worker 照做后
+起了永不退出的 dev server 卡死了一整批。
+
+### 整支分支审查抓出的、逐个 task 审查结构上看不到的两条
+
+- **FAQ 三语种自相矛盾**：`docs/faq/advanced.md` 的「支持套装吗」一节仍在教用户建
+  「XX套装」商品，与**同一文件上一节**及改好的 `Help.vue` 相反。跨 Task 12/13 两批，
+  Task 13 的完成 grep 只盯负价格那句，五轮审查全漏。
+- **管理端订单列表缺套装标签**：Task 6 让同一商品在一张单里出现两行，Task 12 只给
+  摊主端加了区分标签，管理端仍显示「本子A x 2 / 本子A x 1」，看着像重复计数。
+
+两条都已修复。
+
+### 留给后续的 deferred minor（均不阻断合并，按价值排序）
+
+| # | 事项 | 位置 |
+|---|---|---|
+| 1 | 全代卖订单**加价**的镜像场景无测试（折让方向有） | `api/order.rs` 测试模块 |
+| 2 | 事件级不变量「pending + completed + cancelled 混合时 Σpaid == Σfinal」无测试 | `api/stats.rs` 测试模块 |
+| 3 | `/quote` 的 `MAX_STATE_SPACE` / `MAX_STEPS` 无 HTTP 层测试（只有 `MAX_UNITS` 单测） | `api/lot.rs` |
+| 4 | `resolve_cart` 现在依赖入参已去重（`by_id.remove()`），它是 `pub`，该补前置条件注释 | `domain/pricing.rs` |
+| 5 | H / I 两项等价改写无新增测试（xlsx 单元格值、`resolve_cart` 部分缺失 id 与顺序契约） | `api/stats.rs` / `domain/pricing.rs` |
+| 6 | 「展会不存在→404」分支、`list_lots` 的 HTTP 层分组无直接测试 | `api/lot.rs` |
+| 7 | `validate_payload` 未给 `pick_count` 上限（只判 > 0） | `api/lot.rs` |
+| 8 | `sum_revenue_cents += ...` 是未检查 i64 加法（需 ~9.2e18 分才溢出） | `api/stats.rs` |
+| 9 | 收款弹窗的套装行是 `<div @click>`，无 `role`/`tabindex` | `ReceiptModal.vue` |
+| 10 | `db/models.rs:89` 手工维护的行号引用迟早漂移 | `db/models.rs` |
+
+### 全程未做的事
+
+**运行时行为零验证。** headless worker 被禁止启动 dev server，六轮审查全部是读码 + 自动化测试。
+下列全部未验：购物车报价的实际防抖观感、收款弹窗拆套装的点选体验、管理端完成订单的完整流程、
+以及 plan「完成标准」里那条 VNC 端到端走查（含**必须用代卖社团的货**验拆套装归属的那一项）。
+真机验证仍是发版前的硬前提。
