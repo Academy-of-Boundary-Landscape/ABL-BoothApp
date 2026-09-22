@@ -41,6 +41,12 @@ pub async fn init_db(app_data_dir: &PathBuf) -> Result<SqlitePool, sqlx::Error> 
 
     // 5+6. 迁移前快照（视情况）+ 运行迁移，失败就还原。
     let migrator = sqlx::migrate!();
+    // spec 8：v1 → v2 是知情清零，老库必须永久留一份。
+    // 和 ① 的 premigrate 快照不是一回事——那些按 KEEP=3 轮转会被后续迁移挤掉
+    // （见路线图附录第 3 条），这一份不参与轮转、永不删除。
+    if db_existed {
+        backup_v1_once(&pool, &db_path).await;
+    }
     migrate_with_snapshot(&pool, &db_path, db_existed, &migrator).await?;
 
     // 7. 检查并初始化默认管理员/摊主密码
@@ -207,6 +213,39 @@ pub async fn reset_database(app_data_dir: &PathBuf) -> Result<SqlitePool, sqlx::
     init_db(app_data_dir).await
 }
 
+/// v1 库的一次性永久备份。只在「确实是 v1 库」且「备份还不存在」时落一份。
+///
+/// 判据是 `products` 表还在 —— 那是 v1 独有、v2 迁移会删掉的表。用它而不是版本号，
+/// 是因为 `_sqlx_migrations` 在损坏库上读不出来，而这种库恰恰最需要备份。
+/// 失败不阻断启动，但要吼出来。
+async fn backup_v1_once(pool: &SqlitePool, db_path: &Path) {
+    let dest = db_path.with_extension("db.v1-backup");
+    if dest.exists() {
+        return;
+    }
+
+    let is_v1: Result<Option<String>, sqlx::Error> = sqlx::query_scalar(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'products'",
+    )
+    .fetch_optional(pool)
+    .await;
+
+    if !matches!(is_v1, Ok(Some(_))) {
+        return;
+    }
+
+    // VACUUM INTO 而不是 fs::copy：库跑在 WAL 模式下，直接拷 .db 会漏掉
+    // -wal 中尚未 checkpoint 的数据。理由同 db/snapshot.rs。
+    let escaped = dest.to_string_lossy().replace('\'', "''");
+    match sqlx::query(sqlx::AssertSqlSafe(format!("VACUUM INTO '{escaped}'")))
+        .execute(pool)
+        .await
+    {
+        Ok(_) => println!("[Booth Tool] v1 database preserved at {}", dest.display()),
+        Err(e) => eprintln!("[Booth Tool] WARNING: v1 backup failed: {e}"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -323,6 +362,60 @@ mod tests {
         assert!(
             should_snapshot_before_migrate(&pool, &migrator).await,
             "迁移追踪表缺失时必须 fail-safe，判定需要快照"
+        );
+    }
+
+    /// spec 8 的知情清零要求老库永久留存。这条守的是「只对 v1 库落、只落一次」。
+    #[tokio::test]
+    async fn backup_v1_once_preserves_old_db_exactly_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("sale_system.db");
+        let pool = empty_wal_db(&db_path).await;
+
+        // 造一个 v1 特征：products 表存在
+        sqlx::query("CREATE TABLE products (id INTEGER PRIMARY KEY, marker TEXT)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO products (marker) VALUES ('v1-data')")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let dest = db_path.with_extension("db.v1-backup");
+        backup_v1_once(&pool, &db_path).await;
+        assert!(dest.exists(), "v1 库应被备份");
+
+        // 备份内容必须读得到（VACUUM INTO 的事务一致性，fs::copy 在 WAL 下会漏）
+        let snap = SqlitePool::connect(&format!("sqlite://{}", dest.display()))
+            .await
+            .unwrap();
+        let marker: String = sqlx::query_scalar("SELECT marker FROM products")
+            .fetch_one(&snap)
+            .await
+            .unwrap();
+        assert_eq!(marker, "v1-data");
+        snap.close().await;
+
+        // 第二次调用必须是 no-op：不能把用户已经看过的备份覆盖掉
+        let before = std::fs::metadata(&dest).unwrap().modified().unwrap();
+        backup_v1_once(&pool, &db_path).await;
+        let after = std::fs::metadata(&dest).unwrap().modified().unwrap();
+        assert_eq!(before, after, "备份已存在时必须 no-op");
+    }
+
+    /// 全新安装（没有 products 表）不该产生 v1 备份文件。
+    #[tokio::test]
+    async fn backup_v1_once_skips_fresh_v2_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("sale_system.db");
+        let pool = empty_wal_db(&db_path).await;
+        sqlx::migrate!().run(&pool).await.unwrap();
+
+        backup_v1_once(&pool, &db_path).await;
+        assert!(
+            !db_path.with_extension("db.v1-backup").exists(),
+            "v2 库不该产生 v1 备份"
         );
     }
 }

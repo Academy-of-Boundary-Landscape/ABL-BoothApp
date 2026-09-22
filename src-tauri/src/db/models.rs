@@ -5,6 +5,13 @@ use sqlx::FromRow;
 // ==========================================
 // 1. Master Product (全局商品)
 // ==========================================
+
+/// `master_products.owner_society_id` 的 serde 默认值。`.boothpack` 从老版本导入时
+/// 这一列可能缺失，缺失就回落到本社团。
+fn default_home_society() -> i64 {
+    1
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct MasterProduct {
     pub id: i64, // SQLite 的 INTEGER 对应 Rust 的 i64
@@ -21,6 +28,10 @@ pub struct MasterProduct {
     #[serde(default)]
     #[sqlx(default)]
     pub image_count: Option<i64>,
+    /// 归属社团的**默认值**。选品时会被快照到 `event_products.owner_society_id`，
+    /// 之后改这里不影响已有展会的账（spec 3.1）。
+    #[serde(default = "default_home_society")]
+    pub owner_society_id: i64,
 }
 
 // 用于接收前端创建商品的请求 Body
@@ -177,4 +188,71 @@ pub struct SalesReport {
     pub total_revenue: f64,
     pub summary: Vec<ProductSalesDetail>,
     pub timeseries: Vec<SalesTimeSeries>,
+}
+
+// ==========================================
+// 社团（货主的单位）
+// ==========================================
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct Society {
+    pub id: i64,
+    pub name: String,
+    pub is_home: bool,
+}
+
+// ==========================================
+// 摊位商品
+// ==========================================
+// 注意**没有 current_stock / initial_stock**：余额是 stock_movements 的聚合，
+// 由 handler 组装进响应（见 api/product.rs 的 EventProductResponse）。
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct EventProduct {
+    pub id: i64,
+    pub event_id: i64,
+    pub master_product_id: i64,
+    pub owner_society_id: i64,
+    pub product_code: String,
+    pub name: String,
+    /// 单位：分
+    pub unit_price: i64,
+    // JOIN master_products 得到，SELECT 里没有这几列时 sqlx(default) 返回 None
+    #[sqlx(default)]
+    pub image_url: Option<String>,
+    #[sqlx(default)]
+    pub category: Option<String>,
+    #[sqlx(default)]
+    pub tags: Option<String>,
+}
+
+// ==========================================
+// 订单
+// ==========================================
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct OrderRow {
+    pub id: i64,
+    pub event_id: i64,
+    pub status: String,
+    pub channel: Option<String>,
+    /// 以下三个单位都是分。②-1 里恒相等；②-2 引入 Lot 和手工覆盖后才会分开。
+    pub gross_amount: i64,
+    pub solved_amount: i64,
+    pub final_amount: i64,
+    /// 前端读的是 `timestamp` —— 这个 rename 是个隐形契约，
+    /// `frontend/src/components/order/OrderCard.vue:55` 和
+    /// `frontend/src/views/AdminEventOrders.vue:114` 都依赖它。改名会静默白屏。
+    #[serde(rename = "timestamp")]
+    pub created_at: NaiveDateTime,
+    pub completed_at: Option<NaiveDateTime>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct OrderLineRow {
+    pub id: i64,
+    pub order_id: i64,
+    pub event_product_id: i64,
+    pub order_lot_id: Option<i64>,
+    pub qty: i64,
+    pub unit_price: i64,
+    pub allocated_amount: i64,
+    pub paid_amount: i64,
 }
