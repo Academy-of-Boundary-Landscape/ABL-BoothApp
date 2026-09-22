@@ -64,7 +64,7 @@
             <template #footer>
               <div class="status-actions">
                 <n-button
-                  v-if="event.status === '未进行'"
+                  v-if="event.status === '筹备'"
                   size="small"
                   @click.stop="changeStatus(event.id, '进行中')"
                   >► 开始</n-button
@@ -72,13 +72,13 @@
                 <n-button
                   v-if="event.status === '进行中'"
                   size="small"
-                  @click.stop="changeStatus(event.id, '已结束')"
+                  @click.stop="changeStatus(event.id, '已结算')"
                   >■ 结束</n-button
                 >
                 <n-button
-                  v-if="event.status === '已结束'"
+                  v-if="event.status === '已结算'"
                   size="small"
-                  @click.stop="changeStatus(event.id, '未进行')"
+                  @click.stop="changeStatus(event.id, '筹备')"
                   >► 重新开始</n-button
                 >
                 <n-button size="small" type="primary" @click.stop="openEditModal(event)"
@@ -182,8 +182,8 @@ onMounted(() => {
 
 const statusType = (status) => {
   if (status === '进行中') return 'warning'
-  if (status === '已结束') return 'default'
-  return 'success' // 未进行
+  if (status === '已结算') return 'default'
+  return 'success' // 筹备
 }
 async function confirmDelete(eventId) {
   // 弹出浏览器原生确认框

@@ -12,7 +12,7 @@
       <div class="stat-row">
         <div class="stat-card">
           <span class="label">当前营业额</span>
-          <span class="value revenue">¥{{ orderStore.totalRevenue.toFixed(2) }}</span>
+          <span class="value revenue">{{ formatYuan(orderStore.totalRevenue) }}</span>
         </div>
         <div class="stat-card">
           <span class="label">待处理订单</span>
@@ -47,7 +47,7 @@
             :class="stockLevel(product)"
           >
             <span class="chip-name">{{ product.name }}</span>
-            <span class="chip-count">{{ product.current_stock }}</span>
+            <span class="chip-count">{{ product.onsite_qty }}</span>
           </div>
         </div>
 
@@ -63,7 +63,7 @@
               rail-color="var(--bg-secondary)"
             />
             <span class="stock-value" :class="stockLevel(product)">
-              {{ product.current_stock }} / {{ product.initial_stock }}
+              {{ product.onsite_qty }} / {{ product.stocked_qty }}
             </span>
           </div>
         </div>
@@ -77,6 +77,7 @@ import { useOrderStore } from '@/stores/orderStore'
 import { onMounted, onUnmounted, ref } from 'vue'
 import { NButton, NSpin, NProgress } from 'naive-ui'
 import { useEventDetailStore } from '@/stores/eventDetailStore'
+import { formatYuan } from '@/utils/money'
 
 const props = defineProps({
   eventId: { type: String, required: true },
@@ -88,13 +89,13 @@ const orderStore = useOrderStore()
 const eventDetailStore = useEventDetailStore()
 
 function stockPercentage(product) {
-  if (product.initial_stock === 0) return 0
-  return (product.current_stock / product.initial_stock) * 100
+  if (product.stocked_qty === 0) return 0
+  return (product.onsite_qty / product.stocked_qty) * 100
 }
 
 function stockLevel(product) {
-  if (product.current_stock === 0) return 'level-out'
-  if (product.current_stock <= 5) return 'level-critical'
+  if (product.onsite_qty === 0) return 'level-out'
+  if (product.onsite_qty <= 5) return 'level-critical'
   const pct = stockPercentage(product)
   if (pct <= 20) return 'level-low'
   return 'level-ok'

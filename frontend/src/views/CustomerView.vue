@@ -297,6 +297,7 @@ import ProductGrid from '@/components/customer/ProductGrid.vue'
 import ShoppingCart from '@/components/customer/ShoppingCart.vue'
 import PaymentModal from '@/components/customer/PaymentModal.vue'
 import VisionSearch from '@/components/shared/VisionSearch.vue'
+import { formatYuan } from '@/utils/money'
 import { NScrollbar, NSpin, NSlider, NButton, useDialog } from 'naive-ui'
 
 const props = defineProps({ id: { type: String, required: true } })
@@ -320,7 +321,7 @@ function onVisionSelect(hit) {
     showError(`未找到商品「${hit.name}」，可能不在本场展会中`)
     return
   }
-  if (product.current_stock <= 0) {
+  if (product.onsite_qty <= 0) {
     showError(`「${product.name}」已售罄`)
     return
   }
@@ -431,8 +432,8 @@ watch(
       subset = subset.filter((p) => (p.tags || '').split(',').some((t) => t.trim() === tag))
     }
     // 售罄商品自动置底，有货的保持原有排序
-    const inStock = subset.filter((p) => p.current_stock > 0)
-    const soldOut = subset.filter((p) => p.current_stock <= 0)
+    const inStock = subset.filter((p) => p.onsite_qty > 0)
+    const soldOut = subset.filter((p) => p.onsite_qty <= 0)
     mutableProducts.value = [...inStock, ...soldOut]
   },
   { immediate: true }
@@ -529,7 +530,7 @@ async function handleCheckout() {
 
   dialog.info({
     title: '确认下单',
-    content: `共 ${itemCount} 件商品，合计 ¥${totalAmount.toFixed(2)}`,
+    content: `共 ${itemCount} 件商品，合计 ${formatYuan(totalAmount)}`,
     positiveText: '确认下单',
     negativeText: '再看看',
     onPositiveClick: async () => {

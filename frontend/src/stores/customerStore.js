@@ -77,14 +77,14 @@ export const useCustomerStore = defineStore('customer', () => {
   function addToCart(product) {
     const existingItem = cart.value.find((item) => item.id === product.id)
     if (existingItem) {
-      if (existingItem.quantity < product.current_stock) {
+      if (existingItem.quantity < product.onsite_qty) {
         existingItem.quantity++
       } else {
         const { showError } = useAlert()
         showError(`抱歉，"${product.name}" 库存不足！`)
       }
     } else {
-      if (product.current_stock > 0) {
+      if (product.onsite_qty > 0) {
         cart.value.push({ ...product, quantity: 1 })
       }
     }
@@ -128,8 +128,9 @@ export const useCustomerStore = defineStore('customer', () => {
   }
 
   // --- Getters ---
+  // 单位：分（整数运算，展示端由 formatYuan 除以 100）。
   const cartTotal = computed(() => {
-    return cart.value.reduce((total, item) => total + item.price * item.quantity, 0)
+    return cart.value.reduce((total, item) => total + item.unit_price * item.quantity, 0)
   })
 
   const cartItemCount = computed(() => {

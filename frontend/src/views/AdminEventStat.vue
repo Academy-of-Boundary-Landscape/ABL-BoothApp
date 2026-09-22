@@ -104,7 +104,7 @@
         </div>
         <SalesLineChart
           v-if="statStore.stats.timeseries?.length"
-          :series="statStore.stats.timeseries"
+          :series="chartSeries"
           :width="chartWidth"
           :height="chartHeight"
           :padding="padding"
@@ -158,6 +158,7 @@ import { NButton, NSpin, NAlert } from 'naive-ui'
 import HelpBubble from '@/components/shared/HelpBubble.vue'
 import CollapsibleSection from '@/components/shared/CollapsibleSection.vue'
 import { toAbsoluteApiUrl } from '@/services/url'
+import { formatYuan, fromCents } from '@/utils/money'
 
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeFile } from '@tauri-apps/plugin-fs'
@@ -210,9 +211,14 @@ const chartSubtitle = computed(() => {
 })
 
 function formatCurrency(value) {
-  if (typeof value !== 'number') return '¥ 0.00'
-  return `¥ ${value.toFixed(2)}`
+  // 统计接口的金额一律是分，展示走唯一的换算入口。
+  return formatYuan(value)
 }
+
+// 趋势图的内部数值按元计算（坐标轴/提示框），所以先把分换算成元再传。
+const chartSeries = computed(() =>
+  (statStore.stats?.timeseries || []).map((p) => ({ ...p, revenue: fromCents(p.revenue) }))
+)
 
 // Chart implementation moved to SalesLineChart component
 
@@ -319,10 +325,11 @@ async function downloadCsv() {
     const rows = summary.map((item) => [
       item.product_code ?? '',
       item.product_name ?? '',
-      typeof item.unit_price === 'number' ? item.unit_price.toFixed(2) : '0.00',
+      // 接口是分，CSV 给人看，换算成元。
+      typeof item.unit_price === 'number' ? fromCents(item.unit_price).toFixed(2) : '0.00',
       item.total_quantity ?? 0,
       typeof item.total_revenue_per_item === 'number'
-        ? item.total_revenue_per_item.toFixed(2)
+        ? fromCents(item.total_revenue_per_item).toFixed(2)
         : '0.00',
     ])
 

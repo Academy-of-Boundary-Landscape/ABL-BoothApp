@@ -194,6 +194,10 @@ const menuOptions = computed(() => {
       key: '/admin/master-products',
     },
     {
+      label: () => h(RouterLink, { to: '/admin/societies' }, { default: () => '社团管理' }),
+      key: '/admin/societies',
+    },
+    {
       label: () => h(RouterLink, { to: '/admin/help' }, { default: () => '使用教程' }),
       key: '/admin/help',
     },

@@ -80,11 +80,14 @@ export const useOrderStore = defineStore('order', () => {
     }
   }
 
-  async function markOrderAsCompleted(orderId) {
+  async function markOrderAsCompleted(orderId, channel) {
     if (!activeEventId.value) return
+    // 渠道是账本「钱」那条腿的对手账户，缺了后端会 400，前端先拦一道给出人话。
+    if (!channel) throw new Error('请选择收款渠道')
     try {
       await api.put(`/events/${activeEventId.value}/orders/${orderId}/status`, {
         status: 'completed',
+        channel,
       })
       // 更新成功后，将该订单从 pending 移到 completed
       const completedOrder = pendingOrders.value.find((order) => order.id === orderId)
@@ -125,8 +128,9 @@ export const useOrderStore = defineStore('order', () => {
       throw new Error('取消订单失败。')
     }
   }
+  // 单位：分。展示端由 formatYuan 除以 100。
   const totalRevenue = computed(() => {
-    return completedOrders.value.reduce((total, order) => total + order.total_amount, 0)
+    return completedOrders.value.reduce((total, order) => total + order.final_amount, 0)
   })
 
   return {

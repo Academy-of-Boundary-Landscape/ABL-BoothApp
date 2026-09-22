@@ -6,6 +6,7 @@ import AdminDashboard from '../views/AdminDashboard.vue'
 import AdminControlPanel from '../views/AdminControlPanel.vue'
 import AdminMasterProducts from '../views/AdminMasterProducts.vue'
 import AdminEventProducts from '../views/AdminEventProducts.vue'
+import AdminSocieties from '../views/AdminSocieties.vue'
 import VendorEventSelection from '../views/VendorEventSelection.vue' // 【新增】导入新视图
 import VendorView from '../views/VendorView.vue' // 这个现在是详情页
 import CustomerView from '../views/CustomerView.vue'
@@ -40,6 +41,11 @@ const routes = [
         path: 'master-products',
         name: 'admin-master-products',
         component: AdminMasterProducts,
+      },
+      {
+        path: 'societies',
+        name: 'admin-societies',
+        component: AdminSocieties,
       },
       {
         path: 'events/:id/products',

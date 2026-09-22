@@ -62,6 +62,9 @@
               <div class="preview-item-info">
                 <span class="preview-item-name">{{ product.name }}</span>
                 <span class="preview-item-code">{{ product.product_code }}</span>
+                <span class="preview-item-society">{{
+                  societyName(product.owner_society_id)
+                }}</span>
                 <span v-if="product.default_price != null" class="preview-item-price"
                   >¥{{ Number(product.default_price).toFixed(2) }}</span
                 >
@@ -114,8 +117,9 @@
                 <th class="column-preview">预览</th>
                 <th>编号</th>
                 <th>名称</th>
+                <th>归属社团</th>
                 <th>展会售价</th>
-                <th>初始库存</th>
+                <th>累计进货</th>
                 <th>当前库存</th>
                 <th>操作</th>
               </tr>
@@ -137,9 +141,10 @@
                 </td>
                 <td>{{ product.product_code }}</td>
                 <td>{{ product.name }}</td>
-                <td>¥{{ product.price.toFixed(2) }}</td>
-                <td>{{ product.initial_stock }}</td>
-                <td>{{ product.current_stock }}</td>
+                <td>{{ product.owner_society_name }}</td>
+                <td>{{ formatYuan(product.unit_price) }}</td>
+                <td>{{ product.stocked_qty }}</td>
+                <td>{{ product.onsite_qty }}</td>
                 <td>
                   <n-space size="small" justify="end">
                     <n-button size="small" @click="openEditModal(product)">编辑</n-button>
@@ -177,14 +182,31 @@
             />
           </div>
           <div class="form-group">
-            <label>初始库存:</label>
-            <n-input-number
-              v-model:value="editableProduct.initial_stock"
-              :min="0"
-              :precision="0"
-              :show-button="true"
-              required
-            />
+            <!-- 新模型下库存是账本聚合，不能直接改数字（Task 5 拿掉了这个入口）。 -->
+            <label>库存:</label>
+            <div class="stock-readonly">
+              <span
+                >累计进货 <strong>{{ editableProduct.stocked_qty }}</strong></span
+              >
+              <span
+                >当前库存 <strong>{{ editableProduct.onsite_qty }}</strong></span
+              >
+            </div>
+          </div>
+          <div class="form-group">
+            <label>补货数量:</label>
+            <div class="restock-row">
+              <n-input-number
+                v-model:value="restockQty"
+                :min="1"
+                :precision="0"
+                :show-button="true"
+                placeholder="进货数量"
+              />
+              <n-button @click="handleRestock" :disabled="isRestocking">
+                {{ isRestocking ? '补货中...' : '补货' }}
+              </n-button>
+            </div>
           </div>
           <p v-if="editError" class="error-message">{{ editError }}</p>
         </form>
@@ -205,16 +227,19 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useEventDetailStore } from '@/stores/eventDetailStore'
 import { useProductStore } from '@/stores/productStore'
+import { useSocietyStore } from '@/stores/societyStore'
 import AppModal from '@/components/shared/AppModal.vue'
 import HelpBubble from '@/components/shared/HelpBubble.vue'
 import EmptyGuide from '@/components/shared/EmptyGuide.vue'
 import CollapsibleSection from '@/components/shared/CollapsibleSection.vue'
 import { NInput, NSelect, NImage, NInputNumber, NButton, NSpace, useDialog } from 'naive-ui'
+import { formatYuan, fromCents, toCents } from '@/utils/money'
 
 const props = defineProps({ id: { type: String, required: true } })
 
 const eventDetailStore = useEventDetailStore()
 const productStore = useProductStore()
+const societyStore = useSocietyStore()
 const dialog = useDialog()
 
 const searchQuery = ref('')
@@ -261,9 +286,16 @@ const isAdding = ref(false)
 const addError = ref('')
 const addProductData = ref({ product_code: '', initial_stock: null, price: null })
 
+// 选品预览里的归属社团：master_products 只带 owner_society_id，本地映射成名字。
+function societyName(societyId) {
+  if (societyId === null || societyId === undefined) return ''
+  return societyStore.societies.find((s) => s.id === societyId)?.name || ''
+}
+
 function selectProduct(product) {
   addProductData.value.product_code = product.product_code
-  if (product.default_price) {
+  // default_price 是元；0 也要回填，所以用 != null 而不是 truthy。
+  if (product.default_price != null) {
     addProductData.value.price = product.default_price
   }
   stockInputRef.value?.focus()
@@ -301,9 +333,13 @@ async function handleAddProduct() {
 
     // 价格可以为负数（对应折扣），这里无需验证
 
-    const dataToSend = { ...addProductData.value }
-    if (dataToSend.price === null || dataToSend.price === '') {
-      delete dataToSend.price
+    // 表单里用户输入的是元，接口收的是分（unit_price）。
+    const dataToSend = {
+      product_code: addProductData.value.product_code,
+      initial_stock: addProductData.value.initial_stock,
+    }
+    if (addProductData.value.price !== null && addProductData.value.price !== '') {
+      dataToSend.unit_price = toCents(addProductData.value.price)
     }
     await eventDetailStore.addProductToEvent(props.id, dataToSend)
     await eventDetailStore.fetchProductsForEvent(props.id)
@@ -318,11 +354,16 @@ async function handleAddProduct() {
 
 const isEditModalVisible = ref(false)
 const isUpdating = ref(false)
+const isRestocking = ref(false)
+const restockQty = ref(null)
 const editError = ref('')
 const editableProduct = ref(null)
 
 function openEditModal(product) {
-  editableProduct.value = { ...product }
+  // 表单里的价格用元，服务端的 unit_price 是分。
+  editableProduct.value = { ...product, price: fromCents(product.unit_price) }
+  restockQty.value = null
+  editError.value = ''
   isEditModalVisible.value = true
 }
 
@@ -336,7 +377,7 @@ async function handleUpdate() {
   isUpdating.value = true
   editError.value = ''
   try {
-    const { id, price, initial_stock } = editableProduct.value
+    const { id, price } = editableProduct.value
 
     // 验证价格（允许负数用于折扣）
     if (price === null || price === undefined) {
@@ -345,19 +386,38 @@ async function handleUpdate() {
       return
     }
 
-    // 验证库存必须是整数
-    if (!Number.isInteger(initial_stock) || initial_stock < 0) {
-      editError.value = '初始库存必须是非负整数'
-      isUpdating.value = false
-      return
-    }
-
-    await eventDetailStore.updateEventProduct(id, { price, initial_stock })
+    // 库存不能直接改：只改价，补货走 handleRestock（Task 5 拿掉了直接改库存的入口）。
+    await eventDetailStore.updateEventProduct(id, { unit_price: toCents(price) })
     closeEditModal()
   } catch (error) {
     editError.value = error.message
   } finally {
     isUpdating.value = false
+  }
+}
+
+async function handleRestock() {
+  if (!editableProduct.value) return
+  const qty = restockQty.value
+  if (!Number.isInteger(qty) || qty <= 0) {
+    editError.value = '补货数量必须是正整数'
+    return
+  }
+  isRestocking.value = true
+  editError.value = ''
+  try {
+    const updated = await eventDetailStore.restockEventProduct(
+      props.id,
+      editableProduct.value.id,
+      qty
+    )
+    // 用返回值刷新弹窗里的只读库存数字，保留用户正在编辑的价格。
+    editableProduct.value = { ...updated, price: editableProduct.value.price }
+    restockQty.value = null
+  } catch (error) {
+    editError.value = error.message
+  } finally {
+    isRestocking.value = false
   }
 }
 
@@ -385,6 +445,7 @@ async function handleDelete(product) {
 onMounted(() => {
   eventDetailStore.fetchProductsForEvent(props.id)
   productStore.fetchMasterProducts()
+  societyStore.fetchSocieties()
 })
 
 onUnmounted(() => {
@@ -572,6 +633,24 @@ function getProductLabel(name) {
   margin-bottom: 0.5rem;
 }
 
+/* 库存只读展示：新模型下不能直接改数字 */
+.stock-readonly {
+  display: flex;
+  gap: 1rem;
+  color: var(--text-muted);
+  font-size: var(--font-base);
+}
+.stock-readonly strong {
+  color: var(--primary-text-color);
+  font-variant-numeric: tabular-nums;
+}
+
+.restock-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
 .action-btn {
   background: none;
   border: 1px solid transparent;
@@ -707,6 +786,10 @@ function getProductLabel(name) {
 .preview-item-code {
   font-size: var(--font-xs);
   color: var(--text-disabled);
+}
+.preview-item-society {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
 }
 .preview-item-price {
   font-size: var(--font-xs);

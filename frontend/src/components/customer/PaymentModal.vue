@@ -4,7 +4,7 @@
       <div class="payment-card">
         <!-- 顶部：金额 -->
         <div class="payment-header">
-          请扫码支付 <strong>¥{{ total.toFixed(2) }}</strong>
+          请扫码支付 <strong>{{ formatYuan(total) }}</strong>
         </div>
 
         <!-- 中间：二维码区域 -->
@@ -51,6 +51,7 @@
 <script setup>
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { NButton } from 'naive-ui'
+import { formatYuan } from '@/utils/money'
 
 const AUTO_CLOSE_SECONDS = 90
 

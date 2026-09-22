@@ -19,8 +19,8 @@
       <n-card
         class="product-card"
         :class="{
-          'out-of-stock': product.current_stock === 0,
-          'low-stock': !editable && product.current_stock > 0 && product.current_stock <= 10,
+          'out-of-stock': product.onsite_qty === 0,
+          'low-stock': !editable && product.onsite_qty > 0 && product.onsite_qty <= 10,
           'just-added': animatingIds.has(product.id),
         }"
         embedded
@@ -64,24 +64,25 @@
 
             <template v-else>
               <!-- 低库存：角标 + 底部库存条 -->
-              <template v-if="product.current_stock > 0 && product.current_stock <= 10">
+              <template v-if="product.onsite_qty > 0 && product.onsite_qty <= 10">
                 <div class="chip stock-warning">
-                  <span>仅剩 {{ product.current_stock }} 件</span>
+                  <span>仅剩 {{ product.onsite_qty }} 件</span>
                 </div>
                 <div class="stock-bar">
                   <div
                     class="stock-bar-fill"
-                    :class="{ critical: product.current_stock <= 3 }"
+                    :class="{ critical: product.onsite_qty <= 3 }"
                     :style="{
-                      width:
-                        Math.min((product.current_stock / product.initial_stock) * 100, 100) + '%',
+                      width: product.stocked_qty
+                        ? Math.min((product.onsite_qty / product.stocked_qty) * 100, 100) + '%'
+                        : '0%',
                     }"
                   ></div>
                 </div>
               </template>
 
               <!-- 售罄 -->
-              <div v-if="product.current_stock === 0" class="sold-overlay">
+              <div v-if="product.onsite_qty === 0" class="sold-overlay">
                 <div class="sold-badge">SOLD OUT</div>
                 <div class="sold-sub">已售罄</div>
               </div>
@@ -95,11 +96,10 @@
 
             <div class="bottom-row">
               <div class="price-wrapper">
-                <span class="currency">¥</span>
-                <span class="value">{{ formatPrice(product.price) }}</span>
+                <span class="value">{{ formatYuan(product.unit_price) }}</span>
               </div>
 
-              <div class="action-icon" v-if="!editable && product.current_stock > 0"></div>
+              <div class="action-icon" v-if="!editable && product.onsite_qty > 0"></div>
             </div>
           </div>
         </div>
@@ -113,6 +113,7 @@ import { computed, ref, watch } from 'vue'
 import draggable from 'vuedraggable'
 import { NCard, NImage, NSkeleton } from 'naive-ui'
 import { useThemeStore } from '@/stores/themeStore'
+import { formatYuan } from '@/utils/money'
 
 const themeStore = useThemeStore()
 
@@ -149,7 +150,7 @@ watch(
 
 function handleCardClick(product) {
   if (props.editable) return
-  if (product?.current_stock <= 0) return
+  if (product?.onsite_qty <= 0) return
   // Trigger add-to-cart animation
   animatingIds.value = new Set([...animatingIds.value, product.id])
   setTimeout(() => {
@@ -165,11 +166,6 @@ function handleDragEnd() {
   const next = [...localList.value]
   emit('update:products', next)
   emit('order-changed')
-}
-
-function formatPrice(price) {
-  const n = Number(price)
-  return Number.isFinite(n) ? n.toFixed(2) : '--'
 }
 </script>
 

@@ -54,7 +54,7 @@ export const useEventDetailStore = defineStore('eventDetail', () => {
     }
   }
 
-  // 更新展会商品的库存或价格
+  // 更新展会商品的价格（库存不能直接改，只能走 restock / 盘点）
   async function updateEventProduct(productId, productData) {
     try {
       const response = await api.put(`/products/${productId}`, productData)
@@ -67,6 +67,24 @@ export const useEventDetailStore = defineStore('eventDetail', () => {
     } catch (err) {
       console.error(err)
       throw new Error(err.response?.data?.error || '更新商品失败。')
+    }
+  }
+
+  // 补货：记一条「外部 → 现场仓」的进货移动，库存只能这样增加。
+  async function restockEventProduct(eventId, productId, qty, note) {
+    try {
+      const payload = { qty }
+      if (note) payload.note = note
+      const response = await api.post(`/events/${eventId}/products/${productId}/restock`, payload)
+      const product = { ...response.data, image_url: getImageUrl(response.data.image_url) }
+      const index = products.value.findIndex((p) => p.id === productId)
+      if (index !== -1) {
+        products.value[index] = product
+      }
+      return product
+    } catch (err) {
+      console.error(err)
+      throw new Error(err.response?.data?.error || '补货失败。')
     }
   }
 
@@ -94,11 +112,12 @@ export const useEventDetailStore = defineStore('eventDetail', () => {
       isLoading.value = false
     }
   }
-  async function adminUpdateOrderStatus(eventId, orderId, newStatus) {
+  async function adminUpdateOrderStatus(eventId, orderId, newStatus, channel) {
     try {
-      const response = await api.put(`/events/${eventId}/orders/${orderId}/status`, {
-        status: newStatus,
-      })
+      const payload = { status: newStatus }
+      // 只有「完成」才需要渠道：账本里钱那条腿得有对手账户。
+      if (channel) payload.channel = channel
+      const response = await api.put(`/events/${eventId}/orders/${orderId}/status`, payload)
       // 更新成功后，在本地 allOrders 列表中找到并更新该订单
       const processedOrders = processOrders([response.data])
       const index = allOrders.value.findIndex((o) => o.id === orderId)
@@ -127,6 +146,7 @@ export const useEventDetailStore = defineStore('eventDetail', () => {
     fetchProductsForEvent,
     addProductToEvent,
     updateEventProduct,
+    restockEventProduct,
     deleteEventProduct,
     resetStore,
     adminUpdateOrderStatus,

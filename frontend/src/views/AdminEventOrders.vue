@@ -120,7 +120,7 @@
                   </ul>
                 </td>
                 <td>
-                  <strong>¥{{ order.total_amount.toFixed(2) }}</strong>
+                  <strong>{{ formatYuan(order.final_amount) }}</strong>
                 </td>
                 <td>
                   <n-tag :type="tagType(order.status)" size="large" round>{{
@@ -148,6 +148,13 @@
         />
       </CollapsibleSection>
     </main>
+
+    <!-- 设为「已完成」前先记收款方式；标题刻意不用「收款/已收款」，见 spec 第 11 节 -->
+    <ChannelPicker
+      :show="showChannelPicker"
+      @confirm="onChannelConfirm"
+      @cancel="showChannelPicker = false"
+    />
   </div>
 </template>
 
@@ -170,7 +177,9 @@ import {
 import HelpBubble from '@/components/shared/HelpBubble.vue'
 import EmptyGuide from '@/components/shared/EmptyGuide.vue'
 import CollapsibleSection from '@/components/shared/CollapsibleSection.vue'
+import ChannelPicker from '@/components/vendor/ChannelPicker.vue'
 import { formatTimestamp } from '@/utils/dateFormatter'
+import { formatYuan, toCents } from '@/utils/money'
 const props = defineProps({
   id: { type: String, required: true },
 })
@@ -200,12 +209,12 @@ const filteredOrders = computed(() => {
     orders = orders.filter((order) => order.status === statusFilter.value)
   }
 
-  // 金额范围筛选
+  // 金额范围筛选（输入是元，订单里是分）
   if (minAmount.value !== null) {
-    orders = orders.filter((order) => order.total_amount >= minAmount.value)
+    orders = orders.filter((order) => order.final_amount >= toCents(minAmount.value))
   }
   if (maxAmount.value !== null) {
-    orders = orders.filter((order) => order.total_amount <= maxAmount.value)
+    orders = orders.filter((order) => order.final_amount <= toCents(maxAmount.value))
   }
 
   // 商品名称筛选
@@ -219,8 +228,17 @@ const filteredOrders = computed(() => {
   return orders
 })
 
+const showChannelPicker = ref(false)
+const pendingOrderId = ref(null)
+
 function changeStatus(orderId, newStatus) {
   if (!newStatus) return
+  // 「已完成」会记一笔真实的资金移动，必须带渠道——走渠道选择而不是普通确认框。
+  if (newStatus === 'completed') {
+    pendingOrderId.value = orderId
+    showChannelPicker.value = true
+    return
+  }
   dialog.warning({
     title: '确认操作',
     content: `确定要将订单 #${orderId} 的状态修改为 "${statusText(newStatus)}" 吗？`,
@@ -235,6 +253,20 @@ function changeStatus(orderId, newStatus) {
       }
     },
   })
+}
+
+async function onChannelConfirm(channel) {
+  const orderId = pendingOrderId.value
+  showChannelPicker.value = false
+  if (!orderId) return
+  try {
+    await store.adminUpdateOrderStatus(props.id, orderId, 'completed', channel)
+    message.success('状态已更新')
+  } catch (error) {
+    message.error(error.message || '更新失败')
+  } finally {
+    pendingOrderId.value = null
+  }
 }
 
 // --- 辅助函数 ---

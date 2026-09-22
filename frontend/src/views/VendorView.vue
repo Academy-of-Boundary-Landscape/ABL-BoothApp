@@ -56,7 +56,7 @@
 
         <div v-show="currentTab === 'completed'" class="order-feed">
           <p class="revenue-summary">
-            今日已完成订单总额: <strong>¥{{ store.totalRevenue.toFixed(2) }}</strong>
+            今日已完成订单总额: <strong>{{ formatYuan(store.totalRevenue) }}</strong>
           </p>
           <div v-if="!store.completedOrders.length" class="no-orders-message">暂无已完成订单</div>
           <OrderCard
@@ -76,6 +76,13 @@
 
     <!-- 隐藏的音频播放器，引用 public 目录下的 notify.mp3 -->
     <audio ref="audioRef" src="/notify.mp3" preload="auto"></audio>
+
+    <!-- 完成配货前先记收款方式；标题刻意不用「收款/已收款」，见 spec 第 11 节 -->
+    <ChannelPicker
+      :show="showChannelPicker"
+      @confirm="onChannelConfirm"
+      @cancel="showChannelPicker = false"
+    />
   </div>
 </template>
 
@@ -87,6 +94,8 @@ import { useEventStore } from '@/stores/eventStore'
 import { useEventDetailStore } from '@/stores/eventDetailStore'
 import LiveStats from '@/components/vendor/LiveStats.vue'
 import OrderCard from '@/components/order/OrderCard.vue'
+import ChannelPicker from '@/components/vendor/ChannelPicker.vue'
+import { formatYuan } from '@/utils/money'
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -154,14 +163,28 @@ watch(
   }
 )
 
-async function completeOrder(orderId) {
+// 点「完成配货」先选收款方式，选完才真正调接口。
+const showChannelPicker = ref(false)
+const pendingOrderId = ref(null)
+
+function completeOrder(orderId) {
+  pendingOrderId.value = orderId
+  showChannelPicker.value = true
+}
+
+async function onChannelConfirm(channel) {
+  const orderId = pendingOrderId.value
+  showChannelPicker.value = false
+  if (!orderId) return
   try {
-    await store.markOrderAsCompleted(orderId)
+    await store.markOrderAsCompleted(orderId, channel)
     await eventDetailStore.fetchProductsForEvent(props.id)
     await store.fetchCompletedOrders()
-    message.success('订单已完成配货')
+    message.success('已记录收款方式')
   } catch (error) {
     message.error(error?.message || '操作失败')
+  } finally {
+    pendingOrderId.value = null
   }
 }
 

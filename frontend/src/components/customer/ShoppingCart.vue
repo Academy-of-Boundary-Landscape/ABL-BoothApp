@@ -28,7 +28,7 @@
         </div>
 
         <div class="header-right">
-          <span class="total-price">¥{{ total.toFixed(2) }}</span>
+          <span class="total-price">{{ formatYuan(total) }}</span>
           <!-- 手机端箭头 -->
           <span v-if="isMobile" class="toggle-icon">
             {{ expanded ? '▼' : '▲' }}
@@ -53,7 +53,7 @@
               <div class="item-info">
                 <div class="item-name">{{ item.name }}</div>
                 <div class="item-price-row">
-                  <span class="unit-price">¥{{ item.price }}</span>
+                  <span class="unit-price">{{ formatYuan(item.unit_price) }}</span>
                 </div>
               </div>
 
@@ -79,7 +79,7 @@
         <div class="cart-footer">
           <div class="footer-row">
             <span>合计</span>
-            <span class="big-total">¥{{ total.toFixed(2) }}</span>
+            <span class="big-total">{{ formatYuan(total) }}</span>
           </div>
           <n-button
             type="primary"
@@ -102,6 +102,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { NButton } from 'naive-ui'
+import { formatYuan } from '@/utils/money'
 
 const props = defineProps({
   cart: { type: Array, required: true },

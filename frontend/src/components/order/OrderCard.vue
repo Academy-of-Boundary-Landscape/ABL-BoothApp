@@ -20,7 +20,7 @@
         <!-- 商品信息 -->
         <div class="item-details">
           <span class="item-name">{{ item.product_name }}</span>
-          <span class="item-price">¥{{ item.product_price.toFixed(2) }}</span>
+          <span class="item-price">{{ formatYuan(item.product_price) }}</span>
         </div>
         <!-- 数量 -->
         <span class="item-quantity">x {{ item.quantity }}</span>
@@ -28,7 +28,7 @@
     </div>
 
     <div class="order-footer">
-      <span class="total-amount">总计: ¥{{ order.total_amount.toFixed(2) }}</span>
+      <span class="total-amount">总计: {{ formatYuan(order.final_amount) }}</span>
       <!-- 【修改】只有在待处理状态下才显示按钮 -->
       <div v-if="!isCompleted" class="button-group">
         <n-button tertiary type="error" size="small" @click="$emit('cancel', order.id)"
@@ -44,6 +44,7 @@
 import { computed } from 'vue'
 import { NButton } from 'naive-ui'
 import { formatTimestamp } from '@/utils/dateFormatter'
+import { formatYuan } from '@/utils/money'
 
 const props = defineProps({
   order: { type: Object, required: true },
