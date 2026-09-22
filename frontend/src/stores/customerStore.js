@@ -142,6 +142,10 @@ export const useCustomerStore = defineStore('customer', () => {
   // 两份实现，取整规则一漂移就是「显示 145 实收 150」。
   const quote = ref(null)
   const quoteError = ref(null)
+  // 报价在途（debounce 窗口 + 请求往返）。为真时 cartSummary 必须按原价显示：
+  // 否则上一车的 quote 配上这一车的 cartTotal，会渲染出「原价 ~~¥50~~ / 应付 ¥30」
+  // 却一条优惠说明都没有，正好打中 D3 要保护的那个决策点。
+  const quotePending = ref(false)
   let quoteSeq = 0
   let quoteTimer = null
 
@@ -155,8 +159,10 @@ export const useCustomerStore = defineStore('customer', () => {
       quoteSeq += 1 // 作废在途的请求，免得它回来给空车填上价
       quote.value = null
       quoteError.value = null
+      quotePending.value = false
       return
     }
+    quotePending.value = true
     quoteTimer = setTimeout(fetchQuote, 300)
   }
 
@@ -173,10 +179,18 @@ export const useCustomerStore = defineStore('customer', () => {
       // **不静默**：退回原价，同时明说没套用优惠。后端在超限时给的就是人话。
       quote.value = null
       quoteError.value = err.response?.data?.error || '优惠暂时算不出来，按原价显示'
+    } finally {
+      if (seq === quoteSeq) quotePending.value = false
     }
   }
 
-  const cartSummary = computed(() => summarizeQuote(quote.value, cartTotal.value))
+  const cartSummary = computed(() => {
+    // 在途期间先按原价显示，宁可少报优惠也不显示无法解释的价格。
+    if (quotePending.value) {
+      return { gross: cartTotal.value, payable: cartTotal.value, discounts: [] }
+    }
+    return summarizeQuote(quote.value, cartTotal.value)
+  })
 
   const cartItemCount = computed(() => {
     return cart.value.reduce((total, item) => total + item.quantity, 0)
@@ -211,6 +225,7 @@ export const useCustomerStore = defineStore('customer', () => {
     cartItemCount,
     quote,
     quoteError,
+    quotePending,
     cartSummary,
     initializeEventFromUrl,
     setupStoreForEvent,

@@ -90,6 +90,8 @@
             <span>−{{ formatYuan(d.saved) }}</span>
           </div>
           <p v-if="quoteNotice" class="quote-notice">{{ quoteNotice }}</p>
+          <!-- 报价在途：此时显示的 payable 是原价，明说一句，别让顾客以为优惠没了。 -->
+          <p v-if="quotePending" class="quote-notice">优惠计算中…</p>
           <div class="footer-row">
             <span>应付</span>
             <span class="big-total">{{ formatYuan(payable) }}</span>
@@ -99,7 +101,7 @@
             block
             round
             size="large"
-            :disabled="!cart.length || isCheckingOut"
+            :disabled="!cart.length || isCheckingOut || quotePending"
             :loading="isCheckingOut"
             @click="$emit('checkout')"
             class="checkout-btn"
@@ -127,6 +129,8 @@ const props = defineProps({
   discounts: { type: Array, default: () => [] },
   /** 报价失败时的提示。非空就必须显示——不能让顾客以为原价就是应付价。 */
   quoteNotice: { type: String, default: null },
+  /** 报价在途（debounce/请求中）。为真时 payable 只是原价，不能结算。 */
+  quotePending: { type: Boolean, default: false },
   isCheckingOut: { type: Boolean, default: false },
 })
 
