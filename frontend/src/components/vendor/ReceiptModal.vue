@@ -18,11 +18,11 @@
            而拆套装是纠错，钱回到真正的货主头上（spec 4.3 的 2026-09-23 修正）。 -->
       <div v-if="lots.length" class="lot-block">
         <p class="lot-title">已套用的套装</p>
-        <label v-for="lot in lots" :key="lot.id" class="lot-row">
-          <n-checkbox :checked="!unapplied.includes(lot.id)" @update:checked="toggle(lot.id)" />
+        <div v-for="lot in lots" :key="lot.id" class="lot-row" @click="toggle(lot.id)">
+          <n-checkbox :checked="!unapplied.includes(lot.id)" />
           <span class="lot-name">{{ lot.name }}</span>
           <span class="lot-saved">−{{ formatYuan(lot.original_amount - lot.price) }}</span>
-        </label>
+        </div>
         <p v-if="unapplied.length" class="lot-note">
           已拆掉 {{ unapplied.length }} 个套装，这些商品按原价计算。
         </p>
@@ -60,7 +60,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { NRadioGroup, NRadio, NSpace, NButton, NInputNumber, NCheckbox } from 'naive-ui'
+import { NRadioGroup, NRadio, NSpace, NButton, NInputNumber, NCheckbox, useMessage } from 'naive-ui'
 import AppModal from '@/components/shared/AppModal.vue'
 import { formatYuan, toCents, fromCents } from '@/utils/money'
 
@@ -78,6 +78,7 @@ const props = defineProps({
   lots: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['confirm', 'cancel'])
+const message = useMessage()
 
 const channel = ref('微信')
 const finalYuan = ref(0)
@@ -124,6 +125,12 @@ function toggle(lotId) {
 }
 
 function handleConfirm() {
+  // n-input-number 被清空 → finalYuan 为 null，而 toCents(null) 会回落成 0，
+  // 于是静默提交一张 ¥0 的收款单：整单白送，全额记成对本社团的手工折让。
+  if (finalYuan.value === null || !Number.isFinite(finalYuan.value)) {
+    message.warning('请填写实收金额')
+    return
+  }
   localStorage.setItem(CHANNEL_STORAGE_KEY, channel.value)
   emit('confirm', {
     channel: channel.value,
