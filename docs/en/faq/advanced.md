@@ -16,8 +16,11 @@ Two paths cover almost every case you will meet at the booth:
 
 ## Does it Support "Bundled Sales" or "Sets"?
 
-It is recommended to directly create a new product named "XX Set" and set its bundled price.  
-This way, when tracking sales, you can clearly see how many sets have been sold.
+It depends on whether the set can be split apart:
+
+**Can be split** (5 books put into one bag) — configure a set under "Sets & Discounts". On the books they are still 5 individual items, stock is deducted precisely, and customers can still buy single items without any impact.
+
+**Cannot be split** (a sealed gift box that is ruined once opened) — enter it as a separate product; its stock in and out is tracked on its own.
 
 ## How Should I Handle Sold-Out Products?
 
