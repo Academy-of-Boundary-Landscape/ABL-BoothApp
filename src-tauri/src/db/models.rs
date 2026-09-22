@@ -193,6 +193,8 @@ pub struct SalesReport {
 // ==========================================
 // 社团（货主的单位）
 // ==========================================
+// 消费方在 Task 4/5（社团/选品 handler），此前无人构造。
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Society {
     pub id: i64,
@@ -205,6 +207,8 @@ pub struct Society {
 // ==========================================
 // 注意**没有 current_stock / initial_stock**：余额是 stock_movements 的聚合，
 // 由 handler 组装进响应（见 api/product.rs 的 EventProductResponse）。
+// 消费方在 Task 4/5（选品/摊位商品 handler），此前无人构造。
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct EventProduct {
     pub id: i64,
@@ -227,6 +231,8 @@ pub struct EventProduct {
 // ==========================================
 // 订单
 // ==========================================
+// 消费方在 Task 6（订单 handler 重写），此前无人构造。
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct OrderRow {
     pub id: i64,
@@ -245,6 +251,8 @@ pub struct OrderRow {
     pub completed_at: Option<NaiveDateTime>,
 }
 
+// 消费方在 Task 6（订单 handler 重写），此前无人构造。
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct OrderLineRow {
     pub id: i64,
