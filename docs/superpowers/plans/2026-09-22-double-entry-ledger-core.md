@@ -2965,7 +2965,7 @@ EOF
 - [ ] 老库升级路径验过：拿一份 v1.1.1 的 `sale_system.db` 放进 app data 目录启动，
       确认 `sale_system.db.v1-backup` 生成、商品库还在、提示页弹出、导出 xlsx 能打开
 
-### 交给 ②-2 的接口契约
+### 交给 ②-2 / ②-3 的接口契约与已知不变量
 
 ②-2 只需要改这三处，其余不该动：
 
@@ -2974,3 +2974,22 @@ EOF
 3. 新增 `domain/solver.rs`（纯函数）和 `api/lot.rs`（Lot 配置 CRUD）。
 
 **不要改**：`domain/ledger.rs` 的任何签名、`orders` / `order_lines` 的表结构、`EventProductResponse` 的字段。
+
+### ②-3 必须知道的两条不变量（执行中发现，别让它们从注释里蒸发）
+
+1. **「订单是 completed」不蕴含「存在收款 journal」。**
+   spec 4.6 的赠品是 0 元行，一张全赠品订单的各货主合计都是 0，所有资金腿都被滤掉，
+   于是收款 journal 整个被跳过——订单仍然是 `completed` 且 `channel` 非空。
+   这是唯一可行解（记 0 元腿撞 `CHECK(amount > 0)`；记空 journal 会造出「造得出却冲不掉」
+   的幽灵 journal；不跳过则完成订单直接 400）。
+   **②-3 做结算对账时，若从 `journals WHERE kind='收款'` 反推已收款订单，会漏掉全赠品单。**
+   要按 `orders.status` 而不是按 journal 存在性来判定。
+
+2. **「有 `order_lines` 就必然有 `stock_movements`」结构上成立。**
+   销售 journal 的 `money` 参数恒为 `&[]`，所以 `stock_legs` 必须非空、否则 `post_journal`
+   直接报错。`api/product.rs` 的「有流水才禁止删除」守卫因此是完备的，不需要额外查 `order_lines`。
+   **②-2/②-3 若引入任何「只写 order_lines 不写 stock_movements」的路径（比如纯服务类商品），
+   这个不变量就破了，那个删除守卫必须同步补上 `order_lines`。**
+
+3. **`events.status` 只有 `进行中` 能下单**（Task 7 加的守卫）。完整的冻结语义
+   （不能退货、不能改盘点数）仍归 ②-3。
