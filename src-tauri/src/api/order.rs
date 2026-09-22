@@ -542,6 +542,10 @@ mod tests {
         let body = read_json(res).await;
         assert_eq!(body["final_amount"], 6000, "2 × 3000 分");
         assert_eq!(body["status"], "pending");
+        assert!(
+            body["timestamp"].is_string(),
+            "created_at 必须以 timestamp 的名字出现在响应里——前端两处依赖它，改名会静默白屏"
+        );
 
         let left = crate::domain::ledger::onsite_balance(&pool, ep_a)
             .await
@@ -765,5 +769,186 @@ mod tests {
             10,
             "库存只能退一次"
         );
+    }
+
+    #[tokio::test]
+    async fn the_same_product_listed_twice_is_merged_before_the_stock_check() {
+        // 同一个请求里同一商品出现多次，必须先合并再查库存。
+        // 不合并的话两行各自通过检查（6 <= 10），合起来却卖出 12 件。
+        // 这是同请求内唯一的防超卖机制，而它此前零测试覆盖。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None,
+                json!({"items": [
+                    {"product_id": ep_a, "quantity": 6},
+                    {"product_id": ep_a, "quantity": 6}
+                ]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            res.status(),
+            StatusCode::CONFLICT,
+            "6 + 6 = 12 超过库存 10，必须被拒"
+        );
+        assert_eq!(
+            crate::domain::ledger::onsite_balance(&pool, ep_a)
+                .await
+                .unwrap(),
+            10,
+            "被拒的订单不能动库存"
+        );
+
+        // 合并后仍在库存内的情况要正常通过，且只扣一次合计量
+        let res = router
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None,
+                json!({"items": [
+                    {"product_id": ep_a, "quantity": 3},
+                    {"product_id": ep_a, "quantity": 4}
+                ]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+        let body = read_json(res).await;
+        assert_eq!(body["final_amount"], 21000, "7 件 × 3000 分");
+        assert_eq!(
+            crate::domain::ledger::onsite_balance(&pool, ep_a)
+                .await
+                .unwrap(),
+            3,
+            "10 − 7"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_all_gift_order_completes_without_a_receipt_journal() {
+        // spec 4.6：赠品是订单上的 0 元行。一张全是赠品的订单，各货主合计都是 0，
+        // 所有资金腿都被滤掉 —— 此时必须**跳过整个收款 journal**，而不是让
+        // post_journal 因为「空 journal」把「完成订单」整个打回 400。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _ep_a, ep_b) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+
+        sqlx::query("UPDATE event_products SET unit_price = 0 WHERE id = ?")
+            .bind(ep_b)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None,
+                json!({"items": [{"product_id": ep_b, "quantity": 2}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+        let order_id = read_json(res).await["id"].as_i64().unwrap();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "微信"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            res.status(),
+            StatusCode::OK,
+            "全赠品订单必须能完成，不能被空 journal 检查打回"
+        );
+
+        // 没有钱易手，就不该有任何资金移动——记 0 元收款才是造假
+        let money_rows: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM money_movements mm
+             JOIN journals j ON j.id = mm.journal_id WHERE j.order_id = ?",
+        )
+        .bind(order_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(money_rows, 0, "0 元订单不该产生任何资金移动");
+
+        // 货照样要动
+        assert_eq!(
+            crate::domain::ledger::onsite_balance(&pool, ep_b)
+                .await
+                .unwrap(),
+            3,
+            "5 − 2"
+        );
+
+        // 取消这样的订单也必须干净：只有销售 journal 可冲，货要回来
+        let res = router
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "cancelled"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(
+            crate::domain::ledger::onsite_balance(&pool, ep_b)
+                .await
+                .unwrap(),
+            5,
+            "货必须回来"
+        );
+    }
+
+    #[tokio::test]
+    async fn begin_immediate_actually_takes_the_write_lock_up_front() {
+        // brief 整篇在强调「查余额 → 插移动」两步必须在同一个 BEGIN IMMEDIATE 事务里：
+        // 默认的 deferred 事务在第一次写之前不持写锁，两台平板会双双通过库存检查。
+        // 但这条断言在 test_pool()（max_connections(1) 的内存库）里根本测不了。
+        //
+        // 这里用文件库 + 两条连接 + busy_timeout(0) 直接验行为本身：
+        // IMMEDIATE 事务一开就持写锁 → 第二个 IMMEDIATE 立刻 SQLITE_BUSY；
+        // 换成普通 begin() 则第二个会成功，这条测试就会红。
+        use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+        use std::str::FromStr;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lock_probe.db");
+        let opts = SqliteConnectOptions::from_str(&format!("sqlite://{}", path.display()))
+            .unwrap()
+            .create_if_missing(true)
+            .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
+            .busy_timeout(std::time::Duration::from_secs(0));
+        let pool = SqlitePoolOptions::new()
+            .max_connections(2)
+            .connect_with(opts)
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE probe (id INTEGER PRIMARY KEY)")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let first = pool.begin_with("BEGIN IMMEDIATE").await.unwrap();
+        let second = pool.begin_with("BEGIN IMMEDIATE").await;
+        assert!(
+            second.is_err(),
+            "第一个 IMMEDIATE 事务必须立刻持有写锁，第二个应当 SQLITE_BUSY"
+        );
+        drop(first);
     }
 }
