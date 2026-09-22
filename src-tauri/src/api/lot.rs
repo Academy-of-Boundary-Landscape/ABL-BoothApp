@@ -10,7 +10,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Json},
-    routing::{get, put},
+    routing::{get, post, put},
     Router,
 };
 use serde::{Deserialize, Serialize};
@@ -18,6 +18,10 @@ use sqlx::SqliteConnection;
 
 use crate::{
     api::guard::{check_read_permission, check_write_permission},
+    domain::pricing::{
+        cart_lines, ensure_event_selling, load_lots, merge_items, price_cart, resolve_cart,
+        CartItemRequest,
+    },
     error::{ApiError, ApiResult},
     state::AppState,
     utils::security::Claims,
@@ -34,6 +38,7 @@ pub fn router() -> Router<AppState> {
             "/events/:event_id/lots/:lot_id",
             put(update_lot).delete(delete_lot),
         )
+        .route("/events/:event_id/quote", post(quote))
 }
 
 #[derive(Serialize)]
@@ -315,6 +320,113 @@ async fn delete_lot(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[derive(Deserialize)]
+struct QuoteRequest {
+    items: Vec<CartItemRequest>,
+}
+
+#[derive(Serialize)]
+struct QuoteMember {
+    product_id: i64,
+    qty: i64,
+}
+
+#[derive(Serialize)]
+struct QuoteLot {
+    lot_id: i64,
+    name: String,
+    /// 套装价（分）。
+    price: i64,
+    /// 成分按原价的合计（分）。
+    ///
+    /// 前端显示「已应用：XX −YY」时 `YY = original_amount − price`。放在后端算，
+    /// 是因为前端再做一遍单价乘法就等于把分摊逻辑抄了半份出去。
+    original_amount: i64,
+    members: Vec<QuoteMember>,
+}
+
+#[derive(Serialize)]
+struct QuoteLine {
+    product_id: i64,
+    qty: i64,
+    /// 进了 `lots` 数组的第几个，`null` = 没进套装。
+    lot_index: Option<usize>,
+    allocated_amount: i64,
+}
+
+#[derive(Serialize)]
+struct QuoteResponse {
+    gross_amount: i64,
+    solved_amount: i64,
+    lots: Vec<QuoteLot>,
+    lines: Vec<QuoteLine>,
+}
+
+/// 给购物车报价。**公开、无鉴权、零写入。**
+///
+/// 存在的唯一理由是 D3「顾客端价格必须可解释」：购物车要明写
+/// 「已应用：本子任选3本100 −20.00」，而不是默默给个低价。
+///
+/// **不查库存**——报价是定价预览，库存由下单把关（所以这里也不必开事务）。
+///
+/// **报价永远不被信任**：下单时服务端用同一份 `price_cart` 独立重算，顾客最终付的
+/// 金额取自**下单响应**而不是这里。两次之间摊主完全可能刚改过 Lot 配置。
+async fn quote(
+    State(state): State<AppState>,
+    Path(event_id): Path<i64>,
+    Json(payload): Json<QuoteRequest>,
+) -> ApiResult<Json<QuoteResponse>> {
+    let merged = merge_items(&payload.items)?;
+    let mut conn = state.db.acquire().await?;
+    ensure_event_selling(&mut conn, event_id).await?;
+    let resolved = resolve_cart(&mut conn, event_id, &merged).await?;
+    let lots = load_lots(&mut conn, event_id).await?;
+    let priced = price_cart(&cart_lines(&resolved), &lots)?;
+
+    // 成分原价合计：从 priced.lines 里按 lot_index 聚合，而不是重新乘一遍，
+    // 保证和分摊用的是同一组数。
+    let mut original: Vec<i64> = vec![0; priced.lots.len()];
+    for line in &priced.lines {
+        if let Some(k) = line.lot_index {
+            original[k] += line.unit_price.cents() * line.qty;
+        }
+    }
+
+    Ok(Json(QuoteResponse {
+        gross_amount: priced.gross.cents(),
+        solved_amount: priced.solved.cents(),
+        lots: priced
+            .lots
+            .iter()
+            .enumerate()
+            .map(|(k, l)| QuoteLot {
+                lot_id: l.lot_id,
+                name: l.name.clone(),
+                price: l.price.cents(),
+                original_amount: original[k],
+                members: l
+                    .members
+                    .iter()
+                    .map(|(id, q)| QuoteMember {
+                        product_id: *id,
+                        qty: *q,
+                    })
+                    .collect(),
+            })
+            .collect(),
+        lines: priced
+            .lines
+            .iter()
+            .map(|l| QuoteLine {
+                product_id: l.event_product_id,
+                qty: l.qty,
+                lot_index: l.lot_index,
+                allocated_amount: l.allocated.cents(),
+            })
+            .collect(),
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::test_support::{
@@ -523,5 +635,178 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    /// 给 seed 出来的展会加一个只含 ep_a 的「任选 2 件 50」，返回 lot_id。
+    async fn seed_pair_lot(router: &axum::Router, event_id: i64, ep_a: i64, token: &str) -> i64 {
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/lots"),
+                Some(token),
+                json!({"name": "任选2件50", "pick_count": 2, "total_price": 5000,
+                       "candidate_ids": [ep_a]}),
+            ))
+            .await
+            .unwrap();
+        read_json(res).await["id"].as_i64().unwrap()
+    }
+
+    #[tokio::test]
+    async fn quoting_without_any_lot_returns_the_gross_price() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, ep_b) = seed_event_and_product(&pool).await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/quote"),
+                None, // 公开端点
+                json!({"items": [{"product_id": ep_a, "quantity": 2},
+                                 {"product_id": ep_b, "quantity": 1}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = read_json(res).await;
+        assert_eq!(body["gross_amount"], 8000);
+        assert_eq!(body["solved_amount"], 8000);
+        assert_eq!(body["lots"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn quoting_applies_the_best_lot_and_says_how_much_it_saved() {
+        // D3：顾客端价格必须可解释。购物车要能写出「已应用：任选2件50 −10.00」，
+        // 所以响应里必须同时有套装价和成分原价合计。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+        let lot_id = seed_pair_lot(&router, event_id, ep_a, &token).await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/quote"),
+                None,
+                json!({"items": [{"product_id": ep_a, "quantity": 3}]}),
+            ))
+            .await
+            .unwrap();
+        let body = read_json(res).await;
+        assert_eq!(body["gross_amount"], 9000, "3 × 30");
+        assert_eq!(body["solved_amount"], 8000, "套装 50 + 散的 30");
+        let lots = body["lots"].as_array().unwrap();
+        assert_eq!(lots.len(), 1);
+        assert_eq!(lots[0]["lot_id"], lot_id);
+        assert_eq!(lots[0]["price"], 5000);
+        assert_eq!(lots[0]["original_amount"], 6000, "省了 10 元");
+        assert_eq!(lots[0]["members"], json!([{"product_id": ep_a, "qty": 2}]));
+
+        // 同一个商品被拆成两行：2 件在套装里、1 件散着
+        let lines = body["lines"].as_array().unwrap();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0]["lot_index"], 0);
+        assert_eq!(lines[0]["allocated_amount"], 5000);
+        assert!(lines[1]["lot_index"].is_null());
+        assert_eq!(lines[1]["allocated_amount"], 3000);
+    }
+
+    #[tokio::test]
+    async fn quoting_writes_nothing() {
+        // 报价是只读的。留下订单或 journal 就是灾难——它是公开未鉴权端点。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        let before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journals")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        let _ = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/quote"),
+                None,
+                json!({"items": [{"product_id": ep_a, "quantity": 2}]}),
+            ))
+            .await
+            .unwrap();
+
+        let orders: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM orders")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journals")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(orders, 0);
+        assert_eq!(after, before);
+    }
+
+    #[tokio::test]
+    async fn quoting_ignores_stock_because_it_is_only_a_price_preview() {
+        // 现场仓只有 10 件，报 50 件的价照样出——库存由下单把关。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/quote"),
+                None,
+                json!({"items": [{"product_id": ep_a, "quantity": 50}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(read_json(res).await["gross_amount"], 150_000);
+    }
+
+    #[tokio::test]
+    async fn quoting_a_product_from_another_event_is_not_found() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (_event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        sqlx::query("INSERT INTO events (id, name, event_date, status) VALUES (2, '另一场', '2026-11-01', '进行中')")
+            .execute(&pool).await.unwrap();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                "/api/events/2/quote",
+                None,
+                json!({"items": [{"product_id": ep_a, "quantity": 1}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn quoting_a_settled_event_is_refused() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        sqlx::query("UPDATE events SET status = '已结算' WHERE id = ?")
+            .bind(event_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/quote"),
+                None,
+                json!({"items": [{"product_id": ep_a, "quantity": 1}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT);
     }
 }

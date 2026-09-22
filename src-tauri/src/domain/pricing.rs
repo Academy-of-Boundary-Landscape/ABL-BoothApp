@@ -230,6 +230,24 @@ pub fn price_cart(cart: &[CartLine], lots: &[LotDef]) -> ApiResult<PricedCart> {
     })
 }
 
+/// 只有「进行中」的展会能下单——也只有它能报价。
+///
+/// 报价端也挡一道，是为了不让顾客拿到一个**下不了的报价**：筹备中或已结算的展会
+/// 报价能出、下单会 409，那顾客点「去结算」时才发现白填了。
+pub async fn ensure_event_selling(conn: &mut SqliteConnection, event_id: i64) -> ApiResult<()> {
+    let status: Option<String> = sqlx::query_scalar("SELECT status FROM events WHERE id = ?")
+        .bind(event_id)
+        .fetch_optional(&mut *conn)
+        .await?;
+    match status.as_deref() {
+        Some("进行中") => Ok(()),
+        Some(other) => Err(ApiError::Conflict(format!(
+            "展会当前状态为「{other}」，仅「进行中」的展会可以下单"
+        ))),
+        None => Err(ApiError::NotFound("展会不存在".into())),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
