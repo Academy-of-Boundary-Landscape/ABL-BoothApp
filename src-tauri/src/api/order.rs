@@ -21,6 +21,7 @@ use crate::{
     api::guard::{check_read_permission, check_write_permission},
     db::models::OrderRow,
     domain::{
+        allocation::apply_manual_adjustment,
         ledger::{
             onsite_balance, post_journal, reverse_order_journals, Account, JournalKind, Location,
             MoneyLeg, StockLeg,
@@ -62,6 +63,11 @@ struct CreateOrderRequest {
 struct UpdateStatusRequest {
     status: String,
     channel: Option<String>,
+    /// 摊主手工改的实收金额（分）。不给就等于 `solved_amount`。
+    ///
+    /// 落点是「确认收款」这一步（spec 4.3）：现场的手势本来就是
+    /// 「报个数、收钱、点完成」，拆成两步只会多一次忘记。
+    final_amount: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -414,7 +420,45 @@ async fn update_order_status(
                 .map(str::to_string)
                 .ok_or_else(|| ApiError::BadRequest("完成订单必须提供收款渠道".into()))?;
 
-            // 按货主分组，Σ 该货主各行的 allocated_amount。
+            let solved: i64 = query_scalar("SELECT solved_amount FROM orders WHERE id = ?")
+                .bind(order_id)
+                .fetch_one(&mut *tx)
+                .await?;
+            let final_amount = payload.final_amount.unwrap_or(solved);
+            if final_amount < 0 {
+                return Err(ApiError::BadRequest("实收金额不能为负".into()));
+            }
+
+            // 手工折让摊进各行 → paid_amount。**按 id 排序读行**：分摊的取整规则
+            // 依赖稳定的顺序，同样的输入两次必须算出同一个结果（spec 4.5）。
+            let lines: Vec<(i64, i64, i64)> = query_as(
+                "SELECT id, allocated_amount, qty FROM order_lines WHERE order_id = ? ORDER BY id",
+            )
+            .bind(order_id)
+            .fetch_all(&mut *tx)
+            .await?;
+            let allocated: Vec<Money> = lines
+                .iter()
+                .map(|(_, a, _)| Money::from_cents(*a))
+                .collect();
+            let qty: Vec<i64> = lines.iter().map(|(_, _, q)| *q).collect();
+            let paid = apply_manual_adjustment(
+                &allocated,
+                &qty,
+                Money::from_cents(solved),
+                Money::from_cents(final_amount),
+            )?;
+            for ((line_id, _, _), p) in lines.iter().zip(&paid) {
+                query("UPDATE order_lines SET paid_amount = ? WHERE id = ?")
+                    .bind(p.cents())
+                    .bind(line_id)
+                    .execute(&mut *tx)
+                    .await?;
+            }
+
+            // 按货主分组，Σ 该货主各行的 **allocated_amount**。
+            // 用 allocated 而不是 paid 是 spec 4.4 的全部要点：代卖社团该得多少，
+            // 不受摊主当天做了什么人情的影响。
             let owner_totals: Vec<(i64, i64)> = query_as(
                 "SELECT ep.owner_society_id, SUM(ol.allocated_amount)
                  FROM order_lines ol
@@ -426,12 +470,7 @@ async fn update_order_status(
             .fetch_all(&mut *tx)
             .await?;
 
-            // ②-2 会在这里追加一条手工折让的腿（spec 4.4）：
-            //     实收-<渠道> → 社团往来:<本社团>   金额 = solved_amount − final_amount
-            // 它整笔落在本社团头上，不按货主分摊——「我帮你卖货，我自己让的价不该由你买单」。
-            // 金额为 0 时那条腿本就不该存在，post_journal 已经会过滤掉零金额的腿。
-            // ②-1 里 solved == final，所以这里恒为 0，暂不生成。
-            let money_legs: Vec<MoneyLeg> = owner_totals
+            let mut money_legs: Vec<MoneyLeg> = owner_totals
                 .into_iter()
                 .map(|(owner_id, cents)| MoneyLeg {
                     from: Account::SocietyDue(owner_id),
@@ -441,8 +480,39 @@ async fn update_order_status(
                 .filter(|leg| !leg.amount.is_zero())
                 .collect();
 
+            // 手工折让/加价：**整笔落在本社团头上，不按货主分摊**（spec 4.4）。
+            // 这条规则不依赖订单里有没有本社团的行——整单都是代卖货、摊主说
+            // 「算你 15」，那 5 块一样落到本社团头上。
+            let diff = solved - final_amount;
+            if diff != 0 {
+                // 「本社团」有且只有一个，由 idx_societies_home 这个偏唯一索引保证，
+                // 且 api/society.rs 不允许把它降级成「没有本社团」。
+                let home: i64 = query_scalar("SELECT id FROM societies WHERE is_home = 1")
+                    .fetch_one(&mut *tx)
+                    .await?;
+                // ⚠️ 金额恒取绝对值，方向由 from/to 表达（spec 4.4 末句）。
+                // 照「金额 = solved − final」直接传，加价时它是负数，而 post_journal
+                // 对非正金额直接返回「资金移动的金额必须为正」——每一张加价订单的
+                // 「完成」都会 400。
+                money_legs.push(if diff > 0 {
+                    MoneyLeg {
+                        from: Account::Received(channel.clone()),
+                        to: Account::SocietyDue(home),
+                        amount: Money::from_cents(diff),
+                    }
+                } else {
+                    MoneyLeg {
+                        from: Account::SocietyDue(home),
+                        to: Account::Received(channel.clone()),
+                        amount: Money::from_cents(-diff),
+                    }
+                });
+            }
+
             // 全 0 金额（全赠品订单）时没有钱可记，跳过收款 journal 而不是
             // 让 post_journal 拒绝「空的 journal」。
+            // ⚠️ 于是「订单是 completed」**不蕴含**「存在收款 journal」——
+            // ②-3 做结算对账时要按 orders.status 判定，不能按 journal 存在性。
             if !money_legs.is_empty() {
                 post_journal(
                     &mut tx,
@@ -458,9 +528,12 @@ async fn update_order_status(
             }
 
             query(
-                "UPDATE orders SET status = 'completed', channel = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?",
+                "UPDATE orders SET status = 'completed', channel = ?, final_amount = ?,
+                        completed_at = CURRENT_TIMESTAMP
+                 WHERE id = ?",
             )
             .bind(&channel)
+            .bind(final_amount)
             .bind(order_id)
             .execute(&mut *tx)
             .await?;
@@ -1123,5 +1196,283 @@ mod tests {
             .unwrap();
         assert_eq!(price, 5000);
         assert_eq!(solved, 5000);
+    }
+
+    use crate::domain::ledger::{account_balance, Account};
+    use crate::domain::money::Money;
+
+    /// 下一张单并返回 order_id。
+    async fn place(router: &axum::Router, event_id: i64, items: serde_json::Value) -> i64 {
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None,
+                json!({ "items": items }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+        read_json(res).await["id"].as_i64().unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_manual_discount_falls_entirely_on_the_home_society() {
+        // spec 4.4 里最要命的那个 case：**整单都是代卖货**，摊主还是让了价。
+        // 规则不依赖订单里有没有本社团的行——那 5 块一样落到本社团头上。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _ep_a, ep_b) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+        let order_id = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_b, "quantity": 1}]),
+        )
+        .await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "现金", "final_amount": 1500}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        // 代卖社团按**自己的定价**全额入账，一分不少
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::SocietyDue(2))
+                .await
+                .unwrap(),
+            Money::from_cents(-2000),
+            "「我帮你卖货，我自己让的价不该由你买单」"
+        );
+        // 本社团承担了这 5 块：债权减少 500（余额为正）
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::SocietyDue(1))
+                .await
+                .unwrap(),
+            Money::from_cents(500)
+        );
+        // 实收净入 = 顾客实付
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::Received("现金".into()))
+                .await
+                .unwrap(),
+            Money::from_cents(1500)
+        );
+    }
+
+    #[tokio::test]
+    async fn marking_an_order_up_reverses_the_leg_instead_of_passing_a_negative_amount() {
+        // ②-1 交接段点名的坑：照「金额 = solved − final」直接传，加价时它是负数，
+        // post_journal 会用「资金移动的金额必须为正」把每一张加价订单的完成打成 400。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+        let order_id = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_a, "quantity": 1}]),
+        )
+        .await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "现金", "final_amount": 3500}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK, "加价不能 400");
+
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::Received("现金".into()))
+                .await
+                .unwrap(),
+            Money::from_cents(3500)
+        );
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::SocietyDue(1))
+                .await
+                .unwrap(),
+            Money::from_cents(-3500),
+            "本社团那头也跟着多出 5 块"
+        );
+    }
+
+    #[tokio::test]
+    async fn paid_amounts_always_add_up_to_the_final_amount() {
+        // spec 4.5 的第二条不变量。Task 9 的统计口径完全押在它上面。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, ep_b) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+        let order_id = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_a, "quantity": 2}, {"product_id": ep_b, "quantity": 1}]),
+        )
+        .await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "微信", "final_amount": 7333}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let sum: i64 =
+            sqlx::query_scalar("SELECT SUM(paid_amount) FROM order_lines WHERE order_id = ?")
+                .bind(order_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(sum, 7333, "取整的余数不能凭空蒸发或多出来");
+
+        // 货主那一侧完全不受影响（spec 4.3 第一条约束）
+        let alloc: i64 =
+            sqlx::query_scalar("SELECT SUM(allocated_amount) FROM order_lines WHERE order_id = ?")
+                .bind(order_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(alloc, 8000);
+    }
+
+    #[tokio::test]
+    async fn completing_without_a_final_amount_keeps_the_solved_price() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+        let order_id = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_a, "quantity": 1}]),
+        )
+        .await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "微信"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(read_json(res).await["final_amount"], 3000);
+
+        // 没有手工折让就不该有那条腿
+        let legs: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM money_movements mm JOIN journals j ON j.id = mm.journal_id
+             WHERE j.order_id = ?",
+        )
+        .bind(order_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(legs, 1, "只有按货主分组的那一条");
+    }
+
+    #[tokio::test]
+    async fn a_negative_final_amount_is_refused() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+        let order_id = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_a, "quantity": 1}]),
+        )
+        .await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "微信", "final_amount": -1}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn cancelling_a_discounted_order_reverses_the_discount_leg_too() {
+        // 冲正走的是 reverse_order_journals，它把 journal 的每条腿都反向——
+        // 手工折让那条腿不需要任何特殊处理，但必须有测试钉住这一点。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, ep_b) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+        let order_id = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_a, "quantity": 1}, {"product_id": ep_b, "quantity": 1}]),
+        )
+        .await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "现金", "final_amount": 4000}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "cancelled"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        for account in [
+            Account::SocietyDue(1),
+            Account::SocietyDue(2),
+            Account::Received("现金".into()),
+        ] {
+            assert_eq!(
+                account_balance(&pool, event_id, &account).await.unwrap(),
+                Money::ZERO,
+                "取消之后所有资金账户必须回到 0：{account}"
+            );
+        }
+        assert_eq!(
+            crate::domain::ledger::onsite_balance(&pool, ep_a)
+                .await
+                .unwrap(),
+            10
+        );
+        assert_eq!(
+            crate::domain::ledger::onsite_balance(&pool, ep_b)
+                .await
+                .unwrap(),
+            5
+        );
     }
 }

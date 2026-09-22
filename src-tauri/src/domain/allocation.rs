@@ -13,11 +13,6 @@
 //! **取整规则是本模块唯一有技术含量的地方**，而且 spec 原文是错的——见
 //! `apportion` 的文档注释。
 
-// `domain` 是私有模块，`pub` 挡不住 `dead_code`；本模块真正的消费方（`pricing`）
-// 要到下一个 task 才接线，在那之前只有本文件的测试引用它。按仓库既有做法显式放行，
-// 接线后应删掉这条。
-#![allow(dead_code)]
-
 use crate::domain::money::Money;
 use crate::error::{ApiError, ApiResult};
 
