@@ -46,7 +46,8 @@ struct ProductSalesItem {
     /// 「累计进货」= 从外部进到现场仓的总件数（不是当前余额）。
     initial_stock: i64,
     total_quantity: i64,
-    /// 单位：分。
+    /// 单位：分。**顾客实付合计**（`Σ paid_amount`），不是原价合计——
+    /// Lot 分摊与手工折让都已经摊进去了。
     total_revenue_per_item: i64,
 }
 
@@ -119,7 +120,10 @@ async fn get_event_stats(
                   AND sm.from_location = '外部' AND sm.to_location = '现场仓'
             ), 0) as initial_stock,
             SUM(ol.qty) as total_quantity,
-            SUM(ol.unit_price * ol.qty) as total_revenue_per_item
+            -- 顾客实付，不是原价。Σ paid = final_amount（spec 4.5）保证
+            -- 「按商品汇总之和 == SUM(orders.final_amount)」，仪表盘两个数字永远对得上。
+            -- 货主该得多少是结算单的事（②-3），那边用 allocated_amount。
+            SUM(ol.paid_amount) as total_revenue_per_item
         FROM order_lines ol
         JOIN orders o ON ol.order_id = o.id
         JOIN event_products ep ON ol.event_product_id = ep.id
@@ -190,7 +194,10 @@ async fn get_sales_summary(
                   AND sm.from_location = '外部' AND sm.to_location = '现场仓'
             ), 0) as initial_stock,
             SUM(ol.qty) as total_quantity,
-            SUM(ol.unit_price * ol.qty) as total_revenue_per_item
+            -- 顾客实付，不是原价。Σ paid = final_amount（spec 4.5）保证
+            -- 「按商品汇总之和 == SUM(orders.final_amount)」，仪表盘两个数字永远对得上。
+            -- 货主该得多少是结算单的事（②-3），那边用 allocated_amount。
+            SUM(ol.paid_amount) as total_revenue_per_item
         FROM order_lines ol
         JOIN orders o ON ol.order_id = o.id
         JOIN event_products ep ON ol.event_product_id = ep.id
@@ -400,7 +407,10 @@ async fn download_sales_summary(
                   AND sm.from_location = '外部' AND sm.to_location = '现场仓'
             ), 0) as initial_stock,
             SUM(ol.qty) as total_quantity,
-            SUM(ol.unit_price * ol.qty) as total_revenue_per_item
+            -- 顾客实付，不是原价。Σ paid = final_amount（spec 4.5）保证
+            -- 「按商品汇总之和 == SUM(orders.final_amount)」，仪表盘两个数字永远对得上。
+            -- 货主该得多少是结算单的事（②-3），那边用 allocated_amount。
+            SUM(ol.paid_amount) as total_revenue_per_item
         FROM order_lines ol
         JOIN orders o ON ol.order_id = o.id
         JOIN event_products ep ON ol.event_product_id = ep.id
@@ -845,6 +855,70 @@ mod tests {
             &bytes[0..2],
             &b"PK"[..],
             "xlsx 是 zip 格式，前两个字节应是 PK"
+        );
+    }
+
+    #[tokio::test]
+    async fn per_product_revenue_adds_up_to_the_order_total() {
+        // ②-1 交接段第 4 条：Lot + 手工折让一落地，SUM(unit_price × qty) 就是
+        // 「折让前的原价」，仪表盘的两个数字会对不上。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, ep_b) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+        // ep_a 上挂一个「任选 2 件 50」（原价 60）
+        crate::test_support::seed_lot(&pool, event_id, "任选2件50", 2, 5000, &[ep_a]).await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None,
+                json!({"items": [{"product_id": ep_a, "quantity": 2},
+                                 {"product_id": ep_b, "quantity": 1}]}),
+            ))
+            .await
+            .unwrap();
+        let order_id = read_json(res).await["id"].as_i64().unwrap();
+
+        // solved = 5000 + 2000 = 7000，摊主再抹到 6666
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "微信", "final_amount": 6666}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "GET",
+                &format!("/api/events/{event_id}/stats"),
+                Some(&token),
+                json!({}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = read_json(res).await;
+
+        let total = body["summary"]["total_revenue"].as_i64().unwrap();
+        assert_eq!(total, 6666);
+
+        let per_item: i64 = body["product_details"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| d["total_revenue_per_item"].as_i64().unwrap())
+            .sum();
+        assert_eq!(
+            per_item, total,
+            "按商品汇总之和必须等于总额——这条由「同一订单 Σ paid = final_amount」结构上保证"
         );
     }
 }
