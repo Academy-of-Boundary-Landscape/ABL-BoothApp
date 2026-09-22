@@ -200,6 +200,11 @@ pub struct MoneyLeg {
 ///
 /// 所有腿和 journal 本身在同一个事务里落盘——调用方负责开事务和提交，
 /// 因为一次业务操作常常还要连带写 `orders` / `advances` 这些业务表。
+///
+/// ⚠️ **`order_id` 和 `reverses` 相邻且都是 `Option<i64>`，编译器分不出传反。**
+/// `order_id` 是「这条 journal 属于哪个订单」，`reverses` 是「这条 journal 冲正的是哪条 journal」。
+/// 记普通业务操作时 `reverses` 永远是 `None`；只有 `reverse_journal` 才会填它。
+/// 传反了 FK 未必拦得住（两个 id 恰好都有效时就穿过去了），而账会错得很隐蔽。
 //
 // 8 个参数是刻意的：tx / event / kind / order / reverses / note / stock / money
 // 各自独立，没有哪几个天然属于同一个结构体。这个签名是后续 task 依赖的契约，
@@ -215,6 +220,15 @@ pub async fn post_journal(
     stock: &[StockLeg],
     money: &[MoneyLeg],
 ) -> ApiResult<i64> {
+    // 先把零金额的钱腿滤掉再判断是否为空。
+    //
+    // 为什么不能在函数开头只看入参 slice 是否为空：零金额的腿会被静默跳过
+    // （②-2 的手工折让为 0 时那条腿本就不该存在），于是「money 非空但全是零」
+    // 会插出一条两张腿表都空的 journal——而这样的 journal **无法被冲正**
+    // （reverse_journal 读回 0 条腿，转调 post_journal(&[], &[]) 会被同一个检查拒掉），
+    // 造得出来却造不掉。spec 4.6 的全赠品订单（0 元行）正好会走到这条路径。
+    let money: Vec<&MoneyLeg> = money.iter().filter(|l| !l.amount.is_zero()).collect();
+
     if stock.is_empty() && money.is_empty() {
         return Err(ApiError::BadRequest(
             "空的 journal：既没有货也没有钱".into(),
@@ -251,11 +265,8 @@ pub async fn post_journal(
     }
 
     for leg in money {
-        // 金额为 0 的腿直接跳过而不是报错：②-2 的手工折让为 0 时这条腿本就不该存在，
+        // 金额为 0 的腿上面已经滤掉：②-2 的手工折让为 0 时这条腿本就不该存在，
         // 让调用方无脑传、这里过滤，比每个调用方各自判一遍可靠。
-        if leg.amount.is_zero() {
-            continue;
-        }
         if leg.amount.is_negative() {
             return Err(ApiError::BadRequest(
                 "资金移动的金额必须为正——方向由 from/to 表达，不靠负数".into(),
@@ -657,5 +668,228 @@ mod tests {
         )
         .await;
         assert!(r.is_err(), "from == to 必须被 CHECK 约束拦住");
+    }
+
+    #[tokio::test]
+    async fn a_journal_whose_legs_are_all_zero_is_rejected_not_created() {
+        // 能造出来却造不掉的「幽灵 journal」：money 非空但全是零金额时，
+        // 零值过滤会把腿全跳过，留下一条两张腿表都空的 journal，
+        // 而它之后无法被冲正（reverse 读回 0 条腿 → 转调 post_journal(&[],&[]) → 被拒）。
+        // spec 4.6 的全赠品订单（0 元行）正好会走到这条路径。
+        let pool = test_pool().await;
+        let (event_id, _ep_a, _) = fixture(&pool).await;
+
+        let mut tx = pool.begin().await.unwrap();
+        let r = post_journal(
+            &mut tx,
+            event_id,
+            JournalKind::Receipt,
+            None,
+            None,
+            None,
+            &[],
+            &[MoneyLeg {
+                from: Account::SocietyDue(1),
+                to: Account::Received("微信".into()),
+                amount: Money::ZERO,
+            }],
+        )
+        .await;
+        assert!(
+            r.is_err(),
+            "全零金额的 journal 必须被拒绝，不能插出无腿的 journal"
+        );
+        drop(tx);
+
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journals")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 0, "被拒绝的 journal 不能在表里留下痕迹");
+    }
+
+    #[tokio::test]
+    async fn reversing_an_order_undoes_both_its_goods_and_its_money_journals() {
+        // Task 6 取消订单完全依赖这个函数。它必须一次把该订单名下**全部**
+        // 未冲正的 journal 都冲掉——只冲一半（比如只退货不退钱）正是旧模型反复出事的地方。
+        let pool = test_pool().await;
+        let (event_id, ep_a, _) = fixture(&pool).await;
+
+        let mut tx = pool.begin().await.unwrap();
+        post_journal(
+            &mut tx,
+            event_id,
+            JournalKind::Restock,
+            None,
+            None,
+            None,
+            &[StockLeg {
+                event_product_id: ep_a,
+                from: Location::External,
+                to: Location::OnSite,
+                qty: 10,
+            }],
+            &[],
+        )
+        .await
+        .unwrap();
+
+        // 一张订单产生两条 journal：先记货，后记钱
+        sqlx::query("INSERT INTO orders (id, event_id, status, channel, gross_amount, solved_amount, final_amount)
+                     VALUES (7, ?, 'completed', '微信', 9000, 9000, 9000)")
+            .bind(event_id)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        post_journal(
+            &mut tx,
+            event_id,
+            JournalKind::Sale,
+            Some(7),
+            None,
+            None,
+            &[StockLeg {
+                event_product_id: ep_a,
+                from: Location::OnSite,
+                to: Location::Customer,
+                qty: 3,
+            }],
+            &[],
+        )
+        .await
+        .unwrap();
+        post_journal(
+            &mut tx,
+            event_id,
+            JournalKind::Receipt,
+            Some(7),
+            None,
+            None,
+            &[],
+            &[MoneyLeg {
+                from: Account::SocietyDue(1),
+                to: Account::Received("微信".into()),
+                amount: Money::from_cents(9000),
+            }],
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        assert_eq!(onsite_balance(&pool, ep_a).await.unwrap(), 7);
+
+        let mut tx = pool.begin().await.unwrap();
+        let n = reverse_order_journals(&mut tx, 7, Some("取消订单"))
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+
+        assert_eq!(n, 2, "该订单名下两条 journal 都要被冲正");
+        assert_eq!(onsite_balance(&pool, ep_a).await.unwrap(), 10, "货必须回来");
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::Received("微信".into()))
+                .await
+                .unwrap(),
+            Money::ZERO,
+            "钱也必须回去——只回滚一半是这个模型最该防住的事故"
+        );
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::SocietyDue(1))
+                .await
+                .unwrap(),
+            Money::ZERO
+        );
+    }
+
+    #[tokio::test]
+    async fn reversing_an_order_twice_is_a_no_op_not_a_double_refund() {
+        // 幂等性：第二次调用必须一条都不冲（候选集已空），而不是把库存再退一遍。
+        // 没有这条，一次网络重试就能让账面凭空多出一批货。
+        let pool = test_pool().await;
+        let (event_id, ep_a, _) = fixture(&pool).await;
+
+        let mut tx = pool.begin().await.unwrap();
+        post_journal(
+            &mut tx,
+            event_id,
+            JournalKind::Restock,
+            None,
+            None,
+            None,
+            &[StockLeg {
+                event_product_id: ep_a,
+                from: Location::External,
+                to: Location::OnSite,
+                qty: 10,
+            }],
+            &[],
+        )
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO orders (id, event_id, status, gross_amount, solved_amount, final_amount)
+                     VALUES (8, ?, 'pending', 6000, 6000, 6000)",
+        )
+        .bind(event_id)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        post_journal(
+            &mut tx,
+            event_id,
+            JournalKind::Sale,
+            Some(8),
+            None,
+            None,
+            &[StockLeg {
+                event_product_id: ep_a,
+                from: Location::OnSite,
+                to: Location::Customer,
+                qty: 2,
+            }],
+            &[],
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        let mut tx = pool.begin().await.unwrap();
+        assert_eq!(reverse_order_journals(&mut tx, 8, None).await.unwrap(), 1);
+        tx.commit().await.unwrap();
+        assert_eq!(onsite_balance(&pool, ep_a).await.unwrap(), 10);
+
+        let mut tx = pool.begin().await.unwrap();
+        let second = reverse_order_journals(&mut tx, 8, None).await.unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(second, 0, "第二次必须一条都不冲");
+        assert_eq!(
+            onsite_balance(&pool, ep_a).await.unwrap(),
+            10,
+            "库存只能退一次"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_test_database_enforces_foreign_keys() {
+        // post_journal 的 order_id / reverses 相邻且同为 Option<i64>，传反时的第一道
+        // （也是唯一一道自动）防线就是外键。sqlx 默认开 foreign_keys=ON，但这是
+        // 依赖库的默认值——哪天它变了、或 test_pool 换了构造方式，这条会立刻红，
+        // 而不是让一堆「传错 id」的 bug 悄悄溜过测试。
+        let pool = test_pool().await;
+        let on: i64 = sqlx::query_scalar("PRAGMA foreign_keys")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(on, 1, "测试库必须开启外键约束");
+
+        let violated = sqlx::query(
+            "INSERT INTO journals (event_id, kind, reverses_journal_id) VALUES (1, '取消', 999999)",
+        )
+        .execute(&pool)
+        .await;
+        assert!(
+            violated.is_err(),
+            "指向不存在 journal 的 reverses_journal_id 必须被外键拒绝"
+        );
     }
 }
