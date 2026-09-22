@@ -388,6 +388,10 @@ async fn quote(
     let mut original: Vec<i64> = vec![0; priced.lots.len()];
     for line in &priced.lines {
         if let Some(k) = line.lot_index {
+            // 这里是未检查乘法，但安全：price_cart 对**同一组** (unit_price, qty)
+            // 已经跑过 checked_mul_qty，溢出会在那一步提前返回 Err，能走到这里就已经证明乘不爆。
+            // 不要改成 checked——那会多一条永远走不到的错误分支；将来挪动 price_cart 里的检查位置时，
+            // 必须同步确认这层依赖仍然成立。
             original[k] += line.unit_price.cents() * line.qty;
         }
     }
