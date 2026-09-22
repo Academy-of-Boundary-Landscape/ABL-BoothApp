@@ -1,6 +1,7 @@
 // src/api/guard.rs
 
 use crate::{
+    error::{ApiError, ApiResult},
     state::AppState,
     utils::security::{AuthError, Claims},
 };
@@ -95,4 +96,32 @@ impl FromRequestParts<AppState> for AdminOnly {
             Err(AuthError::Forbidden)
         }
     }
+}
+
+/// 读权限：admin 全通；vendor + `access = "all"` 全通；vendor + `access = "event"`
+/// 只能碰 token 里钉着的那一场。
+///
+/// **这份实现原本在 `api/order.rs` 和 `api/product.rs` 里各抄了一份一模一样的**，
+/// `api/lot.rs` 会是第三份。收到这里来，三处共用。
+pub fn check_read_permission(claims: &Claims, event_id: i64) -> ApiResult<()> {
+    if claims.role == "admin" {
+        return Ok(());
+    }
+    if claims.role == "vendor" {
+        if claims.access == "all" {
+            return Ok(());
+        }
+        if let Some(eid) = claims.event_id {
+            if eid == event_id {
+                return Ok(());
+            }
+        }
+    }
+    Err(ApiError::Forbidden)
+}
+
+/// 写权限目前与读权限一致。保留两个名字是因为调用点读起来意图不同，
+/// 将来要收紧写权限时也有地方下手。
+pub fn check_write_permission(claims: &Claims, event_id: i64) -> ApiResult<()> {
+    check_read_permission(claims, event_id)
 }

@@ -7,6 +7,7 @@ mod event;
 pub mod guard;
 mod info;
 mod legacy;
+mod lot;
 mod master_product;
 mod order;
 mod product;
@@ -27,6 +28,7 @@ pub fn router() -> Router<AppState> {
         .merge(sync::router())
         .merge(info::router())
         .merge(product::router())
+        .merge(lot::router())
         .merge(order::router())
         .nest("/legacy", legacy::router());
 

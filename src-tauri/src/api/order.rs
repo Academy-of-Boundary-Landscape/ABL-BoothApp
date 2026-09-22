@@ -18,6 +18,7 @@ use sqlx::{query, query_as, query_scalar, SqlitePool};
 use std::collections::HashMap;
 
 use crate::{
+    api::guard::{check_read_permission, check_write_permission},
     db::models::OrderRow,
     domain::{
         ledger::{
@@ -512,31 +513,6 @@ async fn update_order_status(
 
     let response = load_order_response(&state.db, order_id).await?;
     Ok(Json(response))
-}
-
-// ==========================================
-// 权限检查辅助函数
-// ==========================================
-fn check_read_permission(claims: &Claims, event_id: i64) -> Result<(), ApiError> {
-    if claims.role == "admin" {
-        return Ok(());
-    }
-    if claims.role == "vendor" {
-        if claims.access == "all" {
-            return Ok(());
-        }
-        if let Some(eid) = claims.event_id {
-            if eid == event_id {
-                return Ok(());
-            }
-        }
-    }
-    Err(ApiError::Forbidden)
-}
-
-fn check_write_permission(claims: &Claims, event_id: i64) -> Result<(), ApiError> {
-    // 读写权限目前一致
-    check_read_permission(claims, event_id)
 }
 
 #[cfg(test)]

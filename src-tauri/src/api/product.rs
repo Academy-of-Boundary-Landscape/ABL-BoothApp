@@ -18,6 +18,7 @@ use serde_json::json;
 use sqlx::{query, query_as, query_scalar, FromRow, SqlitePool};
 
 use crate::{
+    api::guard::check_write_permission,
     domain::ledger::{
         onsite_balance, onsite_balances, post_journal, JournalKind, Location, StockLeg,
     },
@@ -37,28 +38,6 @@ pub fn router() -> Router<AppState> {
             post(restock_product),
         )
         .route("/products/:id", put(update_product).delete(delete_product))
-}
-
-// ==========================================
-// 辅助：权限检查
-// ==========================================
-/// 保留旧逻辑，但返回类型改成 `Result<(), ApiError>` 用 `ApiError::Forbidden`。
-/// 旧实现失败时返回纯文本，现在统一走 `{"error": "..."}` JSON 形状。
-fn check_write_permission(claims: &Claims, target_event_id: i64) -> Result<(), ApiError> {
-    if claims.role == "admin" {
-        return Ok(());
-    }
-    if claims.role == "vendor" {
-        if claims.access == "all" {
-            return Ok(());
-        }
-        if let Some(eid) = claims.event_id {
-            if eid == target_event_id {
-                return Ok(());
-            }
-        }
-    }
-    Err(ApiError::Forbidden)
 }
 
 // ==========================================
