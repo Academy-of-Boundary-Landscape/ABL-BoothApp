@@ -2,6 +2,7 @@
 // 用 node 环境而不是 jsdom：jsdom 的 FormData 与 Node 的 Request 不互通，
 // 在 jsdom 里测 multipart 会被序列化成 "[object FormData]"，测的就不是真实行为了。
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { cents } from '@/utils/money'
 import {
   createApiClient,
   unwrap,
@@ -119,7 +120,7 @@ describe('api core', () => {
     await unwrap(
       api.POST('/events/{event_id}/advances', {
         params: { path: { event_id: 1 } },
-        body: { society_id: 1, label: 'x', amount: 1 as never },
+        body: { society_id: 1, label: 'x', amount: cents(1) },
       })
     )
     expect(seen[0]!.headers.get('content-type')).toBe('application/json')
@@ -127,8 +128,8 @@ describe('api core', () => {
 
     const fd = new FormData()
     fd.append('f', new Blob(['x']), 'a.png')
-    // @ts-expect-error 此时 openapi.json 里还没有 multipart 路由；这里只测传输层，路径类型无关紧要
-    await unwrap(api.POST('/master-products', { body: fd }))
+    // multipart：契约里的请求体是字段结构体，FormData 赋不上去——全仓约定用 as never
+    await unwrap(api.POST('/master-products', { body: fd as never }))
     expect(seen[1]!.headers.get('content-type')).toMatch(/^multipart\/form-data; boundary=/)
   })
 
@@ -136,8 +137,8 @@ describe('api core', () => {
     const api = make(() => new Response('length limit exceeded', { status: 413 }))
     const fd = new FormData()
     fd.append('f', new Blob(['x']), 'a.png')
-    // @ts-expect-error 同上一条：此时还没有 multipart 路由
-    await unwrap(api.POST('/master-products', { body: fd })).catch(() => {})
+    // multipart
+    await unwrap(api.POST('/master-products', { body: fd as never })).catch(() => {})
     expect(onUploadError).toHaveBeenCalledOnce()
     const [url, errLike] = onUploadError.mock.calls[0]!
     expect(url).toContain('/master-products')

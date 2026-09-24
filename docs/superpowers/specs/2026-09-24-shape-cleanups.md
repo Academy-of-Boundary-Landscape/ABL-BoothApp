@@ -2,6 +2,19 @@
 
 阶段 2 各模块迁移时发现的「想改但不许改」的 JSON 形状问题（spec K3）。Task 8 整理、Task 10 统一处理。
 
+## 处置（Task 8，2026-09-25）
+
+77 条按性质分四类。判据是 spec §6「用户可见行为零变化」：③b 只收契约，不改行为。
+
+| 类 | 条目 | 处置 | 理由 |
+|---|---|---|---|
+| **A 错误体不统一**：纯文本 / `{"ok":false,...}` / 英文或内部错误原文 | closing 以外几乎每个 v1.1 模块都有（stats、event、admin、master_product、sync、legacy、vision、auth 的 DebugJson） | **不改**，文档已如实标成 `text/plain` 或对应形状 | 现在前端读不到 `error` 字段，显示的是**调用方的中文兜底文案**；改成 `{"error":"Database Error"}` 反而让用户看到英文。要改就得同时重写每条文案，属于 ④ |
+| **B 吞错误**：`unwrap_or_default()` / `unwrap_or(None)` / `let _ =` | stats、event、admin、master_product、sync、legacy、vision、auth、order 分组、closing 账面缺失 | **不改** | 改了就会出现新的 500 或 404，是行为变化；需要配合前端的错误态设计，留给后续 |
+| **C 形状别扭或语义重载** | `OrderRow` flatten 到顶层；`OrderItemResponse.product_id` 实为 event_product_id；`journal_id: null` 语义重载；settle 恒返回常量；删除返回 200+message 而非 204；lot 的哨兵 `0`；refund 多余字段；`default_price`/legacy 金额是 f64 元 | **不改**，记为后续候选 | 牵动面大、收益在以后；`default_price` 改分牵涉 `.boothpack` 跨版本兼容 |
+| **D 值域固定却只写成 string** | 收摊 `status`（进行中/已结算）；以及同类的展会状态、订单状态、退货去向、调整方向 | **Task 10 做** | 只在 schema 上声明枚举（`#[schema(value_type = …)]` 或文档用 enum），**线上 JSON 一个字节不变**，TS 侧得到字面量联合类型，拼错状态字符串在编译期报错 |
+
+Task 10 之外的条目保留在下表，作为 ④ 与后续版本的输入。
+
 | 模块 | 路由 | 现状 | 建议 | 理由 | 前端消费方 |
 |---|---|---|---|---|---|
 | closing | GET /events/{id}/closing | `status` 是中文自由字符串（进行中/已结算） | 改成稳定枚举值（如 `open`/`settled`） | 前端用 `s.status === '已结算'` 比较原文，文案一改契约就断；字符串没有类型约束 | ClosingWizard.vue（`step` computed） |
@@ -35,7 +48,6 @@
 | stats | `GET /events/{event_id}/sales_summary` | `events` `unwrap_or(None)`；动态明细 `unwrap_or_default()`；总额 `unwrap_or((0,))`；时间序列 `unwrap_or_default()` | 同上 | 同上（趋势图静默变空线） | `views/AdminEventStat.vue`、`components/stats/SalesLineChart.vue` |
 | stats | `GET /events/{event_id}/sales_summary/download` | `events` `unwrap_or(None)`；`details` `unwrap_or_default()`；所有 `worksheet.*` / `fs::remove_file` 写入错误用 `let _ =` 吞掉 | 至少记日志；明细查询用 `?` | 导出可能悄悄缺行/缺样式，且没有任何提示 | `views/AdminEventStat.vue` |
 | stats | `GET /events/{event_id}/sales_summary` | `interval_minutes` 只认 30，其余（含非法值/负数/0）一律静默按 60 处理 | 显式校验并 400，或写明回退规则 | 客户端拼错粒度时口径被静默改掉 | `components/stats/StatFilters.vue`（只发 30/60） |
-| handler | 方法 | 前签名 | 后签名 | 形状测试 |
 | master_product | `POST /{id}`、`POST/PUT /{id}/images/{image_id}`、`DELETE /{id}/images/{image_id}` | 404 是纯文本 `"Product not found"` / `"Image not found"` | 统一成 `{"error": "…"}`（`ApiError::NotFound`） | 前端只认 `err.response?.data?.error`，纯文本会走兜底文案，后端原因丢失 | `productStore.js`、`services/vision.js`、`api/core.ts` |
 | master_product | `POST /`、`POST/PUT /{id}`、`PUT /{id}/status`、`GET /{id}/images` | 500 是纯文本 `"Database Error"` / `"File upload failed"` | 统一成 `{"error": …}`（`ApiError::Db` 等） | 同上；`core.ts` 的 `serverMessage` 读不到 | 同上 |
 | master_product | `POST /{id}/images`、`POST/PUT /{id}/images/{image_id}`、`DELETE /{id}/images/{image_id}` | 部分 500 回显底层错误：`{"error": "Database Error: {e}"}` / `{"error": "{上传错误}"}` | 改成固定文案，不回显 `{e}` | 可能泄漏路径/SQL 细节，且与全仓「数据库错误」惯例不一致 | 同上 |
