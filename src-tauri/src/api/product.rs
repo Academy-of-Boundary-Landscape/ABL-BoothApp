@@ -260,7 +260,7 @@ async fn add_product_to_event(
 
     // 建商品 + 首批进货必须在同一个事务里。initial_stock 为 0 时不记 journal
     // （post_journal 会拒绝空 journal）。
-    let mut tx = state.db.begin().await?;
+    let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
     crate::api::guard::require_event_open(&mut tx, event_id).await?;
 
     // owner_society_id 从 master_products 抄一份**快照**。之后改全局商品库的归属
@@ -338,7 +338,7 @@ async fn restock_product(
         return Err(ApiError::NotFound("商品不存在".into()));
     }
 
-    let mut tx = state.db.begin().await?;
+    let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
     crate::api::guard::require_event_open(&mut tx, event_id).await?;
     post_journal(
         &mut tx,
@@ -390,10 +390,10 @@ async fn update_product(
 
     check_write_permission(&claims, event_id)?;
 
-    // 已结算的展会账已冻结：改价写 event_products，必须在改之前过守卫。
-    let mut conn = state.db.acquire().await?;
-    crate::api::guard::require_event_open(&mut conn, event_id).await?;
-    drop(conn);
+    // 已结算的展会账已冻结：改价写 event_products，守卫必须和写入在同一个
+    // BEGIN IMMEDIATE 事务里——事务外查一遍再写，中间隔着一个能被 settle 插进来的窗口。
+    let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
+    crate::api::guard::require_event_open(&mut tx, event_id).await?;
 
     if let Some(unit_price) = payload.unit_price {
         if unit_price < 0 {
@@ -402,9 +402,11 @@ async fn update_product(
         query("UPDATE event_products SET unit_price = ? WHERE id = ?")
             .bind(unit_price)
             .bind(id)
-            .execute(&state.db)
+            .execute(&mut *tx)
             .await?;
     }
+
+    tx.commit().await?;
 
     let product = load_one(&state.db, id).await?;
     Ok(Json(product))
@@ -427,15 +429,15 @@ async fn delete_product(
     check_write_permission(&claims, event_id)?;
 
     // 已结算的展会账已冻结：删除写 event_products（商品名单也是冻结的一部分）。
-    let mut conn = state.db.acquire().await?;
-    crate::api::guard::require_event_open(&mut conn, event_id).await?;
-    drop(conn);
+    // 守卫、流水检查和 DELETE 必须在同一个 BEGIN IMMEDIATE 事务里，事务外查会有窗口。
+    let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
+    crate::api::guard::require_event_open(&mut tx, event_id).await?;
 
     // 有移动流水时拒绝删除：删掉等于账面凭空少一批货。
     let moves: i64 =
         query_scalar("SELECT COUNT(*) FROM stock_movements WHERE event_product_id = ?")
             .bind(id)
-            .fetch_one(&state.db)
+            .fetch_one(&mut *tx)
             .await?;
     if moves > 0 {
         return Err(ApiError::Conflict(
@@ -445,8 +447,10 @@ async fn delete_product(
 
     query("DELETE FROM event_products WHERE id = ?")
         .bind(id)
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await?;
+
+    tx.commit().await?;
 
     Ok((
         StatusCode::OK,
@@ -646,5 +650,50 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn a_settled_event_refuses_product_delete() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _, _) = seed_event_and_product(&pool).await;
+        // 夹具给 A / B 都记了开场带货，那样删的是「有移动流水」那一条 409。
+        // 另插一个没有任何流水的商品，测到的才一定是冻结守卫。
+        // 夹具的 master_products 只到 2，所以先补一个全局商品（(event_id,
+        // master_product_id) 有 UNIQUE 约束，复用 1 / 2 会直接撞上）。
+        sqlx::query(
+            "INSERT INTO master_products (id, product_code, name, default_price, owner_society_id)
+             VALUES (3, 'C', '挂件C', 15.0, 1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let clean_id: i64 = sqlx::query_scalar(
+            "INSERT INTO event_products
+               (event_id, master_product_id, owner_society_id, product_code, name, unit_price)
+             VALUES (?, 3, 1, 'C', '挂件C', 1500)
+             RETURNING id",
+        )
+        .bind(event_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        sqlx::query("UPDATE events SET status = '已结算' WHERE id = ?")
+            .bind(event_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let token = admin_token();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "DELETE",
+                &format!("/api/products/{clean_id}"),
+                Some(&token),
+                json!({}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT, "冻结后不能删商品");
     }
 }

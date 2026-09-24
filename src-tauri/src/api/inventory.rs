@@ -82,8 +82,7 @@ async fn create_gift(
     Path(event_id): Path<i64>,
     Json(payload): Json<LogRequest>,
 ) -> ApiResult<(StatusCode, Json<LogResponse>)> {
-    // 展会守卫在共用的 log_movement 里、且落在同一个 BEGIN IMMEDIATE 事务内
-    // （require_event_open）——这里不另查一次，事务外查会有被 settle 插进来的窗口。
+    // 展会守卫在 log_movement：两个入口共用同一个写事务，在那里查才在事务内
     log_movement(
         state,
         claims,
@@ -101,8 +100,9 @@ async fn create_scrap(
     Path(event_id): Path<i64>,
     mut payload: Json<LogRequest>,
 ) -> ApiResult<(StatusCode, Json<LogResponse>)> {
-    payload.vendor_pays = false; // 报废没有「谁买单」，静默忽略比报错友好
-                                 // 展会守卫同样在 log_movement 的事务内（require_event_open）。
+    // 报废没有「谁买单」，静默忽略比报错友好
+    payload.vendor_pays = false;
+    // 展会守卫在 log_movement：两个入口共用同一个写事务，在那里查才在事务内
     log_movement(
         state,
         claims,
@@ -610,5 +610,116 @@ mod tests {
                 .unwrap();
             assert_eq!(res.status(), StatusCode::CONFLICT, "{path} 应该被冻结挡住");
         }
+    }
+
+    #[tokio::test]
+    async fn the_gift_list_decodes_every_column_and_excludes_scraps() {
+        // 零行的列表什么都不解码。这条是唯一一条真的把三个 JOIN、
+        // EXISTS(...) AS vendor_paid 的 bool 解码、DATETIME 列的 String 解码
+        // 和 note 的 NULL 一起跑过的测试。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, ep_b) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+
+        // 带 note、带自掏的赠送
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/gifts"),
+                Some(&token),
+                json!({"event_product_id": ep_b, "qty": 2, "note": "送给隔壁摊", "vendor_pays": true}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+
+        // 不带 note 的报废（note 为 NULL，且不该出现在 /gifts 里）
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/scraps"),
+                Some(&token),
+                json!({"event_product_id": ep_a, "qty": 1}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "GET",
+                &format!("/api/events/{event_id}/gifts"),
+                Some(&token),
+                json!(null),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let list = read_json(res).await;
+        let rows = list.as_array().unwrap();
+        assert_eq!(rows.len(), 1, "报废不该出现在赠送列表里");
+        let r = &rows[0];
+        assert_eq!(r["event_product_id"], ep_b);
+        assert_eq!(r["product_code"], "B");
+        assert_eq!(r["name"], "本子B");
+        assert_eq!(r["owner_society_id"], 2);
+        assert_eq!(r["owner_name"], "黄昏堂");
+        assert_eq!(r["qty"], 2);
+        assert_eq!(r["note"], "送给隔壁摊");
+        assert_eq!(r["vendor_paid"], true, "自掏的赠品有资金腿");
+        assert!(
+            r["occurred_at"].as_str().is_some(),
+            "DATETIME 列要能解成字符串"
+        );
+        assert!(r["journal_id"].as_i64().unwrap() > 0);
+    }
+
+    #[tokio::test]
+    async fn the_scrap_list_decodes_a_null_note_and_excludes_gifts() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, ep_b) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+
+        router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/scraps"),
+                Some(&token),
+                json!({"event_product_id": ep_a, "qty": 1}),
+            ))
+            .await
+            .unwrap();
+        router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/gifts"),
+                Some(&token),
+                json!({"event_product_id": ep_b, "qty": 1}),
+            ))
+            .await
+            .unwrap();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "GET",
+                &format!("/api/events/{event_id}/scraps"),
+                Some(&token),
+                json!(null),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let list = read_json(res).await;
+        let rows = list.as_array().unwrap();
+        assert_eq!(rows.len(), 1, "赠送不该出现在报废列表里");
+        assert_eq!(rows[0]["product_code"], "A");
+        assert!(rows[0]["note"].is_null(), "没写备注时 note 是 null，不该炸");
+        assert_eq!(rows[0]["vendor_paid"], false, "报废从来没有资金腿");
     }
 }

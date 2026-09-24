@@ -693,7 +693,7 @@ async fn quote(
     Path(event_id): Path<i64>,
     Json(payload): Json<QuoteRequest>,
 ) -> ApiResult<Json<QuoteResponse>> {
-    // 不需要展会守卫：公开报价零写入，只读库存与定价，本就不该被冻结挡
+    // 不需要展会守卫：报价要求更严的「进行中」，守卫在 ensure_event_selling，不能放宽成「不是已结算」
     let merged = merge_items(&payload.items)?;
     let mut conn = state.db.acquire().await?;
     ensure_event_selling(&mut conn, event_id).await?;

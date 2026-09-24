@@ -119,6 +119,26 @@ npx tauri android build --apk true --aab true -t aarch64
 - APK：`src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk`
 - AAB：`src-tauri/gen/android/app/build/outputs/bundle/universalRelease/*.aab`
 
+### 本地测试
+
+```bash
+cd src-tauri && cargo test --workspace
+```
+
+Rust 测试用 `tempfile::tempdir()` 建临时目录（`test_support::test_state` 等夹具），
+`tempfile` 会读 `TMPDIR` 作为临时目录的父目录。**如果 `TMPDIR` 指向一个不存在的路径，
+`tempdir()` 会直接 panic**，症状是：
+
+```
+create temp dir: NotFound
+... path: "<TMPDIR>/.tmpXXXX"
+```
+
+这不是代码问题，不要去查 `tempfile` 或测试夹具。跑测试前确保 `TMPDIR` 指向一个**真实
+存在**的目录即可（`export TMPDIR=/path/that/exists`，或给单条命令前置
+`TMPDIR=/path/that/exists cargo test ...`）。在沙箱 / 容器里 `/tmp` 有时是每次命令
+一份的临时挂载，机器默认的 `TMPDIR=/tmp/<user>` 可能并不存在。
+
 ## 安装包内容
 
 ### Windows NSIS 安装包
