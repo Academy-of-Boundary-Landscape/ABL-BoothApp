@@ -74,7 +74,8 @@ const routes = [
         component: AdminEventStat,
       },
       // 【新增】结算路由：垫付、结算调整、收摊清点、结算单
-      // 摊主端的「查看结算」按钮硬编码跳这个 path，不要改。
+      // 只对管理端开放：摊主端看到的是收摊向导里的「账本已冻结」那一屏，
+      // 结算单在这里查看，见 VendorView.openClosing 的注释。
       {
         path: 'events/:id/settlement',
         name: 'admin-event-settlement',

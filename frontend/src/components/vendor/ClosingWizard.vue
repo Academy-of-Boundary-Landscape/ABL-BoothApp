@@ -109,6 +109,7 @@
               <p>
                 <strong>账本已冻结。</strong>
                 之后仍然可以补垫付、结算调整和收摊清点，其余都改不了了。
+                结算单请到管理端的「展会 → 结算」查看。
               </p>
             </div>
             <template v-else>
@@ -212,14 +213,19 @@ const takebackTotal = computed(() =>
   (store.state?.onsite_remaining || []).reduce((sum, p) => sum + p.qty, 0)
 )
 
-// 盘点输入预填账面数；已经动过的值不被后续刷新覆盖。
+// 盘点输入**不预填账面数**；已经动过的值不被后续刷新覆盖。
+// 预填会让「什么都不数直接提交」等于声称「每个商品我都数了且都对」，
+// 而「我数了、一致」和「我没数这个」正是盘点要分开的两件事——后端那条
+// stocktaken_at 迁移存在的全部理由就是这个。同 AdminEventSettlement 的清点输入。
+// 「摊主没数」由「跳过盘点」承接，那条路径留下 stocktaken_at = null。
 watch(
   () => store.state?.onsite_remaining,
   (rows) => {
     if (!rows) return
     const next = {}
     for (const p of rows) {
-      next[p.event_product_id] = counts.value[p.event_product_id] ?? p.qty
+      const existing = counts.value[p.event_product_id]
+      next[p.event_product_id] = Number.isFinite(existing) ? existing : null
     }
     counts.value = next
   },

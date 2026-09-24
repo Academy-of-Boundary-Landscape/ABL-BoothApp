@@ -69,18 +69,18 @@
                   @click.stop="changeStatus(event.id, '进行中')"
                   >► 开始</n-button
                 >
-                <n-button
-                  v-if="event.status === '进行中'"
-                  size="small"
-                  @click.stop="changeStatus(event.id, '已结算')"
-                  >■ 结束</n-button
-                >
-                <n-button
-                  v-if="event.status === '已结算'"
-                  size="small"
-                  @click.stop="changeStatus(event.id, '筹备')"
-                  >► 重新开始</n-button
-                >
+                <!--
+                  结束展会不再直接改状态：`PUT /events/:id/status` 的迁移守卫
+                  拒绝把展会置为「已结算」（要走收摊流程），也拒绝让已结算的展会
+                  离开「已结算」。管理端与摊主端角色互斥，跳摊主端会被要求重新登录，
+                  所以这里只留一个禁用态 + 提示，把摊主引到收摊向导。
+                -->
+                <template v-if="event.status === '进行中'">
+                  <n-button size="small" disabled>■ 结束</n-button>
+                  <span class="end-event-hint"
+                    >请在摊主端走收摊流程（清点订单 → 盘点 → 带回 → 结算）</span
+                  >
+                </template>
                 <n-button size="small" type="primary" @click.stop="openEditModal(event)"
                   >编辑</n-button
                 >
@@ -374,8 +374,17 @@ async function handleUpdateEvent() {
   flex-wrap: wrap;
   gap: 10px;
   justify-content: flex-end;
+  align-items: center;
   width: 100%;
   min-width: 250px;
+}
+/* 「结束」按钮旁边的禁用说明。移动端没有 hover，所以不靠 tooltip。 */
+.end-event-hint {
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  line-height: 1.4;
+  max-width: 220px;
+  text-align: right;
 }
 .action-btn {
   background: none;
@@ -483,6 +492,11 @@ async function handleUpdateEvent() {
   .status-actions {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .end-event-hint {
+    max-width: none;
+    text-align: left;
   }
 
   .search-container {

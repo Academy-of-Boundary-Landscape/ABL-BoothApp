@@ -14,7 +14,7 @@
       <div class="header-actions">
         <n-button @click="showInventoryModal = true">登记赠送/报废</n-button>
         <n-button @click="openClosing">
-          {{ isEventSettled ? '查看结算' : '收摊' }}
+          {{ isEventSettled ? '查看收摊状态' : '收摊' }}
         </n-button>
         <n-button type="primary" :loading="isRefreshing" @click="manualRefresh">
           {{ isRefreshing ? '刷新中' : '手动刷新' }}
@@ -126,7 +126,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { NButton, NTabs, NTabPane, NAlert, useDialog, useMessage } from 'naive-ui'
-import { useRouter } from 'vue-router'
 import { useOrderStore } from '@/stores/orderStore'
 import { useEventStore } from '@/stores/eventStore'
 import { useEventDetailStore } from '@/stores/eventDetailStore'
@@ -146,7 +145,6 @@ const audioRef = ref(null)
 const store = useOrderStore()
 const eventStore = useEventStore()
 const eventDetailStore = useEventDetailStore()
-const router = useRouter()
 const message = useMessage()
 const dialog = useDialog()
 
@@ -239,15 +237,14 @@ function closeRefund() {
 const showClosingWizard = ref(false)
 
 function openClosing() {
-  if (isEventSettled.value) {
-    // 管理端结算页由后续批次建在同一路由（plan 钉死的 admin-event-settlement）。
-    router.push(`/admin/events/${props.id}/settlement`)
-    return
-  }
+  // 已结算的展会也进同一个向导：向导的第 4 屏（step 由后端状态推出）会停在
+  // 「账本已冻结」，并写清之后还能补什么、结算单去哪儿看。**不要跳管理端**——
+  // /admin/** 要求 admin 角色，而能站在本页的会话是 vendor，两者互斥，跳过去
+  // 只会被重定向到 /login/admin。
   showClosingWizard.value = true
 }
 
-/** 向导里结算成功后，头部按钮当场变成「查看结算」，不用等重新拉展会列表。 */
+/** 向导里结算成功后，头部按钮当场变成「查看收摊状态」，不用等重新拉展会列表。 */
 function onClosingSettled() {
   const event = eventStore.events.find((e) => e.id === parseInt(props.id, 10))
   if (event) event.status = '已结算'
