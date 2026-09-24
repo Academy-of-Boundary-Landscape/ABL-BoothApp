@@ -14,11 +14,15 @@
     // 展会守卫在 <函数名>：<理由>
 找不到那个函数、或者它里面没有调用，都判失败。
 """
+import json
 import re
 import sys
 from pathlib import Path
 
 API_DIR = Path(__file__).resolve().parent.parent / "src-tauri" / "src" / "api"
+# 契约快照：非 GET 操作的 operationId 就是 handler 名（utoipa 默认），用来交叉校验
+# 脚本有没有漏认某种注册写法。openapi.json 本身由 openapi_snapshot 测试保证是最新的。
+OPENAPI = Path(__file__).resolve().parent.parent / "src-tauri" / "openapi.json"
 EXEMPT_RE = re.compile(r"//\s*不需要展会守卫：\s*\S+")
 # // 展会守卫在 <函数名>：<理由>
 DELEGATE_RE = re.compile(r"//\s*展会守卫在\s+([A-Za-z_][A-Za-z0-9_]*)\s*：\s*(\S[^\n]*)")
@@ -29,7 +33,10 @@ IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 # ③b：路由改成 `routes!(a, b)` 注册后，方法写在 handler 的 utoipa 注解里，
 # 上面那条正则就再也看不到它们了——不加这一条，门禁会静默地变成空转。
 UTOIPA_WRITE_RE = re.compile(
-    r"#\[utoipa::path\(\s*(?:post|put|patch|delete)\b.*?\)\]\s*(?:#\[[^\]]*\]\s*)*"
+    # 方法既可以单写（`post,`），也可以是 `method(post, put)` 这种多方法写法——
+    # 后者漏掉的话，同时挂 POST/PUT 的 handler 会静默脱离门禁。
+    r"#\[utoipa::path\(\s*(?:(?:post|put|patch|delete)\b|method\([^)]*\b(?:post|put|patch|delete)\b[^)]*\))"
+    r".*?\)\]\s*(?:#\[[^\]]*\]\s*)*"
     r"(?:pub\s+)?async fn ([A-Za-z_][A-Za-z0-9_]*)\s*\(",
     re.S,
 )
@@ -118,11 +125,13 @@ def write_handlers(code: str, path: Path, problems: list):
 def main() -> int:
     problems = []
     checked = 0
+    found = set()
     for path in sorted(API_DIR.rglob("*.rs")):
         raw = path.read_text(encoding="utf-8")
         code = strip_comments(raw)
         for name in write_handlers(code, path, problems):
             checked += 1
+            found.add(name)
 
             raw_body = handler_body(raw, name)
             if raw_body is None:
@@ -155,6 +164,20 @@ def main() -> int:
                 f"{path.name}:{name} 既没调用 require_event_open，"
                 f"也没写 `// 不需要展会守卫：<理由>` 或 `// 展会守卫在 <函数名>：<理由>`"
             )
+
+    # 交叉校验：文档里的每个写操作，脚本都必须认出来。这条正则已经因为注册写法
+    # 变化（routes!、method(post, put)）两次静默漏认过 handler。
+    if OPENAPI.exists():
+        doc = json.loads(OPENAPI.read_text(encoding="utf-8"))
+        for p, item in doc.get("paths", {}).items():
+            for method, op in item.items():
+                if method in ("post", "put", "patch", "delete") and isinstance(op, dict):
+                    op_id = op.get("operationId")
+                    if op_id and op_id not in found:
+                        problems.append(
+                            f"openapi.json 里的写操作 {method.upper()} {p}（{op_id}）没被脚本认出来——"
+                            f"注册写法变了，脚本需要跟着改"
+                        )
 
     # 一个写入口都没找到，只可能是脚本认不出注册方式了，而不是真的没有写入口。
     if checked == 0:

@@ -12,6 +12,214 @@
     "version": "1"
   },
   "paths": {
+    "/admin/password": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "修改管理员登录密码。需要管理员。",
+        "operationId": "update_admin_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAdminPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "管理员密码已更新",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminMessageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "新密码少于 4 位",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "settings 缺行或数据库写入失败（部分分支为纯文本）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/admin/reset-database": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "清空全部业务数据、删除上传的图片并把密码恢复为默认值（危险操作）。需要管理员。",
+        "operationId": "reset_database_handler",
+        "responses": {
+          "200": {
+            "description": "数据库已完全重置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminResetDatabaseResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "清理上传目录或数据库事务失败（部分分支为纯文本）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/admin/vendor-default-password": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "修改全局默认摊主密码。需要管理员。",
+        "operationId": "update_vendor_default_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateVendorPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "默认摊主密码已更新",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminMessageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "新密码少于 4 位",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "数据库写入失败（返回纯文本，非 error 形状）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/auth/is-default-admin-password": {
       "get": {
         "tags": [
@@ -150,6 +358,116 @@
           },
           "403": {
             "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/events": {
+      "get": {
+        "tags": [
+          "event"
+        ],
+        "summary": "展会列表，可选按 `status` 过滤。公开接口。",
+        "operationId": "list_events",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "按 event_date 倒序",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EventResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "event"
+        ],
+        "summary": "创建展会（multipart 表单，可传多张收款码）。需要管理员。",
+        "operationId": "create_event",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEventForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "缺少 name 或 date",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "保存上传文件或写库失败",
             "content": {
               "application/json": {
                 "schema": {
@@ -3007,6 +3325,1313 @@
         ]
       }
     },
+    "/events/{id}": {
+      "get": {
+        "tags": [
+          "event"
+        ],
+        "summary": "单个展会详情。公开接口。",
+        "operationId": "get_event",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "展会不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "event"
+        ],
+        "summary": "更新展会（multipart 表单；POST 与 PUT 等价）。需要管理员。",
+        "operationId": "update_event",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateEventForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "展会不存在（现状为纯文本响应）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "上传或写库失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "event"
+        ],
+        "summary": "更新展会（multipart 表单；POST 与 PUT 等价）。需要管理员。",
+        "operationId": "update_event",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateEventForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "展会不存在（现状为纯文本响应）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "上传或写库失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "event"
+        ],
+        "summary": "删除展会，连同它的账一起级联删除。需要管理员。",
+        "operationId": "delete_event",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "删除成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventDeletedResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "展会不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "数据库错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/events/{id}/status": {
+      "put": {
+        "tags": [
+          "event"
+        ],
+        "summary": "修改展会状态（筹备 / 进行中）。需要管理员。",
+        "description": "已结算的展会不能通过这里解冻，也不能直接改成已结算——必须走收摊流程。",
+        "operationId": "update_status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventUpdateStatusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "状态值不合法，或试图直接改成已结算",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "展会不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "已结算的展会不能解冻",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/legacy/export.xlsx": {
+      "get": {
+        "tags": [
+          "legacy"
+        ],
+        "summary": "把备份库里的展会 / 订单 / 明细导成三张 sheet 的 xlsx。需要管理员。",
+        "description": "金额**按老库的元原样写进单元格**，不换算成分——老库那一侧就是元，\n中间多一次 ×100 / ÷100 只会引入浮点误差。\n\n错误体是原样的 `text/plain`（不是 `{\"error\": ...}`），保持既有形状不变。",
+        "operationId": "export_legacy_xlsx",
+        "responses": {
+          "200": {
+            "description": "三张 sheet 的 xlsx 二进制流",
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "没有可导出的历史数据",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "生成或读回 xlsx 失败",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/legacy/status": {
+      "get": {
+        "tags": [
+          "legacy"
+        ],
+        "summary": "v1 备份的状态与行数。需要管理员。",
+        "operationId": "get_legacy_status",
+        "responses": {
+          "200": {
+            "description": "备份是否存在，以及老库里的展会 / 订单 / 明细行数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegacyStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/master-products": {
+      "get": {
+        "tags": [
+          "master_product"
+        ],
+        "summary": "全局商品库列表。默认只列上架商品，`?all=true` 连停用的一起返回。",
+        "operationId": "list_products",
+        "parameters": [
+          {
+            "name": "all",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MasterProduct"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "master_product"
+        ],
+        "summary": "新建一个全局商品（multipart 表单，`image` 为可选文件字段）。需要管理员。",
+        "operationId": "create_product",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMasterProductForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "创建成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MasterProduct"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "缺少 product_code 或 name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "product_code 已存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "上传或数据库错误（纯文本）",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/master-products/{id}": {
+      "put": {
+        "tags": [
+          "master_product"
+        ],
+        "summary": "修改一个全局商品（multipart 表单；为兼容旧前端同时挂 POST 与 PUT）。需要管理员。",
+        "operationId": "update_product",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "商品 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMasterProductForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "更新成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MasterProduct"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "商品不存在（纯文本）",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "product_code 已存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "数据库错误（纯文本）",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "master_product"
+        ],
+        "summary": "修改一个全局商品（multipart 表单；为兼容旧前端同时挂 POST 与 PUT）。需要管理员。",
+        "operationId": "update_product",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "商品 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMasterProductForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "更新成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MasterProduct"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "商品不存在（纯文本）",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "product_code 已存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "数据库错误（纯文本）",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/master-products/{id}/images": {
+      "get": {
+        "tags": [
+          "master_product"
+        ],
+        "summary": "列出某个全局商品的全部识别图。",
+        "operationId": "list_product_images",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "商品 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MasterProductImageDto"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "数据库错误（纯文本）",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "master_product"
+        ],
+        "summary": "给全局商品加一张识别图（multipart，`image` 为必填文件字段）。需要管理员。",
+        "operationId": "add_product_image",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "商品 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/AddProductImageForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "添加成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MasterProductImageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "缺少 image 字段",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "上传或数据库错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/master-products/{id}/images/{image_id}": {
+      "put": {
+        "tags": [
+          "master_product"
+        ],
+        "summary": "修改一张识别图（multipart；为兼容旧前端同时挂 POST 与 PUT）。需要管理员。",
+        "operationId": "update_product_image",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "商品 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "image_id",
+            "in": "path",
+            "description": "识别图 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProductImageForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "更新成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MasterProductImageResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "识别图不存在（纯文本）",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "上传或数据库错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "master_product"
+        ],
+        "summary": "修改一张识别图（multipart；为兼容旧前端同时挂 POST 与 PUT）。需要管理员。",
+        "operationId": "update_product_image",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "商品 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "image_id",
+            "in": "path",
+            "description": "识别图 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProductImageForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "更新成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MasterProductImageResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "识别图不存在（纯文本）",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "上传或数据库错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "master_product"
+        ],
+        "summary": "删除一张识别图。需要管理员。",
+        "operationId": "delete_product_image",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "商品 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "image_id",
+            "in": "path",
+            "description": "识别图 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "删除成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteMasterProductImageResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "识别图不存在（纯文本）",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "数据库错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/master-products/{id}/status": {
+      "put": {
+        "tags": [
+          "master_product"
+        ],
+        "summary": "上架 / 下架一个全局商品。需要管理员。",
+        "operationId": "update_status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "商品 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MasterProductUpdateStatusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "更新成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MasterProduct"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "数据库错误（纯文本）",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/products/{id}": {
       "put": {
         "tags": [
@@ -3483,10 +5108,683 @@
           }
         ]
       }
+    },
+    "/sync/export-products": {
+      "get": {
+        "tags": [
+          "sync"
+        ],
+        "summary": "导出商品库与识别图片为 `.boothpack`（zip）压缩包。需要管理员。",
+        "operationId": "export_products",
+        "responses": {
+          "200": {
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "读取数据或打包失败",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/sync/import-products": {
+      "post": {
+        "tags": [
+          "sync"
+        ],
+        "summary": "以 `multipart/form-data` 上传 `.boothpack` 并导入商品库（向后兼容的老路径）。需要管理员。",
+        "operationId": "import_products",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportProductsForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "导入成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncImportResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "没有 file 字段或读取上传字节失败",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/sync/import-products-raw": {
+      "post": {
+        "tags": [
+          "sync"
+        ],
+        "summary": "以 `application/octet-stream` 原始字节上传 `.boothpack` 并导入（Tauri webview 主用）。需要管理员。",
+        "operationId": "import_products_raw",
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "导入成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncImportResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "zip 或 catalog.json 无效",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "数据库写入或 zip 处理失败",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/vision/feedback": {
+      "post": {
+        "tags": [
+          "vision"
+        ],
+        "summary": "保存一次以图搜图的用户反馈（正确/纠错），并把图片加入识别索引。",
+        "operationId": "save_feedback",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/VisionFeedbackForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisionFeedbackResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "缺少图片或 chosen_master_product_id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "商品不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "上传或数据库失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/vision/models": {
+      "get": {
+        "tags": [
+          "vision"
+        ],
+        "summary": "列出注册表中的所有 Vision 模型及其安装/激活状态。",
+        "operationId": "list_models",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisionModelsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/vision/models/activate": {
+      "post": {
+        "tags": [
+          "vision"
+        ],
+        "summary": "激活一个已安装的 Vision 模型，并触发索引重建。",
+        "operationId": "activate_model",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisionActivateModelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisionActivateModelResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "模型不存在或未安装",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/vision/models/install": {
+      "post": {
+        "tags": [
+          "vision"
+        ],
+        "summary": "安装（下载）一个 Vision 模型，返回后台任务 id。",
+        "operationId": "install_model",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisionInstallModelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisionInstallModelResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "source 不受支持、模型不存在或已安装",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/vision/models/tasks/{task_id}": {
+      "get": {
+        "tags": [
+          "vision"
+        ],
+        "summary": "查询模型安装任务的状态。",
+        "operationId": "get_install_task",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "description": "安装任务 id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisionInstallTaskResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "任务不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/vision/models/{model_id}": {
+      "delete": {
+        "tags": [
+          "vision"
+        ],
+        "summary": "删除一个已安装且非当前激活的 Vision 模型文件。",
+        "operationId": "delete_model",
+        "parameters": [
+          {
+            "name": "model_id",
+            "in": "path",
+            "description": "模型 id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisionDeleteModelResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "不能删除激活模型、模型不存在或未安装",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/vision/rebuild": {
+      "post": {
+        "tags": [
+          "vision"
+        ],
+        "summary": "触发 Vision 索引重建；请求体可选，`force_full` 决定全量还是增量。",
+        "operationId": "rebuild_index",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/VisionRebuildRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisionRebuildResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "索引正在重建",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/vision/search": {
+      "post": {
+        "tags": [
+          "vision"
+        ],
+        "summary": "以图搜图：multipart 上传查询图片，返回按相似度排序的商品候选。",
+        "description": "索引未就绪或正在重建时返回 503；`mode` 为 `order`/`admin_event` 时 `event_id` 必填。",
+        "operationId": "search_by_image",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/VisionSearchForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisionSearchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "缺少图片、mode/roi/master_product_ids 非法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "识别超时",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "上传或推理失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "索引重建中、未就绪或并发已满",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/vision/settings/ep": {
+      "get": {
+        "tags": [
+          "vision"
+        ],
+        "summary": "读取 Vision 推理设备（execution provider）配置与可用 GPU 列表。",
+        "operationId": "get_ep_setting",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisionEpSettingResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "vision"
+        ],
+        "summary": "设置 Vision 推理设备并立即重新加载模型。",
+        "operationId": "set_ep_setting",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisionSetEpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisionSetEpResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "EP 取值非法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "配置保存或加载失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/vision/status": {
+      "get": {
+        "tags": [
+          "vision"
+        ],
+        "summary": "Vision 运行时状态：模型、索引版本/大小、重建进度与当前推理设备。",
+        "operationId": "get_vision_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisionStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "AddProductImageForm": {
+        "type": "object",
+        "description": "仅用于 OpenAPI 文档：`add_product_image` 的 multipart 表单字段。",
+        "properties": {
+          "image": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "binary"
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "AdjustmentRequest": {
         "type": "object",
         "required": [
@@ -3510,6 +5808,34 @@
           "society_id": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "AdminMessageResponse": {
+        "type": "object",
+        "description": "管理员密码 / 默认摊主密码更新成功的响应。\n\n两个接口共用；`#[schema(as = ...)]` 加模块前缀，避免和别的模块的同名 schema 在\nopenapi.json 里互相覆盖。",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "AdminResetDatabaseResponse": {
+        "type": "object",
+        "description": "数据库重置成功的响应。`warning` 给前端弹窗展示「数据已清空」。",
+        "required": [
+          "message",
+          "warning"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "warning": {
+            "type": "string"
           }
         }
       },
@@ -3748,6 +6074,86 @@
           }
         }
       },
+      "CreateEventForm": {
+        "type": "object",
+        "description": "仅用于 OpenAPI 文档：创建展会的 multipart 表单字段。",
+        "required": [
+          "name",
+          "date"
+        ],
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "location": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "payment_qr_code_alipay": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "binary"
+          },
+          "payment_qr_code_wechat": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "binary"
+          },
+          "vendor_password": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CreateMasterProductForm": {
+        "type": "object",
+        "description": "仅用于 OpenAPI 文档：`create_product` 的 multipart 表单字段。",
+        "required": [
+          "product_code",
+          "name",
+          "default_price",
+          "tags"
+        ],
+        "properties": {
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "default_price": {
+            "type": "string",
+            "description": "元，不是分（老字段，`f64`）。"
+          },
+          "image": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "binary"
+          },
+          "name": {
+            "type": "string"
+          },
+          "product_code": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "string"
+          }
+        }
+      },
       "CreateOrderRequest": {
         "type": "object",
         "required": [
@@ -3787,6 +6193,23 @@
           "journal_id": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "DeleteMasterProductImageResponse": {
+        "type": "object",
+        "description": "删除识别图的响应。",
+        "required": [
+          "ok",
+          "deleted_image_id"
+        ],
+        "properties": {
+          "deleted_image_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "ok": {
+            "type": "boolean"
           }
         }
       },
@@ -3833,6 +6256,74 @@
               "null"
             ]
           },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "EventDeletedResponse": {
+        "type": "object",
+        "description": "`DELETE /events/{id}` 的成功响应体。",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "EventResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "date",
+          "status",
+          "qrcode_urls"
+        ],
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "location": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "qrcode_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "向后兼容：保留单个 URL（取第一个），旧前端不会崩"
+          },
+          "qrcode_urls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "新字段：所有收款码 URL 数组"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "EventUpdateStatusRequest": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
           "status": {
             "type": "string"
           }
@@ -3954,6 +6445,20 @@
           "variance": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "ImportProductsForm": {
+        "type": "object",
+        "description": "仅用于 OpenAPI 文档：multipart 表单的字段。",
+        "required": [
+          "file"
+        ],
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "description": "`.boothpack` / `.zip` 文件内容。"
           }
         }
       },
@@ -4088,6 +6593,34 @@
           },
           "society_name": {
             "type": "string"
+          }
+        }
+      },
+      "LegacyStatus": {
+        "type": "object",
+        "description": "`/status` 的响应。计数是给前端「有没有值得打扰用户的历史数据」判断用的。",
+        "required": [
+          "has_backup",
+          "event_count",
+          "order_count",
+          "item_count"
+        ],
+        "properties": {
+          "event_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "has_backup": {
+            "type": "boolean"
+          },
+          "item_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "`order_items` 的**明细行数**，不是 `SUM(quantity)` 的件数——别拿它写\n「你有 N 件历史商品」这类文案。"
+          },
+          "order_count": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -4520,6 +7053,132 @@
           "total_price": {
             "$ref": "#/components/schemas/Money",
             "description": "单位：分。"
+          }
+        }
+      },
+      "MasterProduct": {
+        "type": "object",
+        "required": [
+          "id",
+          "product_code",
+          "name",
+          "default_price",
+          "is_active"
+        ],
+        "properties": {
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "default_price": {
+            "type": "number",
+            "format": "double"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "image_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "image_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner_society_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "归属社团的**默认值**。选品时会被快照到 `event_products.owner_society_id`，\n之后改这里不影响已有展会的账（spec 3.1）。"
+          },
+          "product_code": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "string"
+          }
+        }
+      },
+      "MasterProductImageDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "master_product_id",
+          "image_url",
+          "kind",
+          "created_at",
+          "has_embedding"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "has_embedding": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "image_url": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "master_product_id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "MasterProductImageResponse": {
+        "type": "object",
+        "description": "新增 / 修改识别图后返回的字段。",
+        "required": [
+          "id",
+          "master_product_id",
+          "image_url",
+          "kind"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "image_url": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "master_product_id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "MasterProductUpdateStatusRequest": {
+        "type": "object",
+        "required": [
+          "is_active"
+        ],
+        "properties": {
+          "is_active": {
+            "type": "boolean"
           }
         }
       },
@@ -5527,6 +8186,28 @@
           }
         }
       },
+      "SyncImportResponse": {
+        "type": "object",
+        "description": "导入成功后的响应体。",
+        "required": [
+          "message",
+          "products_count",
+          "images_count"
+        ],
+        "properties": {
+          "images_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "message": {
+            "type": "string"
+          },
+          "products_count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
       "TakebackResponse": {
         "type": "object",
         "required": [
@@ -5546,6 +8227,140 @@
           }
         }
       },
+      "UpdateAdminPasswordRequest": {
+        "type": "object",
+        "required": [
+          "oldPassword",
+          "newPassword"
+        ],
+        "properties": {
+          "newPassword": {
+            "type": "string"
+          },
+          "oldPassword": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateEventForm": {
+        "type": "object",
+        "description": "仅用于 OpenAPI 文档：更新展会的 multipart 表单字段。",
+        "properties": {
+          "date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "payment_qr_code_alipay": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "binary"
+          },
+          "payment_qr_code_wechat": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "binary"
+          },
+          "remove_payment_qr_code": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "vendor_password": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "UpdateMasterProductForm": {
+        "type": "object",
+        "description": "仅用于 OpenAPI 文档：`update_product` 的 multipart 表单字段。",
+        "properties": {
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "default_price": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "元，不是分（老字段，`f64`）。"
+          },
+          "image": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "binary"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "remove_image": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "tags": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "UpdateProductImageForm": {
+        "type": "object",
+        "description": "仅用于 OpenAPI 文档：`update_product_image` 的 multipart 表单字段。",
+        "properties": {
+          "image": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "binary"
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "UpdateSocietyRequest": {
         "type": "object",
         "properties": {
@@ -5560,6 +8375,534 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "UpdateVendorPasswordRequest": {
+        "type": "object",
+        "required": [
+          "newPassword"
+        ],
+        "properties": {
+          "newPassword": {
+            "type": "string"
+          }
+        }
+      },
+      "VisionActivateModelRequest": {
+        "type": "object",
+        "required": [
+          "model_id"
+        ],
+        "properties": {
+          "model_id": {
+            "type": "string"
+          }
+        }
+      },
+      "VisionActivateModelResponse": {
+        "type": "object",
+        "required": [
+          "ok",
+          "active_model_id",
+          "rebuild_started"
+        ],
+        "properties": {
+          "active_model_id": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "rebuild_started": {
+            "type": "boolean"
+          }
+        }
+      },
+      "VisionDeleteModelResponse": {
+        "type": "object",
+        "required": [
+          "ok",
+          "deleted_model_id"
+        ],
+        "properties": {
+          "deleted_model_id": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        }
+      },
+      "VisionEpSettingResponse": {
+        "type": "object",
+        "required": [
+          "configured",
+          "active",
+          "platform",
+          "gpu_devices"
+        ],
+        "properties": {
+          "active": {
+            "type": "string"
+          },
+          "configured": {
+            "type": "string"
+          },
+          "gpu_devices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VisionGpuDevice"
+            }
+          },
+          "platform": {
+            "type": "string"
+          }
+        }
+      },
+      "VisionFeedbackForm": {
+        "type": "object",
+        "description": "仅用于 OpenAPI 文档：`/feedback` 的 multipart 表单字段。",
+        "required": [
+          "image",
+          "chosen_master_product_id"
+        ],
+        "properties": {
+          "chosen_master_product_id": {
+            "type": "string",
+            "description": "用户选中的商品 id，必填。"
+          },
+          "image": {
+            "type": "string",
+            "format": "binary",
+            "description": "反馈图片，必填。"
+          },
+          "is_correct": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`1`/`true`/`TRUE`/`True` 表示识别正确，缺省正确。"
+          }
+        }
+      },
+      "VisionFeedbackResponse": {
+        "type": "object",
+        "required": [
+          "ok",
+          "image_id",
+          "image_url",
+          "kind"
+        ],
+        "properties": {
+          "image_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "image_url": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        }
+      },
+      "VisionGpuDevice": {
+        "type": "object",
+        "required": [
+          "device_id",
+          "name"
+        ],
+        "properties": {
+          "device_id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "VisionInstallModelRequest": {
+        "type": "object",
+        "required": [
+          "model_id"
+        ],
+        "properties": {
+          "model_id": {
+            "type": "string"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "VisionInstallModelResponse": {
+        "type": "object",
+        "required": [
+          "ok",
+          "task_id",
+          "model_id",
+          "source"
+        ],
+        "properties": {
+          "model_id": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "source": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          }
+        }
+      },
+      "VisionInstallTaskResponse": {
+        "type": "object",
+        "required": [
+          "task_id",
+          "model_id",
+          "status",
+          "progress"
+        ],
+        "properties": {
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "progress": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          }
+        }
+      },
+      "VisionModelItem": {
+        "type": "object",
+        "required": [
+          "model_id",
+          "model_version",
+          "dim",
+          "input_size",
+          "installed",
+          "is_active"
+        ],
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dim": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "input_size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "installed": {
+            "type": "boolean"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "model_version": {
+            "type": "string"
+          },
+          "size_mb": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tier": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "VisionModelsResponse": {
+        "type": "object",
+        "required": [
+          "active_model_id",
+          "models"
+        ],
+        "properties": {
+          "active_model_id": {
+            "type": "string"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VisionModelItem"
+            }
+          }
+        }
+      },
+      "VisionRebuildRequest": {
+        "type": "object",
+        "properties": {
+          "force_full": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
+      "VisionRebuildResponse": {
+        "type": "object",
+        "required": [
+          "ok",
+          "message",
+          "force_full"
+        ],
+        "properties": {
+          "force_full": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        }
+      },
+      "VisionSearchForm": {
+        "type": "object",
+        "description": "仅用于 OpenAPI 文档：`/search` 的 multipart 表单字段。",
+        "required": [
+          "image"
+        ],
+        "properties": {
+          "event_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "mode 为 order/admin_event 时必填。"
+          },
+          "image": {
+            "type": "string",
+            "format": "binary",
+            "description": "查询图片，必填。"
+          },
+          "master_product_ids": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "JSON 数组或逗号分隔的商品 id。"
+          },
+          "mode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`order` | `admin_event` | `admin_master`。"
+          },
+          "roi": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ROI JSON：`{\"x\":..,\"y\":..,\"w\":..,\"h\":..}`。"
+          },
+          "top_k": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "返回前 K 个结果，1..=20，缺省 5。"
+          }
+        }
+      },
+      "VisionSearchResponse": {
+        "type": "object",
+        "required": [
+          "model_id",
+          "model_version",
+          "index_version",
+          "is_uncertain",
+          "results"
+        ],
+        "properties": {
+          "index_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "is_uncertain": {
+            "type": "boolean"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "model_version": {
+            "type": "string"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VisionSearchResult"
+            }
+          }
+        }
+      },
+      "VisionSearchResult": {
+        "type": "object",
+        "required": [
+          "master_product_id",
+          "product_code",
+          "name",
+          "score"
+        ],
+        "properties": {
+          "master_product_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "product_code": {
+            "type": "string"
+          },
+          "score": {
+            "type": "number",
+            "format": "float"
+          },
+          "thumb_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "VisionSetEpRequest": {
+        "type": "object",
+        "required": [
+          "execution_provider"
+        ],
+        "properties": {
+          "execution_provider": {
+            "type": "string"
+          }
+        }
+      },
+      "VisionSetEpResponse": {
+        "type": "object",
+        "required": [
+          "ok",
+          "execution_provider",
+          "active",
+          "message"
+        ],
+        "properties": {
+          "active": {
+            "type": "string"
+          },
+          "execution_provider": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        }
+      },
+      "VisionStatusResponse": {
+        "type": "object",
+        "required": [
+          "model_id",
+          "model_version",
+          "index_version",
+          "index_size",
+          "is_ready",
+          "is_rebuilding",
+          "rebuild_processed",
+          "rebuild_total",
+          "execution_provider"
+        ],
+        "properties": {
+          "execution_provider": {
+            "type": "string"
+          },
+          "index_size": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "index_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "is_ready": {
+            "type": "boolean"
+          },
+          "is_rebuilding": {
+            "type": "boolean"
+          },
+          "last_rebuild_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "model_version": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rebuild_processed": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "rebuild_total": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       }
