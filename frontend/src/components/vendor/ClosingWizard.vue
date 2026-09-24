@@ -9,138 +9,133 @@
   其余动作把后端那句错误原文显示出来即可。
 -->
 <template>
-  <n-modal :show="show" :mask-closable="false" @update:show="(v) => !v && emit('close')">
-    <n-card class="wizard-card" :bordered="true" size="medium">
-      <template #header>
-        <div class="modal-header">
-          <h3>收摊向导</h3>
-          <n-button quaternary circle size="small" @click="emit('close')">×</n-button>
-        </div>
-      </template>
+  <AppModal
+    :show="show"
+    title="收摊向导"
+    size="md"
+    :mask-closable="false"
+    @update:show="(v) => !v && emit('close')"
+  >
+    <n-spin class="wizard-scroll" :show="store.isLoading && !store.state">
+      <template v-if="store.state">
+        <n-steps :current="step" size="small" class="steps">
+          <n-step title="清点订单" />
+          <n-step title="盘点" />
+          <n-step title="带回" />
+          <n-step title="结算" />
+        </n-steps>
 
-      <n-spin :show="store.isLoading && !store.state">
-        <template v-if="store.state">
-          <n-steps :current="step" size="small" class="steps">
-            <n-step title="清点订单" />
-            <n-step title="盘点" />
-            <n-step title="带回" />
-            <n-step title="结算" />
-          </n-steps>
-
-          <!-- ① 清 pending -->
-          <section v-if="step === 1" class="screen">
-            <p class="screen-hint">
-              还有 {{ store.state.pending_orders.length }} 单待处理，逐单完成或取消之后才能盘点。
-            </p>
-            <div v-for="o in store.state.pending_orders" :key="o.id" class="row">
-              <div class="row-info">
-                <span class="row-title">#{{ o.id }}</span>
-                <span>{{ formatTimestamp(o.created_at, false) }}</span>
-                <span>{{ o.item_count }} 件</span>
-                <span class="row-amount">{{ formatYuan(o.final_amount) }}</span>
-              </div>
-              <n-space size="small">
-                <n-button size="small" :disabled="isBusy" @click="cancelOne(o)">取消</n-button>
-                <n-button size="small" type="primary" :disabled="isBusy" @click="completeOne(o)">
-                  完成
-                </n-button>
-              </n-space>
+        <!-- ① 清 pending -->
+        <section v-if="step === 1" class="screen">
+          <p class="screen-hint">
+            还有 {{ store.state.pending_orders.length }} 单待处理，逐单完成或取消之后才能盘点。
+          </p>
+          <div v-for="o in store.state.pending_orders" :key="o.id" class="row">
+            <div class="row-info">
+              <span class="row-title">#{{ o.id }}</span>
+              <span>{{ formatTimestamp(o.created_at, false) }}</span>
+              <span>{{ o.item_count }} 件</span>
+              <span class="row-amount">{{ formatYuan(o.final_amount) }}</span>
             </div>
+            <n-space size="small">
+              <n-button size="small" :disabled="isBusy" @click="cancelOne(o)">取消</n-button>
+              <n-button size="small" type="primary" :disabled="isBusy" @click="completeOne(o)">
+                完成
+              </n-button>
+            </n-space>
+          </div>
+          <div class="screen-actions">
+            <n-button
+              type="error"
+              tertiary
+              :loading="isBusy"
+              :disabled="!store.state.pending_orders.length"
+              @click="cancelAll"
+            >
+              全部取消
+            </n-button>
+          </div>
+        </section>
+
+        <!-- ② 盘点 -->
+        <section v-else-if="step === 2" class="screen">
+          <p class="screen-hint">
+            盘点现场仓。<strong>数过一致的也要报</strong>——「我数了，一致」和「我没数」是两件事。
+          </p>
+          <div v-for="p in store.state.onsite_remaining" :key="p.event_product_id" class="row">
+            <div class="row-info">
+              <span class="row-title">{{ p.name }}</span>
+              <span class="row-code">{{ p.product_code }}</span>
+              <span>{{ p.owner_name }}</span>
+              <span>账面 {{ p.qty }} 件</span>
+            </div>
+            <n-input-number
+              v-model:value="counts[p.event_product_id]"
+              :min="0"
+              :precision="0"
+              class="count-input"
+            />
+          </div>
+          <p class="screen-note">跳过盘点之后，结算单上会写「未盘点，剩余数为账面推算」。</p>
+          <div class="screen-actions">
+            <n-button :disabled="isBusy" @click="skipStocktake">跳过盘点</n-button>
+            <n-button type="primary" :loading="isBusy" @click="submitStocktake">
+              提交盘点
+            </n-button>
+          </div>
+        </section>
+
+        <!-- ③ 带回 -->
+        <section v-else-if="step === 3" class="screen">
+          <p class="screen-hint">以下商品将带回，共 {{ takebackTotal }} 件。</p>
+          <div v-for="p in store.state.onsite_remaining" :key="p.event_product_id" class="row">
+            <div class="row-info">
+              <span class="row-title">{{ p.name }}</span>
+              <span class="row-code">{{ p.product_code }}</span>
+              <span>{{ p.owner_name }}</span>
+              <span class="row-amount">×{{ p.qty }}</span>
+            </div>
+          </div>
+          <div class="screen-actions">
+            <n-button type="primary" :loading="isBusy" @click="doTakeback">确认带回</n-button>
+          </div>
+        </section>
+
+        <!-- ④ 结算 -->
+        <section v-else class="screen">
+          <div v-if="store.state.status === '已结算'" class="settled-note">
+            <p>
+              <strong>账本已冻结。</strong>
+              之后仍然可以补垫付、结算调整和收摊清点，其余都改不了了。 结算单请到管理端的「展会 →
+              结算」查看。
+            </p>
+          </div>
+          <template v-else>
+            <div v-if="store.state.blockers.length" class="blockers">
+              <p v-for="(b, i) in store.state.blockers" :key="i" class="blocker-line">⚠ {{ b }}</p>
+            </div>
+            <p v-else class="screen-hint">没有拦路的项了，确认无误后结束展会。</p>
             <div class="screen-actions">
               <n-button
-                type="error"
-                tertiary
+                type="primary"
                 :loading="isBusy"
-                :disabled="!store.state.pending_orders.length"
-                @click="cancelAll"
+                :disabled="store.state.blockers.length > 0"
+                @click="doSettle"
               >
-                全部取消
+                结束展会
               </n-button>
             </div>
-          </section>
-
-          <!-- ② 盘点 -->
-          <section v-else-if="step === 2" class="screen">
-            <p class="screen-hint">
-              盘点现场仓。<strong>数过一致的也要报</strong>——「我数了，一致」和「我没数」是两件事。
-            </p>
-            <div v-for="p in store.state.onsite_remaining" :key="p.event_product_id" class="row">
-              <div class="row-info">
-                <span class="row-title">{{ p.name }}</span>
-                <span class="row-code">{{ p.product_code }}</span>
-                <span>{{ p.owner_name }}</span>
-                <span>账面 {{ p.qty }} 件</span>
-              </div>
-              <n-input-number
-                v-model:value="counts[p.event_product_id]"
-                :min="0"
-                :precision="0"
-                class="count-input"
-              />
-            </div>
-            <p class="screen-note">跳过盘点之后，结算单上会写「未盘点，剩余数为账面推算」。</p>
-            <div class="screen-actions">
-              <n-button :disabled="isBusy" @click="skipStocktake">跳过盘点</n-button>
-              <n-button type="primary" :loading="isBusy" @click="submitStocktake">
-                提交盘点
-              </n-button>
-            </div>
-          </section>
-
-          <!-- ③ 带回 -->
-          <section v-else-if="step === 3" class="screen">
-            <p class="screen-hint">以下商品将带回，共 {{ takebackTotal }} 件。</p>
-            <div v-for="p in store.state.onsite_remaining" :key="p.event_product_id" class="row">
-              <div class="row-info">
-                <span class="row-title">{{ p.name }}</span>
-                <span class="row-code">{{ p.product_code }}</span>
-                <span>{{ p.owner_name }}</span>
-                <span class="row-amount">×{{ p.qty }}</span>
-              </div>
-            </div>
-            <div class="screen-actions">
-              <n-button type="primary" :loading="isBusy" @click="doTakeback">确认带回</n-button>
-            </div>
-          </section>
-
-          <!-- ④ 结算 -->
-          <section v-else class="screen">
-            <div v-if="store.state.status === '已结算'" class="settled-note">
-              <p>
-                <strong>账本已冻结。</strong>
-                之后仍然可以补垫付、结算调整和收摊清点，其余都改不了了。 结算单请到管理端的「展会 →
-                结算」查看。
-              </p>
-            </div>
-            <template v-else>
-              <div v-if="store.state.blockers.length" class="blockers">
-                <p v-for="(b, i) in store.state.blockers" :key="i" class="blocker-line">
-                  ⚠ {{ b }}
-                </p>
-              </div>
-              <p v-else class="screen-hint">没有拦路的项了，确认无误后结束展会。</p>
-              <div class="screen-actions">
-                <n-button
-                  type="primary"
-                  :loading="isBusy"
-                  :disabled="store.state.blockers.length > 0"
-                  @click="doSettle"
-                >
-                  结束展会
-                </n-button>
-              </div>
-            </template>
-          </section>
-        </template>
-      </n-spin>
-
-      <template #footer>
-        <n-space justify="end">
-          <n-button @click="emit('close')">关闭</n-button>
-        </n-space>
+          </template>
+        </section>
       </template>
-    </n-card>
-  </n-modal>
+    </n-spin>
+
+    <template #footer>
+      <n-space justify="end">
+        <n-button @click="emit('close')">关闭</n-button>
+      </n-space>
+    </template>
+  </AppModal>
 
   <!-- 第①屏「完成」复用现成的收款弹窗补录渠道。放在外层弹窗外，
        避免两个 n-modal 相互盖住/抢点击。 -->
@@ -156,18 +151,9 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import {
-  NModal,
-  NCard,
-  NButton,
-  NInputNumber,
-  NSpace,
-  NSpin,
-  NSteps,
-  NStep,
-  useMessage,
-  useDialog,
-} from 'naive-ui'
+import { NButton, NInputNumber, NSpace, NSpin, NSteps, NStep } from 'naive-ui'
+import { AppModal } from '@/components/ui'
+import { useFeedback } from '@/composables/useFeedback'
 import ReceiptModal from '@/components/vendor/ReceiptModal.vue'
 import { useClosingStore } from '@/stores/closingStore'
 import { useOrderStore } from '@/stores/orderStore'
@@ -182,8 +168,7 @@ const emit = defineEmits<{ (e: 'close'): void; (e: 'settled'): void }>()
 
 const store = useClosingStore()
 const orderStore = useOrderStore()
-const message = useMessage()
-const dialog = useDialog()
+const fb = useFeedback()
 
 const isBusy = ref(false)
 const counts = ref<Record<number, number | null>>({})
@@ -246,7 +231,7 @@ watch(
       await orderStore.pollPendingOrders()
       await store.fetchState(Number(props.eventId))
     } catch (err) {
-      message.error((err instanceof Error && err.message) || '无法加载收摊状态')
+      fb.error(err, '无法加载收摊状态')
     }
   }
 )
@@ -259,9 +244,9 @@ async function doSubmitStocktake(payload: Schemas['StocktakeRequest']['counts'])
   isBusy.value = true
   try {
     await store.stocktake(Number(props.eventId), payload)
-    message.success('盘点已提交')
+    fb.success('盘点已提交')
   } catch (err) {
-    message.error((err instanceof Error && err.message) || '提交盘点失败')
+    fb.error(err, '提交盘点失败')
   } finally {
     isBusy.value = false
   }
@@ -275,7 +260,7 @@ async function submitStocktake() {
   // 收全量：每个商品都要报数，数过一致的也要报（后端漏一个就 400）。
   const blank = rows.filter((p) => !Number.isFinite(counts.value[p.event_product_id]))
   if (blank.length) {
-    message.warning(`这些商品还没填实数：${blank.map((p) => p.name).join('、')}`)
+    fb.warning(`这些商品还没填实数：${blank.map((p) => p.name).join('、')}`)
     return
   }
   const payload: Schemas['StocktakeRequest']['counts'] = rows.map((p) => ({
@@ -289,13 +274,16 @@ async function submitStocktake() {
     const detail = diffs
       .map((p) => `${p.name}：账面 ${p.qty} → 实数 ${counts.value[p.event_product_id]}`)
       .join('；')
-    dialog.warning({
-      title: '确认盘点差异',
-      content: `以下商品的实数与账面不一致：${detail}。盘点差异提交后不可直接撤销，确认无误再提交。`,
-      positiveText: '确认提交',
-      negativeText: '返回核对',
-      onPositiveClick: () => doSubmitStocktake(payload),
-    })
+    if (
+      await fb.confirm({
+        title: '确认盘点差异',
+        content: `以下商品的实数与账面不一致：${detail}。盘点差异提交后不可直接撤销，确认无误再提交。`,
+        positiveText: '确认提交',
+        negativeText: '返回核对',
+      })
+    ) {
+      await doSubmitStocktake(payload)
+    }
     return
   }
   await doSubmitStocktake(payload)
@@ -305,9 +293,9 @@ async function doTakeback() {
   isBusy.value = true
   try {
     await store.takeback(Number(props.eventId))
-    message.success('已确认带回')
+    fb.success('已确认带回')
   } catch (err) {
-    message.error((err instanceof Error && err.message) || '确认带回失败')
+    fb.error(err, '确认带回失败')
   } finally {
     isBusy.value = false
   }
@@ -317,10 +305,10 @@ async function doSettle() {
   isBusy.value = true
   try {
     await store.settle(Number(props.eventId))
-    message.success('展会已结束，账本已冻结')
+    fb.success('展会已结束，账本已冻结')
     emit('settled')
   } catch (err) {
-    message.error((err instanceof Error && err.message) || '结束展会失败')
+    fb.error(err, '结束展会失败')
   } finally {
     isBusy.value = false
   }
@@ -338,7 +326,7 @@ async function cancelOne(order: Schemas['ClosingPendingOrderRow']) {
     await store.fetchState(Number(props.eventId))
     await orderStore.pollPendingOrders()
   } catch (err) {
-    message.error(errorMessage(err, `取消 #${order.id} 失败`))
+    fb.error(errorMessage(err, `取消 #${order.id} 失败`))
   } finally {
     isBusy.value = false
   }
@@ -365,13 +353,13 @@ async function cancelAll() {
     await orderStore.pollPendingOrders()
   } catch (err) {
     // 刷新失败不能把 isBusy 卡在 true，否则整个向导的按钮永久禁用。
-    message.error((err instanceof Error && err.message) || '刷新收摊状态失败')
+    fb.error(err, '刷新收摊状态失败')
   } finally {
     isBusy.value = false
     // 失败的会留在重新拉回来的列表里，逐条把后端那句话显示出来。
     // 放在 finally 里：即使上面的刷新也失败，摊主仍要知道是哪几单没取消掉。
     for (const f of failed) {
-      message.error(`#${f.id}：${f.msg}`, { duration: 6000 })
+      fb.error(`#${f.id}：${f.msg}`)
     }
   }
 }
@@ -383,7 +371,7 @@ async function completeOne(order: Schemas['ClosingPendingOrderRow']) {
     full = orderStore.pendingOrders.find((o) => o.id === order.id)
   }
   if (!full) {
-    message.error('找不到这张订单的完整信息，请先刷新')
+    fb.error('找不到这张订单的完整信息，请先刷新')
     return
   }
   receiptOrder.value = full
@@ -411,9 +399,9 @@ async function onReceiptConfirm(payload: {
       payload.unapplyLotIds
     )
     await store.fetchState(Number(props.eventId))
-    message.success('已记录收款')
+    fb.success('已记录收款')
   } catch (err) {
-    message.error((err instanceof Error && err.message) || '操作失败')
+    fb.error(err, '操作失败')
   } finally {
     receiptOrder.value = null
   }
@@ -421,33 +409,22 @@ async function onReceiptConfirm(payload: {
 </script>
 
 <style scoped>
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.modal-header h3 {
-  margin: 0;
-}
-.wizard-card {
-  width: 760px;
-  max-width: 95%;
-}
-.wizard-card :deep(.n-card__content) {
+.wizard-scroll {
+  display: block;
   max-height: 68vh;
   overflow-y: auto;
 }
 .steps {
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-lg);
 }
 .screen-hint {
-  margin: 0 0 0.75rem;
+  margin: 0 0 var(--space-md);
   color: var(--text-muted);
   font-size: var(--font-sm);
   line-height: 1.6;
 }
 .screen-note {
-  margin: 0.5rem 0 0;
+  margin: var(--space-sm) 0 0;
   color: var(--warning-color);
   font-size: var(--font-sm);
 }
@@ -455,14 +432,14 @@ async function onReceiptConfirm(payload: {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.5rem 0;
+  gap: var(--space-md);
+  padding: var(--space-sm) 0;
   border-bottom: 1px dashed var(--border-color);
 }
 .row-info {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--space-md);
   flex-wrap: wrap;
   font-size: var(--font-sm);
   color: var(--text-muted);
@@ -470,14 +447,14 @@ async function onReceiptConfirm(payload: {
 }
 .row-title {
   color: var(--primary-text-color);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
 }
 .row-code {
   color: var(--text-disabled);
 }
 .row-amount {
   color: var(--accent-color);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
 }
 .count-input {
   flex: 0 0 120px;
@@ -485,22 +462,22 @@ async function onReceiptConfirm(payload: {
 .screen-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 0.75rem;
-  margin-top: 1rem;
+  gap: var(--space-md);
+  margin-top: var(--space-lg);
 }
 .blockers {
   border: 1px solid var(--warning-color);
   border-radius: var(--radius-sm);
-  padding: 0.5rem 0.75rem;
+  padding: var(--space-sm) var(--space-md);
 }
 .blocker-line {
-  margin: 0.2rem 0;
+  margin: var(--space-xs) 0;
   color: var(--warning-color);
   font-size: var(--font-sm);
 }
 .settled-note {
   border-left: 3px solid var(--accent-color);
-  padding: 0.5rem 0.75rem;
+  padding: var(--space-sm) var(--space-md);
   background: var(--card-bg-color);
 }
 .settled-note p {

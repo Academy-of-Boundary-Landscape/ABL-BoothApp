@@ -10,123 +10,111 @@
   一致，免得出现「界面上写退 33，提交完变成 34」。
 -->
 <template>
-  <n-modal :show="show" :mask-closable="false" @update:show="(v) => !v && emit('close')">
-    <n-card class="refund-card" :bordered="true" size="medium">
-      <template #header>
-        <div class="modal-header">
-          <h3>退货 · 订单 #{{ order?.id }}</h3>
-          <n-button quaternary circle size="small" @click="emit('close')">×</n-button>
-        </div>
-      </template>
+  <AppModal
+    :show="show"
+    :title="`退货 · 订单 #${order?.id}`"
+    size="md"
+    :mask-closable="false"
+    @update:show="(v) => !v && emit('close')"
+  >
+    <n-spin class="refund-scroll" :show="isLoading">
+      <template v-if="order">
+        <p class="order-meta">
+          原实收 {{ formatYuan(order.final_amount) }} · 收款渠道
+          {{ order.channel || '（未记录）' }}
+        </p>
 
-      <n-spin :show="isLoading">
-        <template v-if="order">
-          <p class="order-meta">
-            原实收 {{ formatYuan(order.final_amount) }} · 收款渠道
-            {{ order.channel || '（未记录）' }}
-          </p>
-
-          <!-- ===== 可退行 ===== -->
-          <p class="section-title">选择要退的行</p>
-          <p v-if="!lines.length" class="empty-hint">没有可退的订单行。</p>
-          <div v-for="(line, idx) in lines" :key="line.order_line_id" class="line-block">
-            <div class="line-head">
-              <span class="line-name">{{ lineTitle(line) }}</span>
-              <n-tag v-if="line.remaining_qty === 0" size="small" :bordered="false">已退完</n-tag>
+        <!-- ===== 可退行 ===== -->
+        <p class="section-title">选择要退的行</p>
+        <EmptyState v-if="!lines.length" compact title="没有可退的订单行。" />
+        <div v-for="(line, idx) in lines" :key="line.order_line_id" class="line-block">
+          <div class="line-head">
+            <span class="line-name">{{ lineTitle(line) }}</span>
+            <n-tag v-if="line.remaining_qty === 0" size="small" :bordered="false">已退完</n-tag>
+          </div>
+          <div class="line-body">
+            <div class="line-facts">
+              <span>可退 {{ line.remaining_qty }} / {{ line.qty }} 件</span>
+              <span>该行剩余实付 {{ formatYuan(line.remaining_paid) }}</span>
             </div>
-            <div class="line-body">
-              <div class="line-facts">
-                <span>可退 {{ line.remaining_qty }} / {{ line.qty }} 件</span>
-                <span>该行剩余实付 {{ formatYuan(line.remaining_paid) }}</span>
-              </div>
-              <div class="line-controls">
-                <n-input-number
-                  :value="qtyByLine[line.order_line_id]"
-                  :min="0"
-                  :max="line.remaining_qty"
-                  :precision="0"
-                  :disabled="line.remaining_qty === 0"
-                  @update:value="(v) => (qtyByLine[line.order_line_id] = v ?? 0)"
-                />
-                <span class="line-refund"> 本次退 {{ formatYuan(perLineRefund[idx]) }} </span>
-              </div>
-              <n-radio-group
-                v-model:value="destinationByLine[line.order_line_id]"
+            <div class="line-controls">
+              <n-input-number
+                :value="qtyByLine[line.order_line_id]"
+                :min="0"
+                :max="line.remaining_qty"
+                :precision="0"
                 :disabled="line.remaining_qty === 0"
-                size="small"
-              >
-                <n-space>
-                  <n-radio value="现场仓">回现场仓（还能卖）</n-radio>
-                  <n-radio value="损耗">进损耗（已损坏）</n-radio>
-                </n-space>
-              </n-radio-group>
+                @update:value="(v) => (qtyByLine[line.order_line_id] = v ?? 0)"
+              />
+              <span class="line-refund"> 本次退 {{ formatYuan(perLineRefund[idx]) }} </span>
             </div>
+            <n-radio-group
+              v-model:value="destinationByLine[line.order_line_id]"
+              :disabled="line.remaining_qty === 0"
+              size="small"
+            >
+              <n-space>
+                <n-radio value="现场仓">回现场仓（还能卖）</n-radio>
+                <n-radio value="损耗">进损耗（已损坏）</n-radio>
+              </n-space>
+            </n-radio-group>
           </div>
+        </div>
 
-          <!-- ===== 退款金额与渠道 ===== -->
-          <div class="field">
-            <span class="field-label">退款渠道</span>
-            <ChannelSelect v-model="channel" />
-          </div>
-          <p class="field-note">默认与收款渠道相同；现金退就选现金，否则收摊清点会对不上</p>
+        <!-- ===== 退款金额与渠道 ===== -->
+        <div class="field">
+          <span class="field-label">退款渠道</span>
+          <ChannelSelect v-model="channel" />
+        </div>
+        <p class="field-note">默认与收款渠道相同；现金退就选现金，否则收摊清点会对不上</p>
 
-          <div class="field">
-            <span class="field-label">实际退款（元）</span>
-            <n-input-number
-              v-model:value="amountYuan"
-              :min="0"
-              :precision="2"
-              @update:value="amountTouched = true"
-            />
-          </div>
-          <p v-if="overLimit" class="limit-warning">不能多于顾客实付，白送钱请走结算调整</p>
-          <p v-else class="field-note">
-            默认按所选各行实付之和（{{ formatYuan(defaultTotal) }}）；改低可以，改高会被后端挡住。
-          </p>
+        <div class="field">
+          <span class="field-label">实际退款（元）</span>
+          <n-input-number
+            v-model:value="amountYuan"
+            :min="0"
+            :precision="2"
+            @update:value="amountTouched = true"
+          />
+        </div>
+        <p v-if="overLimit" class="limit-warning">不能多于顾客实付，白送钱请走结算调整</p>
+        <p v-else class="field-note">
+          默认按所选各行实付之和（{{ formatYuan(defaultTotal) }}）；改低可以，改高会被后端挡住。
+        </p>
 
-          <!-- ===== 历史 ===== -->
-          <p class="section-title">退货记录</p>
-          <p v-if="!history.length" class="empty-hint">还没有退过货。</p>
-          <div v-for="h in history" :key="h.id" class="history-row">
-            <span class="history-time">{{ formatTimestamp(h.occurred_at, false) }}</span>
-            <span class="history-name">{{ h.name }}</span>
-            <span>×{{ h.qty }}</span>
-            <span>{{ formatYuan(h.refund_amount) }}</span>
-            <span>{{ h.channel }}</span>
-            <span>{{ h.destination }}</span>
-          </div>
-          <p v-if="history.length" class="field-note">
-            退货没有撤销：退错了再开一张反向的单，或走结算调整。
-          </p>
-        </template>
-      </n-spin>
-
-      <template #footer>
-        <n-space justify="end">
-          <n-button @click="emit('close')">关闭</n-button>
-          <n-button type="primary" :loading="isBusy" :disabled="overLimit" @click="submit">
-            确认退货
-          </n-button>
-        </n-space>
+        <!-- ===== 历史 ===== -->
+        <p class="section-title">退货记录</p>
+        <EmptyState v-if="!history.length" compact title="还没有退过货。" />
+        <div v-for="h in history" :key="h.id" class="history-row">
+          <span class="history-time">{{ formatTimestamp(h.occurred_at, false) }}</span>
+          <span class="history-name">{{ h.name }}</span>
+          <span>×{{ h.qty }}</span>
+          <span>{{ formatYuan(h.refund_amount) }}</span>
+          <span>{{ h.channel }}</span>
+          <span>{{ h.destination }}</span>
+        </div>
+        <p v-if="history.length" class="field-note">
+          退货没有撤销：退错了再开一张反向的单，或走结算调整。
+        </p>
       </template>
-    </n-card>
-  </n-modal>
+    </n-spin>
+
+    <template #footer>
+      <n-space justify="end">
+        <n-button @click="emit('close')">关闭</n-button>
+        <n-button type="primary" :loading="isBusy" :disabled="overLimit" @click="submit">
+          确认退货
+        </n-button>
+      </n-space>
+    </template>
+  </AppModal>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import {
-  NModal,
-  NCard,
-  NButton,
-  NInputNumber,
-  NRadioGroup,
-  NRadio,
-  NSpace,
-  NTag,
-  NSpin,
-  useMessage,
-} from 'naive-ui'
+import { NButton, NInputNumber, NRadioGroup, NRadio, NSpace, NTag, NSpin } from 'naive-ui'
+import { AppModal, EmptyState } from '@/components/ui'
+import { useFeedback } from '@/composables/useFeedback'
 import ChannelSelect from '@/components/shared/ChannelSelect.vue'
 import { formatYuan, fromCents, toCents } from '@/utils/money'
 import { formatTimestamp } from '@/utils/dateFormatter'
@@ -143,7 +131,7 @@ const props = withDefaults(
 )
 const emit = defineEmits<{ (e: 'close'): void }>()
 
-const message = useMessage()
+const fb = useFeedback()
 
 const history = ref<Schemas['RefundHistoryRow'][]>([])
 const lines = ref<Schemas['RefundableLine'][]>([])
@@ -200,7 +188,7 @@ async function load() {
     amountTouched.value = false
     amountYuan.value = fromCents(defaultRefundTotal(lines.value, qty))
   } catch (err) {
-    message.error(errorMessage(err, '无法加载退货信息。'))
+    fb.error(errorMessage(err, '无法加载退货信息。'))
   } finally {
     isLoading.value = false
   }
@@ -220,11 +208,11 @@ watch(defaultTotal, (val) => {
 
 async function submit() {
   const chosen = lines.value.filter((l) => Number(qtyByLine.value[l.order_line_id] || 0) > 0)
-  if (!chosen.length) return message.warning('请至少选择一行退货数量')
+  if (!chosen.length) return fb.warning('请至少选择一行退货数量')
   const order = props.order
   if (!order) return
-  if (!channel.value) return message.warning('请选择退款渠道')
-  if (overLimit.value) return message.warning('不能多于顾客实付，白送钱请走结算调整')
+  if (!channel.value) return fb.warning('请选择退款渠道')
+  if (overLimit.value) return fb.warning('不能多于顾客实付，白送钱请走结算调整')
 
   const payload: Schemas['RefundRequest'] = {
     channel: channel.value,
@@ -245,10 +233,10 @@ async function submit() {
         body: payload,
       })
     )
-    message.success(`已退货，退款 ${formatYuan(data.refund_amount)}`)
+    fb.success(`已退货，退款 ${formatYuan(data.refund_amount)}`)
     await load()
   } catch (err) {
-    message.error(errorMessage(err, '退货失败。'))
+    fb.error(errorMessage(err, '退货失败。'))
   } finally {
     isBusy.value = false
   }
@@ -256,22 +244,14 @@ async function submit() {
 </script>
 
 <style scoped>
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.modal-header h3 {
-  margin: 0;
-}
 .order-meta {
-  margin: 0 0 0.75rem;
+  margin: 0 0 var(--space-md);
   color: var(--text-muted);
   font-size: var(--font-sm);
 }
 .section-title {
-  margin: 1rem 0 0.5rem;
-  padding-bottom: 4px;
+  margin: var(--space-lg) 0 var(--space-sm);
+  padding-bottom: var(--space-xs);
   border-bottom: 1px solid var(--border-color);
   color: var(--text-muted);
   font-size: var(--font-sm);
@@ -279,26 +259,26 @@ async function submit() {
 .line-block {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
-  padding: 0.5rem 0.75rem;
-  margin-bottom: 0.5rem;
+  padding: var(--space-sm) var(--space-md);
+  margin-bottom: var(--space-sm);
 }
 .line-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 .line-name {
-  font-weight: 600;
+  font-weight: var(--weight-bold);
 }
 .line-body {
-  margin-top: 0.4rem;
+  margin-top: var(--space-sm);
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: var(--space-sm);
 }
 .line-facts {
   display: flex;
-  gap: 1rem;
+  gap: var(--space-lg);
   flex-wrap: wrap;
   color: var(--text-muted);
   font-size: var(--font-sm);
@@ -306,7 +286,7 @@ async function submit() {
 .line-controls {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--space-md);
 }
 .line-refund {
   color: var(--accent-color);
@@ -316,8 +296,8 @@ async function submit() {
 .field {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  margin-top: 0.75rem;
+  gap: var(--space-md);
+  margin-top: var(--space-md);
 }
 .field-label {
   flex: 0 0 7em;
@@ -330,26 +310,21 @@ async function submit() {
   min-width: 0;
 }
 .field-note {
-  margin: 0.25rem 0 0;
+  margin: var(--space-xs) 0 0;
   color: var(--text-muted);
   font-size: var(--font-sm);
   line-height: 1.5;
 }
 .limit-warning {
-  margin: 0.25rem 0 0;
+  margin: var(--space-xs) 0 0;
   color: var(--error-color);
-  font-size: var(--font-sm);
-}
-.empty-hint {
-  margin: 0.25rem 0;
-  color: var(--text-muted);
   font-size: var(--font-sm);
 }
 .history-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
-  padding: 4px 0;
+  gap: var(--space-md);
+  padding: var(--space-xs) 0;
   border-bottom: 1px dashed var(--border-color);
   font-size: var(--font-sm);
 }
@@ -357,13 +332,10 @@ async function submit() {
   color: var(--text-muted);
 }
 .history-name {
-  font-weight: 600;
+  font-weight: var(--weight-bold);
 }
-.refund-card {
-  width: 720px;
-  max-width: 95%;
-}
-.refund-card :deep(.n-card__content) {
+.refund-scroll {
+  display: block;
   max-height: 70vh;
   overflow-y: auto;
 }

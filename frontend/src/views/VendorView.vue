@@ -1,16 +1,7 @@
 <template>
-  <div class="vendor-view">
-    <header class="page-header">
-      <div class="header-content">
-        <div class="header-title-row">
-          <h1>待处理订单</h1>
-          <router-link to="/admin" class="back-link">← 管理后台</router-link>
-        </div>
-        <p v-if="eventName">
-          当前展会: <strong>{{ eventName }}</strong>
-        </p>
-        <p v-else>正在加载展会信息...</p>
-      </div>
+  <PageShell title="待处理订单" :subtitle="eventSubtitle" width="wide">
+    <template #actions>
+      <router-link to="/admin" class="back-link">← 管理后台</router-link>
       <div class="header-actions">
         <n-button @click="showInventoryModal = true">登记赠送/报废</n-button>
         <n-button @click="openClosing">
@@ -20,7 +11,7 @@
           {{ isRefreshing ? '刷新中' : '手动刷新' }}
         </n-button>
       </div>
-    </header>
+    </template>
 
     <main class="vendor-body">
       <!-- 左栏：订单 -->
@@ -29,7 +20,7 @@
           v-if="store.pendingOrders.length"
           type="warning"
           :bordered="false"
-          style="margin-bottom: 0.75rem"
+          style="margin-bottom: var(--space-md)"
         >
           有 {{ store.pendingOrders.length }} 条待处理订单，请及时处理。
         </n-alert>
@@ -42,13 +33,12 @@
         </div>
 
         <div v-show="currentTab === 'pending'" class="order-feed">
-          <div v-if="!store.pendingOrders.length" class="no-orders-message">
-            <span style="font-size: 2rem; display: block; margin-bottom: 0.5rem">📭</span>
-            <p>暂无待处理订单</p>
-            <p style="font-size: var(--font-sm); color: var(--text-disabled)">
-              新订单将自动出现，并伴有声音提醒
-            </p>
-          </div>
+          <EmptyState
+            v-if="!store.pendingOrders.length"
+            icon="📭"
+            title="暂无待处理订单"
+            desc="新订单将自动出现，并伴有声音提醒"
+          />
           <TransitionGroup name="list" tag="div">
             <OrderCard
               v-for="order in store.pendingOrders"
@@ -64,7 +54,7 @@
           <p class="revenue-summary">
             今日已完成订单总额: <strong>{{ formatYuan(store.totalRevenue) }}</strong>
           </p>
-          <div v-if="!store.completedOrders.length" class="no-orders-message">暂无已完成订单</div>
+          <EmptyState v-if="!store.completedOrders.length" title="暂无已完成订单" />
           <!-- OrderCard 本身不动（④ 要整体重做），只在外面补一个「退货」入口。
                不做「已退完」置灰预取：那要为每张已完成单各发一个请求，400 单的场次
                会把 3 秒一次的待处理轮询挤在浏览器连接队列后面。退货弹窗里每行
@@ -120,15 +110,17 @@
       @close="showClosingWizard = false"
       @settled="onClosingSettled"
     />
-  </div>
+  </PageShell>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import { NButton, NTabs, NTabPane, NAlert, useDialog, useMessage } from 'naive-ui'
+import { NButton, NTabs, NTabPane, NAlert } from 'naive-ui'
 import { useOrderStore } from '@/stores/orderStore'
 import { useEventStore } from '@/stores/eventStore'
 import { useEventDetailStore } from '@/stores/eventDetailStore'
+import { PageShell, EmptyState } from '@/components/ui'
+import { useFeedback } from '@/composables/useFeedback'
 import LiveStats from '@/components/vendor/LiveStats.vue'
 import OrderCard from '@/components/order/OrderCard.vue'
 import ReceiptModal from '@/components/vendor/ReceiptModal.vue'
@@ -144,8 +136,7 @@ const audioRef = ref<HTMLAudioElement | null>(null)
 const store = useOrderStore()
 const eventStore = useEventStore()
 const eventDetailStore = useEventDetailStore()
-const message = useMessage()
-const dialog = useDialog()
+const fb = useFeedback()
 
 const isRefreshing = ref(false)
 const currentTab = ref('pending')
@@ -155,6 +146,10 @@ const eventName = computed(() => {
   const event = eventStore.events.find((e) => e.id === parseInt(String(props.id), 10))
   return event ? event.name : `展会 #${props.id}`
 })
+
+const eventSubtitle = computed(() =>
+  eventName.value ? `当前展会: ${eventName.value}` : '正在加载展会信息...'
+)
 
 const isEventSettled = computed(() => {
   const event = eventStore.events.find((e) => e.id === parseInt(String(props.id), 10))
@@ -197,7 +192,7 @@ watch(
     // 只有当数量增加，且不是第一次初始化加载时才响铃
     if (isInitialized.value && newCount > oldCount) {
       playNoticeSound()
-      message.info('收到新订单！', { keepAliveOnHover: true })
+      fb.info('收到新订单！')
     }
 
     // 首次加载后标记为已初始化
@@ -277,29 +272,31 @@ async function onReceiptConfirm(payload: {
     )
     await eventDetailStore.fetchProductsForEvent(Number(props.id))
     await store.fetchCompletedOrders()
-    message.success('已记录收款')
+    fb.success('已记录收款')
   } catch (error) {
-    message.error((error instanceof Error && error.message) || '操作失败')
+    fb.error(error, '操作失败')
   } finally {
     pendingOrder.value = null
   }
 }
 
 async function cancelOrder(orderId: number) {
-  dialog.warning({
-    title: '确认取消',
-    content: '确定要取消这个订单吗？此操作无法撤销。',
-    positiveText: '确认',
-    negativeText: '返回',
-    async onPositiveClick() {
-      try {
-        await store.cancelOrder(orderId)
-        message.success('订单已取消')
-      } catch (error) {
-        message.error((error instanceof Error && error.message) || '取消失败')
-      }
-    },
-  })
+  if (
+    await fb.confirm({
+      title: '确认取消',
+      content: '确定要取消这个订单吗？此操作无法撤销。',
+      positiveText: '确认',
+      negativeText: '返回',
+      danger: true,
+    })
+  ) {
+    try {
+      await store.cancelOrder(orderId)
+      fb.success('订单已取消')
+    } catch (error) {
+      fb.error(error, '取消失败')
+    }
+  }
 }
 
 onMounted(() => {
@@ -316,68 +313,11 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.vendor-view {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 1rem;
-}
-
-/* ===== Header ===== */
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 1rem;
-  border-bottom: 1px solid var(--border-color);
-  padding-bottom: 0.75rem;
-  position: sticky;
-  top: 0;
-  background: var(--bg-color);
-  z-index: 10;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
-}
-.header-title-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.page-header h1 {
-  margin: 0;
-  color: var(--accent-color);
-  font-size: var(--font-xl);
-}
-.back-link {
-  font-size: var(--font-sm);
-  color: var(--text-muted);
-  text-decoration: none;
-  padding: 2px 8px;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--border-color);
-  transition: all 0.15s;
-  white-space: nowrap;
-}
-.back-link:hover {
-  background: var(--accent-color);
-  color: white;
-  border-color: var(--accent-color);
-}
-.page-header p {
-  margin: 4px 0 0;
-  font-size: var(--font-sm);
-  color: var(--text-muted);
-}
-.header-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
 /* ===== Body: 自适应双栏 ===== */
 .vendor-body {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--space-lg);
 }
 
 .order-column {
@@ -386,14 +326,7 @@ onUnmounted(() => {
 }
 
 .order-tabs {
-  margin-bottom: 0.75rem;
-}
-
-.no-orders-message {
-  text-align: center;
-  padding: 2rem;
-  color: var(--text-muted);
-  font-size: var(--font-base);
+  margin-bottom: var(--space-md);
 }
 
 /* 已完成单的「退货」入口。OrderCard 本身不动（④ 要整体重做），
@@ -401,21 +334,44 @@ onUnmounted(() => {
 .completed-entry-actions {
   display: flex;
   justify-content: flex-end;
-  margin: -4px 0 10px;
+  margin: calc(-1 * var(--space-xs)) 0 var(--space-sm);
 }
 
 .revenue-summary {
   text-align: right;
   font-size: var(--font-md);
-  margin-bottom: 0.75rem;
+  margin-bottom: var(--space-md);
   color: var(--primary-text-color);
 }
 .revenue-summary strong {
   color: var(--accent-color);
 }
 
+.back-link {
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-color);
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.back-link:hover {
+  background: var(--accent-color);
+  color: var(--text-white);
+  border-color: var(--accent-color);
+}
+
+.header-actions {
+  display: flex;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 /* ===== 宽屏双栏 (平板/电脑) ===== */
-@media (min-width: 768px) {
+@media (--not-phone) {
   .vendor-body {
     flex-direction: row;
     align-items: flex-start;

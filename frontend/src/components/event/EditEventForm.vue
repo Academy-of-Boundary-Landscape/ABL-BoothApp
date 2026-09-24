@@ -49,7 +49,7 @@
       />
     </div>
 
-    <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
+    <p v-if="errorMessage" class="form-error">{{ errorMessage }}</p>
   </n-form>
 </template>
 
@@ -159,40 +159,40 @@ defineExpose({ submit })
 
 <style scoped>
 .form-group {
-  margin-bottom: 1.5rem;
+  margin-bottom: var(--space-xl);
   display: flex;
   flex-direction: column;
 }
 
 label {
   display: block;
-  margin-bottom: 0.5rem;
-  font-weight: 500;
+  margin-bottom: var(--space-sm);
+  font-weight: var(--weight-medium);
   font-size: var(--font-md);
 }
 
 .helper-text {
   color: var(--text-muted);
-  margin-top: 0.25rem;
+  margin-top: var(--space-xs);
   display: block;
 }
 
 .qr-upload-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-  margin-bottom: 1rem;
+  gap: var(--space-lg);
+  margin-bottom: var(--space-lg);
 }
 
-@media (max-width: 600px) {
+@media (--phone) {
   .qr-upload-row {
     grid-template-columns: 1fr;
   }
 }
 
-.error-message {
+.form-error {
   color: var(--error-color);
   font-size: var(--font-base);
-  margin-top: 0.5rem;
+  margin-top: var(--space-sm);
 }
 </style>
