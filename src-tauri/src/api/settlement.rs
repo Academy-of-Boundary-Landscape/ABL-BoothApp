@@ -1,7 +1,7 @@
 //! 结算侧：渠道列表、垫付、结算调整、结算单、收摊清点、xlsx 导出。
 //!
-//! **本模块里有三个端点故意不调用 `require_event_open`**：垫付、结算调整、
-//! 收摊清点。冻结之后它们仍然允许（spec 偏离 3）——「回家翻出一张打印费收据」
+//! **本模块里有三类操作故意不调用 `require_event_open`**：垫付、结算调整、
+//! 收摊清点（后者在 Task 8）。冻结之后它们仍然允许（spec 偏离 3）——「回家翻出一张打印费收据」
 //! 和「回家发现少了一本书」是同一类事件。看见别处都守着就顺手补上去，
 //! 会把有意的例外当成漏掉的守卫。改之前先读 spec 3.2。
 
@@ -104,6 +104,20 @@ async fn ensure_society(conn: &mut sqlx::SqliteConnection, society_id: i64) -> A
         .ok_or_else(|| ApiError::BadRequest("社团不存在".into()))
 }
 
+/// 只查展会存不存在，**不查状态**。
+///
+/// 这四个写入口故意跳过 `require_event_open`（spec 偏离 3：冻结后仍然允许增删），
+/// 但那也把「展会不存在」这道检查一起跳过了，于是不存在的 id 会一路走到
+/// journals.event_id 的外键才炸成 500。这个函数补回 404，不碰冻结语义。
+async fn ensure_event_exists(conn: &mut sqlx::SqliteConnection, event_id: i64) -> ApiResult<()> {
+    let ok: Option<i64> = sqlx::query_scalar("SELECT id FROM events WHERE id = ?")
+        .bind(event_id)
+        .fetch_optional(&mut *conn)
+        .await?;
+    ok.map(|_| ())
+        .ok_or_else(|| ApiError::NotFound("展会不存在".into()))
+}
+
 #[derive(Deserialize)]
 pub struct AdvanceRequest {
     society_id: i64,
@@ -135,6 +149,7 @@ async fn create_advance(
     }
 
     let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
+    ensure_event_exists(&mut tx, event_id).await?;
     ensure_society(&mut tx, payload.society_id).await?;
 
     // 摊主掏钱、社团欠他：`摊主自有 → 社团往来:<社团>`。
@@ -210,6 +225,7 @@ async fn create_adjustment(
     };
 
     let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
+    ensure_event_exists(&mut tx, event_id).await?;
     ensure_society(&mut tx, payload.society_id).await?;
 
     // to_them：往来 −amount ⇒ 我应转给 +amount
@@ -303,6 +319,7 @@ async fn delete_entry_of(
     kind: JournalKind,
 ) -> ApiResult<StatusCode> {
     let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
+    ensure_event_exists(&mut tx, event_id).await?;
 
     let sql = format!("SELECT journal_id FROM {table} WHERE id = ? AND event_id = ?");
     let journal_id: Option<i64> = sqlx::query_scalar(sqlx::AssertSqlSafe(sql))
@@ -571,6 +588,19 @@ mod tests {
                 .unwrap(),
             Money::from_cents(-1500)
         );
+
+        // 账本余额对不代表存进去的符号对——Task 8 读的是这一列。
+        // 把 signed 的两个分支对调，上面的余额断言仍然全绿，只有这里会红。
+        let amounts: Vec<i64> =
+            sqlx::query_scalar("SELECT amount FROM settlement_adjustments ORDER BY id")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            amounts,
+            vec![-2000, 500],
+            "存的是对往来余额的影响：to_them 为负、to_me 为正"
+        );
     }
 
     #[tokio::test]
@@ -622,22 +652,48 @@ mod tests {
         let (router, _dir, pool) = test_router_with().await;
         let (event_id, _, _) = seed_event_and_product(&pool).await;
 
-        for body in [
-            json!({"society_id": 2, "label": "x", "amount": 0}),
-            json!({"society_id": 2, "label": "x", "amount": -100}),
-            json!({"society_id": 2, "label": "   ", "amount": 100}),
-        ] {
+        let cases = [
+            (
+                "advances",
+                json!({"society_id": 2, "label": "x", "amount": 0}),
+            ),
+            (
+                "advances",
+                json!({"society_id": 2, "label": "x", "amount": -100}),
+            ),
+            (
+                "advances",
+                json!({"society_id": 2, "label": "   ", "amount": 100}),
+            ),
+            (
+                "adjustments",
+                json!({"society_id": 2, "label": "x", "direction": "to_them", "amount": 0}),
+            ),
+            (
+                "adjustments",
+                json!({"society_id": 2, "label": "x", "direction": "to_me", "amount": -100}),
+            ),
+            (
+                "adjustments",
+                json!({"society_id": 2, "label": "   ", "direction": "to_them", "amount": 100}),
+            ),
+        ];
+        for (endpoint, body) in cases {
             let res = router
                 .clone()
                 .oneshot(json_request(
                     "POST",
-                    &format!("/api/events/{event_id}/advances"),
+                    &format!("/api/events/{event_id}/{endpoint}"),
                     Some(&admin_token()),
                     body,
                 ))
                 .await
                 .unwrap();
-            assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+            assert_eq!(
+                res.status(),
+                StatusCode::BAD_REQUEST,
+                "{endpoint} 应拒绝非法金额 / 空名目"
+            );
         }
     }
 
@@ -645,16 +701,226 @@ mod tests {
     async fn rejects_an_unknown_society() {
         let (router, _dir, pool) = test_router_with().await;
         let (event_id, _, _) = seed_event_and_product(&pool).await;
+        for endpoint in ["advances", "adjustments"] {
+            let body = if endpoint == "advances" {
+                json!({"society_id": 999, "label": "摊位费", "amount": 100})
+            } else {
+                json!({"society_id": 999, "label": "赔付", "direction": "to_them", "amount": 100})
+            };
+            let res = router
+                .clone()
+                .oneshot(json_request(
+                    "POST",
+                    &format!("/api/events/{event_id}/{endpoint}"),
+                    Some(&admin_token()),
+                    body,
+                ))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::BAD_REQUEST, "{endpoint}");
+        }
+    }
+
+    #[tokio::test]
+    async fn rejects_a_label_longer_than_fifty_chars() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _, _) = seed_event_and_product(&pool).await;
+
+        let long = "名".repeat(super::MAX_LABEL_CHARS + 1);
         let res = router
             .clone()
             .oneshot(json_request(
                 "POST",
                 &format!("/api/events/{event_id}/advances"),
                 Some(&admin_token()),
-                json!({"society_id": 999, "label": "摊位费", "amount": 100}),
+                json!({"society_id": 2, "label": long, "amount": 100}),
             ))
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn rejects_an_unknown_direction() {
+        // 界面不给填正负号，direction 就成了一段客户端自己拼的字符串——
+        // 拼错不是异常，是最可能发生的事情。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _, _) = seed_event_and_product(&pool).await;
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/adjustments"),
+                Some(&admin_token()),
+                json!({"society_id": 2, "label": "赔付", "direction": "sideways", "amount": 100}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn a_write_to_a_missing_event_is_a_404_not_a_foreign_key_500() {
+        // 四个写入口故意跳过 require_event_open，连带把「展会存不存在」也跳过了，
+        // 于是不存在的 id 会一路走到 journals.event_id 的外键才炸成 500。
+        let (router, _dir, pool) = test_router_with().await;
+        seed_event_and_product(&pool).await;
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                "/api/events/99999/advances",
+                Some(&admin_token()),
+                json!({"society_id": 2, "label": "摊位费", "amount": 100}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn the_two_lists_do_not_bleed_into_each_other_or_across_events() {
+        // 四个薄 handler 只靠一个手打的表名字面量区分。表名写反、漏掉 event_id 条件、
+        // 列别名对不上——三种错测试都看不见，除非真的两张表两场展会都摆上。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _, _) = seed_event_and_product(&pool).await;
+        sqlx::query(
+            "INSERT INTO events (id, name, event_date, status)
+                     VALUES (2, '另一场', '2026-11-01', '进行中')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let token = admin_token();
+
+        post_advance(&router, event_id, 2, "本场摊位费", 40000).await;
+        router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/adjustments"),
+                Some(&token),
+                json!({"society_id": 2, "label": "本场赔付", "direction": "to_them", "amount": 2000}),
+            ))
+            .await
+            .unwrap();
+        post_advance(&router, 2, 2, "别场摊位费", 11111).await;
+        router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                "/api/events/2/adjustments",
+                Some(&token),
+                json!({"society_id": 2, "label": "别场赔付", "direction": "to_me", "amount": 3333}),
+            ))
+            .await
+            .unwrap();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "GET",
+                &format!("/api/events/{event_id}/advances"),
+                Some(&token),
+                json!(null),
+            ))
+            .await
+            .unwrap();
+        let rows = read_json(res).await;
+        let rows = rows.as_array().unwrap();
+        assert_eq!(rows.len(), 1, "只该看见本场的垫付");
+        assert_eq!(rows[0]["label"], "本场摊位费", "串到调整表或别场了");
+        assert_eq!(rows[0]["amount"], 40000);
+        assert_eq!(rows[0]["owner_society_id"], 2);
+        assert_eq!(rows[0]["society_name"], "黄昏堂", "JOIN societies 的列别名");
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "GET",
+                &format!("/api/events/{event_id}/adjustments"),
+                Some(&token),
+                json!(null),
+            ))
+            .await
+            .unwrap();
+        let rows = read_json(res).await;
+        let rows = rows.as_array().unwrap();
+        assert_eq!(rows.len(), 1, "只该看见本场的调整");
+        assert_eq!(rows[0]["label"], "本场赔付");
+        assert_eq!(
+            rows[0]["amount"], -2000,
+            "to_them 存的是对往来余额的影响，是负数"
+        );
+    }
+
+    #[tokio::test]
+    async fn deleting_an_adjustment_touches_the_adjustment_not_the_advance() {
+        // 两张表的 id 都从 1 开始。delete_adjustment 若传错表名，
+        // 删调整 #1 会去冲正垫付 #1——两者在同一场展会里同时存在时才暴露得出来。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _, _) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+
+        let adv_id = post_advance(&router, event_id, 2, "摊位费", 40000).await["id"]
+            .as_i64()
+            .unwrap();
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/adjustments"),
+                Some(&token),
+                json!({"society_id": 2, "label": "赔付", "direction": "to_them", "amount": 2000}),
+            ))
+            .await
+            .unwrap();
+        let adj_id = read_json(res).await["id"].as_i64().unwrap();
+
+        // 往来 = +40000（垫付）− 2000（调整）
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::SocietyDue(2))
+                .await
+                .unwrap(),
+            Money::from_cents(38000)
+        );
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "DELETE",
+                &format!("/api/events/{event_id}/adjustments/{adj_id}"),
+                Some(&token),
+                json!(null),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NO_CONTENT);
+
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::SocietyDue(2))
+                .await
+                .unwrap(),
+            Money::from_cents(40000),
+            "只该冲掉调整那 2000，垫付原封不动"
+        );
+        let advances_left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM advances")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(advances_left, 1, "垫付那行不该被删");
+        let adjustments_left: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM settlement_adjustments")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(adjustments_left, 0);
+        let adjust_journals: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM journals WHERE kind = '调整'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(adjust_journals, 2, "账本留下「一条调整 + 一条冲正」");
+        let _ = adv_id;
     }
 }

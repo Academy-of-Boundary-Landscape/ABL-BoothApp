@@ -47,10 +47,13 @@ pub struct GoodsLine {
 #[derive(Debug, Clone, Serialize)]
 pub struct Entry {
     pub label: String,
-    /// **按对「我应转给」的影响存**：垫付为正（算出来要减），
+    /// 按对「我应转给」的影响存：垫付为正（算出来要减），
     /// 结算调整正数 = 我要多给他们（算出来要加）。
-    /// 存进 DB 的符号是另一回事（那边存的是对往来余额的影响），换算在 api 层做。
     pub amount: Money,
+    /// 结算调整取 `settlement_adjustments.created_at`；垫付恒为 `None`
+    /// （`advances` 表没有这一列，迁移已冻结）。
+    /// 母 spec §7 的样例里调整那一行是带日期的：「10-03 追加：…」。
+    pub at: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -339,10 +342,12 @@ mod tests {
             Entry {
                 label: "摊位费".into(),
                 amount: Money::from_cents(40000),
+                at: None,
             },
             Entry {
                 label: "打印费".into(),
                 amount: Money::from_cents(8000),
+                at: None,
             },
         ];
         home.due_balance = Money::from_cents(-117000);
@@ -355,6 +360,7 @@ mod tests {
         other.adjustments = vec![Entry {
             label: "带回后清点少 1 本，按成本赔".into(),
             amount: Money::from_cents(2000),
+            at: None,
         }];
         other.due_balance = Money::from_cents(-38000);
 
@@ -419,7 +425,7 @@ mod tests {
         let report = build_report(&input(vec![s], vec![]));
         assert_eq!(report.warnings.len(), 1);
         assert!(
-            report.warnings[0].contains("60.00"),
+            report.warnings[0].contains("差 ¥60.00"),
             "要把差额写出来才有得查：{:?}",
             report.warnings
         );
