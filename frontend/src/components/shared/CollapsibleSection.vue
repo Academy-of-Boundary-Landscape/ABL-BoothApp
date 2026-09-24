@@ -22,19 +22,29 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, watch } from 'vue'
 import { NButton } from 'naive-ui'
 
-const props = defineProps({
-  title: { type: String, default: '' },
-  // 初始折叠状态
-  defaultCollapsed: { type: Boolean, default: false },
-  // 受控模式（可选）：传入后优先使用此值
-  collapsed: { type: Boolean, default: null },
-})
+const props = withDefaults(
+  defineProps<{
+    title?: string
+    // 初始折叠状态
+    defaultCollapsed?: boolean
+    // 受控模式（可选）：传入后优先使用此值
+    collapsed?: boolean | null
+  }>(),
+  {
+    title: '',
+    defaultCollapsed: false,
+    collapsed: null,
+  }
+)
 
-const emit = defineEmits(['update:collapsed', 'toggle'])
+const emit = defineEmits<{
+  (e: 'update:collapsed', v: boolean): void
+  (e: 'toggle', v: boolean): void
+}>()
 
 const internalCollapsed = ref(props.defaultCollapsed)
 const isCollapsed = ref(props.collapsed !== null ? props.collapsed : props.defaultCollapsed)

@@ -15,7 +15,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { NResult, NButton, NCard } from 'naive-ui'
 import { RouterLink } from 'vue-router'
 </script>

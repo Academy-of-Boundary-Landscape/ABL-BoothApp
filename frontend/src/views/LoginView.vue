@@ -39,16 +39,14 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import { NCard, NInput, NButton, NAlert } from 'naive-ui'
-import api from '@/services/api'
+import { api, unwrap } from '@/api/client'
 
-const props = defineProps({
-  role: { type: String, required: true }, // 'admin' or 'vendor'
-})
+const props = defineProps<{ role: string }>()
 
 const store = useAuthStore()
 const route = useRoute()
@@ -75,14 +73,20 @@ async function handleLogin() {
   })
 
   try {
-    const eventId = route.query.eventId
-    const redirectPath = route.query.redirect || (props.role === 'admin' ? '/admin' : '/')
+    // query 的类型允许 string[]；正常路由下是单值，收窄成 store.login 接受的类型。
+    const eventId = Array.isArray(route.query.eventId)
+      ? route.query.eventId[0]
+      : route.query.eventId
+    const redirectQuery = route.query.redirect
+    const redirectPath =
+      (typeof redirectQuery === 'string' && redirectQuery) ||
+      (props.role === 'admin' ? '/admin' : '/')
 
     // 执行登录逻辑
     await store.login(password.value, props.role, eventId, redirectPath)
   } catch (err) {
     console.error('[前端 DEBUG] Login Error:', err)
-    error.value = err.message || '登录失败，请检查网络或密码'
+    error.value = (err instanceof Error && err.message) || '登录失败，请检查网络或密码'
   } finally {
     // 3. 无论成功失败，结束加载状态 (如果跳转很快，用户可能看不到这里，但为了稳健性必须加)
     loading.value = false
@@ -92,7 +96,7 @@ async function handleLogin() {
 onMounted(async () => {
   if (props.role !== 'admin') return
   try {
-    const { data } = await api.get('/auth/is-default-admin-password')
+    const data = await unwrap(api.GET('/auth/is-default-admin-password'))
     isDefaultAdmin.value = !!data?.is_default
   } catch {
     isDefaultAdmin.value = false
