@@ -3,12 +3,15 @@ use axum::{
     extract::State,
     http::{header, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
-    routing::{get, post},
-    Json, Router,
+    Json,
 };
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::{
+    api::openapi::ApiErrorBody,
+    error::ApiResult,
     state::AppState,
     utils::security::{self, AuthError},
 };
@@ -82,7 +85,7 @@ where
 }
 
 // 1. 请求体 DTO
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct LoginRequest {
     role: String, // "admin" | "vendor"
     password: String,
@@ -95,7 +98,7 @@ struct LoginRequest {
 }
 
 // 2. 响应体 DTO
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct LoginResponse {
     message: String,
     role: String,
@@ -105,26 +108,42 @@ struct LoginResponse {
     token: String, // 我们把 token 直接放在 Body 里方便前端拿
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct IsDefaultAdminPasswordResponse {
     is_default: bool,
 }
 
-// 3. 路由定义
-/// ③b 过渡：本模块的路由还没标 utoipa 注解，整体包进 OpenApiRouter——路由照常工作，
-/// 只是文档里没有它的路径。阶段 2 迁移本模块时改为 `routes!(...)` 并删掉 `legacy_router`。
-pub fn router() -> utoipa_axum::router::OpenApiRouter<AppState> {
-    utoipa_axum::router::OpenApiRouter::from(legacy_router())
+/// 退出登录的成功体。形状和登录响应里的 `message` 一样，单独建类型只是为了文档。
+#[derive(Serialize, ToSchema)]
+struct LogoutResponse {
+    message: String,
 }
 
-fn legacy_router() -> Router<AppState> {
-    Router::new()
-        .route("/login", post(login_handler))
-        .route("/logout", post(logout_handler))
-        .route("/is-default-admin-password", get(is_default_admin_password))
+// 3. 路由定义
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(login_handler))
+        .routes(routes!(logout_handler))
+        .routes(routes!(is_default_admin_password))
 }
 
 // 4. 处理器逻辑
+/// 登录：管理员校验全局密码，摊主可校验全局密码或展会专属密码。
+///
+/// 成功时在 Body 里回 token，同时下发 HttpOnly 的 `access_token_cookie`。
+/// `eventId` 只在摊主用「展会专属密码」登录成功时回填。
+#[utoipa::path(
+    post,
+    path = "/login",
+    tag = "auth",
+    request_body = LoginRequest,
+    responses(
+        (status = 200, body = LoginResponse, description = "登录成功；同时 Set-Cookie 下发 access_token_cookie"),
+        (status = 400, body = String, description = "请求体不是合法 JSON：纯文本 `JSON Parse Error: …`"),
+        (status = 401, body = ApiErrorBody, description = "角色或密码错误"),
+        (status = 500, body = ApiErrorBody, description = "令牌创建失败"),
+    ),
+)]
 async fn login_handler(
     State(state): State<AppState>,
     DebugJson(payload): DebugJson<LoginRequest>,
@@ -301,21 +320,40 @@ fn build_success_response(
     response
 }
 
-// 退出登录：清除 HttpOnly Cookie
+/// 退出登录：清掉 HttpOnly 的 `access_token_cookie`。
+#[utoipa::path(
+    post,
+    path = "/logout",
+    tag = "auth",
+    responses(
+        (status = 200, body = LogoutResponse, description = "已退出；同时 Set-Cookie 清除 access_token_cookie"),
+    ),
+)]
 async fn logout_handler() -> Response {
     // 不需要展会守卫：登出只清 cookie，不碰任何展会的账
     let cookie_str = "access_token_cookie=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0";
-    let mut response = Json(serde_json::json!({"message": "Logged out"})).into_response();
+    let mut response = Json(LogoutResponse {
+        message: "Logged out".into(),
+    })
+    .into_response();
     response
         .headers_mut()
         .insert(header::SET_COOKIE, HeaderValue::from_static(cookie_str));
     response
 }
 
-// 检查管理员密码是否仍为默认值 admin123
+/// 管理员密码是否仍是出厂默认值 `admin123`（登录页据此提示改密码）。
+#[utoipa::path(
+    get,
+    path = "/is-default-admin-password",
+    tag = "auth",
+    responses(
+        (status = 200, body = IsDefaultAdminPasswordResponse, description = "未设置密码时也返回 false"),
+    ),
+)]
 async fn is_default_admin_password(
     State(state): State<AppState>,
-) -> Result<Json<IsDefaultAdminPasswordResponse>, AuthError> {
+) -> ApiResult<Json<IsDefaultAdminPasswordResponse>> {
     let row: Option<(String,)> =
         sqlx::query_as("SELECT value FROM settings WHERE key = 'admin_password'")
             .fetch_optional(&state.db)
@@ -328,5 +366,150 @@ async fn is_default_admin_password(
     } else {
         // 未设置密码时返回 false，避免误报
         Ok(Json(IsDefaultAdminPasswordResponse { is_default: false }))
+    }
+}
+
+#[cfg(test)]
+mod shape_tests {
+    use crate::test_support::{
+        json_request, read_json, seed_event_and_product, shape_of, test_router_with,
+    };
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use axum::Router;
+    use serde_json::{json, Value};
+    use tower::ServiceExt;
+
+    /// 默认管理员密码是 admin123；再给展会挂一个专属摊主密码，
+    /// 让 `vendor` + `event` 登录成功时响应里的 `eventId` 出现一次非空。
+    async fn seeded() -> (Router, tempfile::TempDir, i64) {
+        let (router, dir, pool) = test_router_with().await;
+        let (event_id, _ep_a, _ep_b) = seed_event_and_product(&pool).await;
+        sqlx::query("UPDATE events SET vendor_password = ? WHERE id = ?")
+            .bind(crate::utils::security::hash_password("eventpw"))
+            .bind(event_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        (router, dir, event_id)
+    }
+
+    async fn call(
+        router: &Router,
+        method: &str,
+        uri: &str,
+        token: Option<&str>,
+        body: Value,
+    ) -> (StatusCode, Value) {
+        let res = router
+            .clone()
+            .oneshot(json_request(method, uri, token, body))
+            .await
+            .unwrap();
+        let status = res.status();
+        (status, read_json(res).await)
+    }
+
+    #[tokio::test]
+    async fn shape_login_handler() {
+        let (router, _dir, event_id) = seeded().await;
+
+        // 管理员登录：`eventId` 字段整个缺省（不是 null）。
+        let (s, body) = call(
+            &router,
+            "POST",
+            "/api/auth/login",
+            None,
+            json!({"role": "admin", "password": "admin123"}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(
+            shape_of(&body),
+            json!({
+                "message": "string", "role": "string", "access": "string", "token": "string"
+            })
+        );
+
+        // 展会摊主登录：access=event，eventId 非空。
+        // eventId 故意用字符串——前端 route.query.eventId 传过来的就是字符串。
+        let (s, body) = call(
+            &router,
+            "POST",
+            "/api/auth/login",
+            None,
+            json!({"role": "vendor", "password": "eventpw", "eventId": event_id.to_string()}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(
+            shape_of(&body),
+            json!({
+                "message": "string", "role": "string", "access": "string",
+                "eventId": "int", "token": "string"
+            })
+        );
+
+        // 密码错误：401 + `{"error":"密码错误"}`。
+        let (s, body) = call(
+            &router,
+            "POST",
+            "/api/auth/login",
+            None,
+            json!({"role": "admin", "password": "wrong"}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::UNAUTHORIZED, json!({"error": "string"}))
+        );
+        // 前端 authStore 读的就是 `error.response.data.error`，文字一并钉死。
+        assert_eq!(body, json!({"error": "密码错误"}));
+
+        // DebugJson 解析失败：400 纯文本 `JSON Parse Error: …`，不是 JSON。
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/auth/login")
+            .header("content-type", "application/json")
+            .body(Body::from("{not json"))
+            .unwrap();
+        let res = router.clone().oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            res.headers().get("content-type").unwrap(),
+            "text/plain; charset=utf-8"
+        );
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let text = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(text.starts_with("JSON Parse Error: "), "got: {text}");
+    }
+
+    #[tokio::test]
+    async fn shape_logout_handler() {
+        let (router, _dir, _event_id) = seeded().await;
+        let (s, body) = call(&router, "POST", "/api/auth/logout", None, json!(null)).await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::OK, json!({"message": "string"}))
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_is_default_admin_password() {
+        let (router, _dir, _event_id) = seeded().await;
+        let (s, body) = call(
+            &router,
+            "GET",
+            "/api/auth/is-default-admin-password",
+            None,
+            json!(null),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::OK, json!({"is_default": "bool"}))
+        );
     }
 }
