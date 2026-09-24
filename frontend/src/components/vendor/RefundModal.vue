@@ -22,7 +22,8 @@
       <n-spin :show="isLoading">
         <template v-if="order">
           <p class="order-meta">
-            原实收 {{ formatYuan(order.final_amount) }} · 收款渠道 {{ order.channel || '（未记录）' }}
+            原实收 {{ formatYuan(order.final_amount) }} · 收款渠道
+            {{ order.channel || '（未记录）' }}
           </p>
 
           <!-- ===== 可退行 ===== -->
@@ -46,9 +47,7 @@
                   :precision="0"
                   :disabled="line.remaining_qty === 0"
                 />
-                <span class="line-refund">
-                  本次退 {{ formatYuan(perLineRefund[idx]) }}
-                </span>
+                <span class="line-refund"> 本次退 {{ formatYuan(perLineRefund[idx]) }} </span>
               </div>
               <n-radio-group
                 v-model:value="destinationByLine[line.order_line_id]"
@@ -79,9 +78,7 @@
               @update:value="amountTouched = true"
             />
           </div>
-          <p v-if="overLimit" class="limit-warning">
-            不能多于顾客实付，白送钱请走结算调整
-          </p>
+          <p v-if="overLimit" class="limit-warning">不能多于顾客实付，白送钱请走结算调整</p>
           <p v-else class="field-note">
             默认按所选各行实付之和（{{ formatYuan(defaultTotal) }}）；改低可以，改高会被后端挡住。
           </p>
@@ -179,9 +176,7 @@ async function load() {
   if (!props.order) return
   isLoading.value = true
   try {
-    const { data } = await api.get(
-      `/events/${props.eventId}/orders/${props.order.id}/refunds`
-    )
+    const { data } = await api.get(`/events/${props.eventId}/orders/${props.order.id}/refunds`)
     history.value = data?.history || []
     lines.value = data?.lines || []
 
@@ -216,9 +211,7 @@ watch(defaultTotal, (val) => {
 })
 
 async function submit() {
-  const chosen = lines.value.filter(
-    (l) => Number(qtyByLine.value[l.order_line_id] || 0) > 0
-  )
+  const chosen = lines.value.filter((l) => Number(qtyByLine.value[l.order_line_id] || 0) > 0)
   if (!chosen.length) return message.warning('请至少选择一行退货数量')
   if (!channel.value) return message.warning('请选择退款渠道')
   if (overLimit.value) return message.warning('不能多于顾客实付，白送钱请走结算调整')

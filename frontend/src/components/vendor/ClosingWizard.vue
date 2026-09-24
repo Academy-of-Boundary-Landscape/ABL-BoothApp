@@ -108,13 +108,15 @@
             <div v-if="store.state.status === '已结算'" class="settled-note">
               <p>
                 <strong>账本已冻结。</strong>
-                之后仍然可以补垫付、结算调整和收摊清点，其余都改不了了。
-                结算单请到管理端的「展会 → 结算」查看。
+                之后仍然可以补垫付、结算调整和收摊清点，其余都改不了了。 结算单请到管理端的「展会 →
+                结算」查看。
               </p>
             </div>
             <template v-else>
               <div v-if="store.state.blockers.length" class="blockers">
-                <p v-for="(b, i) in store.state.blockers" :key="i" class="blocker-line">⚠ {{ b }}</p>
+                <p v-for="(b, i) in store.state.blockers" :key="i" class="blocker-line">
+                  ⚠ {{ b }}
+                </p>
               </div>
               <p v-else class="screen-hint">没有拦路的项了，确认无误后结束展会。</p>
               <div class="screen-actions">

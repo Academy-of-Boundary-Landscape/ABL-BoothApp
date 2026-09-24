@@ -41,7 +41,9 @@
               :precision="0"
               :disabled="!form.productId"
             />
-            <span v-if="selectedProduct" class="field-hint">现场仓 {{ selectedProduct.qty }} 件</span>
+            <span v-if="selectedProduct" class="field-hint"
+              >现场仓 {{ selectedProduct.qty }} 件</span
+            >
           </div>
 
           <div class="field">
@@ -53,9 +55,7 @@
             <n-switch v-model:value="form.vendorPays" />
             <div class="switch-text">
               <span>这笔我自掏（按原价补给货主）</span>
-              <span class="field-hint">
-                不开 = 货主自己承担，结算单上只会显示送了几件
-              </span>
+              <span class="field-hint"> 不开 = 货主自己承担，结算单上只会显示送了几件 </span>
             </div>
           </div>
 
@@ -68,9 +68,7 @@
       </n-spin>
 
       <div class="entries">
-        <p class="entries-title">
-          已登记 · {{ activeTab === 'gift' ? '赠送' : '报废' }}
-        </p>
+        <p class="entries-title">已登记 · {{ activeTab === 'gift' ? '赠送' : '报废' }}</p>
         <p v-if="!entries.length" class="empty-hint">还没有登记记录。</p>
         <div v-for="entry in entries" :key="entry.journal_id" class="entry">
           <div class="entry-main">

@@ -32,9 +32,7 @@
       </n-space>
     </header>
 
-    <div v-if="store.isLoading && !store.report" class="loading-message">
-      正在加载结算数据...
-    </div>
+    <div v-if="store.isLoading && !store.report" class="loading-message">正在加载结算数据...</div>
 
     <template v-else>
       <n-alert v-if="store.error" type="error" class="store-error" :bordered="false">
@@ -159,9 +157,15 @@
         </div>
 
         <div class="report-totals">
-          <span>实际到手合计 <strong>{{ formatYuan(store.report.actual_total) }}</strong></span>
-          <span>Σ 我应转给 <strong>{{ formatYuan(store.report.transfer_total) }}</strong></span>
-          <span>摊主留存 <strong>{{ formatYuan(store.report.vendor_retained) }}</strong></span>
+          <span
+            >实际到手合计 <strong>{{ formatYuan(store.report.actual_total) }}</strong></span
+          >
+          <span
+            >Σ 我应转给 <strong>{{ formatYuan(store.report.transfer_total) }}</strong></span
+          >
+          <span
+            >摊主留存 <strong>{{ formatYuan(store.report.vendor_retained) }}</strong></span
+          >
         </div>
 
         <!-- 两个时间戳平铺，不加警告语气。generated_at（此刻）和 last_changed_at
@@ -226,7 +230,13 @@
                 <td>{{ a.label }}</td>
                 <td class="text-right amount-cell">{{ formatYuan(a.amount) }}</td>
                 <td class="text-right">
-                  <n-button size="small" type="error" quaternary :disabled="isBusy" @click="removeAdvance(a)">
+                  <n-button
+                    size="small"
+                    type="error"
+                    quaternary
+                    :disabled="isBusy"
+                    @click="removeAdvance(a)"
+                  >
                     删除
                   </n-button>
                 </td>
@@ -241,9 +251,7 @@
       <section class="block">
         <h2>结算调整</h2>
         <p class="block-note">展会结算之后，这两项仍然可以增删</p>
-        <p class="block-hint">
-          方向用按钮选，金额只填正数——不要自己判断该填正号还是负号。
-        </p>
+        <p class="block-hint">方向用按钮选，金额只填正数——不要自己判断该填正号还是负号。</p>
 
         <div class="form-grid">
           <div class="field field-wide">
@@ -300,7 +308,13 @@
                 <td>{{ a.label }}</td>
                 <td class="text-right amount-cell">{{ describeEntryAdjustment(a.amount) }}</td>
                 <td class="text-right">
-                  <n-button size="small" type="error" quaternary :disabled="isBusy" @click="removeAdjustment(a)">
+                  <n-button
+                    size="small"
+                    type="error"
+                    quaternary
+                    :disabled="isBusy"
+                    @click="removeAdjustment(a)"
+                  >
                     删除
                   </n-button>
                 </td>
