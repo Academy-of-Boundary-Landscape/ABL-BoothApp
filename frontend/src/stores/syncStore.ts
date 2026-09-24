@@ -164,7 +164,7 @@ export const useSyncStore = defineStore('sync', () => {
       console.error(err)
       lastError.value = err
 
-      // 原样抛给组件：组件读 ApiRequestError.response / message 自行兜底。
+      // 原样抛给组件：组件用 errorMessage(e, …) 自行兜底。
       throw err
     } finally {
       isExporting.value = false

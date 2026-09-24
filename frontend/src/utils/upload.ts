@@ -1,3 +1,4 @@
+import { ApiRequestError } from '@/api/core'
 import { createDiscreteApi } from 'naive-ui'
 
 export const IMAGE_UPLOAD_LIMIT_MB = 10
@@ -118,6 +119,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function normalizeUploadError(error: unknown, maxMb: number): string {
+  // 组件里 catch 到的是新 client 的 ApiRequestError；转成下面按 axios 错误形状写的读法
+  if (error instanceof ApiRequestError) {
+    const body = error.body
+    return normalizeUploadError(
+      {
+        message: typeof body === 'string' && body ? body : error.message,
+        response: { status: error.status, data: body },
+      },
+      maxMb
+    )
+  }
   const response = isRecord(error) ? error.response : undefined
   const data = isRecord(response) ? response.data : undefined
   const rawMessage =

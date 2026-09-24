@@ -56,14 +56,13 @@ describe('api core', () => {
     expect(seen[0]!.url).toBe('http://127.0.0.1:5140/api/events/7/advances')
   })
 
-  it('JSON 错误体：serverMessage 取 error 字段，旧式 response 兼容读取仍可用', async () => {
+  it('JSON 错误体：serverMessage 取 error 字段', async () => {
     const api = make(() => json(409, { error: '展会已冻结' }))
     const e = await unwrap(api.GET('/channels')).catch((x: unknown) => x)
     expect(e).toBeInstanceOf(ApiRequestError)
     const err = e as ApiRequestError
     expect(err.status).toBe(409)
     expect(err.serverMessage).toBe('展会已冻结')
-    expect((err.response.data as { error: string }).error).toBe('展会已冻结')
     expect(errorMessage(err, '加载失败')).toBe('展会已冻结')
   })
 

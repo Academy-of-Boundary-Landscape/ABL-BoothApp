@@ -7,8 +7,8 @@ import {
 import pluginVue from 'eslint-plugin-vue'
 import skipFormatting from '@vue/eslint-config-prettier/skip-formatting'
 
-// ③b 过渡期：.vue 里仍有 JS 的 <script setup>。Task 12 收口时改成只允许 'ts'。
-configureVueProject({ scriptLangs: ['ts', 'js'] })
+// 全部 .vue 都是 <script setup lang="ts">；混进 JS 的 script 块会被 lint 拒绝。
+configureVueProject({ scriptLangs: ['ts'] })
 
 export default defineConfigWithVueTs(
   { name: 'app/files-to-lint', files: ['**/*.{js,mjs,ts,mts,vue}'] },

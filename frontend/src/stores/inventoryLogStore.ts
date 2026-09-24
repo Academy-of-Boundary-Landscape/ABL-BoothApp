@@ -65,7 +65,7 @@ export const useInventoryLogStore = defineStore('inventoryLog', () => {
       return entry
     } catch (e) {
       console.error(e)
-      // 原样抛给组件：组件仍是 JS，靠 ApiRequestError.response 兼容 getter 读后端原文。
+      // 原样抛给组件：组件用 errorMessage(e, …) 读后端原文。
       throw e
     }
   }

@@ -32,6 +32,26 @@ describe('validateFileSize', () => {
 })
 
 describe('normalizeUploadError', () => {
+  // 组件里 catch 到的是新 client 的 ApiRequestError（不再有 axios 的 err.response）
+  it('ApiRequestError：413 翻译成体积超限提示', async () => {
+    const { ApiRequestError } = await import('@/api/core')
+    const err = new ApiRequestError(413, 'length limit exceeded')
+    expect(normalizeUploadError(err, 10)).toContain('10MB')
+  })
+
+  it('ApiRequestError：优先取后端返回的 error 字段', async () => {
+    const { ApiRequestError } = await import('@/api/core')
+    expect(normalizeUploadError(new ApiRequestError(400, { error: '后端说不行' }), 10)).toBe(
+      '后端说不行'
+    )
+  })
+
+  it('ApiRequestError：纯文本 multipart 解析错误也翻译成体积超限', async () => {
+    const { ApiRequestError } = await import('@/api/core')
+    const err = new ApiRequestError(400, 'Error parsing `multipart/form-data` request')
+    expect(normalizeUploadError(err, 10)).toContain('10MB')
+  })
+
   it('优先取后端返回的 error 字段', () => {
     const err = { response: { data: { error: '后端说不行' } } }
     expect(normalizeUploadError(err, 10)).toBe('后端说不行')

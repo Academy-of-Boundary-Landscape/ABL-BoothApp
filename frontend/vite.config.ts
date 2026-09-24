@@ -36,7 +36,7 @@ export default defineConfig(({ mode }) => {
     },
     test: {
       environment: 'jsdom',
-      include: ['src/**/*.spec.{js,ts}'], // ③b 过渡期两者都认；Task 12 改成只认 .ts
+      include: ['src/**/*.spec.ts'],
       globals: false,
     },
     esbuild: {

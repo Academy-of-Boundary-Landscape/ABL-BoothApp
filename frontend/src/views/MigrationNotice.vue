@@ -39,7 +39,7 @@ const exporting = ref(false)
  *
  * 只在管理员登录态下发请求：`/api/legacy/status` 是 AdminOnly（历史数据出口不该对
  * 顾客端开放），而 App.vue 在**所有**路由下都挂着这个组件——顾客首页 `/` 是公开的，
- * 若不加判断就发请求，401/403 会被 axios 全局拦截器当成会话失效，把顾客踢去登录页。
+ * 若不加判断就发请求，401/403 会被 API client 的中间件当成会话失效，把顾客踢去登录页。
  */
 async function checkStatus() {
   if (!authStore.isAdmin) {

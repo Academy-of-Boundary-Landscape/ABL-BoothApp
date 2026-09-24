@@ -10,7 +10,7 @@ import { api, errorMessage, unwrap, type Schemas } from '@/api/client'
  *
  * 业务规则全部在后端（垫付与调整在冻结之后仍然允许增删，是 spec 偏离 3 的
  * 有意例外；清点要收全量、同一个渠道只能报一次）。前端不重复判断，把
- * `err.response?.data?.error` 原样抛给页面显示——判据写在两处就会有一处先腐烂。
+ * 后端的错误原文（`errorMessage(e, …)`）原样抛给页面显示——判据写在两处就会有一处先腐烂。
  *
  * 每次写成功都重新拉一遍：垫付/调整会改账本，清点会写对账差异，本地改一条
  * 列表会和结算单漂移。
@@ -83,7 +83,7 @@ export const useSettlementStore = defineStore('settlement', () => {
       return entry
     } catch (e) {
       console.error(e)
-      // 原样抛给组件：组件仍是 JS，靠 ApiRequestError.response 兼容 getter 读后端原文。
+      // 原样抛给组件：组件用 errorMessage(e, …) 读后端原文。
       throw e
     }
   }

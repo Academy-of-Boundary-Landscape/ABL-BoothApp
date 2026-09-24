@@ -24,14 +24,6 @@ export class ApiRequestError extends Error {
     this.body = body
     this.serverMessage = server
   }
-
-  /**
-   * @deprecated ③b 过渡：store 已切到新 client、组件还是 JS 时，组件里
-   * `err.response?.data?.error` 靠它继续工作。Task 12 删除。
-   */
-  get response(): { status: number; data: unknown } {
-    return { status: this.status, data: this.body }
-  }
 }
 
 /**
