@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { shouldShowMigrationNotice } from './migrationNotice.js'
+import { shouldShowMigrationNotice } from './migrationNotice'
 
 describe('shouldShowMigrationNotice', () => {
   const withData = { has_backup: true, event_count: 2, order_count: 3, item_count: 4 }

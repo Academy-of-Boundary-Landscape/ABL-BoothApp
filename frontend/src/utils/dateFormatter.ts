@@ -5,11 +5,14 @@
 
 /**
  * 将数据库返回的时间戳转换为 UTC+8 时间字符串
- * @param {string} timestamp - 数据库返回的时间戳（假设为 UTC 时间）
- * @param {boolean} showSeconds - 是否显示秒
- * @returns {string} 格式化后的时间字符串
+ * @param timestamp - 数据库返回的时间戳（假设为 UTC 时间）
+ * @param showSeconds - 是否显示秒
+ * @returns 格式化后的时间字符串
  */
-export function formatTimestamp(timestamp, showSeconds = true) {
+export function formatTimestamp(
+  timestamp: string | null | undefined,
+  showSeconds: boolean = true
+): string {
   if (!timestamp) return '-'
 
   // 创建 Date 对象，SQLite 返回的是 UTC 时间字符串
@@ -23,7 +26,7 @@ export function formatTimestamp(timestamp, showSeconds = true) {
   }
 
   // 使用 toLocaleString 转换为北京时间
-  const options = {
+  const options: Intl.DateTimeFormatOptions = {
     timeZone: 'Asia/Shanghai',
     year: 'numeric',
     month: '2-digit',
@@ -43,7 +46,7 @@ export function formatTimestamp(timestamp, showSeconds = true) {
 /**
  * 简化版本：只显示日期
  */
-export function formatDate(timestamp) {
+export function formatDate(timestamp: string | null | undefined): string {
   if (!timestamp) return '-'
 
   const dateStr = timestamp.includes('Z') ? timestamp : timestamp + 'Z'
@@ -64,7 +67,7 @@ export function formatDate(timestamp) {
 /**
  * 简化版本：只显示时间
  */
-export function formatTime(timestamp) {
+export function formatTime(timestamp: string | null | undefined): string {
   if (!timestamp) return '-'
 
   const dateStr = timestamp.includes('Z') ? timestamp : timestamp + 'Z'
@@ -86,7 +89,7 @@ export function formatTime(timestamp) {
 /**
  * 图表专用：显示简短的日期时间（不含秒）
  */
-export function formatChartLabel(timestamp) {
+export function formatChartLabel(timestamp: string | null | undefined): string {
   if (!timestamp) return '-'
 
   const dateStr = timestamp.includes('Z') ? timestamp : timestamp + 'Z'
@@ -109,7 +112,7 @@ export function formatChartLabel(timestamp) {
 /**
  * 图表工具提示专用：显示完整的日期时间
  */
-export function formatChartTooltip(timestamp) {
+export function formatChartTooltip(timestamp: string | null | undefined): string {
   if (!timestamp) return '-'
 
   const dateStr = timestamp.includes('Z') ? timestamp : timestamp + 'Z'
