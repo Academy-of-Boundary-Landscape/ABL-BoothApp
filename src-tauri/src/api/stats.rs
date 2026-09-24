@@ -874,8 +874,9 @@ mod tests {
         let (router, _dir, pool) = test_router_with().await;
         let (event_id, ep_a, ep_b) = seed_event_and_product(&pool).await;
         let token = admin_token();
-        // ep_a 上挂一个「任选 2 件 50」（原价 60）
-        crate::test_support::seed_lot(&pool, event_id, "任选2件50", 2, 5000, &[ep_a]).await;
+        // ep_a 上挂一个「任选 2 件 50」（原价 60）。候选只有一种、任选 2 件 ⇒
+        // 必须允许同款重复，否则这个 Lot 会被判为永远凑不出。
+        crate::test_support::seed_lot_repeat(&pool, event_id, "任选2件50", 2, 5000, &[ep_a]).await;
 
         let res = router
             .clone()

@@ -49,6 +49,8 @@ struct LotResponse {
     pick_count: i64,
     /// 单位：分。
     total_price: i64,
+    /// 一个套装实例里，同一个候选能不能算多件（默认 false = 每种最多 1 件）。
+    allow_repeat: bool,
     candidate_ids: Vec<i64>,
     /// 候选集必然同一货主（下面的 `validate_candidates` 保证），所以取其一即可。
     owner_society_id: i64,
@@ -61,6 +63,10 @@ struct LotPayload {
     pick_count: i64,
     /// 单位：分。
     total_price: i64,
+    /// 老客户端不带这个字段，`serde(default)` 落到 false——**默认限 1**，
+    /// 不会因为升级悄悄从「每种 1 件」变成「可同款」。
+    #[serde(default)]
+    allow_repeat: bool,
     candidate_ids: Vec<i64>,
 }
 
@@ -144,9 +150,22 @@ fn validate_payload(payload: &LotPayload) -> ApiResult<String> {
     if payload.total_price > 100_000_000 {
         return Err(ApiError::BadRequest("套装价格超出合理范围".into()));
     }
-    // 候选集大小**不要求** >= pick_count：「任选 3 本 100」而候选只有一种书，
-    // 意思是「买 3 本同款 100」，完全合法。
+    // 候选集大小**这里不查**：它和 `allow_repeat` 绑定——不允许重复时候选必须
+    // 至少 pick_count 种，允许重复时一种就够（「买 3 本同款 100」）。
+    // 那条校验需要候选集，所以放在 `validate_candidates` 拿到 ids 之后。
     Ok(name)
+}
+
+/// 不允许同款重复时，一个套装实例里每种候选最多 1 件，所以候选种类必须至少等于
+/// 「要选几件」；否则这个套装永远凑不出，是配置错误而不是运行时情况——当场拒绝，
+/// 别让它静默地永远不生效。`validate_payload` 看不到候选集，所以这条独立出来。
+fn validate_candidate_count(payload: &LotPayload, ids: &[i64]) -> ApiResult<()> {
+    if !payload.allow_repeat && (ids.len() as i64) < payload.pick_count {
+        return Err(ApiError::BadRequest(
+            "不允许同款重复时，候选商品数不能少于「要选几件」——否则这个套装永远套不上".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// 把候选商品写进去。更新时先删后写，整组替换。
@@ -176,6 +195,7 @@ type LotListRow = (
     String,
     i64,
     i64,
+    i64,
     Option<i64>,
     Option<i64>,
     Option<String>,
@@ -197,7 +217,7 @@ async fn list_lots(
     // （求解器那条 `pricing::load_lots` 保持 INNER JOIN：空候选的 Lot 本来就
     // 套用不上，不该对求解器可见。）
     let rows: Vec<LotListRow> = sqlx::query_as(
-        "SELECT l.id, l.event_id, l.name, l.pick_count, l.total_price,
+        "SELECT l.id, l.event_id, l.name, l.pick_count, l.total_price, l.allow_repeat,
                 lc.event_product_id, ep.owner_society_id, s.name
          FROM lots l
          LEFT JOIN lot_candidates lc ON lc.lot_id = l.id
@@ -211,7 +231,7 @@ async fn list_lots(
     .await?;
 
     let mut out: Vec<LotResponse> = Vec::new();
-    for (id, ev, name, pick, price, candidate, owner, owner_name) in rows {
+    for (id, ev, name, pick, price, allow_repeat, candidate, owner, owner_name) in rows {
         match out.last_mut() {
             Some(last) if last.id == id => {
                 if let Some(candidate) = candidate {
@@ -224,6 +244,7 @@ async fn list_lots(
                 name,
                 pick_count: pick,
                 total_price: price,
+                allow_repeat: allow_repeat != 0,
                 candidate_ids: candidate.into_iter().collect(),
                 owner_society_id: owner.unwrap_or(0),
                 owner_society_name: owner_name.unwrap_or_else(|| "（候选已被删除）".to_string()),
@@ -246,15 +267,17 @@ async fn create_lot(
     ensure_event_open(&mut tx, event_id).await?;
     let (ids, owner, owner_name) =
         validate_candidates(&mut tx, event_id, &payload.candidate_ids).await?;
+    validate_candidate_count(&payload, &ids)?;
 
     let lot_id: i64 = sqlx::query_scalar(
-        "INSERT INTO lots (event_id, name, pick_count, total_price)
-         VALUES (?, ?, ?, ?) RETURNING id",
+        "INSERT INTO lots (event_id, name, pick_count, total_price, allow_repeat)
+         VALUES (?, ?, ?, ?, ?) RETURNING id",
     )
     .bind(event_id)
     .bind(&name)
     .bind(payload.pick_count)
     .bind(payload.total_price)
+    .bind(payload.allow_repeat as i64)
     .fetch_one(&mut *tx)
     .await?;
     write_candidates(&mut tx, lot_id, &ids).await?;
@@ -268,6 +291,7 @@ async fn create_lot(
             name,
             pick_count: payload.pick_count,
             total_price: payload.total_price,
+            allow_repeat: payload.allow_repeat,
             candidate_ids: ids,
             owner_society_id: owner,
             owner_society_name: owner_name,
@@ -297,14 +321,18 @@ async fn update_lot(
 
     let (ids, owner, owner_name) =
         validate_candidates(&mut tx, event_id, &payload.candidate_ids).await?;
+    validate_candidate_count(&payload, &ids)?;
 
-    sqlx::query("UPDATE lots SET name = ?, pick_count = ?, total_price = ? WHERE id = ?")
-        .bind(&name)
-        .bind(payload.pick_count)
-        .bind(payload.total_price)
-        .bind(lot_id)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(
+        "UPDATE lots SET name = ?, pick_count = ?, total_price = ?, allow_repeat = ? WHERE id = ?",
+    )
+    .bind(&name)
+    .bind(payload.pick_count)
+    .bind(payload.total_price)
+    .bind(payload.allow_repeat as i64)
+    .bind(lot_id)
+    .execute(&mut *tx)
+    .await?;
     write_candidates(&mut tx, lot_id, &ids).await?;
     tx.commit().await?;
 
@@ -314,6 +342,7 @@ async fn update_lot(
         name,
         pick_count: payload.pick_count,
         total_price: payload.total_price,
+        allow_repeat: payload.allow_repeat,
         candidate_ids: ids,
         owner_society_id: owner,
         owner_society_name: owner_name,
@@ -490,6 +519,70 @@ mod tests {
         assert_eq!(body["candidate_ids"], json!([ep_a]));
         assert_eq!(body["total_price"], 2500, "金额是分，不是元");
         assert_eq!(body["owner_society_id"], 1, "ep_a 归本社团");
+    }
+
+    #[tokio::test]
+    async fn a_no_repeat_lot_with_fewer_candidates_than_picks_is_refused() {
+        // 候选只有 1 种、任选 2 件、不允许重复 → 永远凑不出。必须在创建时挡住，
+        // 否则摊主会得到一个静默不生效的套装（2026-09-24 真机缺陷的同类）。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _ep_b) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/lots"),
+                Some(&token),
+                json!({"name": "永远凑不出的套装", "pick_count": 2, "total_price": 5000,
+                       "allow_repeat": false, "candidate_ids": [ep_a]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM lots")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 0, "校验失败必须整体回滚");
+    }
+
+    #[tokio::test]
+    async fn a_repeat_lot_lists_back_its_allow_repeat_flag() {
+        // 「买 2 件同款 50」：允许重复。创建要成功，GET /lots 也要把这个声明带回来，
+        // 否则前端编辑时读不回摊主当初选的是哪一种。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _ep_b) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/lots"),
+                Some(&token),
+                json!({"name": "同款任选2件50", "pick_count": 2, "total_price": 5000,
+                       "allow_repeat": true, "candidate_ids": [ep_a]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+        assert_eq!(read_json(res).await["allow_repeat"], true);
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "GET",
+                &format!("/api/events/{event_id}/lots"),
+                Some(&token),
+                json!({}),
+            ))
+            .await
+            .unwrap();
+        let body = read_json(res).await;
+        assert_eq!(body[0]["allow_repeat"], true);
     }
 
     #[tokio::test]
@@ -751,6 +844,9 @@ mod tests {
     }
 
     /// 给 seed 出来的展会加一个只含 ep_a 的「任选 2 件 50」，返回 lot_id。
+    ///
+    /// 候选只有一种、任选 2 件 ⇒ 必须允许同款重复，否则会被
+    /// `validate_candidate_count` 以 400 挡掉。
     async fn seed_pair_lot(router: &axum::Router, event_id: i64, ep_a: i64, token: &str) -> i64 {
         let res = router
             .clone()
@@ -759,7 +855,7 @@ mod tests {
                 &format!("/api/events/{event_id}/lots"),
                 Some(token),
                 json!({"name": "任选2件50", "pick_count": 2, "total_price": 5000,
-                       "candidate_ids": [ep_a]}),
+                       "allow_repeat": true, "candidate_ids": [ep_a]}),
             ))
             .await
             .unwrap();

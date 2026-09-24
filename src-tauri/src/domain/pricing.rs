@@ -129,8 +129,8 @@ pub fn cart_lines(resolved: &[ResolvedLine]) -> Vec<CartLine> {
 /// 一条 JOIN 查完再在 Rust 里分组，靠 `ORDER BY l.id` 保证同一个 Lot 的候选是连续的。
 /// 没有任何候选商品的 Lot 不会出现在结果里——它永远套用不上。
 pub async fn load_lots(conn: &mut SqliteConnection, event_id: i64) -> ApiResult<Vec<LotDef>> {
-    let rows: Vec<(i64, String, i64, i64, i64)> = sqlx::query_as(
-        "SELECT l.id, l.name, l.pick_count, l.total_price, lc.event_product_id
+    let rows: Vec<(i64, String, i64, i64, i64, i64)> = sqlx::query_as(
+        "SELECT l.id, l.name, l.pick_count, l.total_price, l.allow_repeat, lc.event_product_id
          FROM lots l
          JOIN lot_candidates lc ON lc.lot_id = l.id
          WHERE l.event_id = ?
@@ -141,7 +141,7 @@ pub async fn load_lots(conn: &mut SqliteConnection, event_id: i64) -> ApiResult<
     .await?;
 
     let mut out: Vec<LotDef> = Vec::new();
-    for (id, name, pick_count, total_price, candidate) in rows {
+    for (id, name, pick_count, total_price, allow_repeat, candidate) in rows {
         match out.last_mut() {
             Some(last) if last.id == id => last.candidates.push(candidate),
             _ => out.push(LotDef {
@@ -150,8 +150,8 @@ pub async fn load_lots(conn: &mut SqliteConnection, event_id: i64) -> ApiResult<
                 pick_count,
                 total_price: Money::from_cents(total_price),
                 candidates: vec![candidate],
-                // Task 3 会从 `lots.allow_repeat` 读；这里先保住 Task 2 的编译。
-                allow_repeat: false,
+                // 求解器推不出摊主想要哪种语义，必须把这个声明原样传下去。
+                allow_repeat: allow_repeat != 0,
             }),
         }
     }

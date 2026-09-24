@@ -1253,8 +1253,10 @@ mod tests {
     }
 
     /// 给展会加一个只含 `ep` 的「任选 2 件 50」，返回 lot_id。
+    ///
+    /// 候选只有一种、任选 2 件 ⇒ 必须允许同款重复。
     async fn seed_pair_lot(pool: &sqlx::SqlitePool, event_id: i64, ep: i64) -> i64 {
-        crate::test_support::seed_lot(pool, event_id, "任选2件50", 2, 5000, &[ep]).await
+        crate::test_support::seed_lot_repeat(pool, event_id, "任选2件50", 2, 5000, &[ep]).await
     }
 
     #[tokio::test]
@@ -1660,7 +1662,8 @@ mod tests {
     ///
     /// 刻意用**代卖**货：自家货上拆不拆都对得上，只有代卖货能暴露归属错位。
     async fn seed_consignment_lot(pool: &sqlx::SqlitePool, event_id: i64, ep_b: i64) -> i64 {
-        crate::test_support::seed_lot(pool, event_id, "代卖任选2件30", 2, 3000, &[ep_b]).await
+        crate::test_support::seed_lot_repeat(pool, event_id, "代卖任选2件30", 2, 3000, &[ep_b])
+            .await
     }
 
     #[tokio::test]

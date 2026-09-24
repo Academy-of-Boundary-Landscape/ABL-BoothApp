@@ -213,6 +213,9 @@ pub async fn seed_event_and_product(pool: &SqlitePool) -> (i64, i64, i64) {
 
 /// 给展会加一个 Lot，返回 lot_id。`candidates` 是 `event_product_id` 列表。
 ///
+/// 默认 `allow_repeat = false`（每种最多 1 件）——这是模型默认语义。
+/// 需要「同款能拿多件」的测试用 `seed_lot_repeat`。
+///
 /// 直接写 SQL 而不是打 API：Lot 的 CRUD 是 Task 4 才有的东西，而 Task 3 的
 /// 测试现在就要用它。
 pub async fn seed_lot(
@@ -223,13 +226,57 @@ pub async fn seed_lot(
     total_price: i64,
     candidates: &[i64],
 ) -> i64 {
+    seed_lot_with_repeat(
+        pool,
+        event_id,
+        name,
+        pick_count,
+        total_price,
+        candidates,
+        false,
+    )
+    .await
+}
+
+/// 同 `seed_lot`，但允许同一个候选在一个套装实例里算多件。
+pub async fn seed_lot_repeat(
+    pool: &SqlitePool,
+    event_id: i64,
+    name: &str,
+    pick_count: i64,
+    total_price: i64,
+    candidates: &[i64],
+) -> i64 {
+    seed_lot_with_repeat(
+        pool,
+        event_id,
+        name,
+        pick_count,
+        total_price,
+        candidates,
+        true,
+    )
+    .await
+}
+
+async fn seed_lot_with_repeat(
+    pool: &SqlitePool,
+    event_id: i64,
+    name: &str,
+    pick_count: i64,
+    total_price: i64,
+    candidates: &[i64],
+    allow_repeat: bool,
+) -> i64 {
     let lot_id: i64 = sqlx::query_scalar(
-        "INSERT INTO lots (event_id, name, pick_count, total_price) VALUES (?, ?, ?, ?) RETURNING id",
+        "INSERT INTO lots (event_id, name, pick_count, total_price, allow_repeat)
+         VALUES (?, ?, ?, ?, ?) RETURNING id",
     )
     .bind(event_id)
     .bind(name)
     .bind(pick_count)
     .bind(total_price)
+    .bind(allow_repeat as i64)
     .fetch_one(pool)
     .await
     .expect("seed lot");
