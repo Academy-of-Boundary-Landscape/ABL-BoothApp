@@ -69,9 +69,11 @@
 
           <!-- 空购物车提示 -->
           <div v-else class="empty-cart">
-            <span class="empty-icon">🛒</span>
-            <p class="empty-title">购物车是空的</p>
-            <p class="empty-hint">点击商品卡片上的 <span class="hint-plus">+</span> 加入购物车</p>
+            <EmptyState icon="🛒" title="购物车是空的">
+              <template #hint
+                >点击商品卡片上的 <span class="hint-plus">+</span> 加入购物车</template
+              >
+            </EmptyState>
           </div>
         </div>
 
@@ -115,8 +117,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onUnmounted, watch } from 'vue'
 import { NButton } from 'naive-ui'
+import { EmptyState } from '@/components/ui'
+import { useViewport } from '@/composables/useViewport'
 import { formatYuan, type Cents } from '@/utils/money'
 import type { Schemas } from '@/api/client'
 import type { QuoteDiscount } from '@/utils/quote'
@@ -153,21 +157,20 @@ defineEmits<{
   (e: 'checkout'): void
 }>()
 
-const isMobile = ref(false)
+const { isPhone } = useViewport()
+const isMobile = isPhone
 const expanded = ref(false)
 
 const cartCount = computed(() => props.cart.reduce((sum, item) => sum + item.quantity, 0))
 
-function checkMobile() {
-  // ✅ 统一断点为 768px
-  isMobile.value = window.innerWidth <= 768
-  if (!isMobile.value) {
+watch(
+  isMobile,
+  (mobile) => {
     // 桌面端默认永远展开，expanded 状态仅用于移动端
-    expanded.value = true
-  } else {
-    expanded.value = false
-  }
-}
+    expanded.value = !mobile
+  },
+  { immediate: true }
+)
 
 function toggleCart() {
   if (isMobile.value) {
@@ -180,13 +183,8 @@ function syncBodyScrollLock(locked: boolean) {
   document.body.style.overflow = locked ? 'hidden' : ''
 }
 
-onMounted(() => {
-  checkMobile()
-  window.addEventListener('resize', checkMobile)
-})
 onUnmounted(() => {
   syncBodyScrollLock(false)
-  window.removeEventListener('resize', checkMobile)
 })
 
 watch(
@@ -214,7 +212,7 @@ watch(
   min-height: 0;
 }
 
-@media (max-width: 768px) {
+@media (--phone) {
   .shopping-cart-root {
     /* 移动端：零尺寸根，避免在 flex column 父容器里抢占高度 */
     height: 0;
@@ -240,30 +238,30 @@ watch(
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
+  padding: 0 var(--space-lg);
   border-bottom: 1px solid var(--border-color);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   color: var(--primary-text-color);
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 .header-icon {
-  font-size: 1.4rem;
+  font-size: var(--font-xl);
 }
 .header-title {
   font-size: var(--font-lg);
-  font-weight: 800;
+  font-weight: var(--weight-bold);
 }
 .count-badge {
-  background: var(--error-color, #d03050);
-  color: white;
+  background: var(--error-color);
+  color: var(--text-white);
   font-size: var(--font-base);
-  font-weight: 800;
-  padding: 2px 8px;
+  font-weight: var(--weight-bold);
+  padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-lg);
   line-height: 1.3;
   min-width: 24px;
@@ -273,12 +271,12 @@ watch(
 .header-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 .total-price {
   font-family: 'DIN Alternate', sans-serif;
   font-size: var(--font-xl);
-  font-weight: 800;
+  font-weight: var(--weight-bold);
   color: var(--accent-color);
 }
 
@@ -296,7 +294,7 @@ watch(
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 0 12px;
+  padding: 0 var(--space-md);
 }
 
 /* 列表项 */
@@ -308,8 +306,8 @@ watch(
 .cart-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 0;
+  gap: var(--space-sm);
+  padding: var(--space-sm) 0;
   border-bottom: 1px dashed var(--border-color);
 }
 
@@ -331,8 +329,8 @@ watch(
   object-fit: cover;
 }
 .thumb-fallback {
-  font-size: 16px;
-  font-weight: 700;
+  font-size: var(--font-base);
+  font-weight: var(--weight-bold);
   color: var(--text-muted);
 }
 
@@ -342,15 +340,15 @@ watch(
 }
 .item-name {
   font-size: var(--font-md);
-  font-weight: 600;
-  margin-bottom: 4px;
+  font-weight: var(--weight-bold);
+  margin-bottom: var(--space-xs);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .unit-price {
   font-size: var(--font-base);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   color: var(--accent-color);
 }
 
@@ -359,9 +357,9 @@ watch(
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-xs);
   background: var(--bg-secondary);
-  padding: 3px;
+  padding: var(--space-xs);
   border-radius: var(--radius-md);
 }
 .ctrl-btn {
@@ -373,8 +371,8 @@ watch(
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  font-size: 22px;
-  font-weight: 700;
+  font-size: var(--font-xl);
+  font-weight: var(--weight-bold);
   line-height: 1;
   box-shadow: var(--shadow-sm);
   -webkit-tap-highlight-color: transparent;
@@ -387,13 +385,13 @@ watch(
 }
 .ctrl-btn.plus {
   background: var(--accent-color);
-  color: white;
+  color: var(--text-white);
 }
 .ctrl-btn:active {
   transform: scale(0.9);
 }
 .qty {
-  font-weight: 800;
+  font-weight: var(--weight-bold);
   font-size: var(--font-lg);
   min-width: 28px;
   text-align: center;
@@ -402,8 +400,9 @@ watch(
 
 /* 底部结算 */
 .cart-footer {
-  padding: 16px;
-  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  padding: var(--space-lg);
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- iPhone 底部安全区适配，env() 无法用 space token 表达 */
+  padding-bottom: calc(var(--space-lg) + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--border-color);
   background: var(--card-bg-color);
 }
@@ -411,7 +410,7 @@ watch(
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-md);
   font-size: var(--font-base);
   color: var(--text-muted);
 }
@@ -427,19 +426,19 @@ watch(
   font-size: var(--font-sm);
 }
 .quote-notice {
-  margin: 0.25rem 0;
+  margin: var(--space-xs) 0;
   font-size: var(--font-sm);
   color: var(--warning-color);
   line-height: 1.4;
 }
 .big-total {
-  font-size: 1.8rem;
-  font-weight: 900;
+  font-size: var(--font-2xl);
+  font-weight: var(--weight-bold);
   color: var(--accent-color);
   font-variant-numeric: tabular-nums;
 }
 .checkout-btn {
-  font-weight: 800;
+  font-weight: var(--weight-bold);
   font-size: var(--font-lg);
   height: 48px;
 }
@@ -452,27 +451,7 @@ watch(
   align-items: center;
   justify-content: center;
   min-height: 200px;
-  padding: 24px 16px;
-}
-.empty-icon {
-  font-size: 3rem;
-  margin-bottom: 12px;
-  opacity: 0.25;
-}
-.empty-title {
-  font-size: var(--font-base);
-  font-weight: 600;
-  color: var(--text-muted);
-  margin: 0 0 8px;
-}
-.empty-hint {
-  font-size: var(--font-sm, 13px);
-  font-weight: 500;
-  color: var(--text-muted);
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  padding: var(--space-xl) var(--space-lg);
 }
 .hint-plus {
   display: inline-flex;
@@ -482,9 +461,9 @@ watch(
   height: 20px;
   border-radius: 50%;
   background: var(--accent-color);
-  color: #fff;
-  font-size: 14px;
-  font-weight: 700;
+  color: var(--text-white);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-bold);
   line-height: 1;
 }
 
@@ -503,6 +482,7 @@ watch(
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   box-shadow: var(--shadow-xl);
   transform: translateY(calc(100% - 60px - env(safe-area-inset-bottom))); /* 默认只露出头部 */
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- iPhone 底部安全区适配，env() 无法用 space token 表达 */
   padding-bottom: env(safe-area-inset-bottom); /* 适配 iPhone X 横条 */
 }
 
@@ -529,23 +509,13 @@ watch(
 .cart-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--overlay-color);
   backdrop-filter: blur(2px);
   z-index: 1999;
 }
 
-/* 动画 */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s;
-}
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-
 /* 窄屏（手机）：允许商品名占 2 行，避免过早被截断 */
-@media (max-width: 480px) {
+@media (--phone) {
   .item-name {
     white-space: normal;
     display: -webkit-box;

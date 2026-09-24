@@ -146,10 +146,7 @@
               @add-to-cart="store.addToCart"
               @order-changed="saveOrderToLocal"
             />
-            <div v-else class="empty-state">
-              <span class="empty-emoji">🌵</span>
-              <p>暂无商品</p>
-            </div>
+            <EmptyState v-else icon="🌵" title="暂无商品" />
           </n-spin>
         </div>
       </div>
@@ -235,7 +232,7 @@
     />
 
     <!-- ======== 闲置吸引屏 ======== -->
-    <Transition name="attract-fade">
+    <Transition name="fade">
       <div v-if="showAttractScreen" class="attract-screen">
         <div class="attract-content">
           <p class="attract-welcome">欢迎光临</p>
@@ -298,6 +295,7 @@
 
 <script setup lang="ts">
 import { useFeedback } from '@/composables/useFeedback'
+import { useViewport } from '@/composables/useViewport'
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useCustomerStore } from '@/stores/customerStore'
 import { useConnectionCheck } from '@/composables/useConnectionCheck'
@@ -305,13 +303,13 @@ import ProductGrid from '@/components/customer/ProductGrid.vue'
 import ShoppingCart from '@/components/customer/ShoppingCart.vue'
 import PaymentModal from '@/components/customer/PaymentModal.vue'
 import VisionSearch from '@/components/shared/VisionSearch.vue'
+import { EmptyState } from '@/components/ui'
 import { cents, formatYuan, type Cents } from '@/utils/money'
 import type { Schemas } from '@/api/client'
-import { NScrollbar, NSpin, NSlider, NButton, useDialog } from 'naive-ui'
+import { NScrollbar, NSpin, NSlider, NButton } from 'naive-ui'
 
 const props = defineProps<{ id: string }>()
 const store = useCustomerStore()
-const dialog = useDialog()
 const { isConnected } = useConnectionCheck()
 
 // ===================== 模式切换 =====================
@@ -364,21 +362,19 @@ function onCardSizeUserChange() {
   userTouchedCardSize.value = true
 }
 
-const isMobile = ref(false)
+const { isPhone } = useViewport()
+const isMobile = isPhone
 function syncLayout() {
-  const mobile = window.innerWidth <= 768
-  isMobile.value = mobile
-  if (!userTouchedCardSize.value) cardSizeIndex.value = mobile ? 0 : 1
+  if (!userTouchedCardSize.value) cardSizeIndex.value = isMobile.value ? 0 : 1
 }
+watch(isMobile, syncLayout)
 
 onMounted(() => {
   store.setupStoreForEvent(props.id)
   syncLayout()
-  window.addEventListener('resize', syncLayout)
   ACTIVITY_EVENTS.forEach((e) => window.addEventListener(e, onUserActivity, { passive: true }))
 })
 onUnmounted(() => {
-  window.removeEventListener('resize', syncLayout)
   ACTIVITY_EVENTS.forEach((e) => window.removeEventListener(e, onUserActivity))
   clearTimeout(idleTimer ?? undefined)
   clearTimeout(guideTimer ?? undefined)
@@ -545,36 +541,37 @@ async function handleCheckout() {
   const itemCount = store.cartItemCount
   const totalAmount = store.cartSummary.payable // 确认框里也该是折后价
 
-  dialog.info({
-    title: '确认下单',
-    content: `共 ${itemCount} 件商品，合计 ${formatYuan(totalAmount)}`,
-    positiveText: '确认下单',
-    negativeText: '再看看',
-    onPositiveClick: async () => {
-      isCheckingOut.value = true
-      try {
-        const newOrder = await store.submitOrder()
-        if (newOrder) {
-          // **金额取自下单响应，不是购物车的报价。** 报价只是预览，两次之间
-          // 摊主完全可能刚改过 Lot 配置——顾客扫码付的数必须是服务端落账的那个数。
-          orderTotal.value = newOrder.final_amount
-          showPaymentModal.value = true
-          store.clearCart()
-          store.fetchProductsForEvent()
-        }
-      } catch (error) {
-        fb.alert({
-          title: '错误',
-          content: (error instanceof Error && error.message) || '下单失败',
-          type: 'error',
-        })
+  if (
+    await fb.confirm({
+      title: '确认下单',
+      content: `共 ${itemCount} 件商品，合计 ${formatYuan(totalAmount)}`,
+      positiveText: '确认下单',
+      negativeText: '再看看',
+    })
+  ) {
+    isCheckingOut.value = true
+    try {
+      const newOrder = await store.submitOrder()
+      if (newOrder) {
+        // **金额取自下单响应，不是购物车的报价。** 报价只是预览，两次之间
+        // 摊主完全可能刚改过 Lot 配置——顾客扫码付的数必须是服务端落账的那个数。
+        orderTotal.value = newOrder.final_amount
+        showPaymentModal.value = true
         store.clearCart()
         store.fetchProductsForEvent()
-      } finally {
-        isCheckingOut.value = false
       }
-    },
-  })
+    } catch (error) {
+      fb.alert({
+        title: '错误',
+        content: (error instanceof Error && error.message) || '下单失败',
+        type: 'error',
+      })
+      store.clearCart()
+      store.fetchProductsForEvent()
+    } finally {
+      isCheckingOut.value = false
+    }
+  }
 }
 function closePaymentModal() {
   showPaymentModal.value = false
@@ -612,8 +609,8 @@ function closePaymentModal() {
   height: 48px;
   display: flex;
   align-items: center;
-  padding: 0 16px;
-  font-weight: 800;
+  padding: 0 var(--space-lg);
+  font-weight: var(--weight-bold);
   font-size: var(--font-md);
   border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
@@ -626,11 +623,11 @@ function closePaymentModal() {
 :deep(.sidebar-content) {
   display: flex;
   flex-direction: column;
-  padding: 8px;
-  gap: 2px;
+  padding: var(--space-sm);
+  gap: var(--space-xs);
 }
 .menu-item {
-  padding: 8px 12px;
+  padding: var(--space-sm) var(--space-md);
   border-radius: var(--radius-md);
   cursor: pointer;
   font-size: var(--font-base);
@@ -647,12 +644,12 @@ function closePaymentModal() {
 .menu-item.active {
   background-color: color-mix(in srgb, var(--accent-color) 18%, transparent);
   color: var(--accent-color);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
 }
 .active-indicator {
   width: 4px;
   height: 14px;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   background-color: var(--accent-color);
 }
 
@@ -675,14 +672,14 @@ function closePaymentModal() {
 
 .toolbar-categories {
   display: flex;
-  gap: 6px;
-  padding: 8px 12px 0;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md) 0;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
 .cat-chip {
   flex-shrink: 0;
-  padding: 4px 14px;
+  padding: var(--space-xs) var(--space-md);
   border-radius: var(--radius-pill);
   font-size: var(--font-sm);
   cursor: pointer;
@@ -693,23 +690,23 @@ function closePaymentModal() {
 }
 .cat-chip.active {
   background: var(--accent-color);
-  color: white;
+  color: var(--text-white);
 }
 
 .toolbar-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
-  gap: 8px;
+  padding: var(--space-sm) var(--space-md);
+  gap: var(--space-sm);
 }
 
 .toolbar-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-sm);
   background: var(--card-bg-color);
-  padding: 4px 12px;
+  padding: var(--space-xs) var(--space-md);
   border-radius: var(--radius-pill);
   border: 1px solid var(--border-color);
 }
@@ -727,7 +724,7 @@ function closePaymentModal() {
 .toolbar-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 
 .admin-toggle-btn {
@@ -737,7 +734,7 @@ function closePaymentModal() {
   border: 1px solid var(--border-color);
   background: var(--bg-secondary);
   color: var(--text-muted);
-  font-size: 16px;
+  font-size: var(--font-base);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -747,17 +744,17 @@ function closePaymentModal() {
 }
 .admin-toggle-btn.active {
   background: var(--accent-color);
-  color: white;
+  color: var(--text-white);
   border-color: var(--accent-color);
 }
 
 .toolbar-nav {
   display: flex;
-  gap: 6px;
-  padding: 0 12px 8px;
+  gap: var(--space-sm);
+  padding: 0 var(--space-md) var(--space-sm);
 }
 .nav-chip {
-  padding: 4px 12px;
+  padding: var(--space-xs) var(--space-md);
   border-radius: var(--radius-pill);
   font-size: var(--font-sm);
   background: var(--bg-secondary);
@@ -768,23 +765,23 @@ function closePaymentModal() {
 }
 .nav-chip:hover {
   background: var(--accent-color);
-  color: white;
+  color: var(--text-white);
   border-color: var(--accent-color);
 }
 
 /* 模式切换 */
 .mode-toggle {
   display: flex;
-  gap: 2px;
+  gap: var(--space-xs);
   background: var(--bg-secondary);
-  padding: 3px;
+  padding: var(--space-xs);
   border-radius: var(--radius-pill);
   border: 1px solid var(--border-color);
 }
 .mode-btn {
   border: none;
   background: transparent;
-  padding: 4px 14px;
+  padding: var(--space-xs) var(--space-md);
   border-radius: var(--radius-pill);
   font-size: var(--font-sm);
   cursor: pointer;
@@ -794,15 +791,15 @@ function closePaymentModal() {
 }
 .mode-btn.active {
   background: var(--accent-color);
-  color: white;
-  font-weight: 600;
+  color: var(--text-white);
+  font-weight: var(--weight-bold);
 }
 
 /* ===== 标签筛选栏 ===== */
 .tag-filter-bar {
   display: flex;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
   overflow-x: auto;
   flex-shrink: 0;
   scrollbar-width: none;
@@ -813,12 +810,12 @@ function closePaymentModal() {
 
 .tag-chip {
   flex-shrink: 0;
-  padding: 4px 14px;
-  border-radius: 999px;
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-pill);
   border: 1.5px solid var(--border-color);
   background: var(--card-bg-color);
   color: var(--text-color);
-  font-size: var(--font-sm, 13px);
+  font-size: var(--font-sm);
   cursor: pointer;
   user-select: none;
   transition: all 0.15s;
@@ -830,8 +827,8 @@ function closePaymentModal() {
 .tag-chip.active {
   background: var(--accent-color);
   border-color: var(--accent-color);
-  color: #fff;
-  font-weight: 600;
+  color: var(--text-white);
+  font-weight: var(--weight-bold);
 }
 
 /* ===== 商品滚动区 ===== */
@@ -840,25 +837,11 @@ function closePaymentModal() {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 8px 12px;
+  padding: var(--space-sm) var(--space-md);
 }
 
 .spin-content {
   min-height: 100%;
-}
-
-.empty-state {
-  height: 100%;
-  min-height: 200px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-}
-.empty-emoji {
-  font-size: 3rem;
-  margin-bottom: 10px;
 }
 
 /* ===== Vision 面板 body ===== */
@@ -866,7 +849,7 @@ function closePaymentModal() {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  padding: 12px;
+  padding: var(--space-md);
   display: flex;
   flex-direction: column;
 }
@@ -893,6 +876,7 @@ function closePaymentModal() {
   overflow: hidden;
   background: var(--bg-color);
   /* iPhone X+ 刘海/底部横条安全区 */
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- iPhone 安全区适配，env() 无法用 space token 表达 */
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
     env(safe-area-inset-left);
   box-sizing: border-box;
@@ -903,29 +887,30 @@ function closePaymentModal() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 
 .attract-welcome {
   font-size: var(--font-xl);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   color: var(--text-muted);
   margin: 0;
   letter-spacing: 0.2em;
 }
 
 .attract-event {
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- 引导屏 Hero 展会名，clamp 响应式字号，缩小影响观感 */
   font-size: clamp(2rem, 5vw, 3.5rem);
-  font-weight: 900;
+  font-weight: var(--weight-bold);
   color: var(--accent-color);
-  margin: 0 0 2rem;
+  margin: 0 0 var(--space-2xl);
   line-height: 1.2;
 }
 
 .attract-modes {
   display: flex;
-  gap: 20px;
-  margin: 2rem 0 0;
+  gap: var(--space-lg);
+  margin: var(--space-2xl) 0 0;
   flex-wrap: wrap;
   justify-content: center;
 }
@@ -934,8 +919,8 @@ function closePaymentModal() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 24px 32px;
+  gap: var(--space-sm);
+  padding: var(--space-xl) var(--space-2xl);
   border: 2px solid var(--border-color);
   border-radius: var(--radius-md);
   background: var(--card-bg-color);
@@ -951,25 +936,25 @@ function closePaymentModal() {
 }
 
 .attract-mode-icon {
-  font-size: 2.5rem;
+  font-size: var(--font-2xl);
   line-height: 1;
 }
 
 .attract-mode-label {
   font-size: var(--font-lg);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   color: var(--primary-text-color);
 }
 
 .attract-mode-desc {
-  font-size: var(--font-sm, 13px);
+  font-size: var(--font-sm);
   color: var(--text-muted);
   max-width: 140px;
   line-height: 1.4;
 }
 
 .attract-sub {
-  margin: 2rem 0 0;
+  margin: var(--space-2xl) 0 0;
   font-size: var(--font-base);
   color: var(--text-muted);
   opacity: 0.5;
@@ -980,48 +965,37 @@ function closePaymentModal() {
   opacity: 0.8;
 }
 
-.attract-fade-enter-active {
-  transition: opacity 0.3s;
-}
-.attract-fade-leave-active {
-  transition: opacity 0.5s;
-}
-.attract-fade-enter-from,
-.attract-fade-leave-to {
-  opacity: 0;
-}
-
 /* ===================== 引导条 ===================== */
 .guide-toast {
   position: fixed;
   /* 避开 iPhone X+ 底部手势横条 */
-  bottom: calc(24px + env(safe-area-inset-bottom));
+  bottom: calc(var(--space-xl) + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
   z-index: 8000;
-  padding: 14px 24px;
+  padding: var(--space-md) var(--space-xl);
   background: var(--card-bg-color);
   border: 1.5px solid var(--border-color);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.15));
+  box-shadow: var(--shadow-lg);
   cursor: pointer;
   user-select: none;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-sm);
 }
 
 .guide-mode-label {
-  font-size: 11px;
-  font-weight: 700;
+  font-size: var(--font-xs);
+  font-weight: var(--weight-bold);
   color: var(--accent-color);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .guide-switch-hint {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--text-muted);
   opacity: 0.7;
 }
@@ -1029,8 +1003,8 @@ function closePaymentModal() {
 .guide-steps {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: var(--font-sm, 13px);
+  gap: var(--space-sm);
+  font-size: var(--font-sm);
   color: var(--text-color);
   flex-wrap: wrap;
   justify-content: center;
@@ -1039,7 +1013,7 @@ function closePaymentModal() {
 .guide-step {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-sm);
 }
 
 .guide-num {
@@ -1050,15 +1024,15 @@ function closePaymentModal() {
   height: 20px;
   border-radius: 50%;
   background: var(--accent-color);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
+  color: var(--text-white);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-bold);
   flex-shrink: 0;
 }
 
 .guide-arrow {
   color: var(--text-muted);
-  font-size: 16px;
+  font-size: var(--font-base);
 }
 
 .guide-toast-enter-active {
@@ -1087,12 +1061,12 @@ function closePaymentModal() {
   left: 0;
   right: 0;
   z-index: 8500;
-  padding: 10px 16px;
+  padding: var(--space-sm) var(--space-lg);
   text-align: center;
   font-size: var(--font-base);
-  font-weight: 600;
-  color: white;
-  background: var(--error-color, #d03050);
+  font-weight: var(--weight-bold);
+  color: var(--text-white);
+  background: var(--error-color);
   box-shadow: var(--shadow-md);
   animation: disconnect-pulse 2s ease-in-out infinite;
 }
@@ -1107,7 +1081,7 @@ function closePaymentModal() {
 }
 
 /* ===================== Mobile ===================== */
-@media (max-width: 768px) {
+@media (--phone) {
   .customer-view {
     flex-direction: column;
   }
@@ -1120,11 +1094,13 @@ function closePaymentModal() {
 
   .product-scroll {
     /* 给底部悬浮购物车留空间 */
-    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    /* stylelint-disable-next-line declaration-property-value-allowed-list -- iPhone 底部安全区适配，env() 无法用 space token 表达 */
+    padding-bottom: calc(var(--space-xl) * 3 + env(safe-area-inset-bottom, 0px));
   }
 
   .vision-panel__body {
-    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    /* stylelint-disable-next-line declaration-property-value-allowed-list -- iPhone 底部安全区适配，env() 无法用 space token 表达 */
+    padding-bottom: calc(var(--space-xl) * 3 + env(safe-area-inset-bottom, 0px));
   }
 
   .toolbar-left .slider-wrap {
@@ -1132,8 +1108,8 @@ function closePaymentModal() {
   }
 
   .toolbar-right :deep(.n-button) {
-    padding: 0 8px;
-    font-size: 0.75rem;
+    padding: 0 var(--space-sm);
+    font-size: var(--font-xs);
   }
 }
 </style>
