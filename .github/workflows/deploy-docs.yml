@@ -4,8 +4,8 @@ on:
   push:
     branches: [main] # 确保你的主分支叫 main，如果是 master 请修改
     paths:
-      - 'docs/**'
-      - '.github/workflows/deploy-docs.yml'
+      - "docs/**"
+      - ".github/workflows/deploy-docs.yml"
 
 permissions:
   contents: read

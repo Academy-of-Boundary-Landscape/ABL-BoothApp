@@ -7,8 +7,8 @@ export default defineConfig(({ mode }) => {
     plugins: [vue()],
     resolve: {
       alias: {
-        '@': fileURLToPath(new URL('./src', import.meta.url))
-      }
+        '@': fileURLToPath(new URL('./src', import.meta.url)),
+      },
     },
     server: {
       //host : '0.0.0.0',
@@ -25,7 +25,7 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: 'http://127.0.0.1:5140',
           changeOrigin: true,
-        }
+        },
       },
       port: 5173,
       strictPort: true,
