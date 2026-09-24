@@ -13,8 +13,8 @@
     "test:unit": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint . --max-warnings 0",
-    "format": "prettier --write src/",
-    "format:check": "prettier --check src/",
+    "format": "prettier --write src/ scripts/ '*.ts' '*.json' '../.github/**/*.yml'",
+    "format:check": "prettier --check src/ scripts/ '*.ts' '*.json' '../.github/**/*.yml'",
     "gen:api": "node scripts/gen-api.mjs",
     "typecheck": "vue-tsc --build --force"
   },
