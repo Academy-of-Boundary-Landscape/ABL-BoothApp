@@ -752,7 +752,7 @@ async fn quote(
 #[cfg(test)]
 mod tests {
     use crate::test_support::{
-        admin_token, json_request, read_json, seed_event_and_product, test_router_with,
+        admin_token, json_request, read_json, seed_event_and_product, seed_lot, test_router_with,
     };
     use axum::http::StatusCode;
     use serde_json::json;
@@ -1508,5 +1508,74 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(lots, 0, "试算是只读的");
+    }
+
+    #[tokio::test]
+    async fn quote_refuses_a_cart_that_blows_the_search_budget() {
+        // ②-2 deferred #3。超限必须是可读的 400 而不是让公开未鉴权端点
+        // 把一个核转满。**不要改成「预算内尽力搜」**——母 spec 第 10 节把那条路砍掉了，
+        // 「优惠算得不一样」比「算不出来」更难向顾客解释。
+        //
+        // 规模照 domain/solver.rs 顶部的常量反推：状态空间是 Π(qty_i + 1)、只数
+        // 参与 Lot 的商品；总件数另受 MAX_UNITS 限。18 个商品各 1 件 ⇒
+        // 空间 2^18 = 262144 > MAX_STATE_SPACE(200000)，而总件数只有 18 ≤ MAX_UNITS(300)。
+        // **不要照 40 × 8 那组数**：那是 320 件，先撞 MAX_UNITS，测不到这条。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _, _) = seed_event_and_product(&pool).await;
+
+        let mut items = Vec::new();
+        for i in 0..18 {
+            let master = 100 + i;
+            let ep = 100 + i;
+            sqlx::query(
+                "INSERT INTO master_products (id, product_code, name, default_price, owner_society_id)
+                 VALUES (?, ?, ?, 10.0, 1)",
+            )
+            .bind(master)
+            .bind(format!("M{i}"))
+            .bind(format!("母商品{i}"))
+            .execute(&pool)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO event_products
+                   (id, event_id, master_product_id, owner_society_id, product_code, name, unit_price)
+                 VALUES (?, 1, ?, 1, ?, ?, 1000)",
+            )
+            .bind(ep)
+            .bind(master)
+            .bind(format!("P{i}"))
+            .bind(format!("商品{i}"))
+            .execute(&pool)
+            .await
+            .unwrap();
+            items.push(json!({"product_id": ep, "quantity": 1}));
+        }
+        seed_lot(
+            &pool,
+            event_id,
+            "任选5件",
+            5,
+            4000,
+            &(100..118).collect::<Vec<i64>>(),
+        )
+        .await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/quote"),
+                None,
+                json!({"items": items}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        let body = read_json(res).await;
+        assert!(
+            body["error"].as_str().unwrap().contains("分单"),
+            "要告诉摊主该怎么办：{body}"
+        );
     }
 }

@@ -931,4 +931,82 @@ mod tests {
             "按商品汇总之和必须等于总额——这条由「同一订单 Σ paid = final_amount」结构上保证"
         );
     }
+
+    async fn place(router: &axum::Router, event_id: i64, items: serde_json::Value) -> i64 {
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None,
+                json!({ "items": items }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+        read_json(res).await["id"].as_i64().unwrap()
+    }
+
+    #[tokio::test]
+    async fn paid_amounts_sum_to_final_amounts_across_mixed_statuses() {
+        // ②-2 deferred #2。pending / completed / cancelled 三种状态混在一起时，
+        // 「Σ order_lines.paid_amount == Σ orders.final_amount」必须仍然成立——
+        // 仪表盘的「总额」和「按商品汇总之和」结构上相等就靠这一条。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, ep_b) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+
+        let completed = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_a, "quantity": 1}]),
+        )
+        .await;
+        router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{completed}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "现金", "final_amount": 2800}),
+            ))
+            .await
+            .unwrap();
+
+        let cancelled = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_b, "quantity": 1}]),
+        )
+        .await;
+        router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{cancelled}/status"),
+                Some(&token),
+                json!({"status": "cancelled"}),
+            ))
+            .await
+            .unwrap();
+
+        place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_b, "quantity": 2}]),
+        )
+        .await; // pending
+
+        let (sum_paid, sum_final): (i64, i64) = sqlx::query_as(
+            "SELECT (SELECT COALESCE(SUM(ol.paid_amount), 0)
+                     FROM order_lines ol JOIN orders o ON o.id = ol.order_id
+                     WHERE o.event_id = ?1),
+                    (SELECT COALESCE(SUM(final_amount), 0) FROM orders WHERE event_id = ?1)",
+        )
+        .bind(event_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(sum_paid, sum_final);
+    }
 }

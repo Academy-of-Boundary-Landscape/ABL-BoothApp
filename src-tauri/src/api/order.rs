@@ -1492,6 +1492,56 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn marking_up_an_all_consignment_order_charges_the_home_society() {
+        // ②-2 deferred #1。折让方向有测试，加价方向没有。
+        // 加价时那条腿是反的（社团往来:本社团 → 实收），写反了照样平账，
+        // 只有盯着本社团余额的符号才看得出。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _, ep_b) = seed_event_and_product(&pool).await;
+        let order_id = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_b, "quantity": 1}]),
+        )
+        .await;
+        let token = admin_token();
+
+        // 原价 2000，顾客给了 2500（凑整、打赏）
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "现金", "final_amount": 2500}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::SocietyDue(2))
+                .await
+                .unwrap(),
+            Money::from_cents(-2000),
+            "代卖社团只拿原价——多的 5 块不是他们的货挣的"
+        );
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::SocietyDue(1))
+                .await
+                .unwrap(),
+            Money::from_cents(-500),
+            "多出来的 5 块归本社团。写反方向的话这里会是 +500"
+        );
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::Received("现金".into()))
+                .await
+                .unwrap(),
+            Money::from_cents(2500)
+        );
+    }
+
+    #[tokio::test]
     async fn paid_amounts_always_add_up_to_the_final_amount() {
         // spec 4.5 的第二条不变量。Task 9 的统计口径完全押在它上面。
         let (router, _dir, pool) = test_router_with().await;
