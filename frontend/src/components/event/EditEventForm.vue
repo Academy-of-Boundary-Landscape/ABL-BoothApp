@@ -9,7 +9,7 @@
       <label for="edit-date">日期:</label>
       <n-date-picker
         id="edit-date"
-        v-model:value="editableEvent.date"
+        v-model:formatted-value="editableEvent.date"
         type="date"
         value-format="yyyy-MM-dd"
       />
@@ -53,24 +53,38 @@
   </n-form>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 import { NDatePicker, NForm, NInput } from 'naive-ui'
 
+import type { Schemas } from '@/api/client'
 import ImageUploader from '@/components/shared/ImageUploader.vue'
 
-const props = defineProps({
-  event: {
-    type: Object,
-    required: true,
-  },
-})
+type EditableEvent = Omit<Schemas['EventResponse'], 'date'> & {
+  date: string | null
+  vendor_password: string
+}
+
+const props = defineProps<{
+  // 契约缺口：编辑表单要回填 vendor_password，但 EventResponse 里没有这个字段。
+  // 父组件传的是 store 里的 EventResponse，实际总是 undefined（留空 = 不改密码）。
+  event: Schemas['EventResponse'] & { vendor_password?: string | null }
+}>()
 
 const errorMessage = ref('')
-const editableEvent = ref({})
-const newQrWechat = ref(null)
-const newQrAlipay = ref(null)
-const removedSlots = ref(new Set())
+const editableEvent = ref<EditableEvent>({
+  id: 0,
+  name: '',
+  date: null,
+  location: '',
+  qrcode_url: '',
+  qrcode_urls: [],
+  status: '筹备',
+  vendor_password: '',
+})
+const newQrWechat = ref<File | undefined>(undefined)
+const newQrAlipay = ref<File | undefined>(undefined)
+const removedSlots = ref<Set<number>>(new Set())
 
 // 现有的收款码 URL 数组
 const existingQrUrls = computed(() => {
@@ -90,23 +104,23 @@ watch(
     if (!editableEvent.value.date) {
       editableEvent.value.date = null
     }
-    newQrWechat.value = null
-    newQrAlipay.value = null
+    newQrWechat.value = undefined
+    newQrAlipay.value = undefined
     removedSlots.value = new Set()
     errorMessage.value = ''
   },
   { immediate: true }
 )
 
-function handleQrRemoved(index) {
+function handleQrRemoved(index: number) {
   removedSlots.value.add(index)
 }
 
-function handleInvalidFile(message) {
+function handleInvalidFile(message: string) {
   errorMessage.value = message
 }
 
-function submit() {
+function submit(): FormData | null {
   if (!editableEvent.value.name || !editableEvent.value.date) {
     errorMessage.value = '展会名称和日期不能为空。'
     return null
@@ -114,7 +128,7 @@ function submit() {
 
   errorMessage.value = ''
   const formData = new FormData()
-  formData.append('id', editableEvent.value.id)
+  formData.append('id', String(editableEvent.value.id))
   formData.append('name', editableEvent.value.name)
   formData.append('date', editableEvent.value.date)
   formData.append('location', editableEvent.value.location || '')

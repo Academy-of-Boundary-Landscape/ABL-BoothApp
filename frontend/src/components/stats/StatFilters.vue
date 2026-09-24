@@ -30,37 +30,49 @@
   </div>
 </template>
 
-<script setup>
-defineProps({
-  productOptions: { type: Array, default: () => [] },
-  selectedProduct: { type: String, default: '' },
-  startDate: { type: String, default: '' },
-  endDate: { type: String, default: '' },
-  intervalMinutes: { type: Number, default: 60 },
-})
+<script setup lang="ts">
+/** 父组件从 stats.summary 里映射出来的最小选项：code 来自 product_code。 */
+type ProductOption = { code: string; name: string }
 
-const emit = defineEmits([
-  'update:selectedProduct',
-  'update:startDate',
-  'update:endDate',
-  'update:intervalMinutes',
-  'change',
-])
+withDefaults(
+  defineProps<{
+    productOptions?: ProductOption[]
+    selectedProduct?: string
+    startDate?: string
+    endDate?: string
+    intervalMinutes?: number
+  }>(),
+  {
+    productOptions: () => [],
+    selectedProduct: '',
+    startDate: '',
+    endDate: '',
+    intervalMinutes: 60,
+  }
+)
 
-function onProduct(e) {
-  emit('update:selectedProduct', e.target.value)
+const emit = defineEmits<{
+  (e: 'update:selectedProduct', v: string): void
+  (e: 'update:startDate', v: string): void
+  (e: 'update:endDate', v: string): void
+  (e: 'update:intervalMinutes', v: number): void
+  (e: 'change'): void
+}>()
+
+function onProduct(e: Event) {
+  emit('update:selectedProduct', (e.target as HTMLSelectElement).value)
   emit('change')
 }
-function onStart(e) {
-  emit('update:startDate', e.target.value)
+function onStart(e: Event) {
+  emit('update:startDate', (e.target as HTMLInputElement).value)
   emit('change')
 }
-function onEnd(e) {
-  emit('update:endDate', e.target.value)
+function onEnd(e: Event) {
+  emit('update:endDate', (e.target as HTMLInputElement).value)
   emit('change')
 }
-function onInterval(e) {
-  emit('update:intervalMinutes', Number(e.target.value))
+function onInterval(e: Event) {
+  emit('update:intervalMinutes', Number((e.target as HTMLSelectElement).value))
   emit('change')
 }
 </script>

@@ -67,7 +67,7 @@
   </section>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref } from 'vue'
 import { NButton, NDatePicker, NForm, NInput } from 'naive-ui'
 
@@ -75,22 +75,29 @@ import ImageUploader from '@/components/shared/ImageUploader.vue'
 import { useEventStore } from '@/stores/eventStore'
 import { IMAGE_UPLOAD_LIMIT_MB, normalizeUploadError, showUploadDialog } from '@/utils/upload'
 
+type EventFormData = {
+  name: string
+  date: string | null
+  location: string
+  vendor_password: string
+}
+
 const store = useEventStore()
 const isSubmitting = ref(false)
 const errorMessage = ref('')
 const isCollapsed = ref(false)
 
-const formData = ref({
+const formData = ref<EventFormData>({
   name: '',
   date: null,
   location: '',
   vendor_password: '',
 })
 
-const qrCodeWechat = ref(null)
-const qrCodeAlipay = ref(null)
+const qrCodeWechat = ref<File | undefined>(undefined)
+const qrCodeAlipay = ref<File | undefined>(undefined)
 
-function handleInvalidFile(message) {
+function handleInvalidFile(message: string) {
   errorMessage.value = message
 }
 
@@ -120,8 +127,8 @@ async function handleSubmit() {
   try {
     await store.createEvent(submissionData)
     formData.value = { name: '', date: null, location: '', vendor_password: '' }
-    qrCodeWechat.value = null
-    qrCodeAlipay.value = null
+    qrCodeWechat.value = undefined
+    qrCodeAlipay.value = undefined
   } catch (error) {
     errorMessage.value = normalizeUploadError(error, IMAGE_UPLOAD_LIMIT_MB)
   } finally {

@@ -120,7 +120,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
 import { useEventStore } from '@/stores/eventStore'
 import AppModal from '@/components/shared/AppModal.vue'
@@ -128,16 +128,18 @@ import EditEventForm from '@/components/event/EditEventForm.vue'
 import EmptyGuide from '@/components/shared/EmptyGuide.vue'
 import { RouterLink } from 'vue-router'
 import { NInput, NDatePicker, NButton, NCard, NSpace, NTag } from 'naive-ui'
+import type { Schemas } from '@/api/client'
 
 const store = useEventStore()
-const updatingStatusId = ref(null)
+const updatingStatusId = ref<number | null>(null)
 
 // =======================================================
 // 【新增】搜索和过滤相关的状态
 // =======================================================
 const searchName = ref('')
-const dateRangeStart = ref(null)
-const dateRangeEnd = ref(null)
+// n-date-picker 的 v-model:value 带 value-format 时，onUpdate:value 仍发时间戳（number）。
+const dateRangeStart = ref<number | null>(null)
+const dateRangeEnd = ref<number | null>(null)
 const filteredEvents = computed(() => {
   // 从原始列表开始
   let events = store.events
@@ -150,7 +152,8 @@ const filteredEvents = computed(() => {
 
   // 2. 按开始日期过滤
   if (dateRangeStart.value) {
-    events = events.filter((event) => new Date(event.date) >= new Date(dateRangeStart.value))
+    const start = dateRangeStart.value
+    events = events.filter((event) => new Date(event.date) >= new Date(start))
   }
 
   // 3. 按结束日期过滤
@@ -173,19 +176,19 @@ function clearFilters() {
 
 // 【新增】编辑模态框相关的状态
 const isEditModalVisible = ref(false)
-const selectedEvent = ref(null)
-const editForm = ref(null) // 用于获取 EditEventForm 组件的实例
+const selectedEvent = ref<Schemas['EventResponse'] | null>(null)
+const editForm = ref<InstanceType<typeof EditEventForm> | null>(null) // 用于获取 EditEventForm 组件的实例
 
 onMounted(() => {
   store.fetchEvents()
 })
 
-const statusType = (status) => {
+const statusType = (status: Schemas['EventStatus']): 'warning' | 'default' | 'success' => {
   if (status === '进行中') return 'warning'
   if (status === '已结算') return 'default'
   return 'success' // 筹备
 }
-async function confirmDelete(event) {
+async function confirmDelete(event: Schemas['EventResponse']) {
   // 已结算的展会账已经冻结、往往还要留着对账，删除却是级联删掉整本账且不受
   // 冻结保护（后端 DELETE /events/:id 有意不守展会状态）。这里给一句明确的
   // 后果说明，不能和普通展会共用同一句「无法撤销」。
@@ -204,12 +207,12 @@ async function confirmDelete(event) {
       // alert('展会已删除');
     } catch (error) {
       // 显示错误信息
-      alert(error.message || '删除失败，请稍后再试。')
+      alert((error instanceof Error ? error.message : String(error)) || '删除失败，请稍后再试。')
     }
   }
 }
 // 【新增】处理状态变更的函数
-async function changeStatus(eventId, newStatus) {
+async function changeStatus(eventId: number, newStatus: Schemas['EventStatus']) {
   // 防止重复点击
   if (updatingStatusId.value) return
 
@@ -218,13 +221,13 @@ async function changeStatus(eventId, newStatus) {
     await store.updateEventStatus(eventId, newStatus)
   } catch (error) {
     // 如果 store 抛出错误，在这里通知用户
-    alert(error.message)
+    alert(error instanceof Error ? error.message : String(error))
   } finally {
     // 无论成功或失败，最后都清除更新中的状态
     updatingStatusId.value = null
   }
 }
-function openEditModal(event) {
+function openEditModal(event: Schemas['EventResponse']) {
   selectedEvent.value = event
   isEditModalVisible.value = true
 }
@@ -250,7 +253,7 @@ async function handleUpdateEvent() {
         console.log('更新成功')
         closeEditModal() // 成功后关闭模态框
       } catch (error) {
-        alert(error.message) // 显示错误
+        alert(error instanceof Error ? error.message : String(error)) // 显示错误
       }
     }
   }

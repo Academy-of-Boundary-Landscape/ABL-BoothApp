@@ -223,7 +223,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useEventDetailStore } from '@/stores/eventDetailStore'
 import { useProductStore } from '@/stores/productStore'
@@ -232,10 +232,29 @@ import AppModal from '@/components/shared/AppModal.vue'
 import HelpBubble from '@/components/shared/HelpBubble.vue'
 import EmptyGuide from '@/components/shared/EmptyGuide.vue'
 import CollapsibleSection from '@/components/shared/CollapsibleSection.vue'
-import { NInput, NSelect, NImage, NInputNumber, NButton, NSpace, useDialog } from 'naive-ui'
+import {
+  NInput,
+  NSelect,
+  NImage,
+  NInputNumber,
+  NButton,
+  NSpace,
+  useDialog,
+  type InputNumberInst,
+} from 'naive-ui'
+import type { Schemas } from '@/api/client'
 import { formatYuan, fromCents, toCents } from '@/utils/money'
 
-const props = defineProps({ id: { type: String, required: true } })
+type AddProductData = {
+  product_code: string
+  initial_stock: number | null
+  price: number | null
+}
+
+/** 弹窗里的价格是用户输入的「元」，unit_price 是后端的分。 */
+type EditableProduct = Schemas['ProductEventProduct'] & { price: number | null }
+
+const props = defineProps<{ id: number }>()
 
 const eventDetailStore = useEventDetailStore()
 const productStore = useProductStore()
@@ -243,15 +262,15 @@ const societyStore = useSocietyStore()
 const dialog = useDialog()
 
 const searchQuery = ref('')
-const stockInputRef = ref(null)
-const selectedCategory = ref(null)
+const stockInputRef = ref<InputNumberInst | null>(null)
+const selectedCategory = ref<string | null>(null)
 const isFormCollapsed = ref(false)
 const isListCollapsed = ref(false)
 
 const categoryOptions = computed(() => {
   const cats = (productStore.masterProducts || [])
     .map((p) => p.category)
-    .filter((cat) => !!cat && cat.trim() !== '')
+    .filter((cat): cat is string => !!cat && cat.trim() !== '')
   return [...new Set(cats)]
 })
 
@@ -284,15 +303,15 @@ const filteredProducts = computed(() => {
 
 const isAdding = ref(false)
 const addError = ref('')
-const addProductData = ref({ product_code: '', initial_stock: null, price: null })
+const addProductData = ref<AddProductData>({ product_code: '', initial_stock: null, price: null })
 
 // 选品预览里的归属社团：master_products 只带 owner_society_id，本地映射成名字。
-function societyName(societyId) {
+function societyName(societyId: number | null | undefined) {
   if (societyId === null || societyId === undefined) return ''
   return societyStore.societies.find((s) => s.id === societyId)?.name || ''
 }
 
-function selectProduct(product) {
+function selectProduct(product: Schemas['MasterProduct']) {
   addProductData.value.product_code = product.product_code
   // default_price 是元；0 也要回填，所以用 != null 而不是 truthy。
   if (product.default_price != null) {
@@ -312,20 +331,15 @@ async function handleAddProduct() {
       return
     }
 
-    if (
-      addProductData.value.initial_stock === null ||
-      addProductData.value.initial_stock === undefined
-    ) {
+    const initialStock = addProductData.value.initial_stock
+    if (initialStock === null || initialStock === undefined) {
       addError.value = '请输入初始库存'
       isAdding.value = false
       return
     }
 
     // 确保库存是整数
-    if (
-      !Number.isInteger(addProductData.value.initial_stock) ||
-      addProductData.value.initial_stock < 0
-    ) {
+    if (!Number.isInteger(initialStock) || initialStock < 0) {
       addError.value = '初始库存必须是非负整数'
       isAdding.value = false
       return
@@ -335,11 +349,11 @@ async function handleAddProduct() {
     // unit_price < 0 返回 400，DB 也有 CHECK (unit_price >= 0)。
 
     // 表单里用户输入的是元，接口收的是分（unit_price）。
-    const dataToSend = {
+    const dataToSend: Schemas['ProductAddRequest'] = {
       product_code: addProductData.value.product_code,
-      initial_stock: addProductData.value.initial_stock,
+      initial_stock: initialStock,
     }
-    if (addProductData.value.price !== null && addProductData.value.price !== '') {
+    if (addProductData.value.price !== null) {
       dataToSend.unit_price = toCents(addProductData.value.price)
     }
     await eventDetailStore.addProductToEvent(props.id, dataToSend)
@@ -347,7 +361,7 @@ async function handleAddProduct() {
     addProductData.value = { product_code: '', initial_stock: null, price: null }
     searchQuery.value = ''
   } catch (error) {
-    addError.value = error.message
+    addError.value = error instanceof Error ? error.message : String(error)
   } finally {
     isAdding.value = false
   }
@@ -356,11 +370,11 @@ async function handleAddProduct() {
 const isEditModalVisible = ref(false)
 const isUpdating = ref(false)
 const isRestocking = ref(false)
-const restockQty = ref(null)
+const restockQty = ref<number | null>(null)
 const editError = ref('')
-const editableProduct = ref(null)
+const editableProduct = ref<EditableProduct | null>(null)
 
-function openEditModal(product) {
+function openEditModal(product: Schemas['ProductEventProduct']) {
   // 表单里的价格用元，服务端的 unit_price 是分。
   editableProduct.value = { ...product, price: fromCents(product.unit_price) }
   restockQty.value = null
@@ -374,14 +388,15 @@ function closeEditModal() {
 }
 
 async function handleUpdate() {
-  if (!editableProduct.value) return
+  const product = editableProduct.value
+  if (!product) return
   isUpdating.value = true
   editError.value = ''
   try {
-    const { id, price } = editableProduct.value
+    const { id, price } = product
 
     // 只检查非空；负数由后端 400 拒绝（不再用负数表示折扣）。
-    if (price === null || price === undefined) {
+    if (price === null) {
       editError.value = '请输入有效的售价'
       isUpdating.value = false
       return
@@ -391,38 +406,35 @@ async function handleUpdate() {
     await eventDetailStore.updateEventProduct(id, { unit_price: toCents(price) })
     closeEditModal()
   } catch (error) {
-    editError.value = error.message
+    editError.value = error instanceof Error ? error.message : String(error)
   } finally {
     isUpdating.value = false
   }
 }
 
 async function handleRestock() {
-  if (!editableProduct.value) return
+  const product = editableProduct.value
+  if (!product) return
   const qty = restockQty.value
-  if (!Number.isInteger(qty) || qty <= 0) {
+  if (typeof qty !== 'number' || !Number.isInteger(qty) || qty <= 0) {
     editError.value = '补货数量必须是正整数'
     return
   }
   isRestocking.value = true
   editError.value = ''
   try {
-    const updated = await eventDetailStore.restockEventProduct(
-      props.id,
-      editableProduct.value.id,
-      qty
-    )
+    const updated = await eventDetailStore.restockEventProduct(props.id, product.id, qty)
     // 用返回值刷新弹窗里的只读库存数字，保留用户正在编辑的价格。
-    editableProduct.value = { ...updated, price: editableProduct.value.price }
+    editableProduct.value = { ...updated, price: product.price }
     restockQty.value = null
   } catch (error) {
-    editError.value = error.message
+    editError.value = error instanceof Error ? error.message : String(error)
   } finally {
     isRestocking.value = false
   }
 }
 
-async function handleDelete(product) {
+async function handleDelete(product: Schemas['ProductEventProduct']) {
   dialog.warning({
     title: '确认下架',
     content: `确定要从该展会下架 "${product.name}" 吗？此操作不可恢复。`,
@@ -435,7 +447,8 @@ async function handleDelete(product) {
       } catch (error) {
         dialog.error({
           title: '删除失败',
-          content: error.message || '无法下架商品，请稍后重试',
+          content:
+            (error instanceof Error ? error.message : String(error)) || '无法下架商品，请稍后重试',
           positiveText: '知道了',
         })
       }
@@ -454,7 +467,7 @@ onUnmounted(() => {
 })
 
 // 获取商品名称的前几个字作为占位符
-function getProductLabel(name) {
+function getProductLabel(name: string | null | undefined) {
   if (!name) return '无图'
   // 中文字符通常一个字占一个字符宽度，英文需要2-3个，这里简单取前3个字符
   return name.substring(0, 3)

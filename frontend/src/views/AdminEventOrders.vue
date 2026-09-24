@@ -168,7 +168,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useEventDetailStore } from '@/stores/eventDetailStore'
 import {
@@ -183,21 +183,22 @@ import {
   NInputNumber,
   useDialog,
   useMessage,
+  type DropdownOption,
 } from 'naive-ui'
+import type { Schemas } from '@/api/client'
 import HelpBubble from '@/components/shared/HelpBubble.vue'
 import EmptyGuide from '@/components/shared/EmptyGuide.vue'
 import CollapsibleSection from '@/components/shared/CollapsibleSection.vue'
 import ReceiptModal from '@/components/vendor/ReceiptModal.vue'
 import { formatTimestamp } from '@/utils/dateFormatter'
-import { formatYuan, toCents } from '@/utils/money'
-const props = defineProps({
-  id: { type: String, required: true },
-})
+import { formatYuan, toCents, type Cents } from '@/utils/money'
+
+const props = defineProps<{ id: number }>()
 
 const store = useEventDetailStore()
 const statusFilter = ref('all') // 筛选器的状态
-const minAmount = ref(null) // 最小金额
-const maxAmount = ref(null) // 最大金额
+const minAmount = ref<number | null>(null) // 最小金额
+const maxAmount = ref<number | null>(null) // 最大金额
 const productNameFilter = ref('') // 商品名称筛选
 const dialog = useDialog()
 const message = useMessage()
@@ -221,10 +222,12 @@ const filteredOrders = computed(() => {
 
   // 金额范围筛选（输入是元，订单里是分）
   if (minAmount.value !== null) {
-    orders = orders.filter((order) => order.final_amount >= toCents(minAmount.value))
+    const min = toCents(minAmount.value)
+    orders = orders.filter((order) => order.final_amount >= min)
   }
   if (maxAmount.value !== null) {
-    orders = orders.filter((order) => order.final_amount <= toCents(maxAmount.value))
+    const max = toCents(maxAmount.value)
+    orders = orders.filter((order) => order.final_amount <= max)
   }
 
   // 商品名称筛选
@@ -239,9 +242,9 @@ const filteredOrders = computed(() => {
 })
 
 const showReceiptModal = ref(false)
-const pendingOrder = ref(null)
+const pendingOrder = ref<Schemas['OrderResponse'] | null>(null)
 
-function changeStatus(orderId, newStatus) {
+function changeStatus(orderId: number, newStatus: Schemas['OrderStatus']) {
   if (!newStatus) return
   // 「已完成」会记一笔真实的资金移动，必须带渠道——走收款确认而不是普通确认框。
   if (newStatus === 'completed') {
@@ -259,7 +262,7 @@ function changeStatus(orderId, newStatus) {
         await store.adminUpdateOrderStatus(props.id, orderId, newStatus)
         message.success('状态已更新')
       } catch (error) {
-        message.error(error.message || '更新失败')
+        message.error((error instanceof Error ? error.message : String(error)) || '更新失败')
       }
     },
   })
@@ -270,7 +273,11 @@ function closeReceipt() {
   pendingOrder.value = null
 }
 
-async function onReceiptConfirm({ channel, finalAmount, unapplyLotIds }) {
+async function onReceiptConfirm(payload: {
+  channel: string
+  finalAmount: Cents
+  unapplyLotIds: number[]
+}) {
   const order = pendingOrder.value
   showReceiptModal.value = false
   if (!order) return
@@ -279,32 +286,36 @@ async function onReceiptConfirm({ channel, finalAmount, unapplyLotIds }) {
       props.id,
       order.id,
       'completed',
-      channel,
-      finalAmount,
-      unapplyLotIds
+      payload.channel,
+      payload.finalAmount,
+      payload.unapplyLotIds
     )
     message.success('状态已更新')
   } catch (error) {
-    message.error(error.message || '更新失败')
+    message.error((error instanceof Error ? error.message : String(error)) || '更新失败')
   } finally {
     pendingOrder.value = null
   }
 }
 
 // --- 辅助函数 ---
-function statusText(status) {
-  const map = { pending: '待处理', completed: '已完成', cancelled: '已取消' }
+function statusText(status: Schemas['OrderStatus']) {
+  const map: Record<Schemas['OrderStatus'], string> = {
+    pending: '待处理',
+    completed: '已完成',
+    cancelled: '已取消',
+  }
   return map[status] || status
 }
-function tagType(status) {
+function tagType(status: Schemas['OrderStatus']) {
   if (status === 'pending') return 'warning'
   if (status === 'completed') return 'success'
   if (status === 'cancelled') return 'default'
   return 'default'
 }
 
-function actionOptions(status) {
-  const opts = []
+function actionOptions(status: Schemas['OrderStatus']) {
+  const opts: DropdownOption[] = []
   if (status !== 'pending') opts.push({ label: '设为待处理', key: 'pending' })
   if (status !== 'completed') opts.push({ label: '设为已完成', key: 'completed' })
   if (status !== 'cancelled') opts.push({ label: '设为已取消', key: 'cancelled' })
