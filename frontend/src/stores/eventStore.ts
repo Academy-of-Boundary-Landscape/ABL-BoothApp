@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { api, unwrap, type Schemas } from '@/api/client'
+import { api, unwrap, type Schemas, errorMessage } from '@/api/client'
 import { getImageUrl } from '@/services/url'
 
 export const useEventStore = defineStore('event', () => {
@@ -54,7 +54,7 @@ export const useEventStore = defineStore('event', () => {
       return processedEvent
     } catch (err) {
       console.error(err)
-      throw err
+      throw new Error(errorMessage(err, '创建展会失败，请重试。'))
     }
   }
 
@@ -76,7 +76,7 @@ export const useEventStore = defineStore('event', () => {
       return response
     } catch (err) {
       console.error(err)
-      throw err
+      throw new Error(errorMessage(err, '更新状态失败，请重试。'))
     }
   }
 
@@ -104,7 +104,7 @@ export const useEventStore = defineStore('event', () => {
       return processedEvent
     } catch (err) {
       console.error(err)
-      throw err
+      throw new Error(errorMessage(err, '更新展会信息失败。'))
     }
   }
   async function deleteEvent(eventId: number) {
@@ -114,7 +114,7 @@ export const useEventStore = defineStore('event', () => {
       events.value = events.value.filter((e) => e.id !== eventId)
     } catch (err) {
       console.error(err)
-      throw err
+      throw new Error(errorMessage(err, '删除展会失败，请重试。'))
     }
   }
 

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { api, unwrap, type Schemas } from '@/api/client'
+import { api, unwrap, type Schemas, errorMessage } from '@/api/client'
 import { getImageUrl } from '@/services/url'
 import type { Cents } from '@/utils/money'
 
@@ -58,7 +58,7 @@ export const useEventDetailStore = defineStore('eventDetail', () => {
       return product
     } catch (err) {
       console.error(err)
-      throw err
+      throw new Error(errorMessage(err, '上架商品失败。'))
     }
   }
 
@@ -82,7 +82,7 @@ export const useEventDetailStore = defineStore('eventDetail', () => {
       return product
     } catch (err) {
       console.error(err)
-      throw err
+      throw new Error(errorMessage(err, '更新商品失败。'))
     }
   }
 
@@ -110,7 +110,7 @@ export const useEventDetailStore = defineStore('eventDetail', () => {
       return product
     } catch (err) {
       console.error(err)
-      throw err
+      throw new Error(errorMessage(err, '补货失败。'))
     }
   }
 
@@ -121,7 +121,7 @@ export const useEventDetailStore = defineStore('eventDetail', () => {
       products.value = products.value.filter((p) => p.id !== productId)
     } catch (err) {
       console.error(err)
-      throw err
+      throw new Error(errorMessage(err, '下架商品失败。'))
     }
   }
   async function fetchAllOrdersForEvent(eventId: number) {
@@ -171,7 +171,7 @@ export const useEventDetailStore = defineStore('eventDetail', () => {
       return processedOrders[0]
     } catch (err) {
       console.error(err)
-      throw err
+      throw new Error(errorMessage(err, '更新订单状态失败。'))
     }
   }
   // 重置状态，以便在切换不同展会详情页时清空旧数据

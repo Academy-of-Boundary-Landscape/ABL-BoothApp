@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { api, unwrap, ApiRequestError, type Schemas } from '@/api/client'
+import { api, unwrap, ApiRequestError, type Schemas, errorMessage } from '@/api/client'
 import { ref } from 'vue'
 
 function detectEnv() {
@@ -64,6 +64,16 @@ export const useSyncStore = defineStore('sync', () => {
   const lastError = ref<unknown>(null)
 
   const env = detectEnv()
+
+  /**
+   * 旧版的取错误文案规则：后端原文 → 异常自己的 message → 兜底。
+   * API 错误走 errorMessage（后端没给话就用兜底，不显示「网络错误」这类通用词）；
+   * 其它异常（保存文件失败、读文件失败等）保留它自己的 message。
+   */
+  function userFacingError(err: unknown, fallback: string): string {
+    if (err instanceof ApiRequestError) return errorMessage(err, fallback)
+    return (err instanceof Error && err.message) || fallback
+  }
 
   async function exportProducts(): Promise<{ filename: string | null; cancelled?: boolean }> {
     isExporting.value = true
@@ -164,8 +174,7 @@ export const useSyncStore = defineStore('sync', () => {
       console.error(err)
       lastError.value = err
 
-      // 原样抛给组件：组件用 errorMessage(e, …) 自行兜底。
-      throw err
+      throw new Error(userFacingError(err, '导出失败，请稍后重试'))
     } finally {
       isExporting.value = false
     }
@@ -221,7 +230,7 @@ export const useSyncStore = defineStore('sync', () => {
       )
       console.error(err)
       lastError.value = err
-      throw err
+      throw new Error(userFacingError(err, '导入失败，请检查文件格式或稍后重试'))
     } finally {
       isImporting.value = false
     }
@@ -257,7 +266,7 @@ export const useSyncStore = defineStore('sync', () => {
       )
       console.error('[Tauri] importProductsFromPath error:', err)
       lastError.value = err
-      throw err
+      throw new Error(userFacingError(err, '导入失败'))
     } finally {
       isImporting.value = false
     }

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { api, unwrap, type Schemas } from '@/api/client'
+import { api, unwrap, type Schemas, errorMessage } from '@/api/client'
 
 /**
  * 套装（Lot）= 候选商品集合 + 要选几件 + 总价。
@@ -44,7 +44,7 @@ export const useLotStore = defineStore('lot', () => {
       return created
     } catch (e) {
       console.error(e)
-      throw e
+      throw new Error(errorMessage(e, '新建套装失败。'))
     }
   }
 
@@ -65,7 +65,7 @@ export const useLotStore = defineStore('lot', () => {
       return updated
     } catch (e) {
       console.error(e)
-      throw e
+      throw new Error(errorMessage(e, '更新套装失败。'))
     }
   }
 
@@ -79,7 +79,7 @@ export const useLotStore = defineStore('lot', () => {
       lots.value = lots.value.filter((l) => l.id !== lotId)
     } catch (e) {
       console.error(e)
-      throw e
+      throw new Error(errorMessage(e, '删除套装失败。'))
     }
   }
 
@@ -91,12 +91,16 @@ export const useLotStore = defineStore('lot', () => {
    * 「试算说行、保存说不行」比没有试算更糟。
    */
   async function previewLot(eventId: string | number, payload: Schemas['LotPreviewRequest']) {
-    return await unwrap(
-      api.POST('/events/{event_id}/lots/preview', {
-        params: { path: { event_id: Number(eventId) } },
-        body: payload,
-      })
-    )
+    try {
+      return await unwrap(
+        api.POST('/events/{event_id}/lots/preview', {
+          params: { path: { event_id: Number(eventId) } },
+          body: payload,
+        })
+      )
+    } catch (e) {
+      throw new Error(errorMessage(e, '试算失败。'))
+    }
   }
 
   function resetStore() {

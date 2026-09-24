@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { api, ApiRequestError, unwrap, type Schemas } from '@/api/client'
+import { api, ApiRequestError, unwrap, type Schemas, errorMessage } from '@/api/client'
 import { getImageUrl } from '@/services/url'
 import { cents, type Cents } from '@/utils/money'
 
@@ -117,8 +117,7 @@ export const useOrderStore = defineStore('order', () => {
     } catch (e) {
       console.error(e)
       // 后端的错误原文比「更新订单状态失败」有用得多：实收为负、要拆的套装不属于
-      // 这张订单、展会已结算，摊主看到原文才知道下一步该干什么。
-      throw e
+      throw new Error(errorMessage(e, '更新订单状态失败。'))
     }
   }
   async function fetchCompletedOrders() {
@@ -152,7 +151,7 @@ export const useOrderStore = defineStore('order', () => {
       pendingOrders.value = pendingOrders.value.filter((order) => order.id !== orderId)
     } catch (e) {
       console.error(e)
-      throw e
+      throw new Error('取消订单失败。')
     }
   }
   // 单位：分。展示端由 formatYuan 除以 100。

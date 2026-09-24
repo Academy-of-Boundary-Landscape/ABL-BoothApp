@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { api, unwrap, type Schemas } from '@/api/client'
+import { api, unwrap, type Schemas, errorMessage } from '@/api/client'
 
 /**
  * 赠送 / 报废登记。
@@ -65,8 +65,7 @@ export const useInventoryLogStore = defineStore('inventoryLog', () => {
       return entry
     } catch (e) {
       console.error(e)
-      // 原样抛给组件：组件用 errorMessage(e, …) 读后端原文。
-      throw e
+      throw new Error(errorMessage(e, '登记赠送失败。'))
     }
   }
 
@@ -85,7 +84,7 @@ export const useInventoryLogStore = defineStore('inventoryLog', () => {
       return entry
     } catch (e) {
       console.error(e)
-      throw e
+      throw new Error(errorMessage(e, '登记报废失败。'))
     }
   }
 
@@ -100,7 +99,7 @@ export const useInventoryLogStore = defineStore('inventoryLog', () => {
       await Promise.all([fetchGifts(eventId), fetchScraps(eventId)])
     } catch (e) {
       console.error(e)
-      throw e
+      throw new Error(errorMessage(e, '撤销失败。'))
     }
   }
 

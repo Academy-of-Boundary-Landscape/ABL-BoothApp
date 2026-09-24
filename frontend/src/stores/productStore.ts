@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { api, unwrap, type Schemas } from '@/api/client'
+import { api, unwrap, type Schemas, errorMessage } from '@/api/client'
 import { getImageUrl } from '@/services/url'
 
 export const useProductStore = defineStore('masterProduct', () => {
@@ -110,7 +110,7 @@ export const useProductStore = defineStore('masterProduct', () => {
       return product
     } catch (e) {
       console.error(e)
-      throw e
+      throw new Error(errorMessage(e, '创建商品失败，请检查输入。'))
     }
   }
 
@@ -134,7 +134,7 @@ export const useProductStore = defineStore('masterProduct', () => {
       return product
     } catch (e) {
       console.error(e)
-      throw e
+      throw new Error(errorMessage(e, '更新商品失败，请重试。'))
     }
   }
 
@@ -155,7 +155,7 @@ export const useProductStore = defineStore('masterProduct', () => {
       }
     } catch (e) {
       console.error(e)
-      throw e
+      throw new Error(errorMessage(e, '更新商品状态失败。'))
     }
   }
 

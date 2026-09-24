@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { api, unwrap, type Schemas } from '@/api/client'
+import { api, unwrap, type Schemas, errorMessage } from '@/api/client'
 
 /**
  * 社团（货主单位）管理。
@@ -34,7 +34,7 @@ export const useSocietyStore = defineStore('society', () => {
       return response
     } catch (err) {
       console.error(err)
-      throw err
+      throw new Error(errorMessage(err, '新建社团失败。'))
     }
   }
 
@@ -50,7 +50,7 @@ export const useSocietyStore = defineStore('society', () => {
       return response
     } catch (err) {
       console.error(err)
-      throw err
+      throw new Error(errorMessage(err, '更新社团失败。'))
     }
   }
 
@@ -60,7 +60,7 @@ export const useSocietyStore = defineStore('society', () => {
       societies.value = societies.value.filter((s) => s.id !== id)
     } catch (err) {
       console.error(err)
-      throw err
+      throw new Error(errorMessage(err, '删除社团失败。'))
     }
   }
 

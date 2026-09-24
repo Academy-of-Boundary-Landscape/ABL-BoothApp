@@ -139,7 +139,7 @@ export const useCustomerStore = defineStore('customer', () => {
     } catch (e) {
       console.error('Order submission failed:', e)
 
-      throw e
+      throw new Error(errorMessage(e, '下单失败，请重试。'))
     }
   }
 

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { api, unwrap, type Schemas } from '@/api/client'
+import { api, unwrap, type Schemas, errorMessage } from '@/api/client'
 
 /**
  * 收摊向导。**能不能进下一步由后端说了算**——`blockers` 非空就挡住。
@@ -24,8 +24,7 @@ export const useClosingStore = defineStore('closing', () => {
       )
     } catch (e) {
       console.error(e)
-      // 原样抛给组件：组件用 errorMessage(e, …) 读后端原文。
-      throw e
+      throw new Error(errorMessage(e, '无法加载收摊状态。'))
     } finally {
       isLoading.value = false
     }
@@ -42,7 +41,7 @@ export const useClosingStore = defineStore('closing', () => {
       await fetchState(eventId)
     } catch (e) {
       console.error(e)
-      throw e
+      throw new Error(errorMessage(e, '提交盘点失败。'))
     }
   }
 
@@ -56,7 +55,7 @@ export const useClosingStore = defineStore('closing', () => {
       await fetchState(eventId)
     } catch (e) {
       console.error(e)
-      throw e
+      throw new Error(errorMessage(e, '确认带回失败。'))
     }
   }
 
@@ -68,7 +67,7 @@ export const useClosingStore = defineStore('closing', () => {
       await fetchState(eventId)
     } catch (e) {
       console.error(e)
-      throw e
+      throw new Error(errorMessage(e, '结束展会失败。'))
     }
   }
 

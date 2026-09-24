@@ -83,8 +83,7 @@ export const useSettlementStore = defineStore('settlement', () => {
       return entry
     } catch (e) {
       console.error(e)
-      // 原样抛给组件：组件用 errorMessage(e, …) 读后端原文。
-      throw e
+      throw new Error(errorMessage(e, '新增垫付失败。'))
     }
   }
 
@@ -98,7 +97,7 @@ export const useSettlementStore = defineStore('settlement', () => {
       await refresh(eventId)
     } catch (e) {
       console.error(e)
-      throw e
+      throw new Error(errorMessage(e, '删除垫付失败。'))
     }
   }
 
@@ -117,7 +116,7 @@ export const useSettlementStore = defineStore('settlement', () => {
       return entry
     } catch (e) {
       console.error(e)
-      throw e
+      throw new Error(errorMessage(e, '新增结算调整失败。'))
     }
   }
 
@@ -131,7 +130,7 @@ export const useSettlementStore = defineStore('settlement', () => {
       await refresh(eventId)
     } catch (e) {
       console.error(e)
-      throw e
+      throw new Error(errorMessage(e, '删除结算调整失败。'))
     }
   }
 
@@ -151,7 +150,7 @@ export const useSettlementStore = defineStore('settlement', () => {
       return res
     } catch (e) {
       console.error(e)
-      throw e
+      throw new Error(errorMessage(e, '提交清点失败。'))
     }
   }
 
