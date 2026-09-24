@@ -72,28 +72,27 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { useOrderStore } from '@/stores/orderStore'
 import { onMounted, onUnmounted, ref } from 'vue'
 import { NButton, NSpin, NProgress } from 'naive-ui'
 import { useEventDetailStore } from '@/stores/eventDetailStore'
 import { formatYuan } from '@/utils/money'
+import type { Schemas } from '@/api/client'
 
-const props = defineProps({
-  eventId: { type: String, required: true },
-})
+const props = defineProps<{ eventId: string | number }>()
 
 const collapsed = ref(false)
 const stockExpanded = ref(false)
 const orderStore = useOrderStore()
 const eventDetailStore = useEventDetailStore()
 
-function stockPercentage(product) {
+function stockPercentage(product: Schemas['ProductEventProduct']) {
   if (product.stocked_qty === 0) return 0
   return (product.onsite_qty / product.stocked_qty) * 100
 }
 
-function stockLevel(product) {
+function stockLevel(product: Schemas['ProductEventProduct']) {
   if (product.onsite_qty === 0) return 'level-out'
   if (product.onsite_qty <= 5) return 'level-critical'
   const pct = stockPercentage(product)
@@ -101,7 +100,7 @@ function stockLevel(product) {
   return 'level-ok'
 }
 
-function stockColor(product) {
+function stockColor(product: Schemas['ProductEventProduct']) {
   const level = stockLevel(product)
   if (level === 'level-out') return 'var(--text-disabled)'
   if (level === 'level-critical') return 'var(--error-color)'
@@ -109,11 +108,11 @@ function stockColor(product) {
   return 'var(--accent-color)'
 }
 
-let timer = null
+let timer: ReturnType<typeof setInterval> | null = null
 async function refreshStats() {
   await Promise.all([
     orderStore.fetchCompletedOrders?.(),
-    eventDetailStore.fetchProductsForEvent?.(props.eventId),
+    eventDetailStore.fetchProductsForEvent?.(Number(props.eventId)),
   ])
 }
 onMounted(() => {

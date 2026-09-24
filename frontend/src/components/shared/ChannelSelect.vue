@@ -18,13 +18,13 @@
   />
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { NSelect } from 'naive-ui'
-import api from '@/services/api'
+import { api, unwrap } from '@/api/client'
 
-const props = defineProps({ modelValue: { type: String, default: '' } })
-const emit = defineEmits(['update:modelValue'])
+const props = withDefaults(defineProps<{ modelValue?: string }>(), { modelValue: '' })
+const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
 
 // 模块级缓存：n-modal 隐藏时会卸载内容，每开一次收款弹窗就重挂载一次、
 // 多拉一个 /channels。收摊前会堆一屋子这个请求，而列表几乎不变。不为它开 store，
@@ -33,17 +33,17 @@ const emit = defineEmits(['update:modelValue'])
 // 后端 /channels 是「预置三个 + 历史用过的」，提交成功后本来就会带上它。
 // 拉失败**不写缓存**：一次网络抖动不该让摊主整个场次都看不到历史渠道，
 // 否则他会把「微信支付」当新渠道再建一个账户，正是这个组件要防的分裂。
-const channelCache = ref(null)
-let inflight = null
+const channelCache = ref<string[] | null>(null)
+let inflight: Promise<string[]> | null = null
 
 function loadChannels() {
   if (channelCache.value) return Promise.resolve(channelCache.value)
   if (!inflight) {
-    inflight = api
-      .get('/channels')
-      .then(({ data }) => {
-        channelCache.value = Array.isArray(data) ? data : []
-        return channelCache.value
+    inflight = unwrap(api.GET('/channels'))
+      .then((data) => {
+        const list = Array.isArray(data) ? data : []
+        channelCache.value = list
+        return list
       })
       .finally(() => {
         inflight = null
@@ -53,7 +53,7 @@ function loadChannels() {
 }
 
 // 每个实例自己的兜底，不进缓存：请求失败时本次仍能收款
-const fallback = ref(null)
+const fallback = ref<string[] | null>(null)
 const loading = ref(false)
 
 // tag 模式下用户新填的值不在 options 里，补进去才不会显示成空白
@@ -64,7 +64,7 @@ const options = computed(() => {
 })
 
 /** 新填的渠道并进缓存，不然共享缓存会让下一个弹窗看不到它。 */
-function onUpdate(value) {
+function onUpdate(value: string) {
   if (value && channelCache.value && !channelCache.value.includes(value)) {
     channelCache.value = [...channelCache.value, value]
   }

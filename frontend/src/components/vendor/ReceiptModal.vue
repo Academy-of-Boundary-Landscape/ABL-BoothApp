@@ -21,7 +21,7 @@
         <div v-for="lot in lots" :key="lot.id" class="lot-row" @click="toggle(lot.id)">
           <n-checkbox :checked="!unapplied.includes(lot.id)" />
           <span class="lot-name">{{ lot.name }}</span>
-          <span class="lot-saved">−{{ formatYuan(lot.original_amount - lot.price) }}</span>
+          <span class="lot-saved">−{{ formatYuan(cents(lot.original_amount - lot.price)) }}</span>
         </div>
         <p v-if="unapplied.length" class="lot-note">
           已拆掉 {{ unapplied.length }} 个套装，这些商品按原价计算。
@@ -33,7 +33,7 @@
         <n-input-number v-model:value="finalYuan" :min="0" :precision="2" class="field-input" />
       </label>
       <p v-if="adjustment !== 0" class="adjustment">
-        {{ adjustment > 0 ? '手工折让' : '手工加价' }} {{ formatYuan(Math.abs(adjustment)) }}
+        {{ adjustment > 0 ? '手工折让' : '手工加价' }} {{ formatYuan(cents(Math.abs(adjustment))) }}
         <span class="adjustment-note">——全部算在本社团头上，代卖社团按自己的定价结算</span>
       </p>
 
@@ -54,33 +54,45 @@
   </AppModal>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { NSpace, NButton, NInputNumber, NCheckbox, useMessage } from 'naive-ui'
 import AppModal from '@/components/shared/AppModal.vue'
 import ChannelSelect from '@/components/shared/ChannelSelect.vue'
-import { formatYuan, toCents, fromCents } from '@/utils/money'
+import { formatYuan, cents, toCents, fromCents, type Cents } from '@/utils/money'
+import type { Schemas } from '@/api/client'
 
 // 现场一场展会里收款渠道基本不变，上次选的记 localStorage 做默认值。
 // 渠道列表本身由 ChannelSelect 从后端拉（预置三个 + 历史用过的）。
 const CHANNEL_STORAGE_KEY = 'last_payment_channel'
 
-const props = defineProps({
-  show: { type: Boolean, default: false },
-  /** 原价合计（分） */
-  grossAmount: { type: Number, default: 0 },
-  /** 服务端算出的应收（分） */
-  solvedAmount: { type: Number, default: 0 },
-  /** 这一单套用的套装实例：[{ id, name, price, original_amount }] */
-  lots: { type: Array, default: () => [] },
-})
-const emit = defineEmits(['confirm', 'cancel'])
+const props = withDefaults(
+  defineProps<{
+    show?: boolean
+    /** 原价合计（分） */
+    grossAmount?: Cents
+    /** 服务端算出的应收（分） */
+    solvedAmount?: Cents
+    /** 这一单套用的套装实例：[{ id, name, price, original_amount }] */
+    lots?: Schemas['OrderLotResponse'][]
+  }>(),
+  {
+    show: false,
+    grossAmount: cents(0),
+    solvedAmount: cents(0),
+    lots: () => [],
+  }
+)
+const emit = defineEmits<{
+  (e: 'confirm', payload: { channel: string; finalAmount: Cents; unapplyLotIds: number[] }): void
+  (e: 'cancel'): void
+}>()
 const message = useMessage()
 
 const channel = ref('微信')
-const finalYuan = ref(0)
+const finalYuan = ref<number | null>(0)
 /** 被取消勾选的套装实例 id */
-const unapplied = ref([])
+const unapplied = ref<number[]>([])
 
 /**
  * 拆掉几个套装之后的应收。
@@ -90,12 +102,13 @@ const unapplied = ref([])
  */
 const effectiveSolved = computed(() =>
   props.lots.reduce(
-    (sum, lot) => (unapplied.value.includes(lot.id) ? sum + lot.original_amount - lot.price : sum),
+    (sum, lot) =>
+      unapplied.value.includes(lot.id) ? cents(sum + lot.original_amount - lot.price) : sum,
     props.solvedAmount
   )
 )
 
-const adjustment = computed(() => effectiveSolved.value - toCents(finalYuan.value))
+const adjustment = computed(() => effectiveSolved.value - toCents(finalYuan.value ?? 0))
 
 function reset() {
   // 非空就用：自定义渠道也该被记住，不能在下次打开时被悄悄换回预置值。
@@ -113,7 +126,7 @@ watch(
   }
 )
 
-function toggle(lotId) {
+function toggle(lotId: number) {
   unapplied.value = unapplied.value.includes(lotId)
     ? unapplied.value.filter((id) => id !== lotId)
     : [...unapplied.value, lotId]

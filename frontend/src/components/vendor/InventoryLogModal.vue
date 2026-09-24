@@ -91,7 +91,7 @@
   </AppModal>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import {
   NButton,
@@ -109,23 +109,27 @@ import {
 import AppModal from '@/components/shared/AppModal.vue'
 import { useInventoryLogStore } from '@/stores/inventoryLogStore'
 import { formatTimestamp } from '@/utils/dateFormatter'
-import api from '@/services/api'
+import { api, unwrap, errorMessage, type Schemas } from '@/api/client'
 
-const props = defineProps({
-  show: { type: Boolean, default: false },
-  eventId: { type: [String, Number], required: true },
+const props = withDefaults(defineProps<{ show?: boolean; eventId: string | number }>(), {
+  show: false,
 })
-const emit = defineEmits(['close', 'logged'])
+const emit = defineEmits<{ (e: 'close'): void; (e: 'logged'): void }>()
 
 const store = useInventoryLogStore()
 const message = useMessage()
 const dialog = useDialog()
 
 const activeTab = ref('gift')
-const onsite = ref([])
+const onsite = ref<Schemas['ClosingOnSiteRow'][]>([])
 const isLoading = ref(false)
 const isBusy = ref(false)
-const form = ref({ productId: null, qty: 1, note: '', vendorPays: false })
+const form = ref<{
+  productId: number | null
+  qty: number | null
+  note: string
+  vendorPays: boolean
+}>({ productId: null, qty: 1, note: '', vendorPays: false })
 
 const productOptions = computed(() =>
   onsite.value.map((p) => ({
@@ -148,18 +152,25 @@ function resetForm() {
 /** 只重拉现场仓余额：登记 / 撤销之后用它刷新下拉，别留一个过期的账面数。 */
 async function loadOnsite() {
   try {
-    const { data } = await api.get(`/events/${props.eventId}/closing`)
+    const data = await unwrap(
+      api.GET('/events/{event_id}/closing', {
+        params: { path: { event_id: Number(props.eventId) } },
+      })
+    )
     onsite.value = (data?.onsite_remaining || []).filter((p) => p.qty > 0)
   } catch (err) {
     onsite.value = []
-    message.error(err.response?.data?.error || '无法加载现场仓余额。')
+    message.error(errorMessage(err, '无法加载现场仓余额。'))
   }
 }
 
 async function load() {
   isLoading.value = true
   await loadOnsite()
-  await Promise.all([store.fetchGifts(props.eventId), store.fetchScraps(props.eventId)])
+  await Promise.all([
+    store.fetchGifts(Number(props.eventId)),
+    store.fetchScraps(Number(props.eventId)),
+  ])
   isLoading.value = false
 }
 
@@ -183,26 +194,28 @@ watch(
 )
 
 async function submit() {
-  if (!form.value.productId) return message.warning('请选择商品')
-  if (!Number.isFinite(form.value.qty) || form.value.qty <= 0) {
+  const productId = form.value.productId
+  if (!productId) return message.warning('请选择商品')
+  const qty = form.value.qty
+  if (qty === null || !Number.isFinite(qty) || qty <= 0) {
     return message.warning('数量必须为正')
   }
-  if (form.value.qty > maxQty.value) {
+  if (qty > maxQty.value) {
     // 只是少一次往返；真正的余额判据在后端事务里。
     return message.warning(`现场仓只剩 ${maxQty.value} 件`)
   }
 
-  const payload = { event_product_id: form.value.productId, qty: form.value.qty }
+  const payload: Schemas['InventoryLogRequest'] = { event_product_id: productId, qty }
   if (form.value.note.trim()) payload.note = form.value.note.trim()
 
   isBusy.value = true
   try {
     if (activeTab.value === 'gift') {
       payload.vendor_pays = form.value.vendorPays
-      await store.logGift(props.eventId, payload)
+      await store.logGift(Number(props.eventId), payload)
       message.success('已登记赠送')
     } else {
-      await store.logScrap(props.eventId, payload)
+      await store.logScrap(Number(props.eventId), payload)
       message.success('已登记报废')
     }
     resetForm()
@@ -211,13 +224,13 @@ async function submit() {
     // 通知外面刷新库存 / 统计。
     emit('logged')
   } catch (err) {
-    message.error(err.message || '操作失败')
+    message.error((err instanceof Error && err.message) || '操作失败')
   } finally {
     isBusy.value = false
   }
 }
 
-function undo(entry) {
+function undo(entry: Schemas['InventoryLogEntry']) {
   dialog.warning({
     title: '确认撤销',
     content: `撤销这条${activeTab.value === 'gift' ? '赠送' : '报废'}登记？货会回到现场仓。`,
@@ -226,12 +239,12 @@ function undo(entry) {
     async onPositiveClick() {
       isBusy.value = true
       try {
-        await store.reverse(props.eventId, entry.journal_id)
+        await store.reverse(Number(props.eventId), entry.journal_id)
         message.success('已撤销')
         await loadOnsite()
         emit('logged')
       } catch (err) {
-        message.error(err.message || '撤销失败')
+        message.error((err instanceof Error && err.message) || '撤销失败')
       } finally {
         isBusy.value = false
       }

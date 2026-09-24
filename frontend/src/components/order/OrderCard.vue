@@ -48,17 +48,18 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue'
 import { NButton } from 'naive-ui'
 import { formatTimestamp } from '@/utils/dateFormatter'
 import { formatYuan } from '@/utils/money'
+import type { Schemas } from '@/api/client'
 
-const props = defineProps({
-  order: { type: Object, required: true },
-  isCompleted: { type: Boolean, default: false },
-})
-defineEmits(['complete', 'cancel'])
+const props = withDefaults(
+  defineProps<{ order: Schemas['OrderResponse']; isCompleted?: boolean }>(),
+  { isCompleted: false }
+)
+defineEmits<{ (e: 'complete', id: number): void; (e: 'cancel', id: number): void }>()
 
 const formattedTime = computed(() => {
   return formatTimestamp(props.order.timestamp)
