@@ -84,6 +84,7 @@
                   <th class="text-right">报废</th>
                   <th class="text-right">差异</th>
                   <th class="text-right">带回</th>
+                  <th class="text-right">现场仓</th>
                   <th class="text-right">原价</th>
                   <th class="text-right">折让</th>
                   <th class="text-right">净额</th>
@@ -98,12 +99,13 @@
                   <td class="text-right">{{ g.scrapped }}</td>
                   <td class="text-right">{{ g.variance }}</td>
                   <td class="text-right">{{ g.taken_back }}</td>
+                  <td class="text-right">{{ g.on_site }}</td>
                   <td class="text-right amount-cell">{{ formatYuan(g.gross) }}</td>
                   <td class="text-right amount-cell">{{ formatSigned(g.lot_discount) }}</td>
                   <td class="text-right amount-cell">{{ formatYuan(g.allocated) }}</td>
                 </tr>
                 <tr v-if="!s.goods.length">
-                  <td colspan="10" class="empty-line">这个货主没有上架商品</td>
+                  <td colspan="11" class="empty-line">这个货主没有上架商品</td>
                 </tr>
               </tbody>
             </table>
@@ -114,6 +116,12 @@
             <span class="line-body">
               商品原价 {{ formatYuan(s.gross) }} · Lot折让 {{ formatSigned(s.lot_discount) }} ·
               手工折让 {{ formatSigned(s.manual_discount) }} → 净额 {{ formatYuan(s.net) }}
+              <!-- 这两项是「我应转给」的加项，xlsx 里有、网页上原来漏了。
+                   非零时才出现，否则默认全 0 的行会淹没真正的数字。 -->
+              <template v-if="s.refund_kept"> · 退货保留 {{ formatYuan(s.refund_kept) }}</template>
+              <template v-if="s.gift_self_paid">
+                · 自掏赠品 {{ formatYuan(s.gift_self_paid) }}
+              </template>
             </span>
           </div>
 
@@ -131,7 +139,12 @@
             <span class="line-tag">【调整】</span>
             <span class="line-body">
               <template v-if="s.adjustments.length">
-                {{ adjustmentSummary(s.adjustments) }} = {{ formatYuan(s.adjustments_total) }}
+                {{ adjustmentSummary(s.adjustments) }}
+                <!-- 单条明细时合计和它上面那句完全一样，没必要念两遍；
+                     多条时才需要合计，且合计也必须说人话，不能露原始符号。 -->
+                <template v-if="s.adjustments.length > 1">
+                  = {{ describeReportAdjustment(s.adjustments_total) }}
+                </template>
               </template>
               <template v-else>（无）</template>
             </span>
@@ -150,12 +163,13 @@
           <span>摊主留存 <strong>{{ formatYuan(store.report.vendor_retained) }}</strong></span>
         </div>
 
+        <!-- 两个时间戳平铺，不加警告语气。generated_at（此刻）和 last_changed_at
+             （最新 journal 的时间）几乎恒不相等，按字面提示「导出前请刷新」会基本
+             常亮；常亮的警告会训练人忽略警告，而这一页顶部有个真正不能被稀释的
+             红色 warnings 块。摊主自己看得出新旧。 -->
         <p class="report-meta">
-          生成于 {{ store.report.generated_at }}；账本最后变动
+          生成于 {{ store.report.generated_at }} · 账本最后变动于
           {{ store.report.last_changed_at || '（无记录）' }}
-          <template v-if="reportStale">
-            —— 账本在 {{ store.report.last_changed_at }} 之后还有变动，导出前请刷新。
-          </template>
         </p>
       </section>
 
@@ -376,6 +390,10 @@ import {
 import { useSettlementStore } from '@/stores/settlementStore'
 import { useSocietyStore } from '@/stores/societyStore'
 import { formatYuan, toCents, fromCents } from '@/utils/money'
+import {
+  describeEntryAdjustment,
+  describeReportAdjustment,
+} from '@/utils/settlementSigns'
 import { toAbsoluteApiUrl } from '@/services/url'
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeFile } from '@tauri-apps/plugin-fs'
@@ -395,7 +413,9 @@ const defaultAdjustmentForm = () => ({
   societyId: null,
   label: '',
   amountYuan: null,
-  direction: 'to_them',
+  // 不给默认值：方向是「我要多给他们」还是「他们要多给我」必须由人明确选一次，
+  // 默认 to_them 会让累了一天的摊主根本没看控件就提交，然后钱付反。
+  direction: null,
 })
 
 const advanceForm = ref(defaultAdvanceForm())
@@ -412,7 +432,10 @@ const societyOptions = computed(() =>
 // 输入框收「元」，提交时才换算成「分」。
 const counts = ref({})
 
-// 预填当前实际到手；已经动过的值不被后续刷新覆盖（重拉报告时保留摊主刚敲的数）。
+// 只有**已经清点过**的渠道才预填已知的实际到手（重新清点时要保留已知值有意义）。
+// 从未清点过的行必须留空：build_report 对它们回落 actual = book，预填账面值会让
+// 一键提交等于声称「每个渠道我都数了且都对」，而收全量这个设计的全部意义就是
+// 分开「我数了，一致」和「我没数这个」。已经动过的值不被后续刷新覆盖。
 watch(
   () => store.report?.channels,
   (rows) => {
@@ -420,7 +443,8 @@ watch(
     const next = {}
     for (const c of rows) {
       const existing = counts.value[c.channel]
-      next[c.channel] = Number.isFinite(existing) ? existing : fromCents(c.actual)
+      if (Number.isFinite(existing)) next[c.channel] = existing
+      else next[c.channel] = c.counted ? fromCents(c.actual) : null
     }
     counts.value = next
   },
@@ -446,18 +470,6 @@ function diffClass(c) {
   return d < 0 ? 'diff-short' : 'diff-over'
 }
 
-/**
- * 结算调整列表里的方向。
- *
- * `GET /adjustments` 返回的就是 `settlement_adjustments.amount`：**负 = 我要多给他们**
- * （`to_them`），正 = 他们要多给我（`to_me`）。不要把原始符号摆出来，按方向说人话。
- */
-function describeEntryAdjustment(cents) {
-  if (cents < 0) return `我多给 ${formatYuan(-cents)}`
-  if (cents > 0) return `他们多给 ${formatYuan(cents)}`
-  return '—'
-}
-
 // --- 结算单主体 ---
 // 【货】默认收起，展开状态只是界面状态，不落库。
 const expanded = ref({})
@@ -466,26 +478,19 @@ function toggleGoods(societyId) {
   expanded.value = { ...expanded.value, [societyId]: !expanded.value[societyId] }
 }
 
-/** 折让是减项，用负号读起来才符合算术；0 就老实显示 ¥0.00。 */
+/**
+ * 折让显示成带符号的减/加：折让为正（真折让）→ `−¥x`，加价为负 → `+¥x`。
+ * 直接 `formatYuan(cents)` 对负数会打印成 `¥-60.00`（符号在货币号之后），
+ * 加价那一行必须在标签下面读得出是个加项，不能靠摊主自己看负号。
+ */
 function formatSigned(cents) {
-  return cents > 0 ? `−${formatYuan(cents)}` : formatYuan(cents)
+  if (cents > 0) return `−${formatYuan(cents)}`
+  if (cents < 0) return `+${formatYuan(-cents)}`
+  return formatYuan(0)
 }
 
 function advanceSummary(entries) {
   return entries.map((a) => `${a.label} ${formatYuan(a.amount)}`).join(' + ')
-}
-
-/**
- * 结算单里的调整方向。
- *
- * 后端已经把 `settlement_adjustments.amount` 取负换算成「对我应转给的影响」，
- * 所以这里**正 = 我多给**（`to_them`）、负 = 他们多给（`to_me`）。和上面
- * 列表接口的符号正好相反，两边各按各自的数据源显示，不要合并成一个函数。
- */
-function describeReportAdjustment(cents) {
-  if (cents > 0) return `我多给 ${formatYuan(cents)}`
-  if (cents < 0) return `他们多给 ${formatYuan(-cents)}`
-  return '—'
 }
 
 function adjustmentSummary(entries) {
@@ -496,12 +501,6 @@ function adjustmentSummary(entries) {
     })
     .join('；')
 }
-
-const reportStale = computed(() => {
-  const r = store.report
-  if (!r || !r.last_changed_at) return false
-  return r.last_changed_at !== r.generated_at
-})
 
 async function reloadReport() {
   await store.refresh(props.id)
@@ -618,6 +617,7 @@ function removeAdvance(entry) {
 
 async function submitAdjustment() {
   if (!adjustmentForm.value.societyId) return message.warning('请选择社团')
+  if (!adjustmentForm.value.direction) return message.warning('请选择方向')
   const label = adjustmentForm.value.label.trim()
   if (!label) return message.warning('请填写名目')
   if (!Number.isFinite(adjustmentForm.value.amountYuan) || adjustmentForm.value.amountYuan <= 0) {

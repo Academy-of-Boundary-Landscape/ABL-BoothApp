@@ -29,7 +29,6 @@ export const useSettlementStore = defineStore('settlement', () => {
 
   async function fetchReport(eventId) {
     isLoading.value = true
-    error.value = null
     try {
       const response = await api.get(`/events/${eventId}/settlement`)
       report.value = response.data
@@ -62,6 +61,10 @@ export const useSettlementStore = defineStore('settlement', () => {
   }
 
   async function refresh(eventId) {
+    // 清 error 只在这里做一次：三个 fetch 并发跑，如果放在 fetchReport 开头
+    // （或任一 fetch 里），先落地的那条 500 会被后启动的 fetch 静默抹掉，
+    // 页面上什么都不显示、对应的表还空着。
+    error.value = null
     await Promise.all([fetchReport(eventId), fetchAdvances(eventId), fetchAdjustments(eventId)])
   }
 
@@ -123,6 +126,7 @@ export const useSettlementStore = defineStore('settlement', () => {
     report.value = null
     advances.value = []
     adjustments.value = []
+    isLoading.value = false
     error.value = null
   }
 
