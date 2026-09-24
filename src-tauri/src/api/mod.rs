@@ -3,6 +3,7 @@ use axum::Router;
 
 mod admin;
 mod auth;
+mod closing;
 mod event;
 pub mod guard;
 mod info;
@@ -34,6 +35,7 @@ pub fn router() -> Router<AppState> {
         .merge(lot::router())
         .merge(order::router())
         .merge(refund::router())
+        .merge(closing::router())
         .merge(settlement::router())
         .merge(inventory::router())
         .nest("/legacy", legacy::router());
