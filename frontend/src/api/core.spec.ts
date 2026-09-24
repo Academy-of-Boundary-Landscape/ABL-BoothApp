@@ -107,11 +107,29 @@ describe('api core', () => {
   })
 
   it('401 on /login does not redirect，错误照常抛出', async () => {
-    currentPath = '/login'
+    // 真实的登录路由是 /login/:role——以前用字面量 '/login' 测，测不到真实情况
+    currentPath = '/login/vendor'
     const api = make(() => json(401, { error: '密码错误' }))
     const e = await unwrap(api.GET('/channels')).catch((x: unknown) => x)
     expect(onUnauthorized).not.toHaveBeenCalled()
     expect(errorMessage(e, '登录失败')).toBe('密码错误')
+  })
+
+  it('校验密码的接口返回 401 不跳转：那是「密码错」，不是会话失效', async () => {
+    currentPath = '/admin/settings'
+    const api = make(() => json(401, { error: '旧密码错误' }))
+    const e = await unwrap(
+      api.PUT('/admin/password', { body: { old_password: 'x', new_password: 'yyyy' } as never })
+    ).catch((x: unknown) => x)
+    expect(onUnauthorized).not.toHaveBeenCalled()
+    expect(errorMessage(e, '修改失败')).toBe('旧密码错误')
+
+    currentPath = '/'
+    const api2 = make(() => json(401, { error: '密码错误' }))
+    await unwrap(
+      api2.POST('/auth/login', { body: { password: 'x', role: 'admin' } as never })
+    ).catch(() => {})
+    expect(onUnauthorized).not.toHaveBeenCalled()
   })
 
   it('JSON body 带 application/json，multipart 由运行时补 boundary', async () => {

@@ -25,6 +25,7 @@ import {
   showUploadDialog,
 } from '@/utils/upload'
 import { createApiClient } from './core'
+import { sessionExpiredTarget } from './loginRedirect'
 import type { components } from './schema'
 
 export { ApiRequestError, errorMessage, unwrap, type ApiClient } from './core'
@@ -66,7 +67,7 @@ export const api = createApiClient({
   getToken: () => sessionStorage.getItem('access_token'),
   currentPath: () => router.currentRoute.value.path,
   onUnauthorized: () => {
-    router.push('/login').catch(() => {})
+    router.push(sessionExpiredTarget(router.currentRoute.value)).catch(() => {})
   },
   onUploadError: (url, errLike) => {
     // 三条规则与旧 services/api.js 的响应拦截器一致

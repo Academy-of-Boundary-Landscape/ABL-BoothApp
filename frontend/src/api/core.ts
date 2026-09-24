@@ -87,6 +87,17 @@ const isRawBody = (b: unknown) =>
   b instanceof Uint8Array ||
   b instanceof ArrayBuffer
 
+/**
+ * 这些接口的 401 意思是「你输的密码不对」，不是「会话失效」——不能因此把人踢去登录页。
+ * （旧版在登录页输错密码会被带到 404：登录路由是 /login/:role，而判断写的是 !== '/login'。）
+ */
+const CREDENTIAL_CHECK_PATHS = ['/auth/login', '/admin/password']
+
+function isCredentialCheck(request: Request): boolean {
+  const path = new URL(request.url).pathname
+  return CREDENTIAL_CHECK_PATHS.some((p) => path.endsWith(p))
+}
+
 export function createApiClient(o: ApiClientOptions) {
   // 每个请求的控制信号与超时定时器，以 Request 对象为键；响应回来就清掉定时器。
   const controls = new WeakMap<
@@ -124,7 +135,11 @@ export function createApiClient(o: ApiClientOptions) {
     },
     async onResponse({ request, response }) {
       clearTimeout(controls.get(request)?.timer)
-      if ((response.status === 401 || response.status === 403) && o.currentPath() !== '/login') {
+      if (
+        (response.status === 401 || response.status === 403) &&
+        !o.currentPath().startsWith('/login') &&
+        !isCredentialCheck(request)
+      ) {
         o.onUnauthorized()
       }
       const isUpload = (request.headers.get('content-type') ?? '').startsWith('multipart/form-data')
