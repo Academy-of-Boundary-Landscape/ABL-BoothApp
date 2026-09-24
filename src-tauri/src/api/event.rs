@@ -271,7 +271,9 @@ async fn update_event(
     Path(id): Path<i64>,
     mut multipart: Multipart,
 ) -> impl IntoResponse {
-    // 不需要展会守卫：只改展会名称和日期，不写 journals / stock_movements / money_movements / order_lines / event_products
+    // 不需要展会守卫：改的是展会的展示与访问属性（名称、日期、地点、摊主密码、
+    // 收款二维码），不写 journals / stock_movements / money_movements / order_lines /
+    // event_products，动不了账，展会冻没冻结都不影响这些字段。
     let old_event: Event = match query_as("SELECT * FROM events WHERE id = ?")
         .bind(id)
         .fetch_optional(&state.db)

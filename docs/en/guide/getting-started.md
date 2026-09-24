@@ -48,6 +48,17 @@ Navigate to "Master Products" to add your items:
 
 That's it! You're ready to take orders.
 
+## Closing & Settlement
+
+When the event is over, open the **Vendor** screen and tap **Closing** in the top right. The wizard has four steps:
+
+1. **Clear orders** — complete or cancel every pending order first. The remaining steps are blocked while any pending order is left.
+2. **Stocktake** (optional) — enter the actual remaining quantity of each item. If you skip it, the settlement sheet is marked as an estimate ("not stocktaken").
+3. **Take back** — confirm the stock you are carrying home; on-site stock drops to zero.
+4. **Settle** — freezes the event: its status becomes **Settled**.
+
+After settling, orders, refunds, restocks, gifts, scraps, stocktakes, take-backs and re-settling are all refused. Only advances, settlement adjustments and a settlement recount can still be added later. The settlement sheet is available in the admin app under **Events → Settlement**.
+
 ## Next Steps
 
 - [Network Setup Guide](/en/guide/network)

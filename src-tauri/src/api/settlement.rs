@@ -19,10 +19,7 @@ use crate::{
     api::guard::{check_read_permission, check_write_permission},
     domain::{
         channel::{normalize, PRESET_CHANNELS},
-        ledger::{
-            account_balance, home_society_id, post_journal, reverse_journal, Account, JournalKind,
-            MoneyLeg,
-        },
+        ledger::{home_society_id, post_journal, reverse_journal, Account, JournalKind, MoneyLeg},
         money::Money,
         settlement::{
             build_report, ChannelCount, Entry, GoodsLine, SettlementInput, SettlementReport,
@@ -620,41 +617,52 @@ where
     Ok(names)
 }
 
+/// 渠道名的**比对键**：优先用 `normalize`（折叠内部空白 + 限长）。历史库里可能
+/// 存着超过 `MAX_CHANNEL_CHARS` 的名字，`normalize` 会因此报错——那种值退回原样
+/// 参与比对：它已经是一个既存账户名了，再拿「最长 20 字」去卡它只会让那场展会
+/// 永远清不了点。真正的重复/白名单判断仍在下游完成。
+fn channel_key(raw: &str) -> String {
+    normalize(raw).unwrap_or_else(|_| raw.to_string())
+}
+
 /// 把各张表查出来，组装成 `build_report` 要的输入。
 ///
 /// 页面 JSON 和 `settlement.xlsx` 都走这里——「页面显示 1,170、导出写 1,150」
 /// 在结构上不可能发生。
+///
+/// **整个函数包在一个读事务里**（`begin()`，deferred 即可）：下面有 ~2 + 2N 条
+/// 查询，池上逐条跑的时候一次并发写会落在两条查询之间，读出一份内部不自洽的输入，
+/// 于是 `build_report` 打出「结算对不上账本」的警告——而这一页的职责恰恰是可信。
+/// 读事务让所有查询走同一条连接、看同一个快照，顺带把逐社团的 N+1 也收进同一视图。
 pub(crate) async fn load_input(state: &AppState, event_id: i64) -> ApiResult<SettlementInput> {
+    let mut tx = state.db.begin().await?;
     let event: Option<(String, String, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT name, event_date, stocktaken_at, reconciled_at FROM events WHERE id = ?",
     )
     .bind(event_id)
-    .fetch_optional(&state.db)
+    .fetch_optional(&mut *tx)
     .await?;
     let (event_name, event_date, stocktaken_at, reconciled_at) =
         event.ok_or_else(|| ApiError::NotFound("展会不存在".into()))?;
 
     // 本社团：手工折让整笔落在它头上，`is_home` 也靠它判定。
-    let home_id = {
-        let mut conn = state.db.acquire().await?;
-        home_society_id(&mut conn).await?
-    };
+    let home_id = home_society_id(&mut tx).await?;
 
     let goods_rows: Vec<GoodsRow> = sqlx::query_as(GOODS_SQL)
         .bind(event_id)
-        .fetch_all(&state.db)
+        .fetch_all(&mut *tx)
         .await?;
 
     let money_rows: Vec<MoneyRow> = sqlx::query_as(MONEY_SQL)
         .bind(event_id)
-        .fetch_all(&state.db)
+        .fetch_all(&mut *tx)
         .await?;
 
     // 按商品分组的金额，只喂给「货主明细」sheet。一段查询一个分组，和上面
     // 按社团分组的 `money_rows` 并存，谁也不替谁。
     let product_money_rows: Vec<MoneyByProductRow> = sqlx::query_as(MONEY_BY_PRODUCT_SQL)
         .bind(event_id)
-        .fetch_all(&state.db)
+        .fetch_all(&mut *tx)
         .await?;
 
     // 手工折让 = solved − final，摊进各行之后就是 Σallocated − Σpaid。
@@ -669,7 +677,7 @@ pub(crate) async fn load_input(state: &AppState, event_id: i64) -> ApiResult<Set
         "SELECT owner_society_id, label, amount FROM advances WHERE event_id = ? ORDER BY id",
     )
     .bind(event_id)
-    .fetch_all(&state.db)
+    .fetch_all(&mut *tx)
     .await?;
 
     let adjustment_rows: Vec<AdjustmentRow> = sqlx::query_as(
@@ -677,7 +685,7 @@ pub(crate) async fn load_input(state: &AppState, event_id: i64) -> ApiResult<Set
          FROM settlement_adjustments WHERE event_id = ? ORDER BY id",
     )
     .bind(event_id)
-    .fetch_all(&state.db)
+    .fetch_all(&mut *tx)
     .await?;
 
     // 没有任何交易的社团也要出现（有垫付但一件货没卖是合法的）。本社团也永远
@@ -695,7 +703,7 @@ pub(crate) async fn load_input(state: &AppState, event_id: i64) -> ApiResult<Set
     .bind(event_id)
     .bind(event_id)
     .bind(event_id)
-    .fetch_all(&state.db)
+    .fetch_all(&mut *tx)
     .await?;
 
     let mut societies = Vec::with_capacity(society_rows.len());
@@ -739,7 +747,7 @@ pub(crate) async fn load_input(state: &AppState, event_id: i64) -> ApiResult<Set
             .bind(event_id)
             .bind(&account_name)
             .bind(&account_name)
-            .fetch_one(&state.db)
+            .fetch_one(&mut *tx)
             .await?;
 
         let advances = advance_rows
@@ -768,7 +776,7 @@ pub(crate) async fn load_input(state: &AppState, event_id: i64) -> ApiResult<Set
             })
             .collect();
 
-        let due_balance = account_balance(&state.db, event_id, &account).await?;
+        let due_balance = account_balance_tx(&mut tx, event_id, &account).await?;
 
         societies.push(SocietyInput {
             society_id,
@@ -789,18 +797,18 @@ pub(crate) async fn load_input(state: &AppState, event_id: i64) -> ApiResult<Set
     // 渠道清单 = 本展会实际用过的（orders ∪ refunds ∪ 本场 `实收-` 账户），
     // 按展会过滤，不是跨展会的 `GET /channels`。与 `reconcile` 的校验共用
     // `event_channels`，两处由构造保证同步。
-    let channel_names = event_channels(&state.db, event_id).await?;
+    let channel_names = event_channels(&mut *tx, event_id).await?;
 
     let mut channels = Vec::with_capacity(channel_names.len());
     for channel in channel_names {
         let account = Account::Received(channel.clone());
         let account_name = account.to_string();
-        let current = account_balance(&state.db, event_id, &account).await?;
+        let current = account_balance_tx(&mut tx, event_id, &account).await?;
         let recon_diff: i64 = sqlx::query_scalar(RECON_DIFF_SQL)
             .bind(&account_name)
             .bind(&account_name)
             .bind(event_id)
-            .fetch_one(&state.db)
+            .fetch_one(&mut *tx)
             .await?;
         let book = current - Money::from_cents(recon_diff);
         // 清点只记「数过了」这一个全局事实（events.reconciled_at）；数是现场
@@ -820,8 +828,11 @@ pub(crate) async fn load_input(state: &AppState, event_id: i64) -> ApiResult<Set
     let last_changed_at: Option<String> =
         sqlx::query_scalar("SELECT MAX(occurred_at) FROM journals WHERE event_id = ?")
             .bind(event_id)
-            .fetch_one(&state.db)
+            .fetch_one(&mut *tx)
             .await?;
+
+    // 读事务到此结束。deferred 事务的 commit 只是释放快照/连接，不改任何数据。
+    tx.commit().await?;
 
     Ok(SettlementInput {
         event_name,
@@ -906,35 +917,53 @@ async fn reconcile(
     // 每条都在任何腿落库之前读余额，所以重复一次就把同一笔差额写两遍。
     // 必须在 normalize 之后判重——"现金" 和 " 现金 " 会折叠成同一个账户。
     // 同 api/closing.rs 的 stocktake。
+
+    // 本场用过的渠道。清点一个本场没出现过的渠道，钱会写进账本却不出现在报表里。
+    // **和报表的 `channels[]` 共用同一条 `EVENT_CHANNELS_SQL`**——两处各写一份
+    // 迟早分歧，那时管理端会照着报表要摊主填一个清点拒收的渠道。
+    //
+    // 比对用**规范化后的 key**：历史库里可能有没经过 normalize 的值（本分支之前
+    // 后端只 trim，内部多空格、超长都进得来），而报表把存储原样显示给摊主、摊主
+    // 照抄提交，`normalize` 会把它折叠成另一个字符串。两边 key 不同的话，那个渠道
+    // 既过不了白名单、也过不了收全量，整场展会永远清不了点。
+    //
+    // 但读余额 / 记腿必须落回**账本里真正存的那个原样名字**：渠道是 `实收-<名字>`
+    // 这个字符串账户的一部分，规范化后的名字是另一个账户（多半余额为 0）。
+    let used_raw = event_channels(&mut *tx, event_id).await?;
+    let mut routes: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for raw in &used_raw {
+        routes
+            .entry(channel_key(raw))
+            .or_insert_with(|| raw.clone());
+    }
+
     let mut seen = std::collections::HashSet::new();
     for c in &payload.counts {
-        let name = normalize(&c.channel)?;
-        if !seen.insert(name) {
+        if !seen.insert(channel_key(&c.channel)) {
             return Err(ApiError::BadRequest(
                 "同一个渠道在一次清点里只能报一次数".into(),
             ));
         }
     }
 
-    // 本场用过的渠道。清点一个本场没出现过的渠道，钱会写进账本却不出现在报表里。
-    // **和报表的 `channels[]` 共用同一条 `EVENT_CHANNELS_SQL`**——两处各写一份
-    // 迟早分歧，那时管理端会照着报表要摊主填一个清点拒收的渠道。
-    let used = event_channels(&mut *tx, event_id).await?;
-
-    let mut unknown: Vec<&String> = seen.iter().filter(|c| !used.contains(*c)).collect();
+    let mut unknown: Vec<&String> = seen.iter().filter(|k| !routes.contains_key(*k)).collect();
     unknown.sort();
     if !unknown.is_empty() {
         let names: Vec<&str> = unknown.iter().map(|s| s.as_str()).collect();
         return Err(ApiError::BadRequest(format!(
             "「{}」这场展会没用过，无法清点。本场用过的渠道：{}",
             names.join("、"),
-            used.join("、")
+            used_raw.join("、")
         )));
     }
 
     // 收全量，和 `stocktake` 一字不差：「我数了，一致」和「我没数这个」是两件事。
     // 请求体不把它们混成同一个缺省，全局的 `reconciled_at` 才能代表「全都数过了」。
-    let missing: Vec<&String> = used.iter().filter(|c| !seen.contains(*c)).collect();
+    // 沿用 `used_raw` 的顺序，报错里点名漏了哪几个渠道时是稳定的。
+    let missing: Vec<&String> = used_raw
+        .iter()
+        .filter(|raw| !seen.contains(&channel_key(raw)))
+        .collect();
     if !missing.is_empty() {
         let names: Vec<&str> = missing.iter().map(|s| s.as_str()).collect();
         return Err(ApiError::BadRequest(format!(
@@ -945,12 +974,17 @@ async fn reconcile(
 
     let mut money = Vec::new();
     for c in &payload.counts {
-        let channel = normalize(&c.channel)?;
-        if c.actual < 0 {
-            return Err(ApiError::BadRequest("实际到手不能为负".into()));
-        }
-        let account = Account::Received(channel);
+        let key = channel_key(&c.channel);
+        // 白名单已经确认这个 key 在本场用过，取回账本里的原样名字。
+        let raw = routes
+            .get(&key)
+            .expect("白名单已确认每个提交的渠道都在本场用过");
+        let account = Account::Received(raw.clone());
         let current = account_balance_tx(&mut tx, event_id, &account).await?;
+        // **允许 actual 为负**：母 spec §5.4 的「微信收、现金退」很常见，某渠道的
+        // 退款超过收款时，摊主手上那个渠道实际是负持仓（他自掏了钱出去）。以前
+        // 拒收负数，摊主只能填 0，那笔钱被算进对账差异、方向还抬高 actual_total，
+        // 把「摊主留存」虚报。post_journal 不受影响：金额取绝对值、方向由 from/to 表达。
         let diff = Money::from_cents(c.actual) - current;
         if diff.is_zero() {
             continue; // 分文不差——没有腿可记，靠 reconciled_at 记「数过了」
@@ -1497,7 +1531,7 @@ mod tests {
     use crate::domain::ledger::{account_balance, Account};
     use crate::domain::money::Money;
     use crate::test_support::{
-        admin_token, json_request, read_json, seed_event_and_product, test_router_with,
+        admin_token, json_request, place, read_json, seed_event_and_product, test_router_with,
     };
     use axum::http::StatusCode;
     use serde_json::json;
@@ -2302,6 +2336,139 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reconciling_accepts_a_negative_actual_when_cash_is_under_water() {
+        // 母 spec §5.4：「微信收、现金退」很常见。某渠道的退款超过收款时，
+        // book(现金) 就是负的——摊主手上那个渠道实际是负持仓（他自掏了钱出去）。
+        // 以前 `reconcile` 拒收负数，摊主只能填 0，那笔钱被算成对账差异、方向还
+        // 抬高 actual_total，把「摊主留存」虚报。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _ep_a, ep_b) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+
+        // 现金收 20：B 1 件。
+        let order_a = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_b, "quantity": 1}]),
+        )
+        .await;
+        // 微信收 60：B 3 件。跨渠道退款（微信收、现金退）是允许的。
+        let order_b = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_b, "quantity": 3}]),
+        )
+        .await;
+        for (order_id, channel) in [(order_a, "现金"), (order_b, "微信")] {
+            let res = router
+                .clone()
+                .oneshot(json_request(
+                    "PUT",
+                    &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                    Some(&token),
+                    json!({"status": "completed", "channel": channel}),
+                ))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::OK);
+        }
+        let line_b: i64 =
+            sqlx::query_scalar("SELECT id FROM order_lines WHERE order_id = ? ORDER BY id LIMIT 1")
+                .bind(order_b)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        // 现金退 50。
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders/{order_b}/refunds"),
+                Some(&token),
+                json!({"channel": "现金", "refund_amount": 5000,
+                   "lines": [{"order_line_id": line_b, "qty": 3, "destination": "现场仓"}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+
+        // 现金 20 − 50 = −30；微信 +60。
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::Received("现金".into()))
+                .await
+                .unwrap(),
+            Money::from_cents(-3000)
+        );
+
+        let before = read_json(
+            router
+                .clone()
+                .oneshot(json_request(
+                    "GET",
+                    &format!("/api/events/{event_id}/settlement"),
+                    Some(&token),
+                    json!(null),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        let transfer_total = before["transfer_total"].as_i64().unwrap();
+        assert_eq!(before["actual_total"], 3000, "−30 + 60");
+
+        // 清点填 −30。以前这里会 400（「实际到手不能为负」）。
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/settlement/reconcile"),
+                Some(&token),
+                json!({"counts": [{"channel": "现金", "actual": -3000},
+                                  {"channel": "微信", "actual": 6000}]}),
+            ))
+            .await
+            .unwrap();
+        let status = res.status();
+        let body = read_json(res).await;
+        assert_eq!(status, StatusCode::OK, "负持仓也要能清点：{body}");
+        assert!(body["journal_id"].is_null(), "两边都分文不差，不该写腿");
+
+        let after = read_json(
+            router
+                .clone()
+                .oneshot(json_request(
+                    "GET",
+                    &format!("/api/events/{event_id}/settlement"),
+                    Some(&token),
+                    json!(null),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert!(
+            after["warnings"].as_array().unwrap().is_empty(),
+            "{}",
+            after["warnings"]
+        );
+        let cash = after["channels"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["channel"] == "现金")
+            .expect("现金渠道必须在报表里");
+        assert_eq!(cash["book"], -3000);
+        assert_eq!(cash["actual"], -3000);
+        assert_eq!(cash["diff"], 0);
+        assert_eq!(cash["counted"], true);
+        assert_eq!(
+            after["vendor_retained"].as_i64().unwrap(),
+            3000 - transfer_total,
+            "负持仓不能被当成 0 去虚报摊主留存"
+        );
+    }
+
+    #[tokio::test]
     async fn counting_an_exact_match_still_marks_it_counted() {
         // 分文不差时写不出 journal（零金额腿被 post_journal 滤掉，
         // 只剩空 journal 会被拒），所以「数过了」靠 events.reconciled_at 记。
@@ -2657,6 +2824,94 @@ mod tests {
             StatusCode::OK,
             "报表列得出来的渠道，清点就必须收：{body}"
         );
+    }
+
+    #[tokio::test]
+    async fn reconciling_accepts_legacy_channel_names_that_normalize_differently() {
+        // 本分支之前后端只在写单时 trim，所以库里可能存着内部多空格、甚至超过
+        // `MAX_CHANNEL_CHARS` 的渠道名。报表把它们原样列出来，摊主照着填，而
+        // `reconcile` 用 normalize 折叠提交值——不把 `used` 也规范化，两边 key
+        // 对不上，那个渠道既过不了白名单也过不了收全量，整场展会永远清不了点。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _, _) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+
+        let padded = "银行  转账"; // 内部双空格
+        let long: String = "超".repeat(25); // 超过 20 字，normalize 会报错
+        post_stray_received(&pool, event_id, padded, 10000).await;
+        post_stray_received(&pool, event_id, &long, 20000).await;
+
+        let report = read_json(
+            router
+                .clone()
+                .oneshot(json_request(
+                    "GET",
+                    &format!("/api/events/{event_id}/settlement"),
+                    Some(&token),
+                    json!(null),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        let names: Vec<&str> = report["channels"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["channel"].as_str().unwrap())
+            .collect();
+        assert!(names.contains(&padded), "报表要列原样存储值：{names:?}");
+        assert!(
+            names.contains(&long.as_str()),
+            "报表要列原样存储值：{names:?}"
+        );
+
+        // 摊主照着报表原文提交。内部多空格的那个靠 normalize 后的 key 对上；
+        // 超长的 normalize 会报错，退回原样 key 仍能对上，且读的是原样账户。
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/settlement/reconcile"),
+                Some(&token),
+                json!({"counts": [
+                    {"channel": padded, "actual": 10000},
+                    {"channel": long.as_str(), "actual": 20000}
+                ]}),
+            ))
+            .await
+            .unwrap();
+        let status = res.status();
+        let body = read_json(res).await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "历史渠道名不能把整场清点挡死：{body}"
+        );
+        assert!(body["journal_id"].is_null(), "两边都分文不差，不该写腿");
+
+        let after = read_json(
+            router
+                .clone()
+                .oneshot(json_request(
+                    "GET",
+                    &format!("/api/events/{event_id}/settlement"),
+                    Some(&token),
+                    json!(null),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert!(
+            after["warnings"].as_array().unwrap().is_empty(),
+            "{}",
+            after["warnings"]
+        );
+        for c in after["channels"].as_array().unwrap() {
+            assert_eq!(c["diff"], 0, "账面和实际都对上：{c}");
+            assert_eq!(c["counted"], true);
+        }
     }
 
     #[tokio::test]

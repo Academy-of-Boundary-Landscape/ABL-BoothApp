@@ -266,12 +266,18 @@ async fn reverse_entry(
     let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
     require_event_open(&mut tx, event_id).await?;
 
-    let kind: Option<String> =
-        sqlx::query_scalar("SELECT kind FROM journals WHERE id = ? AND event_id = ?")
-            .bind(journal_id)
-            .bind(event_id)
-            .fetch_optional(&mut *tx)
-            .await?;
+    // `reverses_journal_id IS NULL`：一条赠送的**冲正条目** kind 也是「赠送」，
+    // 会被下面的匹配放行；而「有没有东西冲正过它」在它刚建出来时必然是否定的。
+    // 不挡这一下，冲正一条冲正会把货再挪一次 现场仓 → 赠品，而 LOG_ROWS 把两行
+    // 都藏起来——报表的赠送数在 UI 列表里再也找不到对应条目。
+    let kind: Option<String> = sqlx::query_scalar(
+        "SELECT kind FROM journals
+          WHERE id = ? AND event_id = ? AND reverses_journal_id IS NULL",
+    )
+    .bind(journal_id)
+    .bind(event_id)
+    .fetch_optional(&mut *tx)
+    .await?;
     let kind = kind.ok_or_else(|| ApiError::NotFound("记录不存在".into()))?;
     let kind = match kind.as_str() {
         "赠送" => JournalKind::Gift,
@@ -556,6 +562,65 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(second.status(), StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn a_reversal_cannot_itself_be_reversed() {
+        // 冲正条目的 kind 也是「赠送」，会被 kind 闸放行；而「有没有东西
+        // 冲正过它」在它刚建出来时必然是否定的。不挡这一下，冲正一条冲正会把货
+        // 再挪一次 现场仓 → 赠品，而 LOG_ROWS 把两行都藏起来——报表的赠送数
+        // 在 UI 列表里再也找不到对应条目。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _, ep_b) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/gifts"),
+                Some(&token),
+                json!({"event_product_id": ep_b, "qty": 2, "vendor_pays": true}),
+            ))
+            .await
+            .unwrap();
+        let original = read_json(res).await["journal_id"].as_i64().unwrap();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/journals/{original}/reverse"),
+                Some(&token),
+                json!(null),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let reversal = read_json(res).await["journal_id"].as_i64().unwrap();
+        assert_eq!(
+            onsite_balance(&pool, ep_b).await.unwrap(),
+            5,
+            "撤销后货回来了"
+        );
+
+        // 再冲正那条冲正条目：必须被拒，货不能再被挪一次。
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/journals/{reversal}/reverse"),
+                Some(&token),
+                json!(null),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            onsite_balance(&pool, ep_b).await.unwrap(),
+            5,
+            "货不能再被挪一次"
+        );
     }
 
     #[tokio::test]

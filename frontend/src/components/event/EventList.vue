@@ -84,7 +84,7 @@
                 <n-button size="small" type="primary" @click.stop="openEditModal(event)"
                   >编辑</n-button
                 >
-                <n-button size="small" type="error" @click.stop="confirmDelete(event.id)"
+                <n-button size="small" type="error" @click.stop="confirmDelete(event)"
                   >删除</n-button
                 >
               </div>
@@ -185,14 +185,21 @@ const statusType = (status) => {
   if (status === '已结算') return 'default'
   return 'success' // 筹备
 }
-async function confirmDelete(eventId) {
+async function confirmDelete(event) {
+  // 已结算的展会账已经冻结、往往还要留着对账，删除却是级联删掉整本账且不受
+  // 冻结保护（后端 DELETE /events/:id 有意不守展会状态）。这里给一句明确的
+  // 后果说明，不能和普通展会共用同一句「无法撤销」。
+  const message =
+    event.status === '已结算'
+      ? `「${event.name}」已结算。删除将永久删除该展会的全部订单与账本流水，且无法恢复。确定继续吗？`
+      : `您确定要删除「${event.name}」吗？此操作无法撤销。`
   // 弹出浏览器原生确认框
-  if (window.confirm('您确定要删除这个展会吗？此操作无法撤销。')) {
+  if (window.confirm(message)) {
     try {
       // 调用 store 中的 deleteEvent 方法执行删除操作
       // 您需要在 eventStore.js 中实现 deleteEvent 方法，
       // 该方法会向后端发送 DELETE 请求。
-      await store.deleteEvent(eventId)
+      await store.deleteEvent(event.id)
       // 可选：删除成功后显示提示
       // alert('展会已删除');
     } catch (error) {
