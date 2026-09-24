@@ -56,18 +56,38 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, ref } from 'vue'
 import { formatChartLabel, formatChartTooltip } from '@/utils/dateFormatter'
 
-const props = defineProps({
-  series: { type: Array, default: () => [] },
-  width: { type: Number, default: 800 },
-  height: { type: Number, default: 320 },
-  padding: { type: Number, default: 48 },
-})
+/** 图表内部按「元」算坐标，父组件已经用 fromCents 换好，这里的 revenue 不是 Cents。 */
+type SeriesPoint = { date: string; revenue: number }
 
-const hover = ref(null)
+type ChartPoint = {
+  x: number
+  y: number
+  label: string
+  fullLabel: string
+  rawDate: string
+  revenue: number
+}
+
+const props = withDefaults(
+  defineProps<{
+    series?: SeriesPoint[]
+    width?: number
+    height?: number
+    padding?: number
+  }>(),
+  {
+    series: () => [],
+    width: 800,
+    height: 320,
+    padding: 48,
+  }
+)
+
+const hover = ref<ChartPoint | null>(null)
 
 const maxRevenue = computed(() => Math.max(...(props.series?.map((p) => p.revenue) || [0]), 1))
 
@@ -79,7 +99,7 @@ const yTicks = computed(() => {
   const raw = max / 4
   const mag = Math.pow(10, Math.floor(Math.log10(raw)))
   const nice = [1, 2, 5, 10].map((m) => m * mag).find((s) => s >= raw) || raw
-  const ticks = []
+  const ticks: number[] = []
   for (let v = 0; v <= max + nice * 0.01; v += nice) {
     ticks.push(Math.round(v * 100) / 100)
   }
@@ -105,7 +125,7 @@ const labelStep = computed(() => {
   return Math.max(1, Math.ceil(len / (availWidth / 80)))
 })
 
-const points = computed(() => {
+const points = computed<ChartPoint[]>(() => {
   const len = props.series?.length || 0
   const centerX = props.width / 2
   return (props.series || []).map((p, idx) => ({
@@ -132,13 +152,13 @@ const areaPath = computed(() => {
   return `${start} ${line} ${end}`
 })
 
-function yForValue(value) {
+function yForValue(value: number) {
   const max = effectiveMax.value
   if (!max) return props.height - props.padding
   return props.padding + (props.height - props.padding * 2) * (1 - value / max)
 }
 
-function shortLabel(label) {
+function shortLabel(label: string) {
   if (!label) return ''
   // 格式化后的时间是 "MM/DD HH:MM"
   // 只显示时间部分 HH:MM
@@ -146,7 +166,7 @@ function shortLabel(label) {
   return parts.length > 1 ? parts[1] : label
 }
 
-function currency(v) {
+function currency(v: number) {
   if (typeof v !== 'number') return '¥0'
   // 简化大额显示，避免文字过长被遮挡
   if (v >= 10000) {
@@ -158,12 +178,12 @@ function currency(v) {
 }
 
 // 工具提示使用完整金额显示
-function fullCurrency(v) {
+function fullCurrency(v: number) {
   if (typeof v !== 'number') return '¥0.00'
   return `¥${v.toFixed(2)}`
 }
 
-function onEnter(p) {
+function onEnter(p: ChartPoint) {
   hover.value = p
 }
 function onLeave() {

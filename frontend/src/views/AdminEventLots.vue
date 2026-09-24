@@ -137,7 +137,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import {
   NInput,
@@ -154,9 +154,18 @@ import CollapsibleSection from '@/components/shared/CollapsibleSection.vue'
 import EmptyGuide from '@/components/shared/EmptyGuide.vue'
 import { useLotStore } from '@/stores/lotStore'
 import { useEventDetailStore } from '@/stores/eventDetailStore'
+import type { Schemas } from '@/api/client'
 import { formatYuan, toCents, fromCents } from '@/utils/money'
 
-const props = defineProps({ id: { type: [String, Number], required: true } })
+type LotForm = {
+  name: string
+  pickCount: number | null
+  priceYuan: number | null
+  candidateIds: number[]
+  allowRepeat: boolean
+}
+
+const props = defineProps<{ id: number }>()
 
 const store = useLotStore()
 const eventDetailStore = useEventDetailStore()
@@ -165,8 +174,14 @@ const message = useMessage()
 
 const isFormCollapsed = ref(false)
 const isBusy = ref(false)
-const editingId = ref(null)
-const form = ref({ name: '', pickCount: 1, priceYuan: null, candidateIds: [], allowRepeat: false })
+const editingId = ref<number | null>(null)
+const form = ref<LotForm>({
+  name: '',
+  pickCount: 1,
+  priceYuan: null,
+  candidateIds: [],
+  allowRepeat: false,
+})
 
 // 选项标签带上货主名：候选集必须同一货主是后端硬校验，把货主写在标签上
 // 能让摊主在点选时就看出来，而不是提交后才吃一个 400。
@@ -179,18 +194,20 @@ const candidateOptions = computed(() =>
 
 // --- 试算 ---
 // 后端 `/lots/preview` 是只读的 dry-run，走的是和创建完全相同的校验。
-const preview = ref(null)
-const previewError = ref(null)
+const preview = ref<Schemas['LotPreviewResponse'] | null>(null)
+const previewError = ref<string | null>(null)
 let previewSeq = 0
-let previewTimer = null
+let previewTimer: ReturnType<typeof setTimeout> | null = null
 
 // 表单填到能试算了没有。不完整时不发请求——那只会得到一句「至少要有一个候选商品」，
 // 摊主还在填就弹错话，比不说话更烦。
 const previewable = computed(
   () =>
+    typeof form.value.pickCount === 'number' &&
     Number.isFinite(form.value.pickCount) &&
     form.value.pickCount >= 1 &&
     form.value.candidateIds.length > 0 &&
+    typeof form.value.priceYuan === 'number' &&
     Number.isFinite(form.value.priceYuan)
 )
 
@@ -209,10 +226,13 @@ function schedulePreview() {
 
 async function runPreview() {
   const seq = (previewSeq += 1)
+  const pickCount = form.value.pickCount
+  const priceYuan = form.value.priceYuan
+  if (typeof pickCount !== 'number' || typeof priceYuan !== 'number') return
   try {
     const data = await store.previewLot(props.id, {
-      pick_count: form.value.pickCount,
-      total_price: toCents(form.value.priceYuan),
+      pick_count: pickCount,
+      total_price: toCents(priceYuan),
       allow_repeat: form.value.allowRepeat,
       candidate_ids: form.value.candidateIds,
     })
@@ -223,7 +243,7 @@ async function runPreview() {
     if (seq !== previewSeq) return
     preview.value = null
     // 后端原文：跨货主、候选数不够、件数超范围，都是摊主按「新建」会看到的同一句话。
-    previewError.value = error.message
+    previewError.value = error instanceof Error ? error.message : String(error)
   }
 }
 
@@ -253,13 +273,13 @@ const scenarioLines = computed(() => {
   }))
 })
 
-function describeMembers(members) {
+function describeMembers(members: Schemas['LotPreviewMember'][]) {
   return members.map((m) => (m.qty > 1 ? `${m.name} ×${m.qty}` : m.name)).join(' + ')
 }
 
-function candidateNames(lot) {
+function candidateNames(lot: Schemas['LotResponse']) {
   if (!lot.candidate_ids.length) return '（候选已被删除）'
-  const byId = new Map(eventDetailStore.products.map((p) => [p.id, p.name]))
+  const byId = new Map(eventDetailStore.products.map((p): [number, string] => [p.id, p.name]))
   return lot.candidate_ids.map((id) => byId.get(id) || `#${id}`).join('、')
 }
 
@@ -269,7 +289,7 @@ function resetForm() {
   form.value = { name: '', pickCount: 1, priceYuan: null, candidateIds: [], allowRepeat: false }
 }
 
-function startEdit(lot) {
+function startEdit(lot: Schemas['LotResponse']) {
   editingId.value = lot.id
   form.value = {
     name: lot.name,
@@ -284,15 +304,17 @@ function startEdit(lot) {
 async function handleSubmit() {
   const name = form.value.name.trim()
   if (!name) return message.warning('请填写套装名称')
-  if (!Number.isFinite(form.value.pickCount) || form.value.pickCount < 1)
+  const pickCount = form.value.pickCount
+  if (typeof pickCount !== 'number' || !Number.isFinite(pickCount) || pickCount < 1)
     return message.warning('「要选几件」至少是 1')
   if (!form.value.candidateIds.length) return message.warning('请至少选一个候选商品')
-  if (form.value.priceYuan === null) return message.warning('请填写总价')
+  const priceYuan = form.value.priceYuan
+  if (priceYuan === null) return message.warning('请填写总价')
 
-  const payload = {
+  const payload: Schemas['LotPayload'] = {
     name,
-    pick_count: form.value.pickCount,
-    total_price: toCents(form.value.priceYuan),
+    pick_count: pickCount,
+    total_price: toCents(priceYuan),
     candidate_ids: form.value.candidateIds,
     allow_repeat: form.value.allowRepeat,
   }
@@ -307,13 +329,13 @@ async function handleSubmit() {
     }
     resetForm()
   } catch (error) {
-    message.error(error.message || '操作失败')
+    message.error((error instanceof Error ? error.message : String(error)) || '操作失败')
   } finally {
     isBusy.value = false
   }
 }
 
-function handleDelete(lot) {
+function handleDelete(lot: Schemas['LotResponse']) {
   dialog.warning({
     title: '确认删除',
     // 快照的存在是这句话成立的理由，不是安慰剧。
@@ -326,7 +348,7 @@ function handleDelete(lot) {
         await store.deleteLot(props.id, lot.id)
         message.success('套装已删除')
       } catch (error) {
-        message.error(error.message || '删除失败')
+        message.error((error instanceof Error ? error.message : String(error)) || '删除失败')
       } finally {
         isBusy.value = false
       }

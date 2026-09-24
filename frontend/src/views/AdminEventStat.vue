@@ -148,7 +148,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { onMounted, onUnmounted, watch, computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useEventStatStore } from '@/stores/eventStatStore'
@@ -158,7 +158,7 @@ import { NButton, NSpin, NAlert } from 'naive-ui'
 import HelpBubble from '@/components/shared/HelpBubble.vue'
 import CollapsibleSection from '@/components/shared/CollapsibleSection.vue'
 import { toAbsoluteApiUrl } from '@/services/url'
-import { formatYuan, fromCents } from '@/utils/money'
+import { formatYuan, fromCents, type Cents } from '@/utils/money'
 
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeFile } from '@tauri-apps/plugin-fs'
@@ -192,7 +192,7 @@ const totalItemsSold = computed(
 const productVarietyCount = computed(() => statStore.stats?.summary.length || 0)
 const productOptions = computed(() => {
   const summary = statStore.stats?.summary || []
-  const unique = new Map()
+  const unique = new Map<string, { code: string; name: string }>()
   summary.forEach((item) => {
     if (!unique.has(item.product_code)) {
       unique.set(item.product_code, { code: item.product_code, name: item.product_name })
@@ -202,7 +202,7 @@ const productOptions = computed(() => {
 })
 
 const chartSubtitle = computed(() => {
-  const parts = []
+  const parts: string[] = []
   if (selectedProduct.value) parts.push(`制品 ${selectedProduct.value}`)
   if (startDate.value) parts.push(`自 ${startDate.value}`)
   if (endDate.value) parts.push(`至 ${endDate.value}`)
@@ -210,7 +210,7 @@ const chartSubtitle = computed(() => {
   return parts.join(' · ')
 })
 
-function formatCurrency(value) {
+function formatCurrency(value: Cents) {
   // 统计接口的金额一律是分，展示走唯一的换算入口。
   return formatYuan(value)
 }
@@ -231,12 +231,13 @@ async function applyFilters() {
   })
 }
 async function downloadReport() {
-  if (!statStore.stats || !statStore.stats.summary?.length) return
+  const stats = statStore.stats
+  if (!stats || !stats.summary?.length) return
 
   const isTauri = window.__TAURI_INTERNALS__ !== undefined
   const token = sessionStorage.getItem('access_token')
 
-  const safeName = (statStore.stats.event_name || 'sales_report').replace(/[\\/:*?"<>|]/g, '_')
+  const safeName = (stats.event_name || 'sales_report').replace(/[\\/:*?"<>|]/g, '_')
   const fileName = `sales_report_${safeName}.xlsx`
 
   const url = toAbsoluteApiUrl(statStore.downloadUrl)
@@ -245,7 +246,7 @@ async function downloadReport() {
     console.log('开始请求 Excel 报告:', url, 'isTauri:', isTauri)
 
     if (isTauri) {
-      const headers = {
+      const headers: Record<string, string> = {
         Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       }
       if (token) headers['Authorization'] = `Bearer ${token}`
@@ -272,7 +273,7 @@ async function downloadReport() {
     }
 
     // 浏览器环境
-    const headers = {}
+    const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
 
     const response = await fetch(url, {
@@ -300,11 +301,11 @@ async function downloadReport() {
     }, 100)
   } catch (e) {
     console.error('下载 Excel 报告失败:', e)
-    alert(e?.message || '下载失败')
+    alert((e instanceof Error ? e.message : '') || '下载失败')
   }
 }
 
-function escapeCsvCell(value) {
+function escapeCsvCell(value: unknown) {
   const text = String(value ?? '')
   if (/[,"\n\r]/.test(text)) {
     return `"${text.replace(/"/g, '""')}"`
@@ -313,12 +314,13 @@ function escapeCsvCell(value) {
 }
 
 async function downloadCsv() {
-  const summary = statStore.stats?.summary || []
+  const stats = statStore.stats
+  const summary = stats?.summary || []
   if (!summary.length) return
 
   try {
     const isTauri = window.__TAURI_INTERNALS__ !== undefined
-    const safeName = (statStore.stats.event_name || 'sales_report').replace(/[\\/:*?"<>|]/g, '_')
+    const safeName = (stats?.event_name || 'sales_report').replace(/[\\/:*?"<>|]/g, '_')
     const fileName = `sales_report_${safeName}.csv`
 
     const header = ['制品编号', '制品名', '单价', '销售量', '销售额']
@@ -371,7 +373,7 @@ async function downloadCsv() {
 onMounted(() => {
   const eventId = route.params.id
   if (eventId)
-    statStore.setActiveEvent(eventId, {
+    statStore.setActiveEvent(Number(eventId), {
       productCode: selectedProduct.value,
       startDate: startDate.value,
       endDate: endDate.value,
@@ -389,7 +391,7 @@ watch(
   () => route.params.id,
   (newEventId) => {
     if (newEventId)
-      statStore.setActiveEvent(newEventId, {
+      statStore.setActiveEvent(Number(newEventId), {
         productCode: selectedProduct.value,
         startDate: startDate.value,
         endDate: endDate.value,
