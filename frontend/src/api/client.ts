@@ -24,6 +24,7 @@ import {
   normalizeUploadError,
   showUploadDialog,
 } from '@/utils/upload'
+import { backendOrigin } from './backendOrigin'
 import { createApiClient } from './core'
 import { sessionExpiredTarget } from './loginRedirect'
 import type { components } from './schema'
@@ -33,8 +34,8 @@ export type Schemas = components['schemas']
 
 /** 是否运行在 Tauri 壳里（桌面 / Android）；LAN 顾客端浏览器里为 false。 */
 export const isTauri = window.__TAURI_INTERNALS__ !== undefined
-const API_PORT = 5140
-const baseUrl = isTauri ? `http://127.0.0.1:${API_PORT}/api` : '/api'
+// Tauri 内是后端的实际地址（5140 被占时会换端口，见 backendOrigin.ts）；浏览器里走同源
+const baseUrl = isTauri ? `${backendOrigin()}/api` : '/api'
 
 const isLocalhostUrl = (u: string) => {
   try {

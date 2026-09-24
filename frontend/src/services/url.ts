@@ -1,12 +1,11 @@
 // src/services/url.ts
+import { backendOrigin } from '@/api/backendOrigin'
 
 const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined
 
-// 你的后端端口
-const API_PORT = 5140
-
-// 注意：图片不在 /api 下，而在根路径的 /uploads 下
-export const SERVER_ORIGIN = `http://127.0.0.1:${API_PORT}`
+// 注意：图片不在 /api 下，而在根路径的 /uploads 下。
+// 后端的实际地址（5140 被占时会换端口），main.ts 在加载本模块前已经取好了。
+export const SERVER_ORIGIN = backendOrigin()
 
 /**
  * 把后端返回的相对地址补成绝对地址。

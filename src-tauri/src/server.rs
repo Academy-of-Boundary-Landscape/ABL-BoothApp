@@ -4,21 +4,72 @@ use axum::{
     response::IntoResponse,
     Router,
 };
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use tower::ServiceBuilder;
 use tower_http::cors::{AllowHeaders, AllowOrigin, CorsLayer};
 
 use crate::{api, state::AppState, web};
 
-/// HTTP 端口（仅 127.0.0.1 回环，给 Tauri webview 用）。
-/// 改这里时 lib.rs 的调用方 自动生效，无需同步修改。
+/// HTTP 的首选端口（仅 127.0.0.1 回环，给 Tauri webview 用）。
 pub const HTTP_PORT: u16 = 5140;
-/// HTTPS 端口（0.0.0.0，给所有 LAN 设备用）。
-/// 改这里时 api/info.rs 必须同步改：那里的 server_info 端点会把这个端口拼到 QR 码 URL 里。
+/// HTTPS 的首选端口（0.0.0.0，给所有 LAN 设备用）。
 pub const HTTPS_PORT: u16 = 5141;
 
-pub async fn start_server(state: AppState, http_port: u16, https_port: u16, app_data_dir: PathBuf) {
+/// HTTP 的候选端口：先 5140，被占就依次试 5150–5159。
+///
+/// 端口写死的年代，5140 被别的程序占了（2026-09-25 真机上是 VS Code 的端口自动转发）
+/// 后端就起不来，而窗口照常打开、所有请求静默失败。实际用的端口经 `get_backend_url`
+/// 告诉前端（frontend/src/api/backendOrigin.ts），所以换端口对前端透明。
+pub fn http_port_candidates() -> Vec<u16> {
+    std::iter::once(HTTP_PORT).chain(5150..=5159).collect()
+}
+
+/// HTTPS 的候选端口：先 5141，被占就依次试 5160–5169。实际端口放进
+/// `AppState::lan_https_port`，二维码链接用它（api/info.rs）。
+/// 注意 Windows 防火墙放行的是具体端口：换了端口，摊主可能要重新放行一次。
+pub fn https_port_candidates() -> Vec<u16> {
+    std::iter::once(HTTPS_PORT).chain(5160..=5169).collect()
+}
+
+/// 依次尝试绑定候选端口，返回第一个成功的 listener 与端口号（已设为非阻塞，可直接交给 tokio）。
+pub fn bind_first_available(
+    ip: std::net::Ipv4Addr,
+    candidates: &[u16],
+) -> std::io::Result<(std::net::TcpListener, u16)> {
+    let mut last_err = None;
+    for &port in candidates {
+        match std::net::TcpListener::bind((ip, port)) {
+            Ok(l) => {
+                l.set_nonblocking(true)?;
+                if port != candidates[0] {
+                    println!(
+                        "[Booth Tool] port {} is in use; using {} instead",
+                        candidates[0], port
+                    );
+                }
+                return Ok((l, port));
+            }
+            Err(e) => last_err = Some(e),
+        }
+    }
+    let tried: Vec<String> = candidates.iter().map(|p| p.to_string()).collect();
+    Err(std::io::Error::new(
+        std::io::ErrorKind::AddrInUse,
+        format!(
+            "端口 {} 都被占用了（最后一个错误：{}）",
+            tried.join("、"),
+            last_err.map(|e| e.to_string()).unwrap_or_default()
+        ),
+    ))
+}
+
+/// 在已经绑定好的两个 listener 上起服务（端口的选择在调用方同步完成，见 `bind_first_available`）。
+pub async fn start_server(
+    state: AppState,
+    http_listener: std::net::TcpListener,
+    https_listener: std::net::TcpListener,
+    app_data_dir: PathBuf,
+) {
     // 复制一份 upload_dir 供 fallback 闭包使用
     let upload_dir = state.upload_dir.clone();
 
@@ -153,29 +204,20 @@ pub async fn start_server(state: AppState, http_port: u16, https_port: u16, app_
     };
 
     // HTTP listener: 仅绑回环，给 Tauri webview 用，避免 LAN 接触 HTTP
-    let http_addr = SocketAddr::from(([127, 0, 0, 1], http_port));
-    println!(
-        "[Booth Tool] HTTP server (loopback only)  http://{}",
-        http_addr
-    );
-
+    let http_addr = http_listener.local_addr().ok();
+    println!("[Booth Tool] HTTP server (loopback only)  http://{http_addr:?}");
     // HTTPS listener: 绑 0.0.0.0，所有 LAN 设备走这里
-    let https_addr = SocketAddr::from(([0, 0, 0, 0], https_port));
-    println!(
-        "[Booth Tool] HTTPS server (LAN)           https://{}",
-        https_addr
-    );
+    let https_addr = https_listener.local_addr().ok();
+    println!("[Booth Tool] HTTPS server (LAN)           https://{https_addr:?}");
 
     let app_for_http = app.clone();
     // 让闭包返回 io::Result：bind/serve 任一失败必须冒泡到 try_join 才能让用户看到，
     // 不能让 HTTPS 端默默死掉而 HTTP 还在跑（那样 QR 码全部指向死端口，摊主完全察觉不到）。
     let http_task: tokio::task::JoinHandle<std::io::Result<()>> = tokio::spawn(async move {
-        let listener = tokio::net::TcpListener::bind(http_addr)
-            .await
-            .map_err(|e| {
-                eprintln!("[Booth Tool] FATAL: bind {} failed: {}", http_addr, e);
-                e
-            })?;
+        let listener = tokio::net::TcpListener::from_std(http_listener).map_err(|e| {
+            eprintln!("[Booth Tool] FATAL: HTTP listener unusable: {e}");
+            e
+        })?;
         axum::serve(listener, app_for_http).await.map_err(|e| {
             eprintln!("[Booth Tool] HTTP server crashed: {}", e);
             e
@@ -184,7 +226,7 @@ pub async fn start_server(state: AppState, http_port: u16, https_port: u16, app_
     });
 
     let https_task: tokio::task::JoinHandle<std::io::Result<()>> = tokio::spawn(async move {
-        axum_server::bind_rustls(https_addr, tls_cfg)
+        axum_server::from_tcp_rustls(https_listener, tls_cfg)
             .serve(app.into_make_service())
             .await
             .map_err(|e| {
@@ -207,5 +249,43 @@ pub async fn start_server(state: AppState, http_port: u16, https_port: u16, app_
         Err(join_err) => {
             eprintln!("[Booth Tool] server task panicked: {}", join_err);
         }
+    }
+}
+
+#[cfg(test)]
+mod port_tests {
+    use super::bind_first_available;
+    use std::net::{Ipv4Addr, TcpListener};
+
+    #[test]
+    fn skips_an_occupied_port_and_takes_the_next_candidate() {
+        // 先占住一个端口（模拟 VS Code 端口转发 / 另一个程序）
+        let squatter = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let taken = squatter.local_addr().unwrap().port();
+        let free = {
+            let probe = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+            probe.local_addr().unwrap().port()
+        };
+
+        let (listener, port) = bind_first_available(Ipv4Addr::LOCALHOST, &[taken, free]).unwrap();
+        assert_eq!(port, free);
+        assert_eq!(listener.local_addr().unwrap().port(), free);
+    }
+
+    #[test]
+    fn all_candidates_occupied_is_an_error_naming_them() {
+        let squatter = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let taken = squatter.local_addr().unwrap().port();
+        let err = bind_first_available(Ipv4Addr::LOCALHOST, &[taken]).unwrap_err();
+        assert!(err.to_string().contains(&taken.to_string()), "{err}");
+    }
+
+    #[test]
+    fn candidate_lists_start_with_the_historical_ports_and_do_not_overlap() {
+        let http = super::http_port_candidates();
+        let https = super::https_port_candidates();
+        assert_eq!(http[0], 5140);
+        assert_eq!(https[0], 5141);
+        assert!(http.iter().all(|p| !https.contains(p)));
     }
 }

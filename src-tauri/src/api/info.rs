@@ -1,7 +1,7 @@
 // src/api/info.rs
 
-use crate::{error::ApiResult, server::HTTPS_PORT, state::AppState, utils::ip::get_lan_ip};
-use axum::Json;
+use crate::{error::ApiResult, state::AppState, utils::ip::get_lan_ip};
+use axum::{extract::State, Json};
 use serde::Serialize;
 use utoipa::ToSchema;
 use utoipa_axum::{router::OpenApiRouter, routes};
@@ -37,9 +37,9 @@ struct ServerInfo {
         (status = 200, body = ServerInfo, description = "LAN 的 IP、端口与各入口 URL"),
     ),
 )]
-async fn server_info_handler() -> ApiResult<Json<ServerInfo>> {
+async fn server_info_handler(State(state): State<AppState>) -> ApiResult<Json<ServerInfo>> {
     let ip = get_lan_ip();
-    let https_port = HTTPS_PORT;
+    let https_port = state.lan_https_port;
 
     // 给 LAN 设备的 URL 都用 HTTPS（指向 0.0.0.0:5141 listener），
     // 这样浏览器才会把页面当作 secure context，getUserMedia / clipboard 等 API 才可用。
@@ -113,6 +113,31 @@ mod shape_tests {
                 "admin_url": "string",
                 "api_base_url": "string"
             })
+        );
+    }
+
+    /// 5141 被占时 HTTPS 会回退到别的端口；二维码链接必须跟着实际端口走。
+    #[tokio::test]
+    async fn server_info_uses_the_port_actually_bound() {
+        let (mut state, _dir) = crate::test_support::test_state().await;
+        state.lan_https_port = 5163;
+        let router = axum::Router::new()
+            .nest("/api", crate::api::router().split_for_parts().0)
+            .with_state(state);
+        let res = router
+            .oneshot(crate::test_support::json_request(
+                "GET",
+                "/api/server-info",
+                None,
+                serde_json::json!(null),
+            ))
+            .await
+            .unwrap();
+        let body = crate::test_support::read_json(res).await;
+        assert_eq!(body["port"], 5163);
+        assert!(
+            body["order_url"].as_str().unwrap().contains(":5163"),
+            "{body}"
         );
     }
 }

@@ -15,4 +15,7 @@ pub struct AppState {
     pub app_data_dir: PathBuf,
     pub jwt_secret: String,
     pub vision_runtime: Arc<VisionRuntime>,
+    /// LAN HTTPS 实际监听的端口（首选 5141，被占时回退，见 server::https_port_candidates）。
+    /// 二维码链接必须用它，不能用常量。
+    pub lan_https_port: u16,
 }

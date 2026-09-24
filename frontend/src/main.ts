@@ -1,20 +1,8 @@
-// 1. 确保从 'vue' 导入 createApp
-import { createApp } from 'vue'
+// 入口：先拿到后端的实际地址，再加载应用。
+//
+// 后端首选 127.0.0.1:5140，被占时会换端口（src-tauri/src/server.rs）。client.ts / url.ts
+// 在模块初始化时读 backendOrigin()，所以这一步必须在 import 它们之前完成——
+// 应用本体放在 boot.ts 里动态导入。
+import { initBackendOrigin } from './api/backendOrigin'
 
-// 2. 确保从 'pinia' 导入 createPinia
-import { createPinia } from 'pinia'
-
-// 3. 导入你的根组件、路由和全局样式
-import App from './App.vue'
-import router from './router'
-import './assets/main.css'
-
-// 4. 创建 Vue 应用实例
-const app = createApp(App)
-
-// 5. 使用 Pinia 和路由
-app.use(createPinia())
-app.use(router)
-
-// 6. 挂载应用
-app.mount('#app')
+initBackendOrigin().then(() => import('./boot'))

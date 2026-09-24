@@ -49,6 +49,7 @@ mod tests {
                 upload_dir,
                 pool.clone(),
             )),
+            lan_https_port: crate::server::HTTPS_PORT,
         };
         let (api, doc) = crate::api::router().split_for_parts();
         let router = Router::new().nest("/api", api).with_state(state);

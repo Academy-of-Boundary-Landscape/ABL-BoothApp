@@ -144,7 +144,38 @@ pub fn run() {
                 }
             };
 
-            // 5. 构建 AppState
+            // 5. 绑定端口。首选 5140 / 5141，被占就依次回退（server::*_port_candidates）。
+            //    端口写死的年代，5140 被别的程序占了后端就起不来，而窗口照常打开、
+            //    所有请求静默失败（2026-09-25 真机上是 VS Code 的端口自动转发）。
+            let bound = server::bind_first_available(
+                std::net::Ipv4Addr::LOCALHOST,
+                &server::http_port_candidates(),
+            )
+            .and_then(|http| {
+                server::bind_first_available(
+                    std::net::Ipv4Addr::UNSPECIFIED,
+                    &server::https_port_candidates(),
+                )
+                .map(|https| (http, https))
+            });
+            let (listeners, http_port, lan_https_port) = match bound {
+                Ok(((http_l, http_p), (https_l, https_p))) => (Some((http_l, https_l)), http_p, https_p),
+                Err(e) => {
+                    eprintln!("[Booth Tool] FATAL: cannot bind server ports: {e}");
+                    use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+                    app_handle
+                        .dialog()
+                        .message(format!(
+                            "摊盒的本地服务启动失败：{e}\n\n请关闭占用这些端口的程序（或已经打开的另一个摊盒）后重新启动。"
+                        ))
+                        .kind(MessageDialogKind::Error)
+                        .title("无法启动本地服务")
+                        .show(|_| {});
+                    (None, server::HTTP_PORT, server::HTTPS_PORT)
+                }
+            };
+
+            // 6. 构建 AppState
             let state = state::AppState {
                 db: db_pool.clone(),
                 upload_dir: upload_dir.clone(),
@@ -155,6 +186,7 @@ pub fn run() {
                     upload_dir.clone(),
                     db_pool.clone(),
                 )),
+                lan_https_port,
             };
 
             // 初始化 ONNX Runtime 动态库路径
@@ -213,7 +245,7 @@ pub fn run() {
 
             // 获取后端 URL
             let backend_url = std::env::var("BACKEND_URL")
-                .unwrap_or_else(|_| "http://127.0.0.1:5140".to_string());
+                .unwrap_or_else(|_| format!("http://127.0.0.1:{http_port}"));
 
             println!("[Config] Backend URL  : {}", backend_url);
 
@@ -223,20 +255,20 @@ pub fn run() {
             // [优化点 2] 使用 Tauri 内置异步运行时
             // -------------------------------------------------------------
             let app_data_dir_for_server = app_data_dir.clone();
-            tauri::async_runtime::spawn(async move {
-                println!(
-                    "[Booth Tool] Starting HTTP+HTTPS server ({} loopback / {} LAN)...",
-                    server::HTTP_PORT,
-                    server::HTTPS_PORT
-                );
-                server::start_server(
-                    state,
-                    server::HTTP_PORT,
-                    server::HTTPS_PORT,
-                    app_data_dir_for_server,
-                )
-                .await;
-            });
+            if let Some((http_listener, https_listener)) = listeners {
+                tauri::async_runtime::spawn(async move {
+                    println!(
+                        "[Booth Tool] Starting HTTP+HTTPS server ({http_port} loopback / {lan_https_port} LAN)..."
+                    );
+                    server::start_server(
+                        state,
+                        http_listener,
+                        https_listener,
+                        app_data_dir_for_server,
+                    )
+                    .await;
+                });
+            }
 
             Ok(())
         })

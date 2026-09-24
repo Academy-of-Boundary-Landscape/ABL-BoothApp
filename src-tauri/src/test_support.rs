@@ -64,6 +64,7 @@ pub async fn test_state() -> (AppState, TempDir) {
         app_data_dir: dir.path().to_path_buf(),
         jwt_secret: TEST_JWT_SECRET.to_string(),
         vision_runtime,
+        lan_https_port: crate::server::HTTPS_PORT,
     };
 
     (state, dir)
