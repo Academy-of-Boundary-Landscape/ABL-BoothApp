@@ -7,7 +7,8 @@ use serde::Serialize;
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi, ToSchema};
 
-/// security scheme 名。handler 注解里写 `security((BEARER = []))`。
+/// security scheme 名。handler 注解里必须写字面量 `security(("bearer" = []))`
+/// （utoipa 宏不接受常量），改名时两处一起改。
 pub const BEARER: &str = "bearer";
 
 /// 所有错误响应的形状。为什么必须是这个形状，见 `crate::error` 的模块注释。

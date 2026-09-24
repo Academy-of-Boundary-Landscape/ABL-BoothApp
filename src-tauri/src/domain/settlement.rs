@@ -20,7 +20,7 @@ use crate::domain::money::Money;
 
 /// 一个商品在一场展会里的全部去向。**每一项都从 `stock_movements` 按方向取**，
 /// 没有任何缓存字段——母 spec 的整个设计就是「不存在第二个可以漂移的数字」。
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct GoodsLine {
     pub event_product_id: i64,
     pub product_code: String,
@@ -47,7 +47,8 @@ pub struct GoodsLine {
     pub allocated: Money,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[schema(as = SettlementEntry)]
 pub struct Entry {
     pub label: String,
     /// 按对「我应转给」的影响存：垫付为正（算出来要减），
@@ -100,7 +101,7 @@ pub struct SettlementInput {
     pub channels: Vec<ChannelCount>,
 }
 
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Default, utoipa::ToSchema)]
 pub struct GoodsTotals {
     pub brought_in: i64,
     pub sold: i64,
@@ -111,7 +112,7 @@ pub struct GoodsTotals {
     pub on_site: i64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct SocietyBlock {
     pub society_id: i64,
     pub name: String,
@@ -132,7 +133,7 @@ pub struct SocietyBlock {
     pub transfer: Money,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct ChannelLine {
     pub channel: String,
     pub book: Money,
@@ -141,7 +142,7 @@ pub struct ChannelLine {
     pub counted: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct SettlementReport {
     pub event_name: String,
     pub event_date: String,

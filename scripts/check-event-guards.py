@@ -4,7 +4,8 @@
 ②-1 列出 4 个「不查 events.status」的敞口，②-2 一个没补，②-3 又新增了
 十来个写入口——靠记是记不住的，所以做成门禁。
 
-判据：凡是被 post()/put()/patch()/delete() 包起来的 handler 函数，
+判据：凡是被 post()/put()/patch()/delete() 包起来的 handler 函数，以及（③b 起）
+标了 `#[utoipa::path(post|put|patch|delete, ...)]` 的 handler 函数，
 **先剥掉注释**，剩下的函数体里必须出现 require_event_open，或者出现豁免标记注释
     // 不需要展会守卫：<理由>
 理由必须非空。
@@ -25,6 +26,13 @@ DELEGATE_RE = re.compile(r"//\s*展会守卫在\s+([A-Za-z_][A-Za-z0-9_]*)\s*：
 # 这类写法解析不出裸标识符，要当成问题报出来，而不是当作不存在。
 METHOD_TOKEN_RE = re.compile(r"\b(?:post|put|patch|delete)\s*\(")
 IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# ③b：路由改成 `routes!(a, b)` 注册后，方法写在 handler 的 utoipa 注解里，
+# 上面那条正则就再也看不到它们了——不加这一条，门禁会静默地变成空转。
+UTOIPA_WRITE_RE = re.compile(
+    r"#\[utoipa::path\(\s*(?:post|put|patch|delete)\b.*?\)\]\s*(?:#\[[^\]]*\]\s*)*"
+    r"(?:pub\s+)?async fn ([A-Za-z_][A-Za-z0-9_]*)\s*\(",
+    re.S,
+)
 
 
 def strip_comments(src: str) -> str:
@@ -89,19 +97,32 @@ def route_registrations(src: str):
         yield src[m.start() : i], arg
 
 
+def write_handlers(code: str, path: Path, problems: list):
+    """两种注册方式下的写 handler 名，去重。"""
+    seen = []
+    for snippet, arg in route_registrations(code):
+        if not IDENT_RE.match(arg):
+            problems.append(
+                f"{path.name}: 无法解析的路由注册 `{snippet.strip()}`，"
+                f"请改成具名 handler 或手工确认"
+            )
+            continue
+        if arg not in seen:
+            seen.append(arg)
+    for m in UTOIPA_WRITE_RE.finditer(code):
+        if m.group(1) not in seen:
+            seen.append(m.group(1))
+    return seen
+
+
 def main() -> int:
     problems = []
+    checked = 0
     for path in sorted(API_DIR.rglob("*.rs")):
         raw = path.read_text(encoding="utf-8")
         code = strip_comments(raw)
-        for snippet, arg in route_registrations(code):
-            if not IDENT_RE.match(arg):
-                problems.append(
-                    f"{path.name}: 无法解析的路由注册 `{snippet.strip()}`，"
-                    f"请改成具名 handler 或手工确认"
-                )
-                continue
-            name = arg
+        for name in write_handlers(code, path, problems):
+            checked += 1
 
             raw_body = handler_body(raw, name)
             if raw_body is None:
@@ -135,6 +156,10 @@ def main() -> int:
                 f"也没写 `// 不需要展会守卫：<理由>` 或 `// 展会守卫在 <函数名>：<理由>`"
             )
 
+    # 一个写入口都没找到，只可能是脚本认不出注册方式了，而不是真的没有写入口。
+    if checked == 0:
+        problems.append("一个写 handler 都没找到——路由注册写法变了，脚本需要跟着改")
+
     if problems:
         print("展会守卫门禁未通过：", file=sys.stderr)
         for p in problems:
@@ -148,7 +173,7 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-    print("展会守卫门禁通过")
+    print(f"展会守卫门禁通过（{checked} 个写 handler）")
     return 0
 
 

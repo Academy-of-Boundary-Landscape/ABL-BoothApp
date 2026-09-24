@@ -11,9 +11,790 @@
     },
     "version": "1"
   },
-  "paths": {},
+  "paths": {
+    "/channels": {
+      "get": {
+        "tags": [
+          "settlement"
+        ],
+        "summary": "已用过的收款渠道，跨展会。",
+        "description": "挂在 `/api/channels` 而不是 `/api/events/:id/channels`：它按定义就是跨展会的。\n这是防「微信」和「微信支付」分裂成两个账户的那一条（②-1/②-2 交接段第 3 条）。",
+        "operationId": "list_channels",
+        "responses": {
+          "200": {
+            "description": "预置渠道在前，历史用过的在后，去重",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/events/{event_id}/adjustments": {
+      "get": {
+        "tags": [
+          "settlement"
+        ],
+        "summary": "这场展会的结算调整列表。金额带符号：负 = 我要多给他们。",
+        "operationId": "list_adjustments",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LedgerEntryRow"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "settlement"
+        ],
+        "summary": "登记一笔结算调整。方向由 `direction` 表达，金额恒为正。",
+        "description": "展会已结算后仍可调用（冻结例外：垫付、结算调整、收摊清点三类）。",
+        "operationId": "create_adjustment",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdjustmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "金额非正、方向不认识、说明为空或过长、社团不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "展会不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/events/{event_id}/adjustments/{id}": {
+      "delete": {
+        "tags": [
+          "settlement"
+        ],
+        "summary": "删除一笔结算调整——写一条冲正 journal，原记录保留。",
+        "description": "展会已结算后仍可调用（冻结例外：垫付、结算调整、收摊清点三类）。",
+        "operationId": "delete_adjustment",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "条目 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "已冲正"
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "条目不存在或不属于这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "已经删过了",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/events/{event_id}/advances": {
+      "get": {
+        "tags": [
+          "settlement"
+        ],
+        "summary": "这场展会的垫付列表。",
+        "operationId": "list_advances",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LedgerEntryRow"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "settlement"
+        ],
+        "summary": "登记一笔垫付（摊主替货主掏的钱）。",
+        "description": "展会已结算后仍可调用（冻结例外：垫付、结算调整、收摊清点三类）。",
+        "operationId": "create_advance",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdvanceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "金额非正、说明为空或过长、社团不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "展会不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/events/{event_id}/advances/{id}": {
+      "delete": {
+        "tags": [
+          "settlement"
+        ],
+        "summary": "删除一笔垫付——写一条冲正 journal，原记录保留。",
+        "description": "展会已结算后仍可调用（冻结例外：垫付、结算调整、收摊清点三类）。",
+        "operationId": "delete_advance",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "条目 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "已冲正"
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "条目不存在或不属于这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "已经删过了",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/events/{event_id}/settlement": {
+      "get": {
+        "tags": [
+          "settlement"
+        ],
+        "summary": "结算单。页面与 xlsx 导出渲染的是同一个 `SettlementReport`。",
+        "operationId": "get_settlement",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettlementReport"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "展会不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/events/{event_id}/settlement.xlsx": {
+      "get": {
+        "tags": [
+          "settlement"
+        ],
+        "summary": "结算单导出为四 sheet 的 xlsx。",
+        "operationId": "download_settlement_xlsx",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "展会不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/events/{event_id}/settlement/reconcile": {
+      "post": {
+        "tags": [
+          "settlement"
+        ],
+        "summary": "收摊清点：按渠道填实际到手，差额记到摊主名下。",
+        "description": "展会已结算后仍可调用（冻结例外：垫付、结算调整、收摊清点三类）。必须覆盖这场展会用过的每个渠道，且每个渠道只出现一次。",
+        "operationId": "reconcile",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReconcileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconcileResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "渠道重复、漏报、或不是这场展会用过的渠道",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "展会不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    }
+  },
   "components": {
     "schemas": {
+      "AdjustmentRequest": {
+        "type": "object",
+        "required": [
+          "society_id",
+          "label",
+          "direction",
+          "amount"
+        ],
+        "properties": {
+          "amount": {
+            "$ref": "#/components/schemas/Money",
+            "description": "分，必须为正。符号由 `direction` 决定。"
+          },
+          "direction": {
+            "type": "string",
+            "description": "`to_them` = 我要多给他们；`to_me` = 他们要多给我。\n\n**界面不给摊主填正负号。** 母 spec 5.2 那个例子自己都要算一遍才对得上\n方向，让人在收摊后的疲惫状态下判断「赔付该填正还是负」是设计失误。"
+          },
+          "label": {
+            "type": "string"
+          },
+          "society_id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "AdvanceRequest": {
+        "type": "object",
+        "required": [
+          "society_id",
+          "label",
+          "amount"
+        ],
+        "properties": {
+          "amount": {
+            "$ref": "#/components/schemas/Money",
+            "description": "分，必须为正。方向是固定的（摊主掏钱给社团），不需要符号。"
+          },
+          "label": {
+            "type": "string"
+          },
+          "society_id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "ApiErrorBody": {
         "type": "object",
         "description": "所有错误响应的形状。为什么必须是这个形状，见 `crate::error` 的模块注释。",
@@ -23,6 +804,422 @@
         "properties": {
           "error": {
             "type": "string"
+          }
+        }
+      },
+      "ChannelActual": {
+        "type": "object",
+        "required": [
+          "channel",
+          "actual"
+        ],
+        "properties": {
+          "actual": {
+            "$ref": "#/components/schemas/Money",
+            "description": "摊主数出来的实际到手（分）。"
+          },
+          "channel": {
+            "type": "string"
+          }
+        }
+      },
+      "ChannelLine": {
+        "type": "object",
+        "required": [
+          "channel",
+          "book",
+          "actual",
+          "diff",
+          "counted"
+        ],
+        "properties": {
+          "actual": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "book": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "counted": {
+            "type": "boolean"
+          },
+          "diff": {
+            "$ref": "#/components/schemas/Money"
+          }
+        }
+      },
+      "CreatedEntry": {
+        "type": "object",
+        "required": [
+          "id",
+          "journal_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "journal_id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "GoodsLine": {
+        "type": "object",
+        "description": "一个商品在一场展会里的全部去向。**每一项都从 `stock_movements` 按方向取**，\n没有任何缓存字段——母 spec 的整个设计就是「不存在第二个可以漂移的数字」。",
+        "required": [
+          "event_product_id",
+          "product_code",
+          "name",
+          "brought_in",
+          "sold",
+          "gifted",
+          "scrapped",
+          "variance",
+          "taken_back",
+          "on_site",
+          "gross",
+          "lot_discount",
+          "allocated"
+        ],
+        "properties": {
+          "allocated": {
+            "$ref": "#/components/schemas/Money",
+            "description": "货主应得（已扣除退货部分）。**用 allocated 不用 paid。**"
+          },
+          "brought_in": {
+            "type": "integer",
+            "format": "int64",
+            "description": "`外部 → 现场仓` 的合计。开场带货和中途补货是同一件事。"
+          },
+          "event_product_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "gifted": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "gross": {
+            "$ref": "#/components/schemas/Money",
+            "description": "这个商品的原价合计（已扣除退货部分）。spec 8.4 要求「货主明细」按商品列出金额——\n只给数量等于让社团自己去乘单价，而 Lot 折让之后单价不等于成交价。"
+          },
+          "lot_discount": {
+            "$ref": "#/components/schemas/Money",
+            "description": "Lot 折让 = gross − allocated。"
+          },
+          "name": {
+            "type": "string"
+          },
+          "on_site": {
+            "type": "integer",
+            "format": "int64",
+            "description": "还在现场仓的。走完带回之后必须是 0。"
+          },
+          "product_code": {
+            "type": "string"
+          },
+          "scrapped": {
+            "type": "integer",
+            "format": "int64",
+            "description": "`损耗` 的净余额，含「退货到损耗」的那部分。"
+          },
+          "sold": {
+            "type": "integer",
+            "format": "int64",
+            "description": "`顾客仓` 的净余额。退货会自动减回去。"
+          },
+          "taken_back": {
+            "type": "integer",
+            "format": "int64",
+            "description": "`现场仓 → 外部` 的合计。"
+          },
+          "variance": {
+            "type": "integer",
+            "format": "int64",
+            "description": "`差异` 的净余额。盘亏为正、盘盈为负。"
+          }
+        }
+      },
+      "GoodsTotals": {
+        "type": "object",
+        "required": [
+          "brought_in",
+          "sold",
+          "gifted",
+          "scrapped",
+          "variance",
+          "taken_back",
+          "on_site"
+        ],
+        "properties": {
+          "brought_in": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "gifted": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "on_site": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "scrapped": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sold": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "taken_back": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "variance": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "LedgerEntryRow": {
+        "type": "object",
+        "required": [
+          "id",
+          "owner_society_id",
+          "society_name",
+          "label",
+          "amount"
+        ],
+        "properties": {
+          "amount": {
+            "$ref": "#/components/schemas/Money",
+            "description": "垫付恒为正；结算调整带符号（负 = 我要多给他们）。"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "label": {
+            "type": "string"
+          },
+          "owner_society_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "society_name": {
+            "type": "string"
+          }
+        }
+      },
+      "Money": {
+        "type": "integer",
+        "format": "cents",
+        "description": "金额，单位：分"
+      },
+      "ReconcileRequest": {
+        "type": "object",
+        "required": [
+          "counts"
+        ],
+        "properties": {
+          "counts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChannelActual"
+            }
+          }
+        }
+      },
+      "ReconcileResponse": {
+        "type": "object",
+        "properties": {
+          "journal_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "分文不差时为 `None`——没有腿可记，「数过了」靠 `events.reconciled_at`。"
+          }
+        }
+      },
+      "SettlementEntry": {
+        "type": "object",
+        "required": [
+          "label",
+          "amount"
+        ],
+        "properties": {
+          "amount": {
+            "$ref": "#/components/schemas/Money",
+            "description": "按对「我应转给」的影响存：垫付为正（算出来要减），\n结算调整正数 = 我要多给他们（算出来要加）。"
+          },
+          "at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "结算调整取 `settlement_adjustments.created_at`；垫付恒为 `None`\n（`advances` 表没有这一列，迁移已冻结）。\n母 spec §7 的样例里调整那一行是带日期的：「10-03 追加：…」。"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "SettlementReport": {
+        "type": "object",
+        "required": [
+          "event_name",
+          "event_date",
+          "generated_at",
+          "stocktaken",
+          "societies",
+          "channels",
+          "actual_total",
+          "transfer_total",
+          "vendor_retained",
+          "warnings"
+        ],
+        "properties": {
+          "actual_total": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChannelLine"
+            }
+          },
+          "event_date": {
+            "type": "string"
+          },
+          "event_name": {
+            "type": "string"
+          },
+          "generated_at": {
+            "type": "string"
+          },
+          "last_changed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "societies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SocietyBlock"
+            }
+          },
+          "stocktaken": {
+            "type": "boolean"
+          },
+          "stocktaken_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "transfer_total": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "vendor_retained": {
+            "$ref": "#/components/schemas/Money",
+            "description": "摊主留存 = 实际到手合计 − Σ 我应转给各货主。"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "恒等式没撞上的地方。**页面和导出都要显眼地显示它**。"
+          }
+        }
+      },
+      "SocietyBlock": {
+        "type": "object",
+        "required": [
+          "society_id",
+          "name",
+          "is_home",
+          "goods",
+          "totals",
+          "gross",
+          "lot_discount",
+          "manual_discount",
+          "net",
+          "refund_kept",
+          "gift_self_paid",
+          "advances",
+          "advances_total",
+          "adjustments",
+          "adjustments_total",
+          "transfer"
+        ],
+        "properties": {
+          "adjustments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SettlementEntry"
+            }
+          },
+          "adjustments_total": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "advances": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SettlementEntry"
+            }
+          },
+          "advances_total": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "gift_self_paid": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "goods": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GoodsLine"
+            }
+          },
+          "gross": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "is_home": {
+            "type": "boolean"
+          },
+          "lot_discount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "manual_discount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "name": {
+            "type": "string"
+          },
+          "net": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "refund_kept": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "society_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/GoodsTotals"
+          },
+          "transfer": {
+            "$ref": "#/components/schemas/Money",
+            "description": "我应转给他们 = −（往来余额）。"
           }
         }
       }

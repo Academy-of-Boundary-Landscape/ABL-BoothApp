@@ -9,14 +9,16 @@ use axum::{
     extract::{Path, State},
     http::{header, StatusCode},
     response::{IntoResponse, Response},
-    routing::{delete, get, post},
-    Json, Router,
+    Json,
 };
 use rust_xlsxwriter::{Color, Format, Workbook};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::{
     api::guard::{check_read_permission, check_write_permission},
+    api::openapi::ApiErrorBody,
     domain::{
         channel::{normalize, PRESET_CHANNELS},
         ledger::{home_society_id, post_journal, reverse_journal, Account, JournalKind, MoneyLeg},
@@ -31,40 +33,33 @@ use crate::{
     utils::security::Claims,
 };
 
-/// ③b 过渡：本模块的路由还没标 utoipa 注解，整体包进 OpenApiRouter——路由照常工作，
-/// 只是文档里没有它的路径。阶段 2 迁移本模块时改为 `routes!(...)` 并删掉 `legacy_router`。
-pub fn router() -> utoipa_axum::router::OpenApiRouter<AppState> {
-    utoipa_axum::router::OpenApiRouter::from(legacy_router())
-}
-
-fn legacy_router() -> Router<AppState> {
-    Router::new()
-        .route("/channels", get(list_channels))
-        .route(
-            "/events/{event_id}/advances",
-            get(list_advances).post(create_advance),
-        )
-        .route("/events/{event_id}/advances/{id}", delete(delete_advance))
-        .route(
-            "/events/{event_id}/adjustments",
-            get(list_adjustments).post(create_adjustment),
-        )
-        .route(
-            "/events/{event_id}/adjustments/{id}",
-            delete(delete_adjustment),
-        )
-        .route("/events/{event_id}/settlement", get(get_settlement))
-        .route("/events/{event_id}/settlement/reconcile", post(reconcile))
-        .route(
-            "/events/{event_id}/settlement.xlsx",
-            get(download_settlement_xlsx),
-        )
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(list_channels))
+        .routes(routes!(list_advances, create_advance))
+        .routes(routes!(delete_advance))
+        .routes(routes!(list_adjustments, create_adjustment))
+        .routes(routes!(delete_adjustment))
+        .routes(routes!(get_settlement))
+        .routes(routes!(reconcile))
+        .routes(routes!(download_settlement_xlsx))
 }
 
 /// 已用过的收款渠道，跨展会。
 ///
 /// 挂在 `/api/channels` 而不是 `/api/events/:id/channels`：它按定义就是跨展会的。
 /// 这是防「微信」和「微信支付」分裂成两个账户的那一条（②-1/②-2 交接段第 3 条）。
+#[utoipa::path(
+    get,
+    path = "/channels",
+    tag = "settlement",
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = Vec<String>, description = "预置渠道在前，历史用过的在后，去重"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+    ),
+)]
 async fn list_channels(
     State(state): State<AppState>,
     _claims: Claims,
@@ -136,20 +131,38 @@ async fn ensure_event_exists(conn: &mut sqlx::SqliteConnection, event_id: i64) -
         .ok_or_else(|| ApiError::NotFound("展会不存在".into()))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct AdvanceRequest {
     society_id: i64,
     label: String,
     /// 分，必须为正。方向是固定的（摊主掏钱给社团），不需要符号。
+    #[schema(value_type = Money)]
     amount: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct CreatedEntry {
     id: i64,
     journal_id: i64,
 }
 
+/// 登记一笔垫付（摊主替货主掏的钱）。
+#[utoipa::path(
+    post,
+    path = "/events/{event_id}/advances",
+    tag = "settlement",
+    description = "展会已结算后仍可调用（冻结例外：垫付、结算调整、收摊清点三类）。",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    request_body = AdvanceRequest,
+    security(("bearer" = [])),
+    responses(
+        (status = 201, body = CreatedEntry),
+        (status = 400, body = ApiErrorBody, description = "金额非正、说明为空或过长、社团不存在"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "展会不存在"),
+    ),
+)]
 async fn create_advance(
     State(state): State<AppState>,
     claims: Claims,
@@ -204,7 +217,7 @@ async fn create_advance(
     Ok((StatusCode::CREATED, Json(CreatedEntry { id, journal_id })))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct AdjustmentRequest {
     society_id: i64,
     label: String,
@@ -214,9 +227,27 @@ pub struct AdjustmentRequest {
     /// 方向，让人在收摊后的疲惫状态下判断「赔付该填正还是负」是设计失误。
     direction: String,
     /// 分，必须为正。符号由 `direction` 决定。
+    #[schema(value_type = Money)]
     amount: i64,
 }
 
+/// 登记一笔结算调整。方向由 `direction` 表达，金额恒为正。
+#[utoipa::path(
+    post,
+    path = "/events/{event_id}/adjustments",
+    tag = "settlement",
+    description = "展会已结算后仍可调用（冻结例外：垫付、结算调整、收摊清点三类）。",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    request_body = AdjustmentRequest,
+    security(("bearer" = [])),
+    responses(
+        (status = 201, body = CreatedEntry),
+        (status = 400, body = ApiErrorBody, description = "金额非正、方向不认识、说明为空或过长、社团不存在"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "展会不存在"),
+    ),
+)]
 async fn create_adjustment(
     State(state): State<AppState>,
     claims: Claims,
@@ -298,13 +329,14 @@ async fn create_adjustment(
     Ok((StatusCode::CREATED, Json(CreatedEntry { id, journal_id })))
 }
 
-#[derive(Serialize, sqlx::FromRow)]
+#[derive(Serialize, sqlx::FromRow, ToSchema)]
 pub struct LedgerEntryRow {
     id: i64,
     owner_society_id: i64,
     society_name: String,
     label: String,
     /// 垫付恒为正；结算调整带符号（负 = 我要多给他们）。
+    #[schema(value_type = Money)]
     amount: i64,
 }
 
@@ -359,6 +391,16 @@ async fn delete_entry_of(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// 这场展会的垫付列表。
+#[utoipa::path(
+    get,
+    path = "/events/{event_id}/advances",
+    tag = "settlement",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    security(("bearer" = [])),
+    responses((status = 200, body = Vec<LedgerEntryRow>), (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),),
+)]
 async fn list_advances(
     State(state): State<AppState>,
     claims: Claims,
@@ -369,6 +411,25 @@ async fn list_advances(
     Ok(Json(list_entries_of(&state, event_id, "advances").await?))
 }
 
+/// 删除一笔垫付——写一条冲正 journal，原记录保留。
+#[utoipa::path(
+    delete,
+    path = "/events/{event_id}/advances/{id}",
+    tag = "settlement",
+    description = "展会已结算后仍可调用（冻结例外：垫付、结算调整、收摊清点三类）。",
+    params(
+        ("event_id" = i64, Path, description = "展会 id"),
+        ("id" = i64, Path, description = "条目 id"),
+    ),
+    security(("bearer" = [])),
+    responses(
+        (status = 204, description = "已冲正"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "条目不存在或不属于这场展会"),
+        (status = 409, body = ApiErrorBody, description = "已经删过了"),
+    ),
+)]
 async fn delete_advance(
     State(state): State<AppState>,
     claims: Claims,
@@ -380,6 +441,16 @@ async fn delete_advance(
     delete_entry_of(&state, event_id, id, "advances", JournalKind::Advance).await
 }
 
+/// 这场展会的结算调整列表。金额带符号：负 = 我要多给他们。
+#[utoipa::path(
+    get,
+    path = "/events/{event_id}/adjustments",
+    tag = "settlement",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    security(("bearer" = [])),
+    responses((status = 200, body = Vec<LedgerEntryRow>), (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),),
+)]
 async fn list_adjustments(
     State(state): State<AppState>,
     claims: Claims,
@@ -392,6 +463,25 @@ async fn list_adjustments(
     ))
 }
 
+/// 删除一笔结算调整——写一条冲正 journal，原记录保留。
+#[utoipa::path(
+    delete,
+    path = "/events/{event_id}/adjustments/{id}",
+    tag = "settlement",
+    description = "展会已结算后仍可调用（冻结例外：垫付、结算调整、收摊清点三类）。",
+    params(
+        ("event_id" = i64, Path, description = "展会 id"),
+        ("id" = i64, Path, description = "条目 id"),
+    ),
+    security(("bearer" = [])),
+    responses(
+        (status = 204, description = "已冲正"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "条目不存在或不属于这场展会"),
+        (status = 409, body = ApiErrorBody, description = "已经删过了"),
+    ),
+)]
 async fn delete_adjustment(
     State(state): State<AppState>,
     claims: Claims,
@@ -851,6 +941,20 @@ pub(crate) async fn load_input(state: &AppState, event_id: i64) -> ApiResult<Set
     })
 }
 
+/// 结算单。页面与 xlsx 导出渲染的是同一个 `SettlementReport`。
+#[utoipa::path(
+    get,
+    path = "/events/{event_id}/settlement",
+    tag = "settlement",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = SettlementReport),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "展会不存在"),
+    ),
+)]
 async fn get_settlement(
     State(state): State<AppState>,
     claims: Claims,
@@ -862,19 +966,20 @@ async fn get_settlement(
     Ok(Json(build_report(&input)))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct ReconcileRequest {
     counts: Vec<ChannelActual>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct ChannelActual {
     channel: String,
     /// 摊主数出来的实际到手（分）。
+    #[schema(value_type = Money)]
     actual: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct ReconcileResponse {
     /// 分文不差时为 `None`——没有腿可记，「数过了」靠 `events.reconciled_at`。
     journal_id: Option<i64>,
@@ -906,6 +1011,23 @@ async fn account_balance_tx(
     Ok(Money::from_cents(cents))
 }
 
+/// 收摊清点：按渠道填实际到手，差额记到摊主名下。
+#[utoipa::path(
+    post,
+    path = "/events/{event_id}/settlement/reconcile",
+    tag = "settlement",
+    description = "展会已结算后仍可调用（冻结例外：垫付、结算调整、收摊清点三类）。必须覆盖这场展会用过的每个渠道，且每个渠道只出现一次。",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    request_body = ReconcileRequest,
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = ReconcileResponse),
+        (status = 400, body = ApiErrorBody, description = "渠道重复、漏报、或不是这场展会用过的渠道"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "展会不存在"),
+    ),
+)]
 async fn reconcile(
     State(state): State<AppState>,
     claims: Claims,
@@ -1086,6 +1208,20 @@ struct OrderLineRow {
     refunded_qty: i64,
 }
 
+/// 结算单导出为四 sheet 的 xlsx。
+#[utoipa::path(
+    get,
+    path = "/events/{event_id}/settlement.xlsx",
+    tag = "settlement",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", body = Vec<u8>),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "展会不存在"),
+    ),
+)]
 async fn download_settlement_xlsx(
     State(state): State<AppState>,
     claims: Claims,
