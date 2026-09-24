@@ -1,11 +1,35 @@
 <template>
   <div class="page">
+    <!-- warnings 必须最显眼：这里非空意味着业务表加出来的数和账本对不上，
+         也就是某笔账记错了。不折叠、不放底部，逐条列在整张单最上方。 -->
+    <n-alert
+      v-if="store.report && store.report.warnings.length"
+      type="error"
+      :bordered="false"
+      title="这张结算单和账本对不上，先别急着导出"
+      class="warnings-block"
+    >
+      <p v-for="(w, i) in store.report.warnings" :key="i" class="warning-line">⚠ {{ w }}</p>
+      <p class="warning-line muted">说明某笔账记错了，核对无误后再导出。</p>
+    </n-alert>
+
     <header class="page-header">
-      <h1>展会结算</h1>
-      <p>
-        录垫付、结算调整和收摊清点。金额框里填「元」，提交时换算成「分」；
-        业务规则由后端判定，这里只负责把后端那句话原样显示出来。
-      </p>
+      <div class="header-main">
+        <h1>展会结算</h1>
+        <p v-if="store.report" class="event-title">
+          {{ store.report.event_name }} · {{ store.report.event_date }}
+        </p>
+        <p>
+          录垫付、结算调整和收摊清点。金额框里填「元」，提交时换算成「分」；
+          业务规则由后端判定，这里只负责把后端那句话原样显示出来。
+        </p>
+      </div>
+      <n-space class="header-actions">
+        <n-button :disabled="!store.report" @click="reloadReport">刷新</n-button>
+        <n-button type="primary" ghost :disabled="!store.report" @click="exportXlsx">
+          导出 Excel
+        </n-button>
+      </n-space>
     </header>
 
     <div v-if="store.isLoading && !store.report" class="loading-message">
@@ -16,6 +40,124 @@
       <n-alert v-if="store.error" type="error" class="store-error" :bordered="false">
         {{ store.error }}
       </n-alert>
+
+      <!-- ── 结算单主体（母 spec 第 7 节）───────────────────────── -->
+      <section v-if="store.report" class="block report-block">
+        <div v-for="s in store.report.societies" :key="s.society_id" class="society-card">
+          <div class="society-head">
+            <span class="society-name">货主：{{ s.name }}</span>
+            <n-tag v-if="s.is_home" size="small" type="success" round>本社团</n-tag>
+          </div>
+
+          <!-- 【货】收起时是合计，点「展开明细」到每个商品。 -->
+          <div class="society-line">
+            <span class="line-tag">【货】</span>
+            <span class="line-body">
+              带去 {{ s.totals.brought_in }} → 卖出 {{ s.totals.sold }} / 赠送
+              {{ s.totals.gifted }} / 报废 {{ s.totals.scrapped }} / 带回
+              {{ s.totals.taken_back }}
+              <template v-if="s.totals.on_site">／现场仓 {{ s.totals.on_site }}</template>
+              <span class="variance">盘点差异 {{ s.totals.variance }}</span>
+              <!-- 未盘点时不能安静地按账面推算，必须标出来。 -->
+              <n-tag
+                v-if="!store.report.stocktaken"
+                size="small"
+                type="warning"
+                class="stocktake-tag"
+              >
+                未盘点，剩余数为账面推算
+              </n-tag>
+              <n-button text size="tiny" class="detail-toggle" @click="toggleGoods(s.society_id)">
+                {{ expanded[s.society_id] ? '收起明细' : `展开明细（${s.goods.length} 项）` }}
+              </n-button>
+            </span>
+          </div>
+
+          <div v-if="expanded[s.society_id]" class="goods-detail">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>商品</th>
+                  <th class="text-right">带去</th>
+                  <th class="text-right">卖出</th>
+                  <th class="text-right">赠送</th>
+                  <th class="text-right">报废</th>
+                  <th class="text-right">差异</th>
+                  <th class="text-right">带回</th>
+                  <th class="text-right">原价</th>
+                  <th class="text-right">折让</th>
+                  <th class="text-right">净额</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="g in s.goods" :key="g.event_product_id">
+                  <td>{{ g.product_code }} {{ g.name }}</td>
+                  <td class="text-right">{{ g.brought_in }}</td>
+                  <td class="text-right">{{ g.sold }}</td>
+                  <td class="text-right">{{ g.gifted }}</td>
+                  <td class="text-right">{{ g.scrapped }}</td>
+                  <td class="text-right">{{ g.variance }}</td>
+                  <td class="text-right">{{ g.taken_back }}</td>
+                  <td class="text-right amount-cell">{{ formatYuan(g.gross) }}</td>
+                  <td class="text-right amount-cell">{{ formatSigned(g.lot_discount) }}</td>
+                  <td class="text-right amount-cell">{{ formatYuan(g.allocated) }}</td>
+                </tr>
+                <tr v-if="!s.goods.length">
+                  <td colspan="10" class="empty-line">这个货主没有上架商品</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="society-line">
+            <span class="line-tag">【钱】</span>
+            <span class="line-body">
+              商品原价 {{ formatYuan(s.gross) }} · Lot折让 {{ formatSigned(s.lot_discount) }} ·
+              手工折让 {{ formatSigned(s.manual_discount) }} → 净额 {{ formatYuan(s.net) }}
+            </span>
+          </div>
+
+          <div class="society-line">
+            <span class="line-tag">【我垫付】</span>
+            <span class="line-body">
+              <template v-if="s.advances.length">
+                {{ advanceSummary(s.advances) }} = {{ formatYuan(s.advances_total) }}
+              </template>
+              <template v-else>（无）</template>
+            </span>
+          </div>
+
+          <div class="society-line">
+            <span class="line-tag">【调整】</span>
+            <span class="line-body">
+              <template v-if="s.adjustments.length">
+                {{ adjustmentSummary(s.adjustments) }} = {{ formatYuan(s.adjustments_total) }}
+              </template>
+              <template v-else>（无）</template>
+            </span>
+          </div>
+
+          <!-- 这一块唯一要被记住的数字，视觉上压过其它行。 -->
+          <div class="transfer-row">
+            我应转给{{ s.name }}：
+            <span class="transfer-amount">{{ formatYuan(s.transfer) }}</span>
+          </div>
+        </div>
+
+        <div class="report-totals">
+          <span>实际到手合计 <strong>{{ formatYuan(store.report.actual_total) }}</strong></span>
+          <span>Σ 我应转给 <strong>{{ formatYuan(store.report.transfer_total) }}</strong></span>
+          <span>摊主留存 <strong>{{ formatYuan(store.report.vendor_retained) }}</strong></span>
+        </div>
+
+        <p class="report-meta">
+          生成于 {{ store.report.generated_at }}；账本最后变动
+          {{ store.report.last_changed_at || '（无记录）' }}
+          <template v-if="reportStale">
+            —— 账本在 {{ store.report.last_changed_at }} 之后还有变动，导出前请刷新。
+          </template>
+        </p>
+      </section>
 
       <!-- 垫付 -->
       <section class="block">
@@ -227,12 +369,17 @@ import {
   NSpace,
   NRadioGroup,
   NRadioButton,
+  NTag,
   useDialog,
   useMessage,
 } from 'naive-ui'
 import { useSettlementStore } from '@/stores/settlementStore'
 import { useSocietyStore } from '@/stores/societyStore'
 import { formatYuan, toCents, fromCents } from '@/utils/money'
+import { toAbsoluteApiUrl } from '@/services/url'
+import { save } from '@tauri-apps/plugin-dialog'
+import { writeFile } from '@tauri-apps/plugin-fs'
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 
 const props = defineProps({ id: { type: [String, Number], required: true } })
 
@@ -309,6 +456,120 @@ function describeEntryAdjustment(cents) {
   if (cents < 0) return `我多给 ${formatYuan(-cents)}`
   if (cents > 0) return `他们多给 ${formatYuan(cents)}`
   return '—'
+}
+
+// --- 结算单主体 ---
+// 【货】默认收起，展开状态只是界面状态，不落库。
+const expanded = ref({})
+
+function toggleGoods(societyId) {
+  expanded.value = { ...expanded.value, [societyId]: !expanded.value[societyId] }
+}
+
+/** 折让是减项，用负号读起来才符合算术；0 就老实显示 ¥0.00。 */
+function formatSigned(cents) {
+  return cents > 0 ? `−${formatYuan(cents)}` : formatYuan(cents)
+}
+
+function advanceSummary(entries) {
+  return entries.map((a) => `${a.label} ${formatYuan(a.amount)}`).join(' + ')
+}
+
+/**
+ * 结算单里的调整方向。
+ *
+ * 后端已经把 `settlement_adjustments.amount` 取负换算成「对我应转给的影响」，
+ * 所以这里**正 = 我多给**（`to_them`）、负 = 他们多给（`to_me`）。和上面
+ * 列表接口的符号正好相反，两边各按各自的数据源显示，不要合并成一个函数。
+ */
+function describeReportAdjustment(cents) {
+  if (cents > 0) return `我多给 ${formatYuan(cents)}`
+  if (cents < 0) return `他们多给 ${formatYuan(-cents)}`
+  return '—'
+}
+
+function adjustmentSummary(entries) {
+  return entries
+    .map((a) => {
+      const at = a.at ? `（${a.at}）` : ''
+      return `${a.label} ${describeReportAdjustment(a.amount)}${at}`
+    })
+    .join('；')
+}
+
+const reportStale = computed(() => {
+  const r = store.report
+  if (!r || !r.last_changed_at) return false
+  return r.last_changed_at !== r.generated_at
+})
+
+async function reloadReport() {
+  await store.refresh(props.id)
+}
+
+/**
+ * 导出 xlsx。**照 AdminEventStat 那条验过的路径抄**：Tauri 里 `window.open`
+ * 不一定触发下载，得走 plugin-http 取字节 + 保存对话框 + 写文件。
+ */
+async function exportXlsx() {
+  if (!store.report) return
+
+  const isTauri = window.__TAURI_INTERNALS__ !== undefined
+  const token = sessionStorage.getItem('access_token')
+  const safeName = (store.report.event_name || 'settlement').replace(/[\\/:*?"<>|]/g, '_')
+  const fileName = `settlement_${safeName}.xlsx`
+  const url = toAbsoluteApiUrl(`/api/events/${props.id}/settlement.xlsx`)
+
+  try {
+    if (isTauri) {
+      const headers = {
+        Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }
+      if (token) headers['Authorization'] = `Bearer ${token}`
+
+      const resp = await tauriFetch(url, { method: 'GET', headers })
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => '')
+        throw new Error(`下载失败: ${resp.status} ${resp.statusText} ${text.slice(0, 200)}`)
+      }
+
+      const ab = await resp.arrayBuffer()
+      const bytes = new Uint8Array(ab)
+      const filePath = await save({
+        defaultPath: fileName,
+        filters: [{ name: 'Excel Files', extensions: ['xlsx'] }],
+      })
+      if (!filePath) return
+
+      await writeFile(filePath, bytes)
+      alert('导出成功')
+      return
+    }
+
+    const headers = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    const response = await fetch(url, { method: 'GET', credentials: 'include', headers })
+    if (!response.ok) {
+      const text = await response.text().catch(() => '')
+      throw new Error(`下载失败: ${response.status} ${text.slice(0, 200)}`)
+    }
+
+    const blob = await response.blob()
+    const dl = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.style.display = 'none'
+    a.href = dl
+    a.download = fileName
+    document.body.appendChild(a)
+    a.click()
+    setTimeout(() => {
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(dl)
+    }, 100)
+  } catch (error) {
+    console.error('下载结算单失败:', error)
+    alert(error?.message || '下载失败')
+  }
 }
 
 async function submitAdvance() {
@@ -439,7 +700,15 @@ onUnmounted(() => {
   max-width: 1080px;
 }
 .page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
   margin-bottom: 1.5rem;
+}
+.header-main {
+  min-width: 0;
 }
 .page-header h1 {
   margin: 0 0 0.25rem;
@@ -450,6 +719,118 @@ onUnmounted(() => {
   margin: 0;
   color: var(--text-muted);
   font-size: var(--font-base);
+  line-height: 1.6;
+}
+.page-header .event-title {
+  color: var(--primary-text-color);
+  font-weight: 600;
+}
+.header-actions {
+  flex: 0 0 auto;
+}
+
+/* warnings 是「业务表加出来的数和账本对不上」，n-alert 自带红底，这里只压间距。 */
+.warnings-block {
+  margin-bottom: 1.25rem;
+}
+.warning-line {
+  margin: 0.2rem 0;
+  line-height: 1.6;
+  word-break: break-word;
+}
+.warning-line.muted {
+  color: var(--text-muted);
+}
+
+/* ── 结算单主体 ── */
+.report-block {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 1rem 1.25rem;
+  background-color: var(--card-bg-color);
+}
+.society-card {
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.society-card:last-of-type {
+  border-bottom: none;
+}
+.society-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+.society-name {
+  font-weight: 700;
+  color: var(--primary-text-color);
+}
+.society-line {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.15rem 0;
+  font-size: var(--font-sm);
+  line-height: 1.7;
+  color: var(--text-placeholder);
+}
+.line-tag {
+  flex: 0 0 auto;
+  color: var(--accent-color);
+  font-weight: 600;
+}
+.line-body {
+  min-width: 0;
+}
+.variance {
+  margin-left: 0.75rem;
+}
+.stocktake-tag {
+  margin-left: 0.5rem;
+}
+.detail-toggle {
+  margin-left: 0.5rem;
+}
+.goods-detail {
+  margin: 0.5rem 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+}
+.transfer-row {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-color);
+  font-size: var(--font-base);
+  color: var(--primary-text-color);
+}
+/* 这一块唯一要被记住的数字，视觉上压过其它行。 */
+.transfer-amount {
+  margin-left: 0.35rem;
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--accent-color);
+  font-variant-numeric: tabular-nums;
+}
+.report-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  justify-content: flex-end;
+  padding-top: 0.5rem;
+  border-top: 2px solid var(--accent-color);
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+}
+.report-totals strong {
+  color: var(--primary-text-color);
+  font-variant-numeric: tabular-nums;
+}
+.report-meta {
+  margin: 0.75rem 0 0;
+  font-size: var(--font-xs, 0.75rem);
+  color: var(--text-muted);
   line-height: 1.6;
 }
 
