@@ -9,41 +9,29 @@ use std::collections::HashMap;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::{IntoResponse, Json},
-    routing::{get, post, put},
-    Router,
+    response::Json,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use sqlx::{query, query_as, query_scalar, FromRow, SqlitePool};
+use utoipa::ToSchema;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::{
-    api::guard::check_write_permission,
-    domain::ledger::{
-        onsite_balance, onsite_balances, post_journal, JournalKind, Location, StockLeg,
+    api::{guard::check_write_permission, openapi::ApiErrorBody},
+    domain::{
+        ledger::{onsite_balance, onsite_balances, post_journal, JournalKind, Location, StockLeg},
+        money::Money,
     },
     error::{ApiError, ApiResult},
     state::AppState,
     utils::security::Claims,
 };
 
-/// ③b 过渡：本模块的路由还没标 utoipa 注解，整体包进 OpenApiRouter——路由照常工作，
-/// 只是文档里没有它的路径。阶段 2 迁移本模块时改为 `routes!(...)` 并删掉 `legacy_router`。
-pub fn router() -> utoipa_axum::router::OpenApiRouter<AppState> {
-    utoipa_axum::router::OpenApiRouter::from(legacy_router())
-}
-
-fn legacy_router() -> Router<AppState> {
-    Router::new()
-        .route(
-            "/events/{event_id}/products",
-            get(list_event_products).post(add_product_to_event),
-        )
-        .route(
-            "/events/{event_id}/products/{id}/restock",
-            post(restock_product),
-        )
-        .route("/products/{id}", put(update_product).delete(delete_product))
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(list_event_products, add_product_to_event))
+        .routes(routes!(restock_product))
+        .routes(routes!(update_product, delete_product))
 }
 
 // ==========================================
@@ -93,7 +81,8 @@ struct EventProductRow {
 
 /// 响应体。**没有 `current_stock` / `initial_stock`**：
 /// `onsite_qty` 是聚合余额，`stocked_qty` 是累计进货（前端库存条的分母）。
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
+#[schema(as = ProductEventProduct)]
 struct EventProductResponse {
     id: i64,
     event_id: i64,
@@ -102,6 +91,8 @@ struct EventProductResponse {
     owner_society_name: String,
     product_code: String,
     name: String,
+    /// 单位：分。
+    #[schema(value_type = Money)]
     unit_price: i64,
     stocked_qty: i64,
     onsite_qty: i64,
@@ -175,6 +166,16 @@ async fn load_one(pool: &SqlitePool, id: i64) -> ApiResult<EventProductResponse>
 // ==========================================
 // 1. 获取场次商品列表 (Public)
 // ==========================================
+/// 列出某场展会全部商品，带现场库存与累计进货。公开接口。
+#[utoipa::path(
+    get,
+    path = "/events/{event_id}/products",
+    tag = "product",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    responses(
+        (status = 200, body = Vec<EventProductResponse>),
+    ),
+)]
 async fn list_event_products(
     State(state): State<AppState>,
     Path(event_id): Path<i64>,
@@ -203,20 +204,39 @@ async fn list_event_products(
 // ==========================================
 // 2. 添加商品到场次 + 首批进货 (Admin/Vendor)
 // ==========================================
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
+#[schema(as = ProductAddRequest)]
 struct AddProductRequest {
     product_code: String,
     initial_stock: i64,
     /// 单位：分。缺省用 `master_products.default_price`。
+    #[schema(value_type = Option<Money>)]
     unit_price: Option<i64>,
 }
 
+/// 把一个全局商品选进某场展会并记首批进货。需要管理员或本场摊主。
+#[utoipa::path(
+    post,
+    path = "/events/{event_id}/products",
+    tag = "product",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    request_body = AddProductRequest,
+    security(("bearer" = [])),
+    responses(
+        (status = 201, body = EventProductResponse),
+        (status = 400, body = ApiErrorBody, description = "进货数量或单价为负"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "展会不存在或商品编号不在全局商品库"),
+        (status = 409, body = ApiErrorBody, description = "该商品已经在本场展会或展会已结算"),
+    ),
+)]
 async fn add_product_to_event(
     State(state): State<AppState>,
     claims: Claims,
     Path(event_id): Path<i64>,
     Json(payload): Json<AddProductRequest>,
-) -> ApiResult<impl IntoResponse> {
+) -> ApiResult<(StatusCode, Json<EventProductResponse>)> {
     check_write_permission(&claims, event_id)?;
 
     if payload.initial_stock < 0 {
@@ -315,12 +335,33 @@ async fn add_product_to_event(
 // ==========================================
 // 3. 补货 (Admin/Vendor)
 // ==========================================
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
+#[schema(as = ProductRestockRequest)]
 struct RestockRequest {
     qty: i64,
     note: Option<String>,
 }
 
+/// 给某场展会里的商品补货（外部 → 现场仓）。需要管理员或本场摊主。
+#[utoipa::path(
+    post,
+    path = "/events/{event_id}/products/{id}/restock",
+    tag = "product",
+    params(
+        ("event_id" = i64, Path, description = "展会 id"),
+        ("id" = i64, Path, description = "场次商品 id"),
+    ),
+    request_body = RestockRequest,
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = EventProductResponse),
+        (status = 400, body = ApiErrorBody, description = "补货数量必须为正"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "商品不存在或不属于这场展会"),
+        (status = 409, body = ApiErrorBody, description = "展会已结算"),
+    ),
+)]
 async fn restock_product(
     State(state): State<AppState>,
     claims: Claims,
@@ -371,16 +412,35 @@ async fn restock_product(
 // ==========================================
 // 4. 改价 (Admin/Vendor)
 // ==========================================
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
+#[schema(as = ProductUpdateRequest)]
 struct UpdateProductRequest {
     /// 单位：分。
     ///
     /// **`initial_stock` 不再接受**：旧接口用 `current_stock += (new - old)` 硬调数字，
     /// 正是 spec 点名的三个互不共享写入方之一。请求体里即使带了 `initial_stock`，
     /// 也会被 serde 默认忽略——改库存必须走进货/盘点。
+    #[schema(value_type = Option<Money>)]
     unit_price: Option<i64>,
 }
 
+/// 改某场展会里商品的单价。需要管理员或本场摊主。
+#[utoipa::path(
+    put,
+    path = "/products/{id}",
+    tag = "product",
+    params(("id" = i64, Path, description = "场次商品 id")),
+    request_body = UpdateProductRequest,
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = EventProductResponse),
+        (status = 400, body = ApiErrorBody, description = "单价不能为负"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "商品不存在"),
+        (status = 409, body = ApiErrorBody, description = "展会已结算"),
+    ),
+)]
 async fn update_product(
     State(state): State<AppState>,
     claims: Claims,
@@ -421,11 +481,33 @@ async fn update_product(
 // ==========================================
 // 5. 删除商品 (Admin/Vendor)
 // ==========================================
+/// 删除成功后的固定消息体。字段名 `message` 是既有响应形状的一部分。
+#[derive(Serialize, ToSchema)]
+#[schema(as = ProductDeleteMessage)]
+struct DeleteProductResponse {
+    message: String,
+}
+
+/// 从某场展会下架商品。需要管理员或本场摊主。
+#[utoipa::path(
+    delete,
+    path = "/products/{id}",
+    tag = "product",
+    params(("id" = i64, Path, description = "场次商品 id")),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = DeleteProductResponse),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "商品不存在"),
+        (status = 409, body = ApiErrorBody, description = "商品已有进出记录或展会已结算"),
+    ),
+)]
 async fn delete_product(
     State(state): State<AppState>,
     claims: Claims,
     Path(id): Path<i64>,
-) -> ApiResult<impl IntoResponse> {
+) -> ApiResult<(StatusCode, Json<DeleteProductResponse>)> {
     let event_id: Option<i64> = query_scalar("SELECT event_id FROM event_products WHERE id = ?")
         .bind(id)
         .fetch_optional(&state.db)
@@ -460,7 +542,9 @@ async fn delete_product(
 
     Ok((
         StatusCode::OK,
-        Json(json!({"message": "Product removed from event"})),
+        Json(DeleteProductResponse {
+            message: "Product removed from event".to_string(),
+        }),
     ))
 }
 
@@ -701,5 +785,244 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::CONFLICT, "冻结后不能删商品");
+    }
+}
+
+/// ③b 形状快照：钉住每个路由的 JSON 形状（键 + 类型），类型化前后必须一行不改照样绿。
+#[cfg(test)]
+mod shape_tests {
+    use crate::test_support::{
+        admin_token, json_request, read_json, seed_event_and_product, shape_of, test_router_with,
+    };
+    use axum::http::StatusCode;
+    use axum::Router;
+    use serde_json::{json, Value};
+    use tower::ServiceExt;
+
+    /// 一场进行中的展会。A/B 是夹具原有的两个商品；A 补上图片/分类/标签，让列表的
+    /// 可选字段至少出现一次非空。C 直接挂进场次且没有任何流水（删得掉），D 留给选品
+    /// 测试添加（所以不能预先在场次里）。
+    async fn seeded() -> (Router, tempfile::TempDir, i64, i64, i64) {
+        let (router, dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _ep_b) = seed_event_and_product(&pool).await;
+
+        sqlx::query(
+            "UPDATE master_products
+                SET image_url = '/uploads/products/a.png', category = '本子', tags = '原创,文具'
+              WHERE id = 1",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO master_products
+               (id, product_code, name, default_price, owner_society_id, image_url, category, tags)
+             VALUES (3, 'C', '挂件C', 15.0, 1, '/uploads/products/c.png', '挂件', '原创'),
+                    (4, 'D', '挂件D', 18.0, 2, '/uploads/products/d.png', '挂件', '原创')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let clean_id: i64 = sqlx::query_scalar(
+            "INSERT INTO event_products
+               (event_id, master_product_id, owner_society_id, product_code, name, unit_price)
+             VALUES (?, 3, 1, 'C', '挂件C', 1500)
+             RETURNING id",
+        )
+        .bind(event_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        (router, dir, event_id, ep_a, clean_id)
+    }
+
+    async fn call(
+        router: &Router,
+        method: &str,
+        uri: &str,
+        token: Option<&str>,
+        body: Value,
+    ) -> (StatusCode, Value) {
+        let res = router
+            .clone()
+            .oneshot(json_request(method, uri, token, body))
+            .await
+            .unwrap();
+        let status = res.status();
+        (status, read_json(res).await)
+    }
+
+    /// 列表：A 有图片/分类，B 没有 → 两个可选字段合并成 "null|string"。
+    fn product_row_list() -> Value {
+        json!({
+            "id": "int",
+            "event_id": "int",
+            "master_product_id": "int",
+            "owner_society_id": "int",
+            "owner_society_name": "string",
+            "product_code": "string",
+            "name": "string",
+            "unit_price": "int",
+            "stocked_qty": "int",
+            "onsite_qty": "int",
+            "image_url": "null|string",
+            "category": "null|string",
+            "tags": "string",
+        })
+    }
+
+    /// 单个：A 或新选的 D 都有图片/分类。
+    fn product_row_single() -> Value {
+        json!({
+            "id": "int",
+            "event_id": "int",
+            "master_product_id": "int",
+            "owner_society_id": "int",
+            "owner_society_name": "string",
+            "product_code": "string",
+            "name": "string",
+            "unit_price": "int",
+            "stocked_qty": "int",
+            "onsite_qty": "int",
+            "image_url": "string",
+            "category": "string",
+            "tags": "string",
+        })
+    }
+
+    #[tokio::test]
+    async fn shape_list_event_products() {
+        let (router, _dir, event_id, _, _) = seeded().await;
+        let (s, body) = call(
+            &router,
+            "GET",
+            &format!("/api/events/{event_id}/products"),
+            Some(&admin_token()),
+            json!(null),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(shape_of(&body), json!([product_row_list()]));
+    }
+
+    #[tokio::test]
+    async fn shape_add_product_to_event() {
+        let (router, _dir, event_id, _, _) = seeded().await;
+        let t = admin_token();
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/products"),
+            Some(&t),
+            json!({"product_code": "D", "initial_stock": 8, "unit_price": 1500}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::CREATED);
+        assert_eq!(shape_of(&body), product_row_single());
+
+        // 错误分支：已经在场次里的商品 → 409
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/products"),
+            Some(&t),
+            json!({"product_code": "A", "initial_stock": 1}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::CONFLICT, json!({"error": "string"}))
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_restock_product() {
+        let (router, _dir, event_id, ep_a, _) = seeded().await;
+        let t = admin_token();
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/products/{ep_a}/restock"),
+            Some(&t),
+            json!({"qty": 5, "note": "朋友顺路带来"}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(shape_of(&body), product_row_single());
+
+        // 错误分支：非正数量 → 400
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/products/{ep_a}/restock"),
+            Some(&t),
+            json!({"qty": 0}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::BAD_REQUEST, json!({"error": "string"}))
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_update_product() {
+        let (router, _dir, _event_id, ep_a, _) = seeded().await;
+        let t = admin_token();
+        let (s, body) = call(
+            &router,
+            "PUT",
+            &format!("/api/products/{ep_a}"),
+            Some(&t),
+            json!({"unit_price": 2500}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(shape_of(&body), product_row_single());
+
+        // 错误分支：负单价 → 400
+        let (s, body) = call(
+            &router,
+            "PUT",
+            &format!("/api/products/{ep_a}"),
+            Some(&t),
+            json!({"unit_price": -1}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::BAD_REQUEST, json!({"error": "string"}))
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_delete_product() {
+        let (router, _dir, _event_id, ep_a, clean_id) = seeded().await;
+        let t = admin_token();
+        let (s, body) = call(
+            &router,
+            "DELETE",
+            &format!("/api/products/{clean_id}"),
+            Some(&t),
+            json!({}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(shape_of(&body), json!({"message": "string"}));
+
+        // 错误分支：有进货流水的商品删不掉 → 409
+        let (s, body) = call(
+            &router,
+            "DELETE",
+            &format!("/api/products/{ep_a}"),
+            Some(&t),
+            json!({}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::CONFLICT, json!({"error": "string"}))
+        );
     }
 }
