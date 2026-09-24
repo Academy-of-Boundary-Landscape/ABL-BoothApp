@@ -248,6 +248,12 @@ Database initialization failed: Migrate(VersionMismatch(<版本号>))
 - **一旦某个版本发出去**，`src-tauri/migrations/` 里的既有文件就不准再动一个字节。
   任何修正都必须是**一个新的迁移文件**。
 - 装过 beta.N 的测试者升级到 beta.N+1 时同样会踩，不只是正式版用户。
+- **「一个字节」包括换行符。** 2026-09-25 在真 Windows 上实测：v1.1.1 是在 Windows 上构建的，
+  git 的 `core.autocrlf` 把前 3 个迁移签出成了 CRLF，校验和按 CRLF 记进了每个老用户的库；
+  v1.2 改在 Linux 上构建（全是 LF），老用户一打开就 `VersionMismatch(202601020001)` 闪退。
+  现在有两道防线：`.gitattributes` 禁止对迁移文件做换行转换；`init_db` 启动时把
+  「只差换行符」的已应用校验和修正成当前的（`reconcile_line_ending_checksums`，内容真改过的照样拒绝）。
+  **换构建机、换操作系统构建之前，想想这一条。**
 
 改之前先确认它有没有被应用过（路径按平台换）：
 

@@ -82,8 +82,22 @@ async fn migrate_with_snapshot(
         None
     };
 
+    // 已应用迁移的校验和若只是换行符不同，先修正过来（见 reconcile_line_ending_checksums）。
+    // 放在快照之后：万一修正出了岔子，下面的失败路径照样会还原。
+    let fixed = match reconcile_line_ending_checksums(pool, migrator).await {
+        Ok(n) => n,
+        Err(e) => {
+            eprintln!("[Booth Tool] WARNING: checking migration checksums failed: {e}");
+            0
+        }
+    };
+    if fixed > 0 {
+        println!("[Booth Tool] normalized line-ending checksums of {fixed} applied migration(s)");
+    }
+
     // 运行迁移 (使用运行时方式避免编译时需要 DATABASE_URL)
-    if let Err(e) = migrator.run(pool).await {
+    let run = migrator.run(pool).await;
+    if let Err(e) = run {
         if let Some(snap) = snap {
             eprintln!("[Booth Tool] migration failed ({e}); restoring snapshot");
             pool.close().await;
@@ -95,6 +109,74 @@ async fn migrate_with_snapshot(
     }
 
     Ok(())
+}
+
+/// 把「只差换行符」的已应用迁移校验和改成当前构建的，返回修正了几条。
+///
+/// sqlx 用迁移 SQL 文本的 SHA-384 做校验和，存进用户库的 `_sqlx_migrations`，启动时逐条比对，
+/// 不一致就 `VersionMismatch` 拒绝启动。而文本取决于**构建机上 git 签出的换行符**：
+/// v1.1.1 在 Windows 上构建，前 3 个迁移签出成了 CRLF、后 2 个是 LF（从线上 APK 里的
+/// 校验和逐个核对过）；v1.2 在 Linux 上构建，全是 LF。不修正的话，所有老用户第一次打开
+/// v1.2 都会闪退（2026-09-25 在真 Windows 上实测）。
+///
+/// 只放过换行符差异：库里存的校验和必须恰好等于「同一份 SQL 的 LF 版或 CRLF 版」的校验和。
+/// 内容真改过的迁移仍然 `VersionMismatch`——那种情况必须暴露出来（见 docs/BUILD.md「发布前必查」）。
+/// 仓库里的 `.gitattributes` 已禁止对迁移文件做换行转换，以后在哪个系统上构建都一样。
+async fn reconcile_line_ending_checksums(
+    pool: &SqlitePool,
+    migrator: &sqlx::migrate::Migrator,
+) -> Result<usize, sqlx::Error> {
+    use sqlx::SqlSafeStr;
+
+    let has_table: Option<String> = sqlx::query_scalar(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = '_sqlx_migrations'",
+    )
+    .fetch_optional(pool)
+    .await?;
+    if has_table.is_none() {
+        return Ok(0);
+    }
+
+    let applied: Vec<(i64, Vec<u8>)> =
+        sqlx::query_as("SELECT version, checksum FROM _sqlx_migrations")
+            .fetch_all(pool)
+            .await?;
+
+    let variant_checksum = |m: &sqlx::migrate::Migration, sql: String| {
+        sqlx::migrate::Migration::new(
+            m.version,
+            m.description.clone(),
+            m.migration_type,
+            sqlx::AssertSqlSafe(sql).into_sql_str(),
+            m.no_tx,
+        )
+        .checksum
+        .into_owned()
+    };
+
+    let mut fixed = 0;
+    for (version, stored) in applied {
+        let Some(m) = migrator
+            .iter()
+            .find(|m| m.version == version && !m.migration_type.is_down_migration())
+        else {
+            continue;
+        };
+        if stored.as_slice() == m.checksum.as_ref() {
+            continue;
+        }
+        let lf = m.sql.as_str().replace("\r\n", "\n");
+        let crlf = lf.replace('\n', "\r\n");
+        if stored == variant_checksum(m, lf) || stored == variant_checksum(m, crlf) {
+            sqlx::query("UPDATE _sqlx_migrations SET checksum = ? WHERE version = ?")
+                .bind(m.checksum.as_ref())
+                .bind(version)
+                .execute(pool)
+                .await?;
+            fixed += 1;
+        }
+    }
+    Ok(fixed)
 }
 
 /// 迁移前是否需要落快照。**fail-safe**：判断不出「是否有 pending 迁移」时，宁可多落
@@ -557,5 +639,181 @@ mod tests {
             "备份里必须有 v1 数据——查不到就说明备份跑在迁移之后了"
         );
         snap.close().await;
+    }
+
+    /// 用真实的 v1.1.1 结构（前 5 个迁移）和一批像用过的数据造一个老库，再走一遍真实启动的 init_db。
+    ///
+    /// 以前的升级测试只手工建了一张假的 products 表——「带数据的真实 v1.1.1 库 → 升级」从来没被测过，
+    /// 而这正是每个老用户第一次打开 v1.2 时走的路。
+    #[tokio::test]
+    async fn init_db_upgrades_a_real_v1_1_1_database_with_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("sale_system.db");
+        {
+            let opts = SqliteConnectOptions::from_str(&format!("sqlite://{}", db_path.display()))
+                .unwrap()
+                .create_if_missing(true)
+                .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
+                .pragma("foreign_keys", "ON");
+            let pool = SqlitePoolOptions::new()
+                .max_connections(1)
+                .connect_with(opts)
+                .await
+                .unwrap();
+            // v1.1.1 发布时的迁移集合：前 5 个
+            let full = sqlx::migrate!();
+            let mut v1 = sqlx::migrate::Migrator::DEFAULT;
+            v1.migrations =
+                std::borrow::Cow::Owned(full.migrations.iter().take(5).cloned().collect());
+            v1.run(&pool).await.expect("v1.1.1 schema");
+            for sql in [
+                "INSERT INTO settings (key, value) VALUES ('admin_password', 'x'), ('vendor_password', 'y')",
+                "INSERT INTO master_products (id, product_code, name, default_price, image_url, category, is_active, tags)
+                 VALUES (1, 'A01', '本子A', 30.0, '/static/uploads/products/a.jpg', '本子', 1, '新刊,R18'),
+                        (2, 'B02', '亚克力', 19.9, NULL, NULL, 1, ''),
+                        (3, 'DISC', '优惠/抹零', -5.0, NULL, NULL, 1, ''),
+                        (4, 'OLD', '停用商品', 0.0, NULL, NULL, 0, '')",
+                "INSERT INTO events (id, name, event_date, location, status, vendor_password, payment_qr_code_path)
+                 VALUES (1, 'CP30', '2026-03-01', '上海', '已结束', 'hash', '/static/uploads/qr/1.png'),
+                        (2, 'COMICUP', '2026-05-01', NULL, '进行中', NULL, NULL),
+                        (3, '未来展', '2026-12-01', NULL, '未进行', NULL, NULL)",
+                "INSERT INTO products (id, event_id, master_product_id, product_code, name, price, initial_stock, current_stock)
+                 VALUES (1, 1, 1, 'A01', '本子A', 30.0, 50, 12), (2, 1, 3, 'DISC', '优惠/抹零', -5.0, 999, 990),
+                        (3, 2, 2, 'B02', '亚克力', 19.9, 20, 20)",
+                "INSERT INTO orders (id, event_id, total_amount, status) VALUES (1, 1, 55.0, 'completed'), (2, 1, 30.0, 'cancelled'), (3, 2, 19.9, 'pending')",
+                "INSERT INTO order_items (order_id, product_id, product_name, product_price, quantity)
+                 VALUES (1, 1, '本子A', 30.0, 2), (1, 2, '优惠/抹零', -5.0, 1), (2, 1, '本子A', 30.0, 1), (3, 3, '亚克力', 19.9, 1)",
+                "INSERT INTO master_product_images (id, master_product_id, image_url, kind) VALUES (1, 1, '/static/uploads/products/a.jpg', 'primary')",
+            ] {
+                sqlx::query(sql).execute(&pool).await.unwrap_or_else(|e| panic!("seed v1.1.1: {e}\n{sql}"));
+            }
+            pool.close().await;
+        }
+
+        let pool = init_db(&dir.path().to_path_buf())
+            .await
+            .expect("v1.1.1 带数据的老库必须能升级——失败就是老用户第一次打开 v1.2 时的闪退");
+
+        // 保留的东西还在：密码、商品库（含停用和负价商品）、识图资产
+        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM master_products")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(n, 4);
+        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM master_product_images")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(n, 1);
+        pool.close().await;
+        assert!(db_path.with_extension("db.v1-backup").exists());
+    }
+
+    /// 用给定的迁移集合造一个老库（WAL + 外键，与生产一致），返回库所在目录。
+    async fn old_db_with(migrations: Vec<sqlx::migrate::Migration>) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("sale_system.db");
+        let opts = SqliteConnectOptions::from_str(&format!("sqlite://{}", db_path.display()))
+            .unwrap()
+            .create_if_missing(true)
+            .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
+            .pragma("foreign_keys", "ON");
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(opts)
+            .await
+            .unwrap();
+        let mut m = sqlx::migrate::Migrator::DEFAULT;
+        m.migrations = std::borrow::Cow::Owned(migrations);
+        m.run(&pool).await.expect("build old db");
+        sqlx::query("INSERT INTO master_products (product_code, name, default_price, tags) VALUES ('A', '本子', 30.0, '')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        pool.close().await;
+        dir
+    }
+
+    /// 同一个迁移，换一份 SQL 文本（校验和随之重算）。
+    fn with_sql(m: &sqlx::migrate::Migration, sql: String) -> sqlx::migrate::Migration {
+        use sqlx::SqlSafeStr;
+        sqlx::migrate::Migration::new(
+            m.version,
+            m.description.clone(),
+            m.migration_type,
+            sqlx::AssertSqlSafe(sql).into_sql_str(),
+            m.no_tx,
+        )
+    }
+
+    /// v1.1.1 是在 Windows 上构建的：前 3 个迁移文件签出成了 CRLF，后 2 个是 LF
+    /// （从线上 v1.1.1 APK 里的 SHA-384 逐个核对过）。老用户库里记的就是这组混合校验和。
+    /// 在 Linux 上构建的 v1.2 全是 LF——不处理的话，每个老用户第一次打开都会
+    /// VersionMismatch(202601020001) 然后闪退（2026-09-25 真 Windows 上实测）。
+    #[tokio::test]
+    async fn init_db_accepts_old_databases_whose_migrations_differ_only_in_line_endings() {
+        let full = sqlx::migrate!();
+        let v111: Vec<_> = full
+            .migrations
+            .iter()
+            .take(5)
+            .enumerate()
+            .map(|(i, m)| {
+                if i < 3 {
+                    with_sql(
+                        m,
+                        m.sql.as_str().replace("\r\n", "\n").replace('\n', "\r\n"),
+                    )
+                } else {
+                    m.clone()
+                }
+            })
+            .collect();
+        assert_ne!(
+            v111[0].checksum, full.migrations[0].checksum,
+            "前提：CRLF 版本的校验和确实不同"
+        );
+        let dir = old_db_with(v111).await;
+
+        let pool = init_db(&dir.path().to_path_buf())
+            .await
+            .expect("只差换行符的老库必须能升级");
+        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM master_products")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(n, 1);
+        pool.close().await;
+
+        // 修正是持久的：第二次启动不需要再修
+        let pool = init_db(&dir.path().to_path_buf())
+            .await
+            .expect("second start");
+        pool.close().await;
+    }
+
+    /// 放宽只针对换行符：内容真的被改过的已发布迁移，照样拒绝启动（不能悄悄接受）。
+    #[tokio::test]
+    async fn init_db_still_rejects_a_migration_whose_content_really_changed() {
+        let full = sqlx::migrate!();
+        let tampered: Vec<_> = full
+            .migrations
+            .iter()
+            .take(5)
+            .enumerate()
+            .map(|(i, m)| {
+                if i == 0 {
+                    with_sql(m, format!("{}\n-- 改了一行\n", m.sql.as_str()))
+                } else {
+                    m.clone()
+                }
+            })
+            .collect();
+        let dir = old_db_with(tampered).await;
+        let err = init_db(&dir.path().to_path_buf()).await.unwrap_err();
+        assert!(
+            matches!(err, sqlx::Error::Migrate(ref e) if matches!(**e, sqlx::migrate::MigrateError::VersionMismatch(202601020001))),
+            "{err:?}"
+        );
     }
 }

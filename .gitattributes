@@ -1,0 +1,6 @@
+# 迁移文件的字节就是它的校验和：sqlx 把 SQL 文本的 SHA-384 记进用户库，启动时逐条比对。
+# git 若在签出时做换行转换（Windows 上 core.autocrlf=true），同一个迁移在不同系统上构建出的
+# 校验和就不同，老用户启动即 VersionMismatch 闪退——v1.1.1 就是这样在 Windows 上构建的
+# （前 3 个迁移是 CRLF），v1.2 在 Linux 上构建时踩中了（见 src-tauri/src/db/mod.rs 的
+# reconcile_line_ending_checksums）。-text：不做任何换行转换，仓库里是什么字节就构建什么字节。
+src-tauri/migrations/*.sql -text
