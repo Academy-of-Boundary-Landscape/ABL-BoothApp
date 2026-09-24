@@ -134,9 +134,14 @@ raw.use(authMiddleware)          // sessionStorage access_token → Authorizatio
 raw.use(unauthorizedMiddleware)  // 401/403 且不在 /login → router.push('/login')
 raw.use(uploadErrorMiddleware)   // FormData 请求失败 → 按 URL 前缀弹对应上传失败对话框（三条规则原样搬）
 
-export class ApiRequestError extends Error { status: number; body: unknown }
-export const api = { GET, POST, PUT, PATCH, DELETE }  // 成功返回 data；失败抛 ApiRequestError（message = body.error ?? 状态文本）
-export function errorMessage(e: unknown, fallback = '网络错误'): string
+export class ApiRequestError extends Error {
+  status: number; body: unknown
+  serverMessage?: string                       // 后端 {"error": "..."} 的那句话，否则 undefined
+  get response(): { status; data }             // @deprecated 过渡期兼容 err.response.data.error，收口时删
+}
+export const api = createApiClient({...})      // openapi-fetch 实例：api.GET/POST/…，返回 { data, error, response }
+export function unwrap<T>(p): Promise<T>       // 成功返回 data；失败 / 网络错误 / 超时抛 ApiRequestError（后两者 status 0）
+export function errorMessage(e: unknown, fallback: string): string   // serverMessage || fallback
 ```
 
 - `baseUrl` 逻辑与现在一致：Tauri 内 `http://127.0.0.1:5140/api`，浏览器内 `/api`。
@@ -148,7 +153,8 @@ export function errorMessage(e: unknown, fallback = '网络错误'): string
 
 ### 2.1 错误处理约定
 
-- 全仓 `err.response?.data?.error` → `errorMessage(e)`。**用户可见的提示文字一字不变**。
+- 全仓 `err.response?.data?.error || '文案'` → `errorMessage(e, '文案')`，语义相同（只有后端给了话才用后端的）。**用户可见的提示文字一字不变**。
+- 过渡期（store 已切新 client、组件仍是 JS）组件靠 `response` 兼容 getter 继续读旧写法；3.4 删 getter。
 - 现存唯一一处空 `catch {}` 至少改为 `console.warn`。
 - `client.ts` 有单测（vitest，mock `fetch`）：错误包装、`errorMessage`、401/403 跳转与 `/login` 例外、
   上传弹窗的三条 URL 路由、超时。
@@ -204,7 +210,7 @@ export function errorMessage(e: unknown, fallback = '网络错误'): string
 
 | # | 任务 | 方式 |
 |---|---|---|
-| 3.1 | `services/` 其余文件转 TS；删 `socketService.js` 与 `socket.io-client`；14 个 store 按依赖顺序转 `.ts` 并切到新 client | 串行，2～3 个一批 |
+| 3.1 | `services/` 其余文件转 TS；删 `socketService.js` 与 `socket.io-client`；14 个 store 转 `.ts` 并切到新 client | 并行（store 之间互不 import，已核实） |
 | 3.2 | 按 `shape-cleanups.md` 统一改后端形状，重新生成契约，跟着 `vue-tsc` 修消费方 | 串行，一个 task |
 | 3.3 | 49 个 `.vue` → `lang="ts"`，按目录分批（每批 6～8 个，同批不共享子组件） | 并行 |
 | 3.4 | 收口：删 `services/api.js` 与 axios；`typecheck` 转硬门禁；列出全部 `@ts-expect-error`；prettier 扩范围（单独提交） | 串行 |
@@ -212,7 +218,8 @@ export function errorMessage(e: unknown, fallback = '网络错误'): string
 ### 执行方式
 
 - 实现者 dsh-flash，审查者 Claude，2～3 个 task 一批，修复意见一次打包发回。
-- 阶段 2、3 的批次用 Workflow 编排，单批不超过 10 个 agent。
+- 阶段 2、3 的批次：每个 worker 一个独立 git worktree（独立分支、独立 `target/`，避免并发 cargo 互相编译到对方改了一半的文件），
+  批次结束后逐个 merge 回 `1.2-dev`。单批不超过 10 个 worker。
 - brief 必须自包含，**不含任何需要人的步骤**（不起 `tauri dev`、不开 VNC）。
 - 本机命令前缀写进 brief：`cd src-tauri && tauri-env linux cargo …`。
 
