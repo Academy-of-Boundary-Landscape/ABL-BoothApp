@@ -52,6 +52,9 @@ impl Modify for BearerScheme {
 ///
 /// 改写规则：`<tag>.<handler>`；同一 handler 挂了多个方法时再加 `.<method>`。
 /// `scripts/check-event-guards.py` 靠第二段认 handler，改规则时两边一起改。
+///
+/// 只有契约快照测试用它：运行时不对外暴露文档。
+#[cfg(test)]
 pub fn document() -> utoipa::openapi::OpenApi {
     use std::collections::HashMap;
     use utoipa::openapi::path::Operation;
