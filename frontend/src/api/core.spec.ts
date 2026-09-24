@@ -1,8 +1,8 @@
 // @vitest-environment node
 // 用 node 环境而不是 jsdom：jsdom 的 FormData 与 Node 的 Request 不互通，
 // 在 jsdom 里测 multipart 会被序列化成 "[object FormData]"，测的就不是真实行为了。
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { cents } from '@/utils/money'
+import { describe, it, expect, expectTypeOf, vi, beforeEach } from 'vitest'
+import { cents, type Cents } from '@/utils/money'
 import {
   createApiClient,
   unwrap,
@@ -186,5 +186,31 @@ describe('api core', () => {
       (x: unknown) => x
     )) as ApiRequestError
     expect(e3.message).toBe('请求已取消')
+  })
+})
+
+// ---- 类型层面的断言：由 vue-tsc（npm run typecheck）检查，运行时什么都不做 ----
+describe('types', () => {
+  it('本地覆盖的 openapi-typescript-helpers 类型与已安装版本一致', async () => {
+    // types/openapi-typescript-helpers.d.ts 是 0.1.0 的修补版。版本一变，这条就红——
+    // 去重新复制一份再打补丁（见那个文件头），或者确认上游已经修了 Readable。
+    const { readFile } = await import('node:fs/promises')
+    const pkg = JSON.parse(
+      await readFile(
+        new URL('../../node_modules/openapi-typescript-helpers/package.json', import.meta.url),
+        'utf8'
+      )
+    ) as { version: string }
+    expect(pkg.version).toBe('0.1.0')
+  })
+
+  it('unwrap 返回 schema 类型本身：金额仍是 Cents，也不混入 undefined', () => {
+    const api = make(() => json(200, {}))
+    type Report = import('./schema').components['schemas']['SettlementReport']
+    const p = unwrap(
+      api.GET('/events/{event_id}/settlement', { params: { path: { event_id: 1 } } })
+    )
+    expectTypeOf(p).resolves.toEqualTypeOf<Report>()
+    expectTypeOf<Report['actual_total']>().toEqualTypeOf<Cents>()
   })
 })

@@ -42,13 +42,19 @@ export function errorMessage(e: unknown, fallback: string): string {
   return (e instanceof ApiRequestError && e.serverMessage) || fallback
 }
 
-type Result<T> =
-  | { data: T; error?: never; response: Response }
-  | { data?: never; error: unknown; response: Response }
+/** openapi-fetch 返回值里我们用到的部分。 */
+type FetchResult = { data?: unknown; error?: unknown; response: Response }
+
+/**
+ * 成功分支的 data 类型。openapi-fetch 的返回值是「成功（data 必填）| 失败（data?: never）」的联合；
+ * 直接从 `{ data: T }` 推断会把失败分支的可选 data 也算进来，得到 `T | undefined`。
+ * 这里只从 data 必填的那一支取类型。
+ */
+type SuccessData<R> = R extends { data: infer D } ? D : never
 
 /** 成功返回 data；HTTP 错误、网络错误、超时、取消一律抛 ApiRequestError（后三者 status 为 0）。 */
-export async function unwrap<T>(p: Promise<Result<T>>): Promise<T> {
-  let r: Result<T>
+export async function unwrap<R extends FetchResult>(p: Promise<R>): Promise<SuccessData<R>> {
+  let r: R
   try {
     r = await p
   } catch (e) {
@@ -58,7 +64,7 @@ export async function unwrap<T>(p: Promise<Result<T>>): Promise<T> {
     throw new ApiRequestError(0, null, message)
   }
   if (!r.response.ok) throw new ApiRequestError(r.response.status, r.error)
-  return r.data as T
+  return r.data as SuccessData<R>
 }
 
 /** 上传失败回调收到的错误对象。形状与旧 `normalizeUploadError(error, …)` 读取的 axios 错误兼容。 */

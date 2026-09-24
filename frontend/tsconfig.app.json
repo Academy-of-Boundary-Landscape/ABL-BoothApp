@@ -8,6 +8,10 @@
     // ③b 过渡期：还有 .js 被 .ts import。Task 12 收口时删掉这两行。
     "allowJs": true,
     "checkJs": false,
-    "paths": { "@/*": ["./src/*"] }
+    "paths": {
+      "@/*": ["./src/*"],
+      // 本地修补过的类型定义，原因见文件头
+      "openapi-typescript-helpers": ["./types/openapi-typescript-helpers.d.ts"]
+    }
   }
 }
