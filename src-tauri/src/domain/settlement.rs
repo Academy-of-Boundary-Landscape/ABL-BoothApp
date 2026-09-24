@@ -504,13 +504,24 @@ mod tests {
     #[test]
     fn manual_discount_only_ever_lands_on_the_home_society() {
         // 母 spec 4.4。代卖货主的净额恒等于 allocated_net。
+        // 夹具要自洽，否则「明细金额对不上」那条交叉断言也会响，这条测试就用 .any()
+        // 蒙混过去了——它只该测「代卖货主身上出现手工折让」这一条。
         let mut other = society(2, false);
+        other.goods = vec![priced(goods("B", 10, 5, 0, 0, 0, 5, 0), 36000, 36000)];
+        other.gross = Money::from_cents(36000);
         other.allocated_net = Money::from_cents(36000);
+        // 净额 = 36000 − 5000 = 31000，账本那头要跟着对上，免得又响结算不平那条。
         other.manual_discount_net = Money::from_cents(5000); // 不该发生
-        other.due_balance = Money::from_cents(-36000);
+        other.due_balance = Money::from_cents(-31000);
         let report = build_report(&input(vec![other], vec![]));
+        assert_eq!(
+            report.warnings.len(),
+            1,
+            "只该报「代卖货主有手工折让」这一条：{:?}",
+            report.warnings
+        );
         assert!(
-            report.warnings.iter().any(|w| w.contains("手工折让")),
+            report.warnings[0].contains("手工折让"),
             "代卖货主身上出现手工折让必须报出来：{:?}",
             report.warnings
         );

@@ -685,7 +685,7 @@ fn check_read_permission(claims: &Claims, event_id: i64) -> Result<(), (StatusCo
 #[cfg(test)]
 mod tests {
     use crate::test_support::{
-        admin_token, json_request, read_json, seed_event_and_product, test_router_with,
+        admin_token, json_request, place, read_json, seed_event_and_product, test_router_with,
     };
     use axum::http::StatusCode;
     use serde_json::json;
@@ -930,21 +930,6 @@ mod tests {
             per_item, total,
             "按商品汇总之和必须等于总额——这条由「同一订单 Σ paid = final_amount」结构上保证"
         );
-    }
-
-    async fn place(router: &axum::Router, event_id: i64, items: serde_json::Value) -> i64 {
-        let res = router
-            .clone()
-            .oneshot(json_request(
-                "POST",
-                &format!("/api/events/{event_id}/orders"),
-                None,
-                json!({ "items": items }),
-            ))
-            .await
-            .unwrap();
-        assert_eq!(res.status(), StatusCode::CREATED);
-        read_json(res).await["id"].as_i64().unwrap()
     }
 
     #[tokio::test]

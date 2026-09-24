@@ -140,7 +140,7 @@ const props = defineProps({
   eventId: { type: [String, Number], required: true },
   order: { type: Object, default: null },
 })
-const emit = defineEmits(['close', 'refunded', 'loaded'])
+const emit = defineEmits(['close'])
 
 const message = useMessage()
 
@@ -196,7 +196,6 @@ async function load() {
     channel.value = props.order.channel || '微信'
     amountTouched.value = false
     amountYuan.value = fromCents(defaultRefundTotal(lines.value, qty))
-    emit('loaded', { orderId: props.order.id })
   } catch (err) {
     message.error(err.response?.data?.error || '无法加载退货信息。')
   } finally {
@@ -243,7 +242,6 @@ async function submit() {
     )
     message.success(`已退货，退款 ${formatYuan(data.refund_amount)}`)
     await load()
-    emit('refunded', { orderId: props.order.id })
   } catch (err) {
     message.error(err.response?.data?.error || '退货失败。')
   } finally {

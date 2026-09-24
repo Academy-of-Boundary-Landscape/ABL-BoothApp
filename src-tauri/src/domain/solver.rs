@@ -32,8 +32,14 @@ const MAX_STATE_SPACE: i64 = 200_000;
 /// 很多种凑法」这一维，所以还要一条总预算兜底。
 const MAX_STEPS: u64 = 2_000_000;
 
-fn too_large() -> ApiError {
-    ApiError::BadRequest("购物车商品过多，无法自动计算优惠，请分单结算".into())
+/// 三条规模上限共用前一句「请分单结算」，但各自缀上不同的尾巴。
+///
+/// **尾巴必须可区分**：`api/lot.rs` 的 HTTP 测试只能断言哪一条撞了，否则有人把
+/// `MAX_UNITS` 调小，原本测 `MAX_STATE_SPACE` 的测试照样绿、测的却是另一条分支。
+fn too_large(reason: &str) -> ApiError {
+    ApiError::BadRequest(format!(
+        "购物车商品过多，无法自动计算优惠，请分单结算（{reason}）"
+    ))
 }
 
 fn overflow() -> ApiError {
@@ -131,7 +137,7 @@ fn enumerate_picks(
 ) -> ApiResult<()> {
     *steps += 1;
     if *steps > MAX_STEPS {
-        return Err(too_large());
+        return Err(too_large("搜索步数过多"));
     }
     if need == 0 {
         out.push(current.clone());
@@ -185,7 +191,7 @@ impl Search<'_> {
     fn best(&mut self, state: &[i64]) -> ApiResult<(Money, Choice)> {
         self.steps += 1;
         if self.steps > MAX_STEPS {
-            return Err(too_large());
+            return Err(too_large("搜索步数过多"));
         }
         if let Some(hit) = self.memo.get(state) {
             return Ok(hit.clone());
@@ -323,13 +329,13 @@ pub fn solve(cart: &[CartLine], lots: &[LotDef]) -> ApiResult<Solution> {
     let counts: Vec<i64> = participating.iter().map(|id| in_cart[id].qty).collect();
     let units: i64 = counts.iter().sum();
     if units > MAX_UNITS {
-        return Err(too_large());
+        return Err(too_large("商品件数过多"));
     }
     let mut space: i64 = 1;
     for c in &counts {
         space = space.saturating_mul(c + 1);
         if space > MAX_STATE_SPACE {
-            return Err(too_large());
+            return Err(too_large("组合方式过多"));
         }
     }
 
@@ -556,7 +562,31 @@ mod tests {
         let cart = [line(1, 301, 100)];
         let lots = [lot_repeat(7, 3, 200, &[1])];
         let err = solve(&cart, &lots).unwrap_err();
-        assert!(matches!(err, ApiError::BadRequest(_)));
+        match err {
+            ApiError::BadRequest(msg) => assert!(
+                msg.contains("商品件数过多"),
+                "301 件先撞的是 MAX_UNITS，不是状态空间：{msg}"
+            ),
+            other => panic!("要的是 400：{other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_lot_enumeration_that_explodes_hits_the_step_budget() {
+        // 状态空间 4^8 = 65536 在 MAX_STATE_SPACE(200000) 内，件数 24 也在
+        // MAX_UNITS(300) 内；但「任选 8 件、同款可重复」在 8 个候选上每个状态
+        // 都要枚举大量凑法，总步数会先撞 MAX_STEPS。三条上限的报文现在可区分，
+        // 这条测试才证明得了它测的是步数那一条。
+        let cart: Vec<CartLine> = (1..=8).map(|id| line(id, 3, 100)).collect();
+        let lots = [lot_repeat(7, 8, 100, &[1, 2, 3, 4, 5, 6, 7, 8])];
+        let err = solve(&cart, &lots).unwrap_err();
+        match err {
+            ApiError::BadRequest(msg) => assert!(
+                msg.contains("搜索步数过多"),
+                "空间和件数都在预算内，撞的该是 MAX_STEPS：{msg}"
+            ),
+            other => panic!("要的是 400：{other:?}"),
+        }
     }
 
     #[test]

@@ -1573,9 +1573,12 @@ mod tests {
             .unwrap();
         assert_eq!(res.status(), StatusCode::BAD_REQUEST);
         let body = read_json(res).await;
+        let error = body["error"].as_str().unwrap();
+        assert!(error.contains("分单"), "要告诉摊主该怎么办：{body}");
+        // 三条规模上限的报文现在各带不同尾巴，断言到具体那条，避免撞错分支也绿。
         assert!(
-            body["error"].as_str().unwrap().contains("分单"),
-            "要告诉摊主该怎么办：{body}"
+            error.contains("组合方式过多"),
+            "18 个商品各 1 件撞的是状态空间（组合方式），不是件数也不是步数：{body}"
         );
     }
 }

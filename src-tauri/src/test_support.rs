@@ -127,6 +127,25 @@ pub async fn read_json(res: axum::response::Response) -> serde_json::Value {
     serde_json::from_slice(&bytes).expect("parse json body")
 }
 
+/// 下一张单并返回 `order_id`。
+///
+/// `api/order.rs` 和 `api/stats.rs` 各抄过一份逐字相同的副本，放这里共用。
+pub async fn place(router: &Router, event_id: i64, items: serde_json::Value) -> i64 {
+    use tower::ServiceExt;
+    let res = router
+        .clone()
+        .oneshot(json_request(
+            "POST",
+            &format!("/api/events/{event_id}/orders"),
+            None,
+            serde_json::json!({ "items": items }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), axum::http::StatusCode::CREATED);
+    read_json(res).await["id"].as_i64().unwrap()
+}
+
 /// 同 `test_router()`，但把 pool 也还回来。
 ///
 /// Task 5 / Task 6 的测试要直接查账本余额做断言——拿不到 pool 就只能靠 HTTP 反推，

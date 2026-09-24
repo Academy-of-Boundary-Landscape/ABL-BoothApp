@@ -747,7 +747,7 @@ async fn update_order_status(
 #[cfg(test)]
 mod tests {
     use crate::test_support::{
-        admin_token, json_request, read_json, seed_event_and_product, test_router_with,
+        admin_token, json_request, place, read_json, seed_event_and_product, test_router_with,
     };
     use axum::http::StatusCode;
     use serde_json::json;
@@ -1383,22 +1383,6 @@ mod tests {
 
     use crate::domain::ledger::{account_balance, Account};
     use crate::domain::money::Money;
-
-    /// 下一张单并返回 order_id。
-    async fn place(router: &axum::Router, event_id: i64, items: serde_json::Value) -> i64 {
-        let res = router
-            .clone()
-            .oneshot(json_request(
-                "POST",
-                &format!("/api/events/{event_id}/orders"),
-                None,
-                json!({ "items": items }),
-            ))
-            .await
-            .unwrap();
-        assert_eq!(res.status(), StatusCode::CREATED);
-        read_json(res).await["id"].as_i64().unwrap()
-    }
 
     #[tokio::test]
     async fn a_manual_discount_falls_entirely_on_the_home_society() {

@@ -295,11 +295,11 @@ const qaList = [
       },
       {
         q: '展会结束时怎么收摊？',
-        a: '在<strong>摊主端</strong>点右上角「收摊」，跟着向导走三步：<strong>盘点</strong>（可以跳过）→ <strong>带回</strong> → <strong>结算</strong>。盘点是把每个品种实际剩多少件数一遍，和账面一比，差额记成「盘点差异」；没盘点的话结算单会明确标注「未盘点，剩余数为账面推算」。带回之后每个商品的现场仓余额清零。结算会把展会冻结——之后<strong>不能再下单或改单</strong>，但<strong>垫付、结算调整、收摊清点</strong>这三件事仍然可以回家补。',
+        a: '在<strong>摊主端</strong>点右上角「收摊」，跟着向导走四步：<strong>清点订单</strong> → <strong>盘点</strong>（可以跳过）→ <strong>带回</strong> → <strong>结算</strong>。第一步要<strong>先把 pending 订单（还没确认的单）逐单完成或取消</strong>，只要还有 pending 订单，后面三步都会被拒绝。盘点是把每个品种实际剩多少件数一遍，和账面一比，差额记成「盘点差异」；没盘点的话结算单会明确标注「未盘点，剩余数为账面推算」。带回之后每个商品的现场仓余额清零。结算会把展会冻结——之后<strong>不能再下单或改单</strong>，但<strong>垫付、结算调整、收摊清点</strong>这三件事仍然可以回家补。',
       },
       {
         q: '结算单里有什么？和销售统计的 Excel 有什么区别？',
-        a: '<strong>销售统计</strong>的 Excel 回答「<strong>卖了什么</strong>」——各商品的销量和销售额。<strong>结算单</strong>（展会 → 结算 → 导出 Excel）回答「<strong>账怎么算</strong>」，有四个 sheet：<br/>• <strong>结算汇总</strong>：每个货主该分多少、「我应转给」多少，以及各收款渠道的账面 / 实际 / 差额；<br/>• <strong>货主明细</strong>：按货主 × 商品列出数量和原价 / 折让 / 净额；<br/>• <strong>账本流水</strong>：每条记账的时间、摘要和货腿 / 钱腿；<br/>• <strong>订单明细</strong>：每张订单每一行的实付金额和已退数量。<br/>寄售分账看结算单。注意「我应转给」只是账本算出来的应转数，<strong>系统没有能力核对任何一笔到账</strong>。',
+        a: '<strong>销售统计</strong>的 Excel 回答「<strong>卖了什么</strong>」——各商品的销量和销售额。<strong>结算单</strong>（展会 → 结算 → 导出 Excel）回答「<strong>账怎么算</strong>」，有四个 sheet：<br/>• <strong>结算汇总</strong>：每个货主该分多少、「我应转给」多少，以及各收款渠道的账面 / 实际 / 差额；<br/>• <strong>货主明细</strong>：按货主 × 商品列出数量和原价 / 折让 / 净额；<br/>• <strong>账本流水</strong>：每条记账的时间、摘要和货腿 / 钱腿；<br/>• <strong>订单明细</strong>：每张订单每一行的货主应得、顾客实付和已退件数。<br/>寄售分账看结算单。注意「我应转给」只是账本算出来的应转数，<strong>系统没有能力核对任何一笔到账</strong>。',
       },
     ],
   },
