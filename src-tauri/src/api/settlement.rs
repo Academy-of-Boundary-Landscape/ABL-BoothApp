@@ -686,6 +686,11 @@ async fn load_input(state: &AppState, event_id: i64) -> ApiResult<SettlementInpu
 
     // 渠道清单 = 本展会实际用过的（orders ∪ refunds），按展会过滤，
     // 不是跨展会的 `GET /channels`。
+    //
+    // 还要并上本展会 `money_movements` 里出现过的所有 `实收-` 账户：报表的
+    // actual_total / vendor_retained 只对这份清单求和，如果哪个别的路径往一个
+    // 出人意料的实收账户写了腿而这里没列出，那笔钱就会在结算单上彻底隐形。
+    // `substr(..., 4)` 从第 4 个字符起，正好剥掉 3 个字符的前缀 `实收-`。
     let channel_names: Vec<String> = sqlx::query_scalar(
         "SELECT channel FROM (
             SELECT channel FROM orders
@@ -695,8 +700,18 @@ async fn load_input(state: &AppState, event_id: i64) -> ApiResult<SettlementInpu
               JOIN order_lines ol ON ol.id = r.order_line_id
               JOIN orders o ON o.id = ol.order_id
              WHERE o.event_id = ? AND r.channel <> ''
-         ) ORDER BY 1",
+            UNION
+            SELECT substr(mm.to_account, 4) AS channel
+              FROM money_movements mm JOIN journals j ON j.id = mm.journal_id
+             WHERE j.event_id = ? AND mm.to_account LIKE '实收-%'
+            UNION
+            SELECT substr(mm.from_account, 4) AS channel
+              FROM money_movements mm JOIN journals j ON j.id = mm.journal_id
+             WHERE j.event_id = ? AND mm.from_account LIKE '实收-%'
+         ) WHERE channel <> '' ORDER BY 1",
     )
+    .bind(event_id)
+    .bind(event_id)
     .bind(event_id)
     .bind(event_id)
     .fetch_all(&state.db)
@@ -813,6 +828,57 @@ async fn reconcile(
     let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
     // 补齐「展会不存在」的 404：跳过 require_event_open 不等于允许对着空气记账。
     ensure_event_exists(&mut tx, event_id).await?;
+
+    // 每条都在任何腿落库之前读余额，所以重复一次就把同一笔差额写两遍。
+    // 必须在 normalize 之后判重——"现金" 和 " 现金 " 会折叠成同一个账户。
+    // 同 api/closing.rs 的 stocktake。
+    let mut seen = std::collections::HashSet::new();
+    for c in &payload.counts {
+        let name = normalize(&c.channel)?;
+        if !seen.insert(name) {
+            return Err(ApiError::BadRequest(
+                "同一个渠道在一次清点里只能报一次数".into(),
+            ));
+        }
+    }
+
+    // 本场用过的渠道。清点一个本场没出现过的渠道，钱会写进账本却不出现在报表里
+    //（报表的渠道清单来自 orders.channel ∪ refunds.channel），彻底隐形。
+    let used: Vec<String> = sqlx::query_scalar(
+        "SELECT DISTINCT channel FROM orders  WHERE event_id = ? AND channel IS NOT NULL AND channel <> ''
+         UNION
+         SELECT DISTINCT r.channel FROM refunds r
+           JOIN order_lines ol ON ol.id = r.order_line_id
+           JOIN orders o       ON o.id = ol.order_id
+         WHERE o.event_id = ? AND r.channel <> ''
+         ORDER BY 1",
+    )
+    .bind(event_id)
+    .bind(event_id)
+    .fetch_all(&mut *tx)
+    .await?;
+
+    let mut unknown: Vec<&String> = seen.iter().filter(|c| !used.contains(*c)).collect();
+    unknown.sort();
+    if !unknown.is_empty() {
+        let names: Vec<&str> = unknown.iter().map(|s| s.as_str()).collect();
+        return Err(ApiError::BadRequest(format!(
+            "「{}」这场展会没用过，无法清点。本场用过的渠道：{}",
+            names.join("、"),
+            used.join("、")
+        )));
+    }
+
+    // 收全量，和 `stocktake` 一字不差：「我数了，一致」和「我没数这个」是两件事。
+    // 请求体不把它们混成同一个缺省，全局的 `reconciled_at` 才能代表「全都数过了」。
+    let missing: Vec<&String> = used.iter().filter(|c| !seen.contains(*c)).collect();
+    if !missing.is_empty() {
+        let names: Vec<&str> = missing.iter().map(|s| s.as_str()).collect();
+        return Err(ApiError::BadRequest(format!(
+            "这些本场用过的渠道没报数：{}。数过一致的也要报，否则分不出「数了一致」和「没数」",
+            names.join("、")
+        )));
+    }
 
     let mut money = Vec::new();
     for c in &payload.counts {
@@ -2239,6 +2305,208 @@ mod tests {
         .await;
         assert_eq!(report["channels"][0]["actual"], 2800, "第二次数出来是 28");
         assert_eq!(report["channels"][0]["book"], 3000, "账面应有始终是 30");
+    }
+
+    #[tokio::test]
+    async fn reconciling_the_same_channel_twice_in_one_request_is_refused() {
+        // 两条都对着「写入前余额」算完整差额 ⇒ 同一笔差额被写两遍。
+        // " 现金 " 和 "现金" 会被 normalize 折叠成同一个账户，所以要在规范化之后判重。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+        // 先卖一单制造出「现金」这个渠道
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None,
+                json!({"items": [{"product_id": ep_a, "quantity": 1}]}),
+            ))
+            .await
+            .unwrap();
+        let order_id = read_json(res).await["id"].as_i64().unwrap();
+        router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "现金"}),
+            ))
+            .await
+            .unwrap();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/settlement/reconcile"),
+                Some(&token),
+                json!({"counts": [{"channel": "现金", "actual": 2500},
+                                  {"channel": " 现金 ", "actual": 2500}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::Received("现金".into()))
+                .await
+                .unwrap(),
+            Money::from_cents(3000),
+            "一分都不该动"
+        );
+    }
+
+    #[tokio::test]
+    async fn reconciling_a_channel_the_event_never_used_is_refused() {
+        // 否则钱写进账本却不在报表的渠道清单里 ⇒ actual_total / vendor_retained 都看不见它。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None,
+                json!({"items": [{"product_id": ep_a, "quantity": 1}]}),
+            ))
+            .await
+            .unwrap();
+        let order_id = read_json(res).await["id"].as_i64().unwrap();
+        router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "现金"}),
+            ))
+            .await
+            .unwrap();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/settlement/reconcile"),
+                Some(&token),
+                json!({"counts": [{"channel": "微信支付", "actual": 10000}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        let body = read_json(res).await;
+        assert!(
+            body["error"].as_str().unwrap().contains("现金"),
+            "要告诉摊主本场用过哪些渠道：{body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn reconciling_must_cover_every_channel_the_event_used() {
+        // 全局的 events.reconciled_at 只能代表「全都数过了」，前提是请求收全量。
+        // 和盘点一字不差：「我数了，一致」和「我没数这个」是两件事。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+        for channel in ["现金", "微信"] {
+            let res = router
+                .clone()
+                .oneshot(json_request(
+                    "POST",
+                    &format!("/api/events/{event_id}/orders"),
+                    None,
+                    json!({"items": [{"product_id": ep_a, "quantity": 1}]}),
+                ))
+                .await
+                .unwrap();
+            let order_id = read_json(res).await["id"].as_i64().unwrap();
+            router
+                .clone()
+                .oneshot(json_request(
+                    "PUT",
+                    &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                    Some(&token),
+                    json!({"status": "completed", "channel": channel}),
+                ))
+                .await
+                .unwrap();
+        }
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/settlement/reconcile"),
+                Some(&token),
+                json!({"counts": [{"channel": "现金", "actual": 3000}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        let body = read_json(res).await;
+        assert!(
+            body["error"].as_str().unwrap().contains("微信"),
+            "要点名漏了哪个渠道：{body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_stray_received_account_the_event_never_used_still_shows_in_the_report() {
+        // 报表的渠道清单若只来自 orders ∪ refunds，一条别的路径写进本场没用过的
+        // 实收账户的腿就会既不在清单里、也不被 actual_total / vendor_retained 计入，
+        // 钱静默消失。并上 money_movements 里的 `实收-` 账户后它必须成为一行。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _, _) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+
+        // 绕过 API 直接写一条腿，模拟「别的路径」。
+        let mut tx = pool.begin().await.unwrap();
+        crate::domain::ledger::post_journal(
+            &mut tx,
+            event_id,
+            crate::domain::ledger::JournalKind::Adjust,
+            None,
+            None,
+            Some("测试：意外的实收账户"),
+            &[],
+            &[crate::domain::ledger::MoneyLeg {
+                from: Account::VendorOwn,
+                to: Account::Received("微信支付".into()),
+                amount: Money::from_cents(10000),
+            }],
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        let report = read_json(
+            router
+                .clone()
+                .oneshot(json_request(
+                    "GET",
+                    &format!("/api/events/{event_id}/settlement"),
+                    Some(&token),
+                    json!(null),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+
+        let channels = report["channels"].as_array().unwrap();
+        let stray = channels
+            .iter()
+            .find(|c| c["channel"] == "微信支付")
+            .expect("意外的实收账户必须在渠道清单里，钱才不会隐形");
+        assert_eq!(stray["book"], 10000);
+        assert_eq!(
+            report["actual_total"], 10000,
+            "actual_total 要把它算进去，否则摊主留存少一截"
+        );
     }
 
     #[tokio::test]
