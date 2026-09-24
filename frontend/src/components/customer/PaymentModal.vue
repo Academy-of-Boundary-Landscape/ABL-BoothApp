@@ -1,5 +1,5 @@
 <template>
-  <Transition name="payment-fade">
+  <Transition name="fade">
     <div v-if="show" class="payment-overlay">
       <div class="payment-card">
         <!-- 顶部：金额 -->
@@ -116,31 +116,34 @@ onUnmounted(stopCountdown)
   align-items: center;
   justify-content: center;
   /* 基础 padding + iPhone X+ 安全区偏移 */
-  padding: calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right))
-    calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- iPhone 安全区适配，env() 无法用 space token 表达 */
+  padding: calc(var(--space-lg) + env(safe-area-inset-top))
+    calc(var(--space-lg) + env(safe-area-inset-right))
+    calc(var(--space-lg) + env(safe-area-inset-bottom))
+    calc(var(--space-lg) + env(safe-area-inset-left));
   box-sizing: border-box;
 }
 
 .payment-card {
   width: 100%;
-  max-width: 720px;
+  max-width: var(--page-narrow);
   height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-md);
 }
 
 .payment-header {
   flex-shrink: 0;
   font-size: var(--font-xl);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   text-align: center;
-  padding-top: 8px;
+  padding-top: var(--space-sm);
 }
 .payment-header strong {
   color: var(--accent-color);
-  font-size: 1.8rem;
+  font-size: var(--font-2xl);
 }
 
 /* 二维码区域 */
@@ -155,7 +158,7 @@ onUnmounted(stopCountdown)
 
 .qr-grid {
   display: flex;
-  gap: 16px;
+  gap: var(--space-lg);
   align-items: center;
   justify-content: center;
   max-height: 100%;
@@ -190,32 +193,33 @@ onUnmounted(stopCountdown)
 }
 
 .no-qr {
-  padding: 2rem;
+  padding: var(--space-2xl);
   color: var(--text-disabled);
   border: 2px dashed var(--border-color);
   border-radius: var(--radius-md);
   text-align: center;
 }
 .no-qr p {
-  margin: 0.5rem 0;
+  margin: var(--space-sm) 0;
 }
 
 .payment-footer {
   flex-shrink: 0;
   width: 100%;
   text-align: center;
-  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- iPhone 底部安全区适配，env() 无法用 space token 表达 */
+  padding-bottom: calc(var(--space-sm) + env(safe-area-inset-bottom, 0px));
 }
 
 .scan-tip {
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-md);
   color: var(--text-muted);
   font-size: var(--font-sm);
   line-height: 1.5;
 }
 
 .close-btn {
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   font-size: var(--font-md);
 }
 
@@ -223,44 +227,32 @@ onUnmounted(stopCountdown)
   width: 100%;
   height: 3px;
   background: var(--border-color);
-  border-radius: 2px;
-  margin-bottom: 12px;
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-md);
   overflow: hidden;
 }
 .timer-fill {
   height: 100%;
   background: var(--accent-color);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   transition: width 1s linear;
 }
 .extend-btn {
-  margin-top: 10px;
+  margin-top: var(--space-sm);
   background: none;
   border: none;
   color: var(--text-muted);
   font-size: var(--font-sm);
   cursor: pointer;
-  padding: 4px 12px;
+  padding: var(--space-xs) var(--space-md);
   text-decoration: underline;
 }
 .extend-btn:hover {
   color: var(--accent-color);
 }
 
-/* 过渡动画 */
-.payment-fade-enter-active {
-  transition: opacity 0.25s;
-}
-.payment-fade-leave-active {
-  transition: opacity 0.35s;
-}
-.payment-fade-enter-from,
-.payment-fade-leave-to {
-  opacity: 0;
-}
-
 /* 竖屏手机：双码改为上下排列 */
-@media (max-width: 600px) and (orientation: portrait) {
+@media (--phone) and (orientation: portrait) {
   .qr-grid:not(.single) {
     flex-direction: column;
   }

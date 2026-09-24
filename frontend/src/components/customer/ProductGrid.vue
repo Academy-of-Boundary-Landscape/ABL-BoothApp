@@ -182,12 +182,12 @@ function handleDragEnd() {
   --pg-bg: var(--card-bg-color);
   --pg-border: var(--border-color);
   --pg-accent: var(--accent-color);
-  --pg-radius: var(--radius-lg);
+  --pg-media-pad: 133%;
 
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--min-col), 1fr));
-  gap: 12px;
-  padding: 4px;
+  gap: var(--space-md);
+  padding: var(--space-xs);
   align-content: start;
 }
 
@@ -204,23 +204,23 @@ function handleDragEnd() {
 /* 小号卡片：缩字、缩按钮、缩内边距 —— 否则在 3:4 + 110px 宽时
    bottom-row 的 ¥15.00 会被 32px 加号按钮挤到省略号 (15...) */
 .card-size-small .info-box {
-  padding: 8px 8px;
-  gap: 4px;
+  padding: var(--space-sm) var(--space-sm);
+  gap: var(--space-xs);
 }
 .card-size-small .title {
-  font-size: clamp(11px, 1.4vw, 13px);
+  font-size: var(--font-sm);
   line-height: 1.25;
-  font-weight: 600;
+  font-weight: var(--weight-bold);
 }
 .card-size-small .bottom-row {
-  gap: 6px;
+  gap: var(--space-sm);
 }
 .card-size-small .currency {
-  font-size: 10px;
+  font-size: var(--font-xs);
 }
 .card-size-small .value {
-  font-size: 15px;
-  font-weight: 800;
+  font-size: var(--font-base);
+  font-weight: var(--weight-bold);
 }
 .card-size-small .action-icon {
   width: 26px;
@@ -236,7 +236,7 @@ function handleDragEnd() {
 }
 
 .product-card {
-  border-radius: var(--pg-radius);
+  border-radius: var(--radius-lg);
   transition:
     transform 0.2s,
     box-shadow 0.2s;
@@ -274,13 +274,10 @@ function handleDragEnd() {
    3:4（默认）=> 133.33%（竖向，适合立绘/明信片/海报）
    1:1        => 100%（方形，适合亚克力/徽章/周边小物）
    如果 inline style 未提供，兜底 133% 保持旧行为。 */
-.product-grid {
-  --pg-media-pad: 133%;
-}
-
 .media-box::before {
   content: '';
   display: block;
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- 商品图区宽高比占位（百分比 padding-top），属内容几何，不是间距刻度 */
   padding-top: var(--pg-media-pad);
 }
 
@@ -346,9 +343,9 @@ function handleDragEnd() {
   inset: 0;
   background: linear-gradient(
     110deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.2) 30%,
-    rgba(255, 255, 255, 0) 60%
+    transparent 0%,
+    color-mix(in srgb, var(--text-white) 20%, transparent) 30%,
+    transparent 60%
   );
   transform: translateX(-60%);
   animation: shine 1.2s infinite;
@@ -373,12 +370,12 @@ function handleDragEnd() {
   bottom: 8px;
   left: 8px;
   right: 8px;
-  font-size: 12px;
-  font-weight: 800;
+  font-size: var(--font-xs);
+  font-weight: var(--weight-bold);
   color: var(--text-muted);
   background: color-mix(in srgb, var(--card-bg-color) 85%, transparent);
   border-radius: var(--radius-md);
-  padding: 6px 8px;
+  padding: var(--space-sm) var(--space-sm);
   text-align: center;
 }
 
@@ -386,7 +383,7 @@ function handleDragEnd() {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 2.5em;
+  font-size: var(--font-2xl);
   opacity: 0.5;
 }
 
@@ -394,20 +391,20 @@ function handleDragEnd() {
   position: absolute;
   top: 6px;
   right: 6px;
-  padding: 3px 8px;
+  padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-md);
-  font-size: 11px;
-  font-weight: 800;
-  color: white;
-  background: rgba(0, 0, 0, 0.55);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-bold);
+  color: var(--text-white);
+  background: color-mix(in srgb, var(--tooltip-bg) 55%, transparent);
   backdrop-filter: blur(6px);
 }
 .chip.stock-warning {
-  background: var(--warning-color, #f0a020);
+  background: var(--warning-color);
   animation: stock-pulse 2s ease-in-out infinite;
 }
 .product-card.low-stock {
-  border-color: var(--warning-color, #f0a020);
+  border-color: var(--warning-color);
 }
 
 @keyframes stock-pulse {
@@ -427,16 +424,16 @@ function handleDragEnd() {
   left: 0;
   right: 0;
   height: 3px;
-  background: rgba(0, 0, 0, 0.1);
+  background: color-mix(in srgb, var(--overlay-color) 25%, transparent);
 }
 .stock-bar-fill {
   height: 100%;
-  background: var(--warning-color, #f0a020);
-  border-radius: 0 2px 2px 0;
+  background: var(--warning-color);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   transition: width 0.3s;
 }
 .stock-bar-fill.critical {
-  background: var(--error-color, #d03050);
+  background: var(--error-color);
 }
 
 /* ✅ SOLD OUT：磨砂 + badge，自适应明暗主题 */
@@ -445,7 +442,7 @@ function handleDragEnd() {
   inset: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-sm);
   align-items: center;
   justify-content: center;
   background: color-mix(in srgb, var(--card-bg-color) 70%, transparent);
@@ -453,40 +450,39 @@ function handleDragEnd() {
 }
 
 .sold-badge {
-  padding: 6px 12px;
+  padding: var(--space-sm) var(--space-md);
   border-radius: var(--radius-pill);
-  font-weight: 950;
+  font-weight: var(--weight-bold);
   letter-spacing: 0.06em;
-  font-size: 12px;
-  color: white;
-  background: rgba(20, 20, 20, 0.86);
+  font-size: var(--font-xs);
+  color: var(--text-white);
+  background: var(--tooltip-bg);
   box-shadow: var(--shadow-lg);
   transform: rotate(-6deg);
 }
 
 .sold-sub {
-  font-size: 12px;
-  font-weight: 800;
+  font-size: var(--font-xs);
+  font-weight: var(--weight-bold);
   color: var(--text-muted);
 }
 
 /* 信息区 */
 .info-box {
-  padding: 10px 10px;
+  padding: var(--space-sm) var(--space-sm);
   flex: 1;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 6px;
+  gap: var(--space-sm);
   min-width: 0;
 }
 
 .title {
-  /* 最小 11px 保证可读，随视口宽度放大，上限 16px */
-  font-size: clamp(11px, 2vw, 16px);
+  font-size: var(--font-base);
   line-height: 1.35;
   color: var(--primary-text-color);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -498,7 +494,7 @@ function handleDragEnd() {
   align-items: flex-end;
   justify-content: space-between;
   flex-wrap: nowrap;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 
 .price-wrapper {
@@ -510,11 +506,11 @@ function handleDragEnd() {
 }
 .currency {
   font-size: var(--font-xs);
-  margin-right: 1px;
+  margin-right: var(--space-xs);
 }
 .value {
   font-size: var(--font-lg);
-  font-weight: 900;
+  font-weight: var(--weight-bold);
   font-family: sans-serif;
 }
 
@@ -535,8 +531,8 @@ function handleDragEnd() {
   position: absolute;
   top: 50%;
   left: 50%;
-  background: white;
-  border-radius: 1px;
+  background: var(--text-white);
+  border-radius: var(--radius-sm);
   transform: translate(-50%, -50%);
 }
 .action-icon::before {
@@ -556,7 +552,7 @@ function handleDragEnd() {
   opacity: 0.5;
   background: var(--bg-secondary);
   border: 2px dashed var(--border-color);
-  border-radius: var(--pg-radius);
+  border-radius: var(--radius-lg);
 }
 .drag-card {
   opacity: 1;
@@ -577,7 +573,7 @@ function handleDragEnd() {
 .edit-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.05);
+  background: color-mix(in srgb, var(--overlay-color) 12%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -585,11 +581,11 @@ function handleDragEnd() {
 }
 .drag-icon {
   background: var(--pg-accent);
-  color: white;
-  padding: 4px 10px;
+  color: var(--text-white);
+  padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-xl);
-  font-size: 12px;
-  font-weight: 800;
+  font-size: var(--font-xs);
+  font-weight: var(--weight-bold);
   box-shadow: var(--shadow-sm);
 }
 
@@ -618,6 +614,7 @@ function handleDragEnd() {
   }
   30% {
     transform: scale(0.93);
+    /* stylelint-disable-next-line declaration-property-value-allowed-list -- 新增商品强调脉冲环（0 0 0 3px），非设计阴影档 */
     box-shadow: 0 0 0 3px var(--accent-color);
   }
   60% {

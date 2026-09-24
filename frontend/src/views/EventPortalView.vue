@@ -44,35 +44,35 @@
           </div>
         </n-alert>
 
-        <div v-if="eventStore.isLoading" class="loading">
-          <n-spin>
-            <template #description>正在加载展会列表...</template>
-          </n-spin>
-        </div>
-        <div v-else-if="eventStore.error" class="error">
-          <n-alert type="error" :bordered="false">{{ eventStore.error }}</n-alert>
-        </div>
+        <AsyncState
+          :loading="eventStore.isLoading"
+          :error="eventStore.error"
+          :empty="!ongoingEvents.length"
+          loading-text="正在加载展会列表..."
+        >
+          <div class="event-list">
+            <n-space vertical size="large">
+              <RouterLink
+                v-for="event in ongoingEvents"
+                :key="event.id"
+                :to="`/events/${event.id}/order`"
+                class="event-link-card"
+              >
+                <n-card hoverable :bordered="true">
+                  <h2>{{ event.name }}</h2>
+                  <span>{{ event.date }} @ {{ event.location || '会场' }}</span>
+                </n-card>
+              </RouterLink>
+            </n-space>
+          </div>
 
-        <div v-else-if="ongoingEvents.length" class="event-list">
-          <n-space vertical size="large">
-            <RouterLink
-              v-for="event in ongoingEvents"
-              :key="event.id"
-              :to="`/events/${event.id}/order`"
-              class="event-link-card"
-            >
-              <n-card hoverable :bordered="true">
-                <h2>{{ event.name }}</h2>
-                <span>{{ event.date }} @ {{ event.location || '会场' }}</span>
-              </n-card>
-            </RouterLink>
-          </n-space>
-        </div>
-
-        <div v-else class="no-events">
-          <p>当前没有正在进行的贩售活动 (´·ω·`)</p>
-          <p>摊主可能还在准备中，或今日活动尚未开始。</p>
-        </div>
+          <template #empty>
+            <div class="no-events">
+              <p>当前没有正在进行的贩售活动 (´·ω·`)</p>
+              <p>摊主可能还在准备中，或今日活动尚未开始。</p>
+            </div>
+          </template>
+        </AsyncState>
 
         <div class="portal-nav">
           <router-link to="/admin" class="portal-nav-link">管理后台</router-link>
@@ -87,7 +87,8 @@
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useEventStore } from '@/stores/eventStore' // 复用我们已有的 eventStore
-import { NCard, NSpin, NAlert, NSpace, NButton } from 'naive-ui'
+import { AsyncState } from '@/components/ui'
+import { NCard, NAlert, NSpace, NButton } from 'naive-ui'
 
 const VERSION_ALERT_KEY = 'portal_version_alert_dismissed_v1.1'
 const ADMIN_FIRST_LOGIN_KEY = 'admin_first_login_done'
@@ -133,15 +134,15 @@ onMounted(() => {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  padding: 1rem;
+  padding: var(--space-lg);
   box-sizing: border-box;
 }
 .portal-box {
   width: 100%;
-  max-width: 600px;
+  max-width: var(--page-narrow);
   background-color: var(--card-bg-color);
   border-radius: var(--radius-md);
-  padding: 1.25rem 1rem;
+  padding: var(--space-lg) var(--space-lg);
   border: 1px solid var(--border-color);
   text-align: center;
 }
@@ -151,10 +152,10 @@ header h1 {
 }
 header p {
   color: var(--text-muted);
-  margin-bottom: 2rem;
+  margin-bottom: var(--space-2xl);
 }
 .version-alert {
-  margin-bottom: 1.25rem;
+  margin-bottom: var(--space-lg);
   background-color: var(--highlight-color);
   border-color: var(--warning-color);
 }
@@ -163,7 +164,7 @@ header p {
   flex-direction: column;
   justify-content: center;
   align-items: flex-start;
-  gap: 1rem;
+  gap: var(--space-lg);
   width: 100%;
 }
 .close-btn {
@@ -172,22 +173,22 @@ header p {
 }
 
 /* 手机端：进一步收紧外边距和内边距，避免内容过窄 */
-@media (max-width: 767px) {
+@media (--phone) {
   .portal-container {
-    padding: 0.5rem;
+    padding: var(--space-sm);
   }
 
   .portal-box {
-    padding: 1rem 0.75rem;
+    padding: var(--space-lg) var(--space-md);
   }
 
   header p {
-    margin-bottom: 1.25rem;
+    margin-bottom: var(--space-lg);
   }
 }
 
 /* 平板及以上屏幕 */
-@media (min-width: 768px) {
+@media (--not-phone) {
   .alert-content {
     flex-direction: row;
     justify-content: space-between;
@@ -200,7 +201,7 @@ header p {
 .event-list {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--space-lg);
 }
 .event-link-card {
   display: block;
@@ -208,7 +209,7 @@ header p {
   color: var(--primary-text-color);
 }
 .event-link-card h2 {
-  margin: 0 0 0.5rem 0;
+  margin: 0 0 var(--space-sm) 0;
 }
 .event-link-card span {
   color: var(--text-muted);
@@ -219,13 +220,13 @@ header p {
 .portal-nav {
   display: flex;
   justify-content: center;
-  gap: 12px;
-  margin-top: 2rem;
-  padding-top: 1.5rem;
+  gap: var(--space-md);
+  margin-top: var(--space-2xl);
+  padding-top: var(--space-xl);
   border-top: 1px solid var(--border-color);
 }
 .portal-nav-link {
-  padding: 6px 16px;
+  padding: var(--space-sm) var(--space-lg);
   border-radius: var(--radius-pill);
   font-size: var(--font-sm);
   color: var(--text-muted);
@@ -235,23 +236,23 @@ header p {
 }
 .portal-nav-link:hover {
   background: var(--accent-color);
-  color: white;
+  color: var(--text-white);
   border-color: var(--accent-color);
 }
 
 /* ========== 首次使用欢迎页 ========== */
 .welcome-header {
   text-align: center;
-  margin-bottom: 1.5rem;
+  margin-bottom: var(--space-xl);
 }
 .welcome-emoji {
-  font-size: 3rem;
+  font-size: var(--font-2xl);
   line-height: 1;
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--space-sm);
 }
 .welcome-header h1 {
   color: var(--accent-color);
-  margin: 0 0 0.25rem;
+  margin: 0 0 var(--space-xs);
 }
 .welcome-sub {
   color: var(--text-muted);
@@ -260,47 +261,47 @@ header p {
 }
 
 .welcome-body {
-  padding: 0.5rem 0 1rem;
+  padding: var(--space-sm) 0 var(--space-lg);
 }
 .welcome-intro {
   text-align: center;
   color: var(--primary-text-color);
   font-size: var(--font-base);
-  margin: 0 0 1.25rem;
+  margin: 0 0 var(--space-lg);
 }
 
 .welcome-cta {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 1rem 1.25rem;
+  gap: var(--space-md);
+  padding: var(--space-lg) var(--space-lg);
   background: var(--accent-color);
-  color: white;
+  color: var(--text-white);
   text-decoration: none;
   border-radius: var(--radius-md);
-  font-size: var(--font-md, 16px);
-  font-weight: 600;
+  font-size: var(--font-md);
+  font-weight: var(--weight-bold);
   transition:
     transform 0.12s ease,
     box-shadow 0.12s ease,
     filter 0.12s ease;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-md);
 }
 .welcome-cta:hover {
   transform: translateY(-1px);
   filter: brightness(1.06);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-md);
 }
 .welcome-cta:active {
   transform: translateY(0);
 }
 .welcome-cta-icon {
-  font-size: 1.25rem;
+  font-size: var(--font-lg);
   line-height: 1;
 }
 .welcome-cta-arrow {
-  font-size: 1.1rem;
+  font-size: var(--font-md);
   line-height: 1;
   opacity: 0.85;
 }
@@ -308,7 +309,7 @@ header p {
   text-align: center;
   color: var(--text-muted);
   font-size: var(--font-sm);
-  margin: 1.25rem 0 0;
+  margin: var(--space-lg) 0 0;
   line-height: 1.6;
 }
 </style>
