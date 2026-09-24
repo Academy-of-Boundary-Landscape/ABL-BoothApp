@@ -74,12 +74,14 @@ import { ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { NIcon } from 'naive-ui'
 import { ChevronDown, PersonOutline, StorefrontOutline, SettingsOutline } from '@vicons/ionicons5'
+import { useViewport } from '@/composables/useViewport'
 
 const isOpen = ref(false)
 const isCollapsed = ref(localStorage.getItem('header_collapsed') === 'true')
+const { isPhone } = useViewport()
 
 const closeIfMobile = () => {
-  if (window.innerWidth <= 768) {
+  if (isPhone.value) {
     isOpen.value = false
   }
 }
@@ -108,8 +110,9 @@ const toggleCollapse = () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 16px;
-  padding-top: calc(6px + env(safe-area-inset-top, 0));
+  padding: var(--space-sm) var(--space-lg);
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- env() 安全区适配，无对应空间 token */
+  padding-top: calc(var(--space-sm) + env(safe-area-inset-top, 0));
   border-bottom: 1px solid var(--border-color);
   background-color: var(--bg-color);
   min-height: var(--app-header-height, 64px);
@@ -125,8 +128,8 @@ const toggleCollapse = () => {
 }
 
 .app-logo {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: var(--font-base);
+  font-weight: var(--weight-bold);
   color: var(--primary-text-color);
   margin-right: auto; /* 让 Logo 靠左，把右边的元素推过去 */
 }
@@ -134,8 +137,8 @@ const toggleCollapse = () => {
 /* 恢复按钮样式 */
 .restore-toggle {
   position: absolute;
-  top: calc(6px + env(safe-area-inset-top, 0));
-  right: 12px;
+  top: calc(var(--space-sm) + env(safe-area-inset-top, 0));
+  right: var(--space-md);
   width: 32px;
   height: 32px;
   border-radius: var(--radius-pill);
@@ -152,7 +155,7 @@ const toggleCollapse = () => {
 
 /* 收起按钮样式 */
 .collapse-toggle {
-  margin-left: 12px;
+  margin-left: var(--space-md);
   width: 36px;
   height: 36px;
   border-radius: var(--radius-md);
@@ -166,7 +169,7 @@ const toggleCollapse = () => {
 }
 
 .chevron-icon {
-  font-size: 18px;
+  font-size: var(--font-md);
   transform: rotate(90deg);
   transition: transform 0.2s ease;
   color: var(--primary-text-color);
@@ -182,7 +185,7 @@ const toggleCollapse = () => {
   display: none; /* 桌面端隐藏 */
   width: 36px;
   height: 36px;
-  margin-left: 8px;
+  margin-left: var(--space-sm);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   background: var(--bg-secondary);
@@ -232,16 +235,16 @@ const toggleCollapse = () => {
 /* 导航链接 */
 .app-header-nav {
   display: flex;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 
 .nav-link {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
   border-radius: var(--radius-md);
-  font-size: 13px;
+  font-size: var(--font-sm);
   color: var(--secondary-text-color);
   text-decoration: none;
   transition:
@@ -260,7 +263,7 @@ const toggleCollapse = () => {
 }
 
 .nav-icon-desktop {
-  font-size: 16px;
+  font-size: var(--font-base);
 }
 
 /* 收起状态 */
@@ -284,7 +287,7 @@ const toggleCollapse = () => {
   display: none; /* 桌面端隐藏 */
 }
 
-@media (max-width: 768px) {
+@media (--phone) {
   .app-header-container {
     --app-header-height: 52px;
   }
@@ -293,8 +296,9 @@ const toggleCollapse = () => {
     flex-direction: column;
     align-items: flex-start;
     gap: 0;
-    padding: 8px 12px;
-    padding-top: calc(4px + env(safe-area-inset-top, 0));
+    padding: var(--space-sm) var(--space-md);
+    /* stylelint-disable-next-line declaration-property-value-allowed-list -- env() 安全区适配，无对应空间 token */
+    padding-top: calc(var(--space-xs) + env(safe-area-inset-top, 0));
     min-height: var(--app-header-height, 56px);
   }
 
@@ -308,9 +312,9 @@ const toggleCollapse = () => {
   /* 移动端快捷按钮组 */
   .mobile-shortcuts {
     display: flex;
-    gap: 8px;
+    gap: var(--space-sm);
     margin-left: auto;
-    margin-right: 8px; /* 与汉堡菜单保持距离 */
+    margin-right: var(--space-sm); /* 与汉堡菜单保持距离 */
   }
 
   .shortcut-btn {
@@ -322,7 +326,7 @@ const toggleCollapse = () => {
     border-radius: var(--radius-md);
     background-color: var(--bg-secondary);
     color: var(--secondary-text-color);
-    font-size: 18px; /* 图标大小 */
+    font-size: var(--font-md); /* 图标大小 */
     text-decoration: none;
     border: 1px solid transparent;
     transition: all 0.2s;
@@ -345,7 +349,7 @@ const toggleCollapse = () => {
   .app-header-nav {
     width: 100%;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-xs);
     max-height: 0;
     overflow: hidden;
     transition:
@@ -356,15 +360,16 @@ const toggleCollapse = () => {
 
   .app-header-nav.open {
     max-height: 200px; /* 足够容纳菜单的高度 */
-    margin-top: 8px;
+    margin-top: var(--space-sm);
     border-top: 1px solid var(--border-color); /* 可选：增加分割线 */
-    padding-top: 8px;
-    padding-bottom: calc(4px + env(safe-area-inset-bottom, 0));
+    padding-top: var(--space-sm);
+    /* stylelint-disable-next-line declaration-property-value-allowed-list -- env() 安全区适配，无对应空间 token */
+    padding-bottom: calc(var(--space-xs) + env(safe-area-inset-bottom, 0));
   }
 
   .nav-link {
     width: 100%;
-    padding: 9px 12px; /* 增加移动端点击区域 */
+    padding: var(--space-sm) var(--space-md); /* 增加移动端点击区域 */
     justify-content: flex-start;
   }
 

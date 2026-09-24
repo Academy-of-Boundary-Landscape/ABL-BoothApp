@@ -27,6 +27,6 @@ import { RouterLink } from 'vue-router'
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 2rem;
+  padding: var(--space-2xl);
 }
 </style>

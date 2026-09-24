@@ -43,8 +43,11 @@ const themeOverrides = computed(() => themeStore.naiveThemeOverrides)
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- env() 安全区适配，无对应空间 token */
   padding-left: env(safe-area-inset-left, 0);
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- env() 安全区适配，无对应空间 token */
   padding-right: env(safe-area-inset-right, 0);
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- env() 安全区适配，无对应空间 token */
   padding-bottom: env(safe-area-inset-bottom, 0);
   box-sizing: border-box;
 }

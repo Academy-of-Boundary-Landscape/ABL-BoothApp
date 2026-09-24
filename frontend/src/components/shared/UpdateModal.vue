@@ -1,9 +1,8 @@
 <template>
-  <n-modal
+  <AppModal
     v-model:show="showModal"
-    preset="card"
     title="检查更新"
-    style="max-width: 400px"
+    size="sm"
     :mask-closable="!loading && isTauriEnv"
     :close-on-esc="!loading && isTauriEnv"
     @after-enter="handleEnter"
@@ -65,7 +64,7 @@
 
       <div class="current-ver-tip">当前版本: v{{ currentVersion }}</div>
 
-      <n-divider title-placement="left" style="margin: 12px 0">更新内容</n-divider>
+      <n-divider title-placement="left" style="margin: var(--space-md) 0">更新内容</n-divider>
 
       <n-scrollbar style="max-height: 200px" class="log-scroll">
         <div class="release-note">{{ releaseNote }}</div>
@@ -106,14 +105,13 @@
         </template>
       </div>
     </div>
-  </n-modal>
+  </AppModal>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useUpdateCheck } from '@/composables/useUpdateCheck'
 import {
-  NModal,
   NSpin,
   NResult,
   NButton,
@@ -123,14 +121,15 @@ import {
   NAlert,
   NProgress,
   NSpace,
-  useDialog,
 } from 'naive-ui'
+import { AppModal } from '@/components/ui'
+import { useFeedback } from '@/composables/useFeedback'
 
 const props = defineProps<{ show: boolean }>()
 const emit = defineEmits<{ (e: 'update:show', v: boolean): void }>()
 
 const isTauriEnv = ref(typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined)
-const dialog = useDialog()
+const fb = useFeedback()
 
 const showModal = computed({
   get: () => props.show,
@@ -191,16 +190,17 @@ const handleAutoInstall = async () => {
   // 失败时 error.value 已被设置；UI 会回退到错误分支让用户重试。
 }
 
-const confirmRestart = () => {
-  dialog.warning({
-    title: '即将重启摊盒',
-    content: '重启会关闭应用以完成安装。请确认当前没有未保存的订单或编辑。继续吗？',
-    positiveText: '确认重启',
-    negativeText: '再等等',
-    onPositiveClick: async () => {
-      await restartApp()
-    },
-  })
+const confirmRestart = async () => {
+  if (
+    await fb.confirm({
+      title: '即将重启摊盒',
+      content: '重启会关闭应用以完成安装。请确认当前没有未保存的订单或编辑。继续吗？',
+      positiveText: '确认重启',
+      negativeText: '再等等',
+    })
+  ) {
+    await restartApp()
+  }
 }
 
 const formatDate = (dateStr: string) => {
@@ -227,25 +227,25 @@ const formatBytes = (bytes: number) => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 2rem 1rem;
+  padding: var(--space-2xl) var(--space-lg);
   min-height: 220px;
 }
 
 .text-muted {
   color: var(--text-muted);
   font-size: var(--font-base);
-  margin-top: 1rem;
+  margin-top: var(--space-lg);
 }
 
 .update-content {
-  padding: 0.5rem 0;
+  padding: var(--space-sm) 0;
 }
 
 .header-section {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 1rem;
+  gap: var(--space-lg);
   flex-wrap: wrap;
 }
 
@@ -257,42 +257,43 @@ const formatBytes = (bytes: number) => {
 .current-ver-tip {
   font-size: var(--font-sm);
   color: var(--secondary-text-color);
-  margin-top: 1rem;
-  padding: 0.5rem 0.75rem;
+  margin-top: var(--space-lg);
+  padding: var(--space-sm) var(--space-md);
   background: var(--bg-secondary);
   border-radius: var(--radius-sm);
   border-left: 4px solid var(--accent-color);
 }
 
 .log-scroll {
-  margin: 0.5rem 0;
-  border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.09));
+  margin: var(--space-sm) 0;
+  border: 1px solid var(--divider-color);
   border-radius: var(--radius-md);
 }
 
 .release-note {
   white-space: pre-wrap;
   line-height: 1.6;
-  padding: 1rem;
+  padding: var(--space-lg);
   font-size: var(--font-base);
-  color: var(--text-color-1, inherit);
-  background: var(--card-color, transparent);
+  color: var(--primary-text-color);
+  background: var(--card-bg-color);
+  /* stylelint-disable-next-line declaration-property-value-keyword-no-deprecated -- 保留原关键字，不做行为变更 */
   word-break: break-word;
 }
 
 .actions {
   display: flex;
   justify-content: flex-end;
-  gap: 0.75rem;
-  margin-top: 1.5rem;
+  gap: var(--space-md);
+  margin-top: var(--space-xl);
 }
 
 /* 移动端适配 */
-@media (max-width: 600px) {
+@media (--phone) {
   .header-section {
     flex-direction: column;
     align-items: flex-start;
-    gap: 0.5rem;
+    gap: var(--space-sm);
   }
 
   .actions {
@@ -305,24 +306,24 @@ const formatBytes = (bytes: number) => {
 }
 
 .progress-section {
-  margin-top: 1rem;
+  margin-top: var(--space-lg);
 }
 .progress-text {
   font-size: var(--font-sm);
   color: var(--text-muted);
-  margin-top: 0.5rem;
+  margin-top: var(--space-sm);
   text-align: center;
 }
 .installed-hint {
-  margin-top: 1rem;
+  margin-top: var(--space-lg);
 }
 
 .error-hint {
   font-size: var(--font-sm);
   color: var(--text-muted);
   text-align: center;
-  margin-top: 1rem;
-  padding: 0.5rem 1rem;
+  margin-top: var(--space-lg);
+  padding: var(--space-sm) var(--space-lg);
   line-height: 1.5;
 }
 </style>

@@ -177,23 +177,22 @@ const isDefaultColor = (swatch: { color: string; label: string }) => {
 
 <style scoped>
 .theme-setting-container {
-  max-width: 1200px;
   margin: 0 auto;
-  padding: 20px;
+  padding: var(--space-lg);
 }
 
 .setting-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 16px;
+  gap: var(--space-lg);
 }
 
 /* 标题 + 描述纵向排列；之前两个 span 默认 inline 会挤成一行 */
 .label {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-xs);
   flex: 1;
   min-width: 0;
 }
@@ -204,9 +203,9 @@ const isDefaultColor = (swatch: { color: string; label: string }) => {
 .aspect-rail {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 500;
+  gap: var(--space-sm);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
   white-space: nowrap;
   color: var(--primary-text-color) !important;
 }
@@ -218,7 +217,7 @@ const isDefaultColor = (swatch: { color: string; label: string }) => {
   display: inline-block;
   background: currentColor;
   opacity: 0.85;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   flex-shrink: 0;
 }
 .aspect-preview--3-4 {
@@ -233,7 +232,7 @@ const isDefaultColor = (swatch: { color: string; label: string }) => {
 .setting-item-vertical {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-md);
 }
 .label-row {
   display: flex;
@@ -242,21 +241,21 @@ const isDefaultColor = (swatch: { color: string; label: string }) => {
 }
 
 .title {
-  font-weight: 600;
-  font-size: 16px;
+  font-weight: var(--weight-bold);
+  font-size: var(--font-base);
   color: var(--primary-text-color);
 }
 
 .desc {
-  font-size: 12px;
+  font-size: var(--font-xs);
   color: var(--secondary-text-color);
-  margin-top: 4px;
+  margin-top: var(--space-xs);
 }
 
 /* 色板样式 */
 .color-swatches {
   display: flex;
-  gap: 12px;
+  gap: var(--space-md);
   flex-wrap: wrap;
 }
 
@@ -268,7 +267,7 @@ const isDefaultColor = (swatch: { color: string; label: string }) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
+  color: var(--text-white);
   transition:
     transform 0.2s,
     box-shadow 0.2s;
@@ -282,22 +281,23 @@ const isDefaultColor = (swatch: { color: string; label: string }) => {
 .swatch.active {
   transform: scale(1.1);
   box-shadow:
+    /* stylelint-disable-next-line declaration-property-value-allowed-list -- 选中色板的双层描边环（焦点环），非通用阴影 */
     0 0 0 2px var(--card-bg-color),
     0 0 0 4px var(--primary-text-color);
 }
 
 .mt-2 {
-  margin-top: 8px;
+  margin-top: var(--space-sm);
 }
 
 /* 自定义 CSS 变量测试框 */
 .custom-box {
-  padding: 16px;
+  padding: var(--space-lg);
   border: 1px dashed var(--accent-color);
   background-color: var(--accent-color-light);
   color: var(--accent-color-dark);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   text-align: center;
-  font-weight: bold;
+  font-weight: var(--weight-bold);
 }
 </style>
