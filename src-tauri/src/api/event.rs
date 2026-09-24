@@ -37,6 +37,8 @@ pub fn router() -> OpenApiRouter<AppState> {
 // 1. 用于查询参数解析
 #[derive(Deserialize, IntoParams)]
 struct ListEventsQuery {
+    /// 只列这个状态的；不传则全部。
+    #[param(value_type = Option<crate::api::openapi::EventStatus>)]
     status: Option<String>,
 }
 
@@ -48,6 +50,7 @@ struct EventResponse {
     #[serde(rename = "date")]
     pub event_date: String,
     pub location: Option<String>,
+    #[schema(value_type = crate::api::openapi::EventStatus)]
     pub status: String,
     /// 向后兼容：保留单个 URL（取第一个），旧前端不会崩
     pub qrcode_url: Option<String>,
@@ -453,6 +456,7 @@ async fn update_event(
 #[derive(Deserialize, ToSchema)]
 #[schema(as = EventUpdateStatusRequest)]
 struct UpdateStatusRequest {
+    #[schema(value_type = crate::api::openapi::EventStatus)]
     status: String,
 }
 

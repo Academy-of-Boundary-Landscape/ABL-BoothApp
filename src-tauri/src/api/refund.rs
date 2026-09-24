@@ -55,6 +55,7 @@ pub struct RefundLineRequest {
     order_line_id: i64,
     qty: i64,
     /// `现场仓`（还能卖）或 `损耗`（已损坏）。
+    #[schema(value_type = crate::api::openapi::RefundDestination)]
     destination: String,
 }
 
@@ -340,6 +341,7 @@ pub struct RefundHistoryRow {
     #[schema(value_type = Money)]
     refund_amount: i64,
     channel: String,
+    #[schema(value_type = crate::api::openapi::RefundDestination)]
     destination: String,
     occurred_at: String,
 }

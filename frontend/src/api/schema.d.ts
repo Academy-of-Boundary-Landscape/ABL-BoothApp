@@ -1150,6 +1150,11 @@ export interface components {
             image?: string | null;
             kind?: string | null;
         };
+        /**
+         * @description 结算调整方向：`to_them` = 我要多给他们；`to_me` = 他们要多给我。
+         * @enum {string}
+         */
+        AdjustmentDirection: "to_them" | "to_me";
         AdjustmentRequest: {
             /** @description 分，必须为正。符号由 `direction` 决定。 */
             amount: components["schemas"]["Money"];
@@ -1159,7 +1164,7 @@ export interface components {
              *     **界面不给摊主填正负号。** 母 spec 5.2 那个例子自己都要算一遍才对得上
              *     方向，让人在收摊后的疲惫状态下判断「赔付该填正还是负」是设计失误。
              */
-            direction: string;
+            direction: components["schemas"]["AdjustmentDirection"];
             label: string;
             /** Format: int64 */
             society_id: number;
@@ -1247,7 +1252,7 @@ export interface components {
             blockers: string[];
             onsite_remaining: components["schemas"]["ClosingOnSiteRow"][];
             pending_orders: components["schemas"]["ClosingPendingOrderRow"][];
-            status: string;
+            status: components["schemas"]["EventStatus"];
             stocktaken_at?: string | null;
         };
         /** @description 仅用于 OpenAPI 文档：创建展会的 multipart 表单字段。 */
@@ -1301,7 +1306,7 @@ export interface components {
             location?: string | null;
             name: string;
             payment_qr_code_path?: string | null;
-            status: string;
+            status: components["schemas"]["EventStatus"];
         };
         /** @description `DELETE /events/{id}` 的成功响应体。 */
         EventDeletedResponse: {
@@ -1317,10 +1322,17 @@ export interface components {
             qrcode_url?: string | null;
             /** @description 新字段：所有收款码 URL 数组 */
             qrcode_urls: string[];
-            status: string;
+            status: components["schemas"]["EventStatus"];
         };
+        /**
+         * @description `info.version` 故意固定为 "1" 而不是 App 版本号：否则每次 `set-version.sh`
+         *     都会让契约快照变红，而契约本身并没有变。
+         *     展会状态。
+         * @enum {string}
+         */
+        EventStatus: "筹备" | "进行中" | "已结算";
         EventUpdateStatusRequest: {
-            status: string;
+            status: components["schemas"]["EventStatus"];
         };
         /**
          * @description 一个商品在一场展会里的全部去向。**每一项都从 `stock_movements` 按方向取**，
@@ -1714,7 +1726,7 @@ export interface components {
             /** Format: int64 */
             id: number;
             solved_amount: components["schemas"]["Money"];
-            status: string;
+            status: components["schemas"]["OrderStatus"];
             /**
              * Format: date-time
              * @description 前端读的是 `timestamp` —— 这个 rename 是个隐形契约，
@@ -1724,13 +1736,18 @@ export interface components {
             timestamp: string;
         };
         /**
+         * @description 订单状态。
+         * @enum {string}
+         */
+        OrderStatus: "pending" | "completed" | "cancelled";
+        /**
          * @description 改订单状态的请求体。schema 名加 `Order` 前缀：`UpdateStatusRequest` 这种名字
          *     还会出现在别的模块，重名会在 openapi.json 里互相覆盖且不报错。
          */
         OrderUpdateStatusRequest: {
             channel?: string | null;
             final_amount?: components["schemas"]["Money"] | null;
-            status: string;
+            status: components["schemas"]["OrderStatus"];
             /**
              * @description 要拆掉的套装实例（`order_lots.id`）。
              *
@@ -1794,9 +1811,14 @@ export interface components {
              */
             journal_id?: number | null;
         };
+        /**
+         * @description 退货的货去哪：`现场仓`（还能卖）或 `损耗`（已损坏）。
+         * @enum {string}
+         */
+        RefundDestination: "现场仓" | "损耗";
         RefundHistoryRow: {
             channel: string;
-            destination: string;
+            destination: components["schemas"]["RefundDestination"];
             /** Format: int64 */
             id: number;
             name: string;
@@ -1810,7 +1832,7 @@ export interface components {
         };
         RefundLineRequest: {
             /** @description `现场仓`（还能卖）或 `损耗`（已损坏）。 */
-            destination: string;
+            destination: components["schemas"]["RefundDestination"];
             /** Format: int64 */
             order_line_id: number;
             /** Format: int64 */
@@ -1879,7 +1901,7 @@ export interface components {
             vendor_url: string;
         };
         SettleResponse: {
-            status: string;
+            status: components["schemas"]["EventStatus"];
         };
         SettlementEntry: {
             /**
@@ -2505,7 +2527,8 @@ export interface operations {
     "event.list_events": {
         parameters: {
             query?: {
-                status?: string | null;
+                /** @description 只列这个状态的；不传则全部。 */
+                status?: components["schemas"]["EventStatus"] | null;
             };
             header?: never;
             path?: never;
@@ -3625,7 +3648,8 @@ export interface operations {
     "order.list_orders": {
         parameters: {
             query?: {
-                status?: string | null;
+                /** @description 只列这个状态的；不传则全部。 */
+                status?: components["schemas"]["OrderStatus"] | null;
             };
             header?: never;
             path: {

@@ -225,6 +225,7 @@ pub struct AdjustmentRequest {
     ///
     /// **界面不给摊主填正负号。** 母 spec 5.2 那个例子自己都要算一遍才对得上
     /// 方向，让人在收摊后的疲惫状态下判断「赔付该填正还是负」是设计失误。
+    #[schema(value_type = crate::api::openapi::AdjustmentDirection)]
     direction: String,
     /// 分，必须为正。符号由 `direction` 决定。
     #[schema(value_type = Money)]

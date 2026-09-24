@@ -385,11 +385,16 @@
           {
             "name": "status",
             "in": "query",
+            "description": "只列这个状态的；不传则全部。",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/EventStatus"
+                },
+                {
+                  "type": "null"
+                }
               ]
             }
           }
@@ -1950,11 +1955,16 @@
           {
             "name": "status",
             "in": "query",
+            "description": "只列这个状态的；不传则全部。",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/OrderStatus"
+                },
+                {
+                  "type": "null"
+                }
               ]
             }
           },
@@ -5785,6 +5795,14 @@
           }
         }
       },
+      "AdjustmentDirection": {
+        "type": "string",
+        "description": "结算调整方向：`to_them` = 我要多给他们；`to_me` = 他们要多给我。",
+        "enum": [
+          "to_them",
+          "to_me"
+        ]
+      },
       "AdjustmentRequest": {
         "type": "object",
         "required": [
@@ -5799,7 +5817,7 @@
             "description": "分，必须为正。符号由 `direction` 决定。"
           },
           "direction": {
-            "type": "string",
+            "$ref": "#/components/schemas/AdjustmentDirection",
             "description": "`to_them` = 我要多给他们；`to_me` = 他们要多给我。\n\n**界面不给摊主填正负号。** 母 spec 5.2 那个例子自己都要算一遍才对得上\n方向，让人在收摊后的疲惫状态下判断「赔付该填正还是负」是设计失误。"
           },
           "label": {
@@ -6064,7 +6082,7 @@
             }
           },
           "status": {
-            "type": "string"
+            "$ref": "#/components/schemas/EventStatus"
           },
           "stocktaken_at": {
             "type": [
@@ -6257,7 +6275,7 @@
             ]
           },
           "status": {
-            "type": "string"
+            "$ref": "#/components/schemas/EventStatus"
           }
         }
       },
@@ -6314,9 +6332,18 @@
             "description": "新字段：所有收款码 URL 数组"
           },
           "status": {
-            "type": "string"
+            "$ref": "#/components/schemas/EventStatus"
           }
         }
+      },
+      "EventStatus": {
+        "type": "string",
+        "description": "`info.version` 故意固定为 \"1\" 而不是 App 版本号：否则每次 `set-version.sh`\n都会让契约快照变红，而契约本身并没有变。\n展会状态。",
+        "enum": [
+          "筹备",
+          "进行中",
+          "已结算"
+        ]
       },
       "EventUpdateStatusRequest": {
         "type": "object",
@@ -6325,7 +6352,7 @@
         ],
         "properties": {
           "status": {
-            "type": "string"
+            "$ref": "#/components/schemas/EventStatus"
           }
         }
       },
@@ -7347,7 +7374,7 @@
             "$ref": "#/components/schemas/Money"
           },
           "status": {
-            "type": "string"
+            "$ref": "#/components/schemas/OrderStatus"
           },
           "timestamp": {
             "type": "string",
@@ -7355,6 +7382,15 @@
             "description": "前端读的是 `timestamp` —— 这个 rename 是个隐形契约，\n`frontend/src/components/order/OrderCard.vue:55` 和\n`frontend/src/views/AdminEventOrders.vue:114` 都依赖它。改名会静默白屏。"
           }
         }
+      },
+      "OrderStatus": {
+        "type": "string",
+        "description": "订单状态。",
+        "enum": [
+          "pending",
+          "completed",
+          "cancelled"
+        ]
       },
       "OrderUpdateStatusRequest": {
         "type": "object",
@@ -7381,7 +7417,7 @@
             ]
           },
           "status": {
-            "type": "string"
+            "$ref": "#/components/schemas/OrderStatus"
           },
           "unapply_lot_ids": {
             "type": [
@@ -7567,6 +7603,14 @@
           }
         }
       },
+      "RefundDestination": {
+        "type": "string",
+        "description": "退货的货去哪：`现场仓`（还能卖）或 `损耗`（已损坏）。",
+        "enum": [
+          "现场仓",
+          "损耗"
+        ]
+      },
       "RefundHistoryRow": {
         "type": "object",
         "required": [
@@ -7585,7 +7629,7 @@
             "type": "string"
           },
           "destination": {
-            "type": "string"
+            "$ref": "#/components/schemas/RefundDestination"
           },
           "id": {
             "type": "integer",
@@ -7622,7 +7666,7 @@
         ],
         "properties": {
           "destination": {
-            "type": "string",
+            "$ref": "#/components/schemas/RefundDestination",
             "description": "`现场仓`（还能卖）或 `损耗`（已损坏）。"
           },
           "order_line_id": {
@@ -7816,7 +7860,7 @@
         ],
         "properties": {
           "status": {
-            "type": "string"
+            "$ref": "#/components/schemas/EventStatus"
           }
         }
       },

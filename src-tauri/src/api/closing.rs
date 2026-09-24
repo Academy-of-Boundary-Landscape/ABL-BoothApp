@@ -59,6 +59,7 @@ pub struct OnSiteRow {
 
 #[derive(Serialize, ToSchema)]
 pub struct ClosingState {
+    #[schema(value_type = crate::api::openapi::EventStatus)]
     status: String,
     pending_orders: Vec<PendingOrderRow>,
     onsite_remaining: Vec<OnSiteRow>,
@@ -451,6 +452,7 @@ async fn takeback(
 
 #[derive(Serialize, ToSchema)]
 pub struct SettleResponse {
+    #[schema(value_type = crate::api::openapi::EventStatus)]
     status: String,
 }
 

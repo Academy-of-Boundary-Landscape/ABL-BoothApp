@@ -19,10 +19,65 @@ pub struct ApiErrorBody {
 
 /// `info.version` 故意固定为 "1" 而不是 App 版本号：否则每次 `set-version.sh`
 /// 都会让契约快照变红，而契约本身并没有变。
+// ---- 值域固定的字符串：只用于文档 ----
+//
+// 这些字段在 Rust 里仍是 `String`（改成真枚举会动到 SQL 读写与校验逻辑，③b 不做），
+// 在文档里声明成枚举，让前端生成的类型是字面量联合。字段上用
+// `#[schema(value_type = EventStatus)]` 引用。取值必须与校验代码一致：
+// `event.rs` 的 update_status、`order.rs` 的 update_order_status、`refund.rs` 的去向、
+// `settlement.rs` 的调整方向。
+
+/// 展会状态。
+#[derive(Serialize, ToSchema)]
+#[allow(dead_code)]
+pub enum EventStatus {
+    #[serde(rename = "筹备")]
+    Preparing,
+    #[serde(rename = "进行中")]
+    Ongoing,
+    #[serde(rename = "已结算")]
+    Settled,
+}
+
+/// 订单状态。
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+#[allow(dead_code)]
+pub enum OrderStatus {
+    Pending,
+    Completed,
+    Cancelled,
+}
+
+/// 退货的货去哪：`现场仓`（还能卖）或 `损耗`（已损坏）。
+#[derive(Serialize, ToSchema)]
+#[allow(dead_code)]
+pub enum RefundDestination {
+    #[serde(rename = "现场仓")]
+    OnSite,
+    #[serde(rename = "损耗")]
+    Loss,
+}
+
+/// 结算调整方向：`to_them` = 我要多给他们；`to_me` = 他们要多给我。
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[allow(dead_code)]
+pub enum AdjustmentDirection {
+    ToThem,
+    ToMe,
+}
+
 #[derive(OpenApi)]
 #[openapi(
     info(title = "摊盒 Booth-Kernel API", version = "1"),
-    components(schemas(ApiErrorBody)),
+    components(schemas(
+        ApiErrorBody,
+        EventStatus,
+        OrderStatus,
+        RefundDestination,
+        AdjustmentDirection
+    )),
     modifiers(&BearerScheme)
 )]
 pub struct ApiDoc;
@@ -135,6 +190,64 @@ mod tests {
             }
         }
         assert!(count > 0);
+    }
+
+    /// 值域固定的字符串字段在文档里是枚举：TS 侧得到字面量联合类型，拼错状态在编译期报错。
+    /// 线上 JSON 不变——只是文档层的声明（shape-cleanups.md 的 D 类）。
+    #[test]
+    fn fixed_value_strings_are_documented_as_enums() {
+        let doc = serde_json::to_value(super::document()).unwrap();
+        let schemas = &doc["components"]["schemas"];
+        let enum_of = |name: &str| -> Vec<String> {
+            serde_json::from_value(schemas[name]["enum"].clone())
+                .unwrap_or_else(|_| panic!("{name} 不是枚举：{}", schemas[name]))
+        };
+        assert_eq!(enum_of("EventStatus"), ["筹备", "进行中", "已结算"]);
+        assert_eq!(
+            enum_of("OrderStatus"),
+            ["pending", "completed", "cancelled"]
+        );
+        assert_eq!(enum_of("RefundDestination"), ["现场仓", "损耗"]);
+        assert_eq!(enum_of("AdjustmentDirection"), ["to_them", "to_me"]);
+
+        // 列表接口的 status 查询参数
+        for path in ["/events", "/events/{event_id}/orders"] {
+            let params = doc["paths"][path]["get"]["parameters"].as_array().unwrap();
+            let status = params.iter().find(|p| p["name"] == "status").unwrap();
+            assert!(
+                status["schema"].to_string().contains("Status"),
+                "{path}: {status}"
+            );
+        }
+
+        let field_ref = |schema: &str, field: &str| {
+            schemas[schema]["properties"][field]["$ref"]
+                .as_str()
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{schema}.{field} 没有引用枚举：{}",
+                        schemas[schema]["properties"][field]
+                    )
+                })
+                .rsplit('/')
+                .next()
+                .unwrap()
+                .to_string()
+        };
+        for (schema, field, e) in [
+            ("EventResponse", "status", "EventStatus"),
+            ("Event", "status", "EventStatus"),
+            ("ClosingState", "status", "EventStatus"),
+            ("SettleResponse", "status", "EventStatus"),
+            ("EventUpdateStatusRequest", "status", "EventStatus"),
+            ("OrderRow", "status", "OrderStatus"),
+            ("OrderUpdateStatusRequest", "status", "OrderStatus"),
+            ("RefundLineRequest", "destination", "RefundDestination"),
+            ("RefundHistoryRow", "destination", "RefundDestination"),
+            ("AdjustmentRequest", "direction", "AdjustmentDirection"),
+        ] {
+            assert_eq!(field_ref(schema, field), e, "{schema}.{field}");
+        }
     }
 
     #[test]

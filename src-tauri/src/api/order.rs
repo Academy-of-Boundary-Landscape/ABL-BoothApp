@@ -58,6 +58,7 @@ struct CreateOrderRequest {
 #[derive(Deserialize, ToSchema)]
 #[schema(as = OrderUpdateStatusRequest)]
 struct UpdateStatusRequest {
+    #[schema(value_type = crate::api::openapi::OrderStatus)]
     status: String,
     channel: Option<String>,
     /// 摊主手工改的实收金额（分）。不给就等于 `solved_amount`。
@@ -76,6 +77,8 @@ struct UpdateStatusRequest {
 
 #[derive(Deserialize, IntoParams)]
 struct ListOrdersQuery {
+    /// 只列这个状态的；不传则全部。
+    #[param(value_type = Option<crate::api::openapi::OrderStatus>)]
     status: Option<String>,
 }
 

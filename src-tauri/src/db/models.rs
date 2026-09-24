@@ -54,6 +54,7 @@ pub struct Event {
     #[serde(rename = "date")] //以此匹配前端 JSON 字段名 "date"
     pub event_date: String,
     pub location: Option<String>,
+    #[schema(value_type = crate::api::openapi::EventStatus)]
     pub status: String,
     // vendor_password 不应该通过 API 直接返回给前端，加上 skip_serializing
     #[serde(skip_serializing)]
@@ -78,6 +79,7 @@ pub struct Society {
 pub struct OrderRow {
     pub id: i64,
     pub event_id: i64,
+    #[schema(value_type = crate::api::openapi::OrderStatus)]
     pub status: String,
     pub channel: Option<String>,
     /// 以下三个单位都是分。②-1 里恒相等；②-2 引入 Lot 和手工覆盖后才会分开。
