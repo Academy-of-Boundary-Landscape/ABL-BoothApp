@@ -11,6 +11,7 @@ mod lot;
 mod master_product;
 mod order;
 mod product;
+mod settlement;
 mod society;
 mod stats;
 mod sync;
@@ -30,6 +31,7 @@ pub fn router() -> Router<AppState> {
         .merge(product::router())
         .merge(lot::router())
         .merge(order::router())
+        .merge(settlement::router())
         .nest("/legacy", legacy::router());
 
     #[cfg(feature = "vision")]

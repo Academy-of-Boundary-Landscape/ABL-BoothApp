@@ -536,13 +536,12 @@ async fn update_order_status(
         }
         ("pending", "completed") => {
             // completed 必须带 channel：钱那条腿 `社团往来 → 实收-<渠道>` 需要对手账户。
-            let channel = payload
+            let raw = payload
                 .channel
                 .as_deref()
-                .map(str::trim)
-                .filter(|c| !c.is_empty())
-                .map(str::to_string)
                 .ok_or_else(|| ApiError::BadRequest("完成订单必须提供收款渠道".into()))?;
+            // 渠道名会成为账户名的一部分，规范化必须在写库之前（domain/channel.rs 的模块注释）
+            let channel = crate::domain::channel::normalize(raw)?;
 
             // 拆套装（spec 4.3 的辅助通道）。必须排在读 solved_amount 之前——
             // 拆完 solved 会变，而手工折让是相对**新的** solved 算的。
@@ -1980,5 +1979,70 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn completing_an_order_normalizes_the_channel() {
+        // 账户名是 `实收-<渠道>`，"  微信  " 和 "微信" 必须是同一个账户。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        let order_id = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_a, "quantity": 1}]),
+        )
+        .await;
+        let token = admin_token();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "  微信  "}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let stored: String = sqlx::query_scalar("SELECT channel FROM orders WHERE id = ?")
+            .bind(order_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(stored, "微信");
+        assert_eq!(
+            account_balance(&pool, event_id, &Account::Received("微信".into()))
+                .await
+                .unwrap(),
+            Money::from_cents(3000)
+        );
+    }
+
+    #[tokio::test]
+    async fn completing_an_order_rejects_an_overlong_channel() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        let order_id = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_a, "quantity": 1}]),
+        )
+        .await;
+        let token = admin_token();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed",
+                       "channel": "一二三四五六七八九十一二三四五六七八九十超"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     }
 }

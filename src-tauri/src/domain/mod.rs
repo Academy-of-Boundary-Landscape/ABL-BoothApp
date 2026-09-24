@@ -4,6 +4,7 @@
 //! 把它单独拎出来是为了 ②-2 的折扣求解器能作为纯函数测试。
 
 pub mod allocation;
+pub mod channel;
 pub mod ledger;
 pub mod money;
 pub mod pricing;
