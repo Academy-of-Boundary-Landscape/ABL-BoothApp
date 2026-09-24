@@ -114,6 +114,8 @@ struct CreateMasterProductForm {
     default_price: String,
     category: Option<String>,
     tags: String,
+    /// 所属社团 id；不传则归本社团。
+    owner_society_id: Option<String>,
     #[schema(value_type = Option<String>, format = Binary)]
     image: Option<Vec<u8>>,
 }
@@ -128,9 +130,30 @@ struct UpdateMasterProductForm {
     default_price: Option<String>,
     category: Option<String>,
     tags: Option<String>,
+    /// 所属社团 id；不传则不变。只影响之后上架到展会的货。
+    owner_society_id: Option<String>,
     remove_image: Option<bool>,
     #[schema(value_type = Option<String>, format = Binary)]
     image: Option<Vec<u8>>,
+}
+
+/// 表单里的 `owner_society_id` → 社团 id。不传（None）时用 `default`；传了就必须是存在的社团。
+///
+/// ②-1 给 master_products 加了这一列（默认 1 = 本社团），却一直没有写入口——
+/// 代卖社团的货只能靠 boothpack 导入带进来，手动建的商品全都归本社团。
+async fn resolve_owner(state: &AppState, raw: Option<String>, default: i64) -> ApiResult<i64> {
+    let Some(raw) = raw.filter(|v| !v.trim().is_empty()) else {
+        return Ok(default);
+    };
+    let id: i64 = raw
+        .trim()
+        .parse()
+        .map_err(|_| ApiError::BadRequest("所属社团无效".into()))?;
+    let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM societies WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await?;
+    exists.ok_or_else(|| ApiError::BadRequest("社团不存在".into()))
 }
 
 /// 全局商品库列表。默认只列上架商品，`?all=true` 连停用的一起返回。
@@ -204,6 +227,7 @@ async fn create_product(
     let mut default_price: f64 = 0.0;
     let mut category: Option<String> = None;
     let mut tags = String::new();
+    let mut owner_raw: Option<String> = None;
     let mut image_path: Option<String> = None;
 
     while let Some(field) = multipart.next_field().await.unwrap_or(None) {
@@ -227,6 +251,7 @@ async fn create_product(
                 "default_price" => default_price = value.parse().unwrap_or(0.0),
                 "category" => category = if value.is_empty() { None } else { Some(value) },
                 "tags" => tags = value,
+                "owner_society_id" => owner_raw = Some(value),
                 _ => {}
             }
         }
@@ -235,11 +260,16 @@ async fn create_product(
     if product_code.is_empty() || name.is_empty() {
         return Err(ApiError::BadRequest("Code and Name are required".into()));
     }
+    let home = {
+        let mut conn = state.db.acquire().await?;
+        crate::domain::ledger::home_society_id(&mut conn).await?
+    };
+    let owner = resolve_owner(&state, owner_raw, home).await?;
 
     let result = query_as::<_, MasterProduct>(
         r#"
-        INSERT INTO master_products (product_code, name, default_price, category, image_url, tags)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO master_products (product_code, name, default_price, category, image_url, tags, owner_society_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         RETURNING *
         "#,
     )
@@ -249,6 +279,7 @@ async fn create_product(
     .bind(category)
     .bind(image_path)
     .bind(tags)
+    .bind(owner)
     .fetch_one(&state.db)
     .await;
 
@@ -305,6 +336,8 @@ async fn update_product(
     let mut default_price = old_product.default_price;
     let mut category = old_product.category;
     let mut tags = old_product.tags;
+    let old_owner = old_product.owner_society_id;
+    let mut owner_raw: Option<String> = None;
     let mut image_path = old_product.image_url;
     let mut should_remove_image = false;
 
@@ -333,6 +366,7 @@ async fn update_product(
                 }
                 "category" => category = if value.is_empty() { None } else { Some(value) },
                 "tags" => tags = value,
+                "owner_society_id" => owner_raw = Some(value),
                 "remove_image" if value == "true" => {
                     should_remove_image = true;
                 }
@@ -348,10 +382,13 @@ async fn update_product(
         image_path = None;
     }
 
+    // 已上架到展会的货不受影响：event_products 在上架那一刻快照了归属（已记的账不能事后改货主）
+    let owner = resolve_owner(&state, owner_raw, old_owner).await?;
     let result = query_as::<_, MasterProduct>(
         r#"
         UPDATE master_products
-        SET product_code = ?, name = ?, default_price = ?, category = ?, image_url = ?, tags = ?
+        SET product_code = ?, name = ?, default_price = ?, category = ?, image_url = ?, tags = ?,
+            owner_society_id = ?
         WHERE id = ?
         RETURNING *
         "#,
@@ -362,6 +399,7 @@ async fn update_product(
     .bind(category)
     .bind(image_path)
     .bind(tags)
+    .bind(owner)
     .bind(id)
     .fetch_one(&state.db)
     .await;
@@ -1243,5 +1281,137 @@ mod shape_tests {
             (s, bytes.as_slice()),
             (StatusCode::NOT_FOUND, b"Image not found".as_slice())
         );
+    }
+
+    // ---- 所属社团（代卖）：②-1 加了 owner_society_id 列，却一直没有写入口 ----
+
+    async fn with_second_society() -> (Router, tempfile::TempDir, sqlx::SqlitePool) {
+        let (router, dir, pool) = test_router_with().await;
+        sqlx::query("INSERT INTO societies (id, name, is_home) VALUES (2, '黄昏堂', 0)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        (router, dir, pool)
+    }
+
+    #[tokio::test]
+    async fn creating_a_product_can_set_its_owner_society() {
+        let (router, _dir, _pool) = with_second_society().await;
+        let t = admin_token();
+        let (s, body) = multipart_call(
+            &router,
+            "POST",
+            "/api/master-products",
+            Some(&t),
+            &[
+                ("product_code", "Z1", None),
+                ("name", "代卖本", None),
+                ("default_price", "20", None),
+                ("owner_society_id", "2", None),
+            ],
+        )
+        .await;
+        assert_eq!(s, StatusCode::CREATED, "{body}");
+        assert_eq!(body["owner_society_id"], 2);
+
+        // 不传就归本社团
+        let (s, body) = multipart_call(
+            &router,
+            "POST",
+            "/api/master-products",
+            Some(&t),
+            &[
+                ("product_code", "Z2", None),
+                ("name", "自家本", None),
+                ("default_price", "20", None),
+            ],
+        )
+        .await;
+        assert_eq!(s, StatusCode::CREATED);
+        assert_eq!(body["owner_society_id"], 1);
+    }
+
+    #[tokio::test]
+    async fn an_unknown_owner_society_is_rejected() {
+        let (router, _dir, _pool) = with_second_society().await;
+        let t = admin_token();
+        for bad in ["999", "abc"] {
+            let (s, body) = multipart_call(
+                &router,
+                "POST",
+                "/api/master-products",
+                Some(&t),
+                &[
+                    ("product_code", "Z3", None),
+                    ("name", "x", None),
+                    ("owner_society_id", bad, None),
+                ],
+            )
+            .await;
+            assert_eq!(s, StatusCode::BAD_REQUEST, "{bad}: {body}");
+            assert!(body["error"].is_string());
+        }
+    }
+
+    #[tokio::test]
+    async fn editing_a_product_can_change_its_owner_and_new_listings_follow() {
+        let (router, _dir, pool) = with_second_society().await;
+        let t = admin_token();
+        let (_, created) = multipart_call(
+            &router,
+            "POST",
+            "/api/master-products",
+            Some(&t),
+            &[
+                ("product_code", "Z4", None),
+                ("name", "本子", None),
+                ("default_price", "30", None),
+            ],
+        )
+        .await;
+        let id = created["id"].as_i64().unwrap();
+
+        // 编辑时不传：保持原值
+        let (s, body) = multipart_call(
+            &router,
+            "PUT",
+            &format!("/api/master-products/{id}"),
+            Some(&t),
+            &[("name", "本子改名", None)],
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(body["owner_society_id"], 1);
+
+        let (s, body) = multipart_call(
+            &router,
+            "PUT",
+            &format!("/api/master-products/{id}"),
+            Some(&t),
+            &[("owner_society_id", "2", None)],
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK, "{body}");
+        assert_eq!(body["owner_society_id"], 2);
+
+        // 之后上架到展会的，归属跟着走——这才是这个字段要解决的事
+        sqlx::query("INSERT INTO events (id, name, event_date, status) VALUES (7, 'E', '2026-10-01', '筹备')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                "/api/events/7/products",
+                Some(&t),
+                json!({"product_code": "Z4", "initial_stock": 3}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+        let ep = read_json(res).await;
+        assert_eq!(ep["owner_society_id"], 2);
+        assert_eq!(ep["owner_society_name"], "黄昏堂");
     }
 }

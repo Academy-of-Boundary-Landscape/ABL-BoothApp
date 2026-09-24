@@ -54,6 +54,11 @@
                         placeholder="可选择已有分类，或直接输入新分类"
                       />
                     </div>
+                    <div class="form-group">
+                      <label>所属社团:</label>
+                      <SocietySelect v-model="localProduct.owner_society_id" />
+                      <span class="hint">只影响之后上架到展会的货，已上架的保持原归属</span>
+                    </div>
 
                     <div class="form-group" style="grid-column: 1 / -1">
                       <label>标签:</label>
@@ -248,6 +253,7 @@ import {
 } from 'naive-ui'
 
 import ImageUploader from '@/components/shared/ImageUploader.vue'
+import SocietySelect from '@/components/shared/SocietySelect.vue'
 import ImageCropper from '@/components/shared/ImageCropper.vue'
 import { useProductStore } from '@/stores/productStore'
 import { useThemeStore } from '@/stores/themeStore'
@@ -370,6 +376,9 @@ async function handleUpdate() {
     if (category) formData.append('category', category)
 
     formData.append('tags', (localProduct.value.tags || []).join(','))
+    if (localProduct.value.owner_society_id != null) {
+      formData.append('owner_society_id', String(localProduct.value.owner_society_id))
+    }
 
     if (editFormFile.value) {
       formData.append('image', editFormFile.value)
@@ -723,5 +732,11 @@ label {
   .gallery-grid {
     grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
   }
+}
+.hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 </style>

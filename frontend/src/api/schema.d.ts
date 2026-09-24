@@ -1274,6 +1274,8 @@ export interface components {
             /** Format: binary */
             image?: string | null;
             name: string;
+            /** @description 所属社团 id；不传则归本社团。 */
+            owner_society_id?: string | null;
             product_code: string;
             tags: string;
         };
@@ -2054,6 +2056,8 @@ export interface components {
             /** Format: binary */
             image?: string | null;
             name?: string | null;
+            /** @description 所属社团 id；不传则不变。只影响之后上架到展会的货。 */
+            owner_society_id?: string | null;
             product_code?: string | null;
             remove_image?: boolean | null;
             tags?: string | null;

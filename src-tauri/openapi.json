@@ -6164,6 +6164,13 @@
           "name": {
             "type": "string"
           },
+          "owner_society_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "所属社团 id；不传则归本社团。"
+          },
           "product_code": {
             "type": "string"
           },
@@ -8365,6 +8372,13 @@
               "string",
               "null"
             ]
+          },
+          "owner_society_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "所属社团 id；不传则不变。只影响之后上架到展会的货。"
           },
           "product_code": {
             "type": [

@@ -61,6 +61,14 @@
                     />
                   </div>
 
+                  <div class="form-group">
+                    <label>所属社团:</label>
+                    <SocietySelect
+                      v-model="createFormData.owner_society_id"
+                      placeholder="不选则归本社团"
+                    />
+                  </div>
+
                   <div class="form-group" style="grid-column: 1 / -1">
                     <label for="create-tags">标签:</label>
                     <n-select
@@ -105,6 +113,7 @@ import { ref } from 'vue'
 import { NButton, NCard, NInput, NInputNumber, NSelect } from 'naive-ui'
 
 import ImageUploader from '@/components/shared/ImageUploader.vue'
+import SocietySelect from '@/components/shared/SocietySelect.vue'
 import { useProductStore } from '@/stores/productStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { IMAGE_UPLOAD_LIMIT_MB, normalizeUploadError } from '@/utils/upload'
@@ -116,6 +125,8 @@ interface CreateFormState {
   default_price: number | null
   category: string
   tags: string[]
+  /** 所属社团（货主）；null = 不传，后端归本社团。 */
+  owner_society_id: number | null
 }
 
 const emit = defineEmits<{ (e: 'created'): void }>()
@@ -132,6 +143,7 @@ const createFormData = ref<CreateFormState>({
   default_price: null,
   category: '',
   tags: [],
+  owner_society_id: null,
 })
 
 const createFormFile = ref<File | undefined>(undefined)
@@ -161,6 +173,9 @@ async function handleCreate() {
     if (category) formData.append('category', category)
 
     formData.append('tags', (createFormData.value.tags || []).join(','))
+    if (createFormData.value.owner_society_id !== null) {
+      formData.append('owner_society_id', String(createFormData.value.owner_society_id))
+    }
 
     if (createFormFile.value) {
       formData.append('image', createFormFile.value)
@@ -174,6 +189,7 @@ async function handleCreate() {
       default_price: null,
       category: '',
       tags: [],
+      owner_society_id: null,
     }
     createFormFile.value = undefined
     emit('created')
