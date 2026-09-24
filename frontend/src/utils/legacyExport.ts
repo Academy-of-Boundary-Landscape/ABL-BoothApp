@@ -4,44 +4,47 @@
 // 首启弹窗（MigrationNotice.vue，只弹一次）和「历史数据（v1）」常驻 section。
 // 弹窗只保证第一次提醒，常驻入口保证那之后还能导出——两份下载逻辑不许分叉。
 
-import { toAbsoluteApiUrl } from '@/services/url'
+import { ApiRequestError, api, unwrap } from '@/api/client'
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeFile } from '@tauri-apps/plugin-fs'
-import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 
 /** 默认落盘文件名，两个出口保持一致。 */
 export const LEGACY_EXPORT_FILENAME = 'legacy_v1_export.xlsx'
 
 /**
- * 从 `/api/legacy/export.xlsx` 下载 v1 备份并保存/触发下载。
+ * 从 `/api/legacy/export.xlsx` 下载 v1 备份的原始字节。
  *
- * 照抄 AdminEventStat.vue 的既有写法：手动拼绝对 URL、手动加 Authorization 头、
- * Tauri 走 tauriFetch 浏览器走 fetch。不能走 axios 实例——它在 Tauri 下用的是
- * 自定义 adapter，二进制下载不适合经过它。
+ * HTTP 统一走新 client（Bearer、超时、Tauri/浏览器传输切换都由它处理），二进制响应加
+ * `parseAs: 'blob'`。失败时保留旧文案「下载失败: 状态码 + 错误体」的形状。
+ */
+async function downloadLegacyXlsx(): Promise<Blob> {
+  try {
+    // 显式给出响应类型：见 authStore.login 的同款说明（unwrap 会推断出 `T | undefined`）。
+    return await unwrap<Blob>(api.GET('/legacy/export.xlsx', { parseAs: 'blob' }))
+  } catch (e) {
+    if (e instanceof ApiRequestError) {
+      // 旧代码是手动 fetch + `下载失败: <status> <text>`；这里保持同样的形状，
+      // JSON 错误体（401/403 的 `{error}`）也序列化进去。
+      const bodyText =
+        typeof e.body === 'string' ? e.body : e.body == null ? '' : JSON.stringify(e.body)
+      throw new Error(`下载失败: ${e.status} ${bodyText.slice(0, 200)}`.trim())
+    }
+    throw e
+  }
+}
+
+/**
+ * 下载 v1 备份并保存/触发下载。
  *
  * @returns 真正写出了文件返回 true；用户在保存对话框取消返回 false。
  *   请求/读取失败会抛错，由调用方决定怎么提示。
  */
 export async function exportLegacyXlsx(): Promise<boolean> {
   const isTauri = window.__TAURI_INTERNALS__ !== undefined
-  const token = sessionStorage.getItem('access_token')
-  const url = toAbsoluteApiUrl('/api/legacy/export.xlsx')
+  const blob = await downloadLegacyXlsx()
 
   if (isTauri) {
-    const headers: Record<string, string> = {
-      Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    }
-    if (token) headers['Authorization'] = `Bearer ${token}`
-
-    const resp = await tauriFetch(url, { method: 'GET', headers })
-
-    if (!resp.ok) {
-      const text = await resp.text().catch(() => '')
-      throw new Error(`下载失败: ${resp.status} ${resp.statusText} ${text.slice(0, 200)}`)
-    }
-
-    const ab = await resp.arrayBuffer()
-    const bytes = new Uint8Array(ab)
+    const bytes = new Uint8Array(await blob.arrayBuffer())
 
     const filePath = await save({
       defaultPath: LEGACY_EXPORT_FILENAME,
@@ -54,21 +57,6 @@ export async function exportLegacyXlsx(): Promise<boolean> {
   }
 
   // 浏览器环境
-  const headers: Record<string, string> = {}
-  if (token) headers['Authorization'] = `Bearer ${token}`
-
-  const response = await fetch(url, {
-    method: 'GET',
-    credentials: 'include',
-    headers,
-  })
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => '')
-    throw new Error(`下载失败: ${response.status} ${text.slice(0, 200)}`)
-  }
-
-  const blob = await response.blob()
   const dl = window.URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.style.display = 'none'

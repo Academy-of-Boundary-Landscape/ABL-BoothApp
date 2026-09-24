@@ -1,6 +1,6 @@
 // Shared clipboard helper
 // Attempts navigator.clipboard first, falls back to a hidden textarea.
-export async function copyLink(text) {
+export async function copyLink(text: string): Promise<void> {
   if (!text) throw new Error('No text to copy')
 
   // Prefer modern async API when available and in secure context

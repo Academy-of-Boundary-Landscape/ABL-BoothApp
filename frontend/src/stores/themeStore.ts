@@ -1,9 +1,15 @@
-// src/stores/themeStore.js
+// src/stores/themeStore.ts
 import { defineStore } from 'pinia'
 import { computed, watch } from 'vue'
 import { useStorage } from '@vueuse/core'
 import { colord } from 'colord'
-import { darkTheme, lightTheme, generateCSSVariables, generateNaiveUITheme } from '@/config/theme'
+import {
+  darkTheme,
+  lightTheme,
+  generateCSSVariables,
+  generateNaiveUITheme,
+  type ThemeColors,
+} from '@/config/theme'
 
 export const useThemeStore = defineStore('theme', () => {
   // 1. 状态：是否暗黑模式 (持久化)
@@ -11,7 +17,7 @@ export const useThemeStore = defineStore('theme', () => {
 
   // 2. 状态：自定义主色 (持久化)
   // 如果用户没选过，就用默认配置里的颜色
-  const customPrimaryColor = useStorage('customPrimary', null)
+  const customPrimaryColor = useStorage<string | null>('customPrimary', null)
 
   // 2.5 商品图比例偏好 (持久化)
   // '3:4' = 竖版（默认，适合立绘/明信片/海报）
@@ -24,7 +30,7 @@ export const useThemeStore = defineStore('theme', () => {
 
   // 4. 计算最终的颜色配置
   // 如果用户选了自定义颜色，覆盖默认配置里的 primary.base
-  const currentThemeConfig = computed(() => {
+  const currentThemeConfig = computed<ThemeColors>(() => {
     const theme = { ...currentBaseTheme.value }
 
     // 如果有自定义颜色，动态计算衍生色
@@ -65,7 +71,7 @@ export const useThemeStore = defineStore('theme', () => {
   )
 
   // 动作：重置颜色
-  function resetColor() {
+  function resetColor(): void {
     customPrimaryColor.value = null
   }
 

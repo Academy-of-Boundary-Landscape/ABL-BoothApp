@@ -1,6 +1,6 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import type { Ref } from 'vue'
-import api from '@/services/api'
+import { api, unwrap } from '@/api/client'
 
 /** `useConnectionCheck` 的返回值。 */
 export interface ConnectionCheck {
@@ -26,7 +26,7 @@ export function useConnectionCheck(intervalMs = 8000, timeoutMs = 3000): Connect
       const current = new AbortController()
       controller = current
       const timeout = setTimeout(() => current.abort(), timeoutMs)
-      await api.get('/server-info', { signal: current.signal })
+      await unwrap(api.GET('/server-info', { signal: current.signal }))
       clearTimeout(timeout)
       isConnected.value = true
     } catch {
