@@ -68,6 +68,9 @@ jobs:
         working-directory: src-tauri
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+      - name: 展会守卫门禁
+        run: python3 scripts/check-event-guards.py
+
       - name: cargo test
         working-directory: src-tauri
         run: cargo test --all-features

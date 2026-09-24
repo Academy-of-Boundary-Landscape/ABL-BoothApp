@@ -125,6 +125,7 @@ async fn login_handler(
     State(state): State<AppState>,
     DebugJson(payload): DebugJson<LoginRequest>,
 ) -> Result<Response, AuthError> {
+    // 不需要展会守卫：登录不属于任何展会
     // [调试] 确认成功解析 payload
     // println!("[DEBUG] Login handler called successfully");
     // println!(
@@ -298,6 +299,7 @@ fn build_success_response(
 
 // 退出登录：清除 HttpOnly Cookie
 async fn logout_handler() -> Response {
+    // 不需要展会守卫：登出只清 cookie，不碰任何展会的账
     let cookie_str = "access_token_cookie=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0";
     let mut response = Json(serde_json::json!({"message": "Logged out"})).into_response();
     response

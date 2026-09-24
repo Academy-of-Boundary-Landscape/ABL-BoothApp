@@ -77,22 +77,6 @@ struct LotPayload {
     candidate_ids: Vec<i64>,
 }
 
-/// 已结算的展会账已冻结，不能再改定价。
-///
-/// ②-1 交接段列了 4 个「当前完全不查 `events.status`」的既有敞口留给 ②-3 的冻结语义。
-/// **新增的写入路径不要再添第 5 个。**
-async fn ensure_event_open(conn: &mut SqliteConnection, event_id: i64) -> ApiResult<()> {
-    let status: Option<String> = sqlx::query_scalar("SELECT status FROM events WHERE id = ?")
-        .bind(event_id)
-        .fetch_optional(&mut *conn)
-        .await?;
-    match status.as_deref() {
-        None => Err(ApiError::NotFound("展会不存在".into())),
-        Some("已结算") => Err(ApiError::Conflict("展会已结算，不能再改套装配置".into())),
-        Some(_) => Ok(()),
-    }
-}
-
 /// 一个候选商品。
 ///
 /// `validate_candidates` 返回整行而不是只返回 id，是因为 `/lots/preview` 要用
@@ -307,7 +291,7 @@ async fn create_lot(
     let name = validate_payload(&payload)?;
 
     let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
-    ensure_event_open(&mut tx, event_id).await?;
+    crate::api::guard::require_event_open(&mut tx, event_id).await?;
     let candidates = validate_candidates(&mut tx, event_id, &payload.candidate_ids).await?;
     validate_candidate_count(payload.allow_repeat, payload.pick_count, candidates.len())?;
     let ids: Vec<i64> = candidates.iter().map(|c| c.id).collect();
@@ -354,7 +338,7 @@ async fn update_lot(
     let name = validate_payload(&payload)?;
 
     let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
-    ensure_event_open(&mut tx, event_id).await?;
+    crate::api::guard::require_event_open(&mut tx, event_id).await?;
 
     let exists: Option<i64> =
         sqlx::query_scalar("SELECT id FROM lots WHERE id = ? AND event_id = ?")
@@ -409,7 +393,7 @@ async fn delete_lot(
     check_write_permission(&claims, event_id)?;
 
     let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
-    ensure_event_open(&mut tx, event_id).await?;
+    crate::api::guard::require_event_open(&mut tx, event_id).await?;
     let affected = sqlx::query("DELETE FROM lots WHERE id = ? AND event_id = ?")
         .bind(lot_id)
         .bind(event_id)
@@ -574,6 +558,7 @@ async fn preview_lot(
     Path(event_id): Path<i64>,
     Json(payload): Json<LotPreviewRequest>,
 ) -> ApiResult<Json<LotPreviewResponse>> {
+    // 不需要展会守卫：试算零写入，不改任何账
     check_write_permission(&claims, event_id)?;
     validate_numbers(payload.pick_count, payload.total_price)?;
 
@@ -708,6 +693,7 @@ async fn quote(
     Path(event_id): Path<i64>,
     Json(payload): Json<QuoteRequest>,
 ) -> ApiResult<Json<QuoteResponse>> {
+    // 不需要展会守卫：公开报价零写入，只读库存与定价，本就不该被冻结挡
     let merged = merge_items(&payload.items)?;
     let mut conn = state.db.acquire().await?;
     ensure_event_selling(&mut conn, event_id).await?;

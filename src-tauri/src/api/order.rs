@@ -263,6 +263,7 @@ async fn create_order(
     Path(event_id): Path<i64>,
     Json(payload): Json<CreateOrderRequest>,
 ) -> ApiResult<impl IntoResponse> {
+    // 不需要展会守卫：下单要求更严的「进行中」，守卫在 ensure_event_selling，不能放宽成「不是已结算」
     let merged = merge_items(&payload.items)?;
 
     // 展会状态放在事务之前，省得白拿写锁。
@@ -514,6 +515,8 @@ async fn update_order_status(
     }
 
     let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
+    // ②-1 交接段列的第 4 个敞口。放在事务内、读订单状态之前。
+    crate::api::guard::require_event_open(&mut tx, event_id).await?;
 
     let current: Option<String> =
         query_scalar("SELECT status FROM orders WHERE id = ? AND event_id = ?")
@@ -1945,5 +1948,37 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
+
+    /// ②-1 交接段列了 4 个「当前完全不查 events.status」的既有敞口，②-2 一个没补。
+    /// 冻结语义靠守卫而不是「流程上到不了」，所以每个口子都要有自己的测试。
+    #[tokio::test]
+    async fn a_settled_event_refuses_order_status_change() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        let order_id = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_a, "quantity": 1}]),
+        )
+        .await;
+        sqlx::query("UPDATE events SET status = '已结算' WHERE id = ?")
+            .bind(event_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let token = admin_token();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "cancelled"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT);
     }
 }

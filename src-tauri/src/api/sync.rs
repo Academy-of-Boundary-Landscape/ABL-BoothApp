@@ -754,6 +754,7 @@ async fn import_products(
     _: AdminOnly,
     mut multipart: Multipart,
 ) -> Response {
+    // 不需要展会守卫：只同步全局商品库和社团名单，不写任何展会的账
     let t0 = Instant::now();
     eprintln!("{} import (multipart): start", TAG);
 
@@ -790,6 +791,7 @@ async fn import_products(
 // body 直接是 zip 字节流，无需 multipart 解析。客户端把 Uint8Array 直接当 body 发即可，
 // 这条路径不走 plugin-http 的 multipart 编码 / IPC 字符串化，主线程不会被冻住。
 async fn import_products_raw(State(state): State<AppState>, _: AdminOnly, body: Bytes) -> Response {
+    // 不需要展会守卫：只同步全局商品库和社团名单，不写任何展会的账
     let t0 = Instant::now();
     eprintln!("{} import (raw): received {} bytes", TAG, body.len());
     process_import_bytes(state, body, t0).await

@@ -337,6 +337,7 @@ async fn parse_feedback_request(
 }
 
 async fn search_by_image(State(state): State<AppState>, multipart: Multipart) -> impl IntoResponse {
+    // 不需要展会守卫：只读识别，不写任何账
     let snapshot = state.vision_runtime.snapshot().await;
 
     if snapshot.is_rebuilding {
@@ -472,6 +473,7 @@ fn compute_uncertainty(top1_min: f32, gap_min: f32, results: &[index::ProductSea
 }
 
 async fn save_feedback(State(state): State<AppState>, multipart: Multipart) -> impl IntoResponse {
+    // 不需要展会守卫：只写识别反馈图片，不写展会的账
     let req = match parse_feedback_request(&state, multipart).await {
         Ok(req) => req,
         Err((code, msg)) => return (code, Json(json!({ "error": msg }))).into_response(),
@@ -571,6 +573,7 @@ async fn install_model(
     State(state): State<AppState>,
     Json(payload): Json<InstallModelRequest>,
 ) -> impl IntoResponse {
+    // 不需要展会守卫：模型文件管理，不属于任何展会
     if let Some(source) = &payload.source {
         let supported = ["auto", "github", "hf", "hf_mirror"];
         if !supported.iter().any(|item| item == source) {
@@ -634,6 +637,7 @@ async fn activate_model(
     State(state): State<AppState>,
     Json(payload): Json<ActivateModelRequest>,
 ) -> impl IntoResponse {
+    // 不需要展会守卫：模型选择，不属于任何展会
     let result = state
         .vision_runtime
         .activate_model(state.db.clone(), &payload.model_id)
@@ -673,6 +677,7 @@ async fn rebuild_index(
     State(state): State<AppState>,
     payload: Option<Json<RebuildRequest>>,
 ) -> impl IntoResponse {
+    // 不需要展会守卫：重建全局识别索引，不写展会的账
     let snapshot = state.vision_runtime.snapshot().await;
     if snapshot.is_rebuilding {
         return (
@@ -709,6 +714,7 @@ async fn delete_model(
     State(state): State<AppState>,
     Path(model_id): Path<String>,
 ) -> impl IntoResponse {
+    // 不需要展会守卫：模型文件管理，不属于任何展会
     match state.vision_runtime.delete_model(&model_id).await {
         Ok(_) => (
             StatusCode::OK,
@@ -761,6 +767,7 @@ async fn set_ep_setting(
     State(state): State<AppState>,
     Json(payload): Json<SetEpRequest>,
 ) -> impl IntoResponse {
+    // 不需要展会守卫：全局 OCR 设置，不属于任何展会
     let ep = &payload.execution_provider;
     let valid = ep == "auto" || ep == "cpu" || ep == "nnapi" || ep.starts_with("gpu:");
     if !valid {

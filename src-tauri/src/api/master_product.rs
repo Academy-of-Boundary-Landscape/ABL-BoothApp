@@ -142,6 +142,7 @@ async fn create_product(
     _: AdminOnly,
     mut multipart: Multipart,
 ) -> impl IntoResponse {
+    // 不需要展会守卫：全局商品库，不属于任何展会；选的货到选品时才写 event_products
     let mut product_code = String::new();
     let mut name = String::new();
     let mut default_price: f64 = 0.0;
@@ -222,6 +223,7 @@ async fn update_product(
     Path(id): Path<i64>,
     mut multipart: Multipart,
 ) -> impl IntoResponse {
+    // 不需要展会守卫：全局商品库，不属于任何展会；已有展会的账靠 event_products 快照
     let old_product: MasterProduct = match query_as("SELECT * FROM master_products WHERE id = ?")
         .bind(id)
         .fetch_optional(&state.db)
@@ -326,6 +328,7 @@ async fn update_status(
     Path(id): Path<i64>,
     Json(payload): Json<UpdateStatusRequest>,
 ) -> impl IntoResponse {
+    // 不需要展会守卫：全局商品库的上下架，不属于任何展会
     let result = query_as::<_, MasterProduct>(
         r#"
         UPDATE master_products
@@ -352,6 +355,7 @@ async fn add_product_image(
     Path(master_product_id): Path<i64>,
     mut multipart: Multipart,
 ) -> impl IntoResponse {
+    // 不需要展会守卫：全局商品库的识别图片，不属于任何展会
     let mut image_url: Option<String> = None;
     let mut kind = "gallery".to_string();
 
@@ -422,6 +426,7 @@ async fn update_product_image(
     Path((_master_product_id, image_id)): Path<(i64, i64)>,
     mut multipart: Multipart,
 ) -> impl IntoResponse {
+    // 不需要展会守卫：全局商品库的识别图片，不属于任何展会
     let store = VisionStore::new(state.db.clone());
     let old = match store.get_master_product_image(image_id).await {
         Ok(Some(item)) => item,
@@ -494,6 +499,7 @@ async fn delete_product_image(
     _: AdminOnly,
     Path((_master_product_id, image_id)): Path<(i64, i64)>,
 ) -> impl IntoResponse {
+    // 不需要展会守卫：全局商品库的识别图片，不属于任何展会
     let store = VisionStore::new(state.db.clone());
     let old = match store.get_master_product_image(image_id).await {
         Ok(Some(item)) => item,

@@ -125,3 +125,26 @@ pub fn check_read_permission(claims: &Claims, event_id: i64) -> ApiResult<()> {
 pub fn check_write_permission(claims: &Claims, event_id: i64) -> ApiResult<()> {
     check_read_permission(claims, event_id)
 }
+
+/// 已结算的展会账已冻结，不能再改账。
+///
+/// **判据是「不是已结算」，不是「必须进行中」**——筹备阶段本来就要能选品、
+/// 改价、录带货数。要求「必须进行中」的只有下单一处（`api/order.rs` 的
+/// `create_order`，②-1 Task 7 加的），那条更严的检查保持独立，不要合并进来。
+///
+/// 参数是 `&mut SqliteConnection` 而不是 `&SqlitePool`：在事务里检查才是真的守住，
+/// 事务外查一遍再进事务写，中间隔着一个可以被 `settle` 插进来的窗口。
+///
+/// 冻结之后**仍然允许**三件事，它们不调用本函数（spec 偏离 3）：
+/// 垫付、结算调整、收摊清点。改动那三处前先读 spec 3.2。
+pub async fn require_event_open(conn: &mut sqlx::SqliteConnection, event_id: i64) -> ApiResult<()> {
+    let status: Option<String> = sqlx::query_scalar("SELECT status FROM events WHERE id = ?")
+        .bind(event_id)
+        .fetch_optional(&mut *conn)
+        .await?;
+    match status.as_deref() {
+        None => Err(ApiError::NotFound("展会不存在".into())),
+        Some("已结算") => Err(ApiError::Conflict("展会已结算，不能再改账".into())),
+        Some(_) => Ok(()),
+    }
+}

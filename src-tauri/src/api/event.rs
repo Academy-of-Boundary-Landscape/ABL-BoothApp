@@ -183,6 +183,7 @@ async fn create_event(
     _: AdminOnly,
     mut multipart: Multipart,
 ) -> impl IntoResponse {
+    // 不需要展会守卫：展会本身还不存在，没有可守卫的状态
     let mut name = String::new();
     let mut date = String::new();
     let mut location = String::new();
@@ -270,6 +271,7 @@ async fn update_event(
     Path(id): Path<i64>,
     mut multipart: Multipart,
 ) -> impl IntoResponse {
+    // 不需要展会守卫：只改展会名称和日期，不写 journals / stock_movements / money_movements / order_lines / event_products
     let old_event: Event = match query_as("SELECT * FROM events WHERE id = ?")
         .bind(id)
         .fetch_optional(&state.db)
@@ -382,6 +384,7 @@ async fn update_status(
     Path(id): Path<i64>,
     Json(payload): Json<UpdateStatusRequest>,
 ) -> impl IntoResponse {
+    // 不需要展会守卫：本 handler 自己管展会状态迁移，迁移守卫在后续 task 补
     // [修复] 验证状态值只能是允许的值 ✓
     match payload.status.as_str() {
         "筹备" | "进行中" | "已结算" => {
@@ -426,6 +429,7 @@ async fn delete_event(
     _: AdminOnly,
     Path(id): Path<i64>,
 ) -> impl IntoResponse {
+    // 不需要展会守卫：删的是展会本身（连同它的账一起级联删掉），不是结算后的追加写
     let event: Option<Event> = query_as("SELECT * FROM events WHERE id = ?")
         .bind(id)
         .fetch_optional(&state.db)

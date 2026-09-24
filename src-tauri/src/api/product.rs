@@ -261,6 +261,7 @@ async fn add_product_to_event(
     // 建商品 + 首批进货必须在同一个事务里。initial_stock 为 0 时不记 journal
     // （post_journal 会拒绝空 journal）。
     let mut tx = state.db.begin().await?;
+    crate::api::guard::require_event_open(&mut tx, event_id).await?;
 
     // owner_society_id 从 master_products 抄一份**快照**。之后改全局商品库的归属
     // 不影响已有展会的账——否则展会结算完之后有人改了归属，冻结的账就跟着变
@@ -338,6 +339,7 @@ async fn restock_product(
     }
 
     let mut tx = state.db.begin().await?;
+    crate::api::guard::require_event_open(&mut tx, event_id).await?;
     post_journal(
         &mut tx,
         event_id,
@@ -388,6 +390,11 @@ async fn update_product(
 
     check_write_permission(&claims, event_id)?;
 
+    // 已结算的展会账已冻结：改价写 event_products，必须在改之前过守卫。
+    let mut conn = state.db.acquire().await?;
+    crate::api::guard::require_event_open(&mut conn, event_id).await?;
+    drop(conn);
+
     if let Some(unit_price) = payload.unit_price {
         if unit_price < 0 {
             return Err(ApiError::BadRequest("单价不能为负".into()));
@@ -418,6 +425,11 @@ async fn delete_product(
     let event_id = event_id.ok_or_else(|| ApiError::NotFound("Product not found".into()))?;
 
     check_write_permission(&claims, event_id)?;
+
+    // 已结算的展会账已冻结：删除写 event_products（商品名单也是冻结的一部分）。
+    let mut conn = state.db.acquire().await?;
+    crate::api::guard::require_event_open(&mut conn, event_id).await?;
+    drop(conn);
 
     // 有移动流水时拒绝删除：删掉等于账面凭空少一批货。
     let moves: i64 =
@@ -546,6 +558,93 @@ mod tests {
             .await
             .unwrap();
         // 夹具已经录了一笔进货，删掉等于账面凭空少一批货
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+    }
+
+    /// 三个商品写入口在冻结后都要挡住。分开三条而不是循环，
+    /// 是因为它们各自的 URL 形状和 body 不同，合起来写会把断言糊掉。
+    ///
+    /// ⚠️ 请求体字段按 `api/product.rs` 现有的 `Deserialize` 结构体写：
+    /// 选品用的是 `product_code`（不是 `master_product_id`），字段对不上会得到
+    /// 422 而不是 409，测试就变成假绿。
+    #[tokio::test]
+    async fn a_settled_event_refuses_adding_products() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _, _) = seed_event_and_product(&pool).await;
+        // 用一个还没进场的全局商品，否则先撞上 (event_id, master_product_id) 的
+        // 重复检查——那也会返回 409，测试就测不到守卫了。
+        sqlx::query(
+            "INSERT INTO master_products (id, product_code, name, default_price, owner_society_id)
+             VALUES (3, 'C', '挂件C', 15.0, 1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("UPDATE events SET status = '已结算' WHERE id = ?")
+            .bind(event_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let token = admin_token();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/products"),
+                Some(&token),
+                json!({"product_code": "C", "unit_price": 1500, "initial_stock": 5}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn a_settled_event_refuses_restock() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        sqlx::query("UPDATE events SET status = '已结算' WHERE id = ?")
+            .bind(event_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let token = admin_token();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/products/{ep_a}/restock"),
+                Some(&token),
+                json!({"qty": 3}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn a_settled_event_refuses_product_edit() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        sqlx::query("UPDATE events SET status = '已结算' WHERE id = ?")
+            .bind(event_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let token = admin_token();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/products/{ep_a}"),
+                Some(&token),
+                json!({"unit_price": 9999}),
+            ))
+            .await
+            .unwrap();
         assert_eq!(res.status(), StatusCode::CONFLICT);
     }
 }

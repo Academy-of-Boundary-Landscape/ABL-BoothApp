@@ -43,6 +43,7 @@ async fn update_admin_password(
     _: AdminOnly,
     Json(payload): Json<UpdateAdminPasswordRequest>,
 ) -> impl IntoResponse {
+    // 不需要展会守卫：管理员密码存在全局 settings 表，不属于任何展会
     if payload.new_password.chars().count() < 4 {
         return (
             StatusCode::BAD_REQUEST,
@@ -116,6 +117,7 @@ async fn update_vendor_default_password(
     _: AdminOnly,
     Json(payload): Json<UpdateVendorPasswordRequest>,
 ) -> impl IntoResponse {
+    // 不需要展会守卫：摊主默认密码存在全局 settings 表，不属于任何展会
     if payload.new_password.chars().count() < 4 {
         return (
             StatusCode::BAD_REQUEST,
@@ -157,6 +159,7 @@ async fn update_vendor_default_password(
 // 3. 重置数据库（危险操作）
 // ==========================================
 async fn reset_database_handler(State(state): State<AppState>, _: AdminOnly) -> impl IntoResponse {
+    // 不需要展会守卫：管理员全局重置，不属于任何展会，且本来就要清空全部展会
     //eprintln!("[WARNING] Database reset requested by admin");
 
     // --------------------------------------------------------

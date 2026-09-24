@@ -52,6 +52,7 @@ async fn create_society(
     _: AdminOnly,
     Json(payload): Json<CreateSocietyRequest>,
 ) -> ApiResult<impl IntoResponse> {
+    // 不需要展会守卫：社团是全局实体，尚未挂任何展会的账
     let name = payload.name.trim();
     if name.is_empty() {
         return Err(ApiError::BadRequest("社团名不能为空".into()));
@@ -81,6 +82,7 @@ async fn update_society(
     Path(id): Path<i64>,
     Json(payload): Json<UpdateSocietyRequest>,
 ) -> ApiResult<Json<Society>> {
+    // 不需要展会守卫：社团是全局实体，改名不动任何展会的账
     let mut tx = state.db.begin().await?;
 
     let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM societies WHERE id = ?")
@@ -144,6 +146,7 @@ async fn delete_society(
     _: AdminOnly,
     Path(id): Path<i64>,
 ) -> ApiResult<impl IntoResponse> {
+    // 不需要展会守卫：社团是全局实体，且被任何展会的货引用时本 handler 自己会拒绝
     let is_home: Option<bool> = sqlx::query_scalar("SELECT is_home FROM societies WHERE id = ?")
         .bind(id)
         .fetch_optional(&state.db)
