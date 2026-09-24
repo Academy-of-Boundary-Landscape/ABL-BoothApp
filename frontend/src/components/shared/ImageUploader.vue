@@ -178,10 +178,11 @@ function onCropConfirm(croppedFile: File) {
   cropperFile.value = undefined
   finalizeFile(croppedFile)
 }
-function onCropSkip(originalFile: File) {
+function onCropSkip(originalFile: File | null) {
   cropperShow.value = false
   cropperFile.value = undefined
-  finalizeFile(originalFile)
+  // 裁剪框只在有文件时打开，null 实际不会出现（旧代码拿 null 调 createObjectURL 会直接抛错）
+  if (originalFile) finalizeFile(originalFile)
 }
 function onCropClose() {
   // 用户取消 → 不提交，清空 cropperFile

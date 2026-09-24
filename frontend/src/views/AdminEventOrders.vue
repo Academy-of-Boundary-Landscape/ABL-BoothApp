@@ -159,8 +159,8 @@
     <!-- 设为「已完成」前先确认收款：显示原价/应收/已套用的套装（可逐个拆），实收可改（spec 4.3） -->
     <ReceiptModal
       :show="showReceiptModal"
-      :gross-amount="pendingOrder?.gross_amount ?? 0"
-      :solved-amount="pendingOrder?.solved_amount ?? 0"
+      :gross-amount="pendingOrder?.gross_amount"
+      :solved-amount="pendingOrder?.solved_amount"
       :lots="pendingOrder?.lots ?? []"
       @confirm="onReceiptConfirm"
       @cancel="closeReceipt"

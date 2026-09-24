@@ -511,7 +511,7 @@ function resolveGalleryCropper(value: File | null) {
 function onGalleryCropConfirm(croppedFile: File) {
   resolveGalleryCropper(croppedFile)
 }
-function onGalleryCropSkip(originalFile: File) {
+function onGalleryCropSkip(originalFile: File | null) {
   resolveGalleryCropper(originalFile)
 }
 function onGalleryCropClose() {
