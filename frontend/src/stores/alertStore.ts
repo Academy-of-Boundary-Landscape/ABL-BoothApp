@@ -1,7 +1,13 @@
-// src/stores/alertStore.js
+// src/stores/alertStore.ts
 
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+
+/** `show` 的可选配置。 */
+export interface AlertOptions {
+  title?: string
+  type?: string
+}
 
 export const useAlertStore = defineStore('alert', () => {
   // State: 弹窗的状态
@@ -14,19 +20,19 @@ export const useAlertStore = defineStore('alert', () => {
 
   /**
    * 显示弹窗
-   * @param {string} msg - 要显示的消息
-   * @param {object} options - 可选配置
-   * @param {string} options.title - 弹窗标题
-   * @param {string} options.type - 弹窗类型 ('info', 'success', 'warning', 'error')
+   * @param msg - 要显示的消息
+   * @param options - 可选配置
+   * @param options.title - 弹窗标题
+   * @param options.type - 弹窗类型 ('info', 'success', 'warning', 'error')
    */
-  function show(msg, options = {}) {
+  function show(msg: string, options: AlertOptions = {}): void {
     message.value = msg
     title.value = options.title || '提示'
     type.value = options.type || 'info'
     isVisible.value = true
   }
 
-  function hide() {
+  function hide(): void {
     isVisible.value = false
     // 重置为默认值，以防下次调用时残留
     message.value = ''

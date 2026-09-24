@@ -1,4 +1,4 @@
-// src/services/url.js
+// src/services/url.ts
 
 const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined
 
@@ -12,10 +12,8 @@ export const SERVER_ORIGIN = `http://127.0.0.1:${API_PORT}`
  * 把后端返回的相对地址补成绝对地址。
  * 和 getImageUrl 的区别：这个不判断 Tauri 环境，任何相对路径都补全，
  * 用于 fetch / 下载链接这类必须拿到绝对地址的场景。
- * @param {string} url
- * @returns {string}
  */
-export function toAbsoluteApiUrl(url) {
+export function toAbsoluteApiUrl(url: string): string {
   if (!url) return url
   if (url.startsWith('http://') || url.startsWith('https://')) return url
   if (url.startsWith('/')) return `${SERVER_ORIGIN}${url}`
@@ -24,9 +22,9 @@ export function toAbsoluteApiUrl(url) {
 
 /**
  * 将数据库存储的相对路径转换为完整的 URL
- * @param {string} path - 数据库存的路径 (如 "uploads/products/abc.png" 或 "/uploads/products/abc.png")
+ * @param path - 数据库存的路径 (如 "uploads/products/abc.png" 或 "/uploads/products/abc.png")
  */
-export function getImageUrl(path) {
+export function getImageUrl(path: string): string {
   if (!path) return ''
 
   // 已经是完整链接 or blob
