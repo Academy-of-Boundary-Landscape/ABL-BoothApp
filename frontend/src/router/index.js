@@ -73,6 +73,14 @@ const routes = [
         name: 'AdminEventStats',
         component: AdminEventStat,
       },
+      // 【新增】结算路由：垫付、结算调整、收摊清点、结算单
+      // 摊主端的「查看结算」按钮硬编码跳这个 path，不要改。
+      {
+        path: 'events/:id/settlement',
+        name: 'admin-event-settlement',
+        component: () => import('@/views/AdminEventSettlement.vue'),
+        props: true,
+      },
       // 【新增】关于页面
       {
         path: 'about',

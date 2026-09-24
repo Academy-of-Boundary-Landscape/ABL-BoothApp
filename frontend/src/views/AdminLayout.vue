@@ -257,6 +257,15 @@ const menuOptions = computed(() => {
               ),
             key: `/admin/events/${event.value.id}/stats`,
           },
+          {
+            label: () =>
+              h(
+                RouterLink,
+                { to: `/admin/events/${event.value.id}/settlement` },
+                { default: () => '结算' }
+              ),
+            key: `/admin/events/${event.value.id}/settlement`,
+          },
         ],
       }
     )
