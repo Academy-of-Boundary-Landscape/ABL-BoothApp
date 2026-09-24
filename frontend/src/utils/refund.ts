@@ -1,3 +1,23 @@
+import { fromCents, toCents, type Cents } from './money'
+
+/** 参与退款摊分的订单行。 */
+export interface RefundLine {
+  order_line_id: number
+  remaining_qty: number
+  remaining_paid: Cents
+}
+
+/** 每行选择的退款件数，键是 `order_line_id`。 */
+export type QtyByLine = Record<number, number>
+
+/**
+ * 摊分结果是整数分（number），brand 回 `Cents` 只经 `toCents`。
+ * 分 → 元 → 分对整数分无损，浮点残渣会被 toCents 的四舍五入吃掉。
+ */
+function brandCents(values: number[]): Cents[] {
+  return values.map((v) => toCents(v / 100))
+}
+
 /**
  * 把 `total` 按 `weights` 分成同长的一组数，和精确等于 `total`。
  *
@@ -10,12 +30,12 @@
  * 规则必须完全一致，否则摊主会看到「界面上写退 33，提交完变成 34」。
  * 规则：各自向下取整，余数按「权重降序、下标升序」逐分派发，跳过已顶到上限的那一份。
  */
-export function splitRefund(total, weights, capped = true) {
+export function splitRefund(total: Cents, weights: number[], capped: boolean = true): Cents[] {
   const n = weights.length
-  const out = new Array(n).fill(0)
-  if (n === 0 || total <= 0) return out
+  const out: number[] = new Array<number>(n).fill(0)
+  if (n === 0 || total <= 0) return brandCents(out)
   const sum = weights.reduce((a, b) => a + b, 0)
-  if (sum <= 0) return out // 0 元行：除以零会让界面显示一排 NaN
+  if (sum <= 0) return brandCents(out) // 0 元行：除以零会让界面显示一排 NaN
 
   let assigned = 0
   for (let i = 0; i < n; i++) {
@@ -42,7 +62,7 @@ export function splitRefund(total, weights, capped = true) {
     // 不设上限时这个分支永远走不到。
     if (!moved) break
   }
-  return out
+  return brandCents(out)
 }
 
 /**
@@ -51,11 +71,14 @@ export function splitRefund(total, weights, capped = true) {
  * 每一行的权重是件数而不是分，所以切一行的「退的/留的」必须用**不带 cap** 的
  * `splitRefund`——拿件数当分的上限会把结果截成件数那么小。取整规则和后端
  * `apportion(remaining_paid, &[qty, remaining_qty - qty], None)[0]` 逐分一致。
+ *
+ * 和 `splitRefund` 一样在元上累加，最后经 `toCents` 落回整数分。
  */
-export function defaultRefundTotal(lines, qtyByLine) {
-  return lines.reduce((sum, l) => {
+export function defaultRefundTotal(lines: RefundLine[], qtyByLine: QtyByLine): Cents {
+  const totalYuan = lines.reduce((sumYuan, l) => {
     const q = Number(qtyByLine[l.order_line_id] || 0)
-    if (q <= 0 || l.remaining_qty <= 0) return sum
-    return sum + splitRefund(l.remaining_paid, [q, l.remaining_qty - q], false)[0]
+    if (q <= 0 || l.remaining_qty <= 0) return sumYuan
+    return sumYuan + fromCents(splitRefund(l.remaining_paid, [q, l.remaining_qty - q], false)[0])
   }, 0)
+  return toCents(totalYuan)
 }

@@ -1,4 +1,4 @@
-// src/utils/legacyExport.js
+// src/utils/legacyExport.ts
 //
 // v1 历史数据 xlsx 的下载逻辑。抽出来是因为它有两个出口：
 // 首启弹窗（MigrationNotice.vue，只弹一次）和「历史数据（v1）」常驻 section。
@@ -19,16 +19,16 @@ export const LEGACY_EXPORT_FILENAME = 'legacy_v1_export.xlsx'
  * Tauri 走 tauriFetch 浏览器走 fetch。不能走 axios 实例——它在 Tauri 下用的是
  * 自定义 adapter，二进制下载不适合经过它。
  *
- * @returns {Promise<boolean>} 真正写出了文件返回 true；用户在保存对话框取消返回 false。
+ * @returns 真正写出了文件返回 true；用户在保存对话框取消返回 false。
  *   请求/读取失败会抛错，由调用方决定怎么提示。
  */
-export async function exportLegacyXlsx() {
+export async function exportLegacyXlsx(): Promise<boolean> {
   const isTauri = window.__TAURI_INTERNALS__ !== undefined
   const token = sessionStorage.getItem('access_token')
   const url = toAbsoluteApiUrl('/api/legacy/export.xlsx')
 
   if (isTauri) {
-    const headers = {
+    const headers: Record<string, string> = {
       Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     }
     if (token) headers['Authorization'] = `Bearer ${token}`
@@ -54,7 +54,7 @@ export async function exportLegacyXlsx() {
   }
 
   // 浏览器环境
-  const headers = {}
+  const headers: Record<string, string> = {}
   if (token) headers['Authorization'] = `Bearer ${token}`
 
   const response = await fetch(url, {
