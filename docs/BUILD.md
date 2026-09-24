@@ -196,7 +196,38 @@ npx tauri signer sign -f "$PWD/src-tauri/updater-key.key" -p "<密码>" /tmp/pro
 
 **私钥和密码务必在仓库之外另存备份。** 丢了就等于永久失去给老用户推更新的能力。
 
+### 发布前必查：sqlx 迁移文件一旦发布就**永久冻结**
+
+`sqlx::migrate!()` 在 `_sqlx_migrations` 表里记的是每个迁移文件的**校验和**。
+改动一个已经被应用过的迁移文件，下次启动就是
+
+```
+Database initialization failed: Migrate(VersionMismatch(<版本号>))
+```
+
+**App 直接 panic，起不来。** 而且「迁移前自动快照 + 失败回滚」那套基建救不了它——
+那是防「迁移跑失败」的，而这是「迁移还没开始跑就被拒」。
+
+2026-09-24 真踩过一次：`202609230001_double_entry_schema.sql` 在开发期间被改过两次，
+开发机上的 dev 库停在中间某一版，于是 App 起不来。开发库可以改名留存让它重建，
+**真实用户的库不行**。
+
+所以：
+
+- **发布之前**改迁移文件是免费的（顶多自己的开发库要重建）。
+- **一旦某个版本发出去**，`src-tauri/migrations/` 里的既有文件就不准再动一个字节。
+  任何修正都必须是**一个新的迁移文件**。
+- 装过 beta.N 的测试者升级到 beta.N+1 时同样会踩，不只是正式版用户。
+
+改之前先确认它有没有被应用过（路径按平台换）：
+
+```bash
+sqlite3 <app data dir>/sale_system.db \
+  "SELECT version, description FROM _sqlx_migrations ORDER BY version DESC LIMIT 3;"
+```
+
 ### 每次发布
+
 
 1. 更新版本号：
    - `src-tauri/tauri.conf.json` → `"version"`
