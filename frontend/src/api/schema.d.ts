@@ -4,6 +4,61 @@
 import type { Cents } from '@/utils/money'
 
 export interface paths {
+    "/auth/is-default-admin-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 管理员密码是否仍是出厂默认值 `admin123`（登录页据此提示改密码）。 */
+        get: operations["is_default_admin_password"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 登录：管理员校验全局密码，摊主可校验全局密码或展会专属密码。
+         * @description 成功时在 Body 里回 token，同时下发 HttpOnly 的 `access_token_cookie`。
+         *     `eventId` 只在摊主用「展会专属密码」登录成功时回填。
+         */
+        post: operations["login_handler"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 退出登录：清掉 HttpOnly 的 `access_token_cookie`。 */
+        post: operations["logout_handler"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/channels": {
         parameters: {
             query?: never;
@@ -355,6 +410,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/events/{event_id}/products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 列出某场展会全部商品，带现场库存与累计进货。公开接口。 */
+        get: operations["list_event_products"];
+        put?: never;
+        /** 把一个全局商品选进某场展会并记首批进货。需要管理员或本场摊主。 */
+        post: operations["add_product_to_event"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/events/{event_id}/products/{id}/restock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 给某场展会里的商品补货（外部 → 现场仓）。需要管理员或本场摊主。 */
+        post: operations["restock_product"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/events/{event_id}/quote": {
         parameters: {
             query?: never;
@@ -375,6 +465,48 @@ export interface paths {
          *     金额取自**下单响应**而不是这里。两次之间摊主完全可能刚改过 Lot 配置。
          */
         post: operations["quote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/events/{event_id}/sales_summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 销售趋势图数据：按商品汇总 + 可填充空白时段的时间序列。
+         *     支持按商品编号、开始/结束日期筛选，时间粒度 30 或 60 分钟。
+         * @description 需要管理员，或本场摊主。
+         */
+        get: operations["get_sales_summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/events/{event_id}/sales_summary/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 导出本场销售记录为 xlsx 文件。展会不存在时不返回 404，文件名回落到
+         *     `Event {id}` 后照常出表（现状如此，见 REPORT 的「形状清理」）。
+         * @description 需要管理员，或本场摊主。
+         */
+        get: operations["download_sales_summary"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -448,6 +580,97 @@ export interface paths {
          */
         post: operations["reconcile"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/events/{event_id}/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 展会仪表盘：总额、订单数、售出件数以及按商品汇总。
+         * @description 需要管理员，或本场摊主。
+         */
+        get: operations["get_event_stats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/products/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 改某场展会里商品的单价。需要管理员或本场摊主。 */
+        put: operations["update_product"];
+        post?: never;
+        /** 从某场展会下架商品。需要管理员或本场摊主。 */
+        delete: operations["delete_product"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/server-info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 返回本机 LAN 的 IP、端口与各入口 URL，供连接检测与二维码使用。 */
+        get: operations["server_info_handler"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/societies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 社团列表：本社团排第一，其余按名字。选品下拉框里本社团永远在最上面。 */
+        get: operations["list_societies"];
+        put?: never;
+        /** 新建一个社团。需要管理员。 */
+        post: operations["create_society"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/societies/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 修改社团名，或把它设为本社团（旧的会自动降级）。需要管理员。 */
+        put: operations["update_society"];
+        post?: never;
+        /** 删除一个社团。仍被商品 / 垫付 / 结算调整引用的不能删。需要管理员。 */
+        delete: operations["delete_society"];
         options?: never;
         head?: never;
         patch?: never;
@@ -546,11 +769,27 @@ export interface components {
         CreateOrderRequest: {
             items: components["schemas"]["CartItemRequest"][];
         };
+        CreateSocietyRequest: {
+            name: string;
+        };
         CreatedEntry: {
             /** Format: int64 */
             id: number;
             /** Format: int64 */
             journal_id: number;
+        };
+        /** @description 删除社团的响应体。 */
+        DeleteSocietyResponse: {
+            message: string;
+        };
+        Event: {
+            date: string;
+            /** Format: int64 */
+            id: number;
+            location?: string | null;
+            name: string;
+            payment_qr_code_path?: string | null;
+            status: string;
         };
         /**
          * @description 一个商品在一场展会里的全部去向。**每一项都从 `stock_movements` 按方向取**，
@@ -655,6 +894,9 @@ export interface components {
             /** Format: int64 */
             journal_id: number;
         };
+        IsDefaultAdminPasswordResponse: {
+            is_default: boolean;
+        };
         LedgerEntryRow: {
             /** @description 垫付恒为正；结算调整带符号（负 = 我要多给他们）。 */
             amount: components["schemas"]["Money"];
@@ -664,6 +906,24 @@ export interface components {
             /** Format: int64 */
             owner_society_id: number;
             society_name: string;
+        };
+        LoginRequest: {
+            /** Format: int64 */
+            eventId?: number | null;
+            password: string;
+            role: string;
+        };
+        LoginResponse: {
+            access: string;
+            /** Format: int64 */
+            eventId?: number | null;
+            message: string;
+            role: string;
+            token: string;
+        };
+        /** @description 退出登录的成功体。形状和登录响应里的 `message` 一样，单独建类型只是为了文档。 */
+        LogoutResponse: {
+            message: string;
         };
         LotPayload: {
             /**
@@ -885,6 +1145,50 @@ export interface components {
              */
             unapply_lot_ids?: number[] | null;
         };
+        ProductAddRequest: {
+            /** Format: int64 */
+            initial_stock: number;
+            product_code: string;
+            unit_price?: components["schemas"]["Money"] | null;
+        };
+        /** @description 删除成功后的固定消息体。字段名 `message` 是既有响应形状的一部分。 */
+        ProductDeleteMessage: {
+            message: string;
+        };
+        /**
+         * @description 响应体。**没有 `current_stock` / `initial_stock`**：
+         *     `onsite_qty` 是聚合余额，`stocked_qty` 是累计进货（前端库存条的分母）。
+         */
+        ProductEventProduct: {
+            category?: string | null;
+            /** Format: int64 */
+            event_id: number;
+            /** Format: int64 */
+            id: number;
+            image_url?: string | null;
+            /** Format: int64 */
+            master_product_id: number;
+            name: string;
+            /** Format: int64 */
+            onsite_qty: number;
+            /** Format: int64 */
+            owner_society_id: number;
+            owner_society_name: string;
+            product_code: string;
+            /** Format: int64 */
+            stocked_qty: number;
+            tags: string;
+            /** @description 单位：分。 */
+            unit_price: components["schemas"]["Money"];
+        };
+        ProductRestockRequest: {
+            note?: string | null;
+            /** Format: int64 */
+            qty: number;
+        };
+        ProductUpdateRequest: {
+            unit_price?: components["schemas"]["Money"] | null;
+        };
         ReconcileRequest: {
             counts: components["schemas"]["ChannelActual"][];
         };
@@ -954,6 +1258,31 @@ export interface components {
             /** Format: int64 */
             remaining_qty: number;
         };
+        /**
+         * @description server-info 的响应：LAN 访问所需的 IP、端口与各入口 URL。
+         *
+         *     字段按字母序声明：`serde_json` 未开 `preserve_order`，原来的 `json!` 输出
+         *     就是这个顺序，这样序列化出来的字节与迁移前一致。
+         */
+        ServerInfo: {
+            /** @description 管理员入口。 */
+            admin_url: string;
+            /** @description API 根路径。 */
+            api_base_url: string;
+            /** @description LAN 访问的 HTTPS 根 URL。 */
+            base_url: string;
+            /** @description 给 LAN 设备用的 IP。 */
+            ip: string;
+            /** @description 顾客下单入口。 */
+            order_url: string;
+            /**
+             * Format: int32
+             * @description HTTPS 端口。
+             */
+            port: number;
+            /** @description 摊主入口。 */
+            vendor_url: string;
+        };
         SettleResponse: {
             status: string;
         };
@@ -987,6 +1316,12 @@ export interface components {
             /** @description 恒等式没撞上的地方。**页面和导出都要显眼地显示它**。 */
             warnings: string[];
         };
+        Society: {
+            /** Format: int64 */
+            id: number;
+            is_home: boolean;
+            name: string;
+        };
         SocietyBlock: {
             adjustments: components["schemas"]["SettlementEntry"][];
             adjustments_total: components["schemas"]["Money"];
@@ -1007,6 +1342,55 @@ export interface components {
             /** @description 我应转给他们 = −（往来余额）。 */
             transfer: components["schemas"]["Money"];
         };
+        StatsProductSalesItem: {
+            /**
+             * Format: int64
+             * @description 「累计进货」= 从外部进到现场仓的总件数（不是当前余额）。
+             */
+            initial_stock: number;
+            product_code: string;
+            /** Format: int64 */
+            product_id: number;
+            product_name: string;
+            /** Format: int64 */
+            total_quantity: number;
+            /**
+             * @description 单位：分。**顾客实付合计**（`Σ paid_amount`），不是原价合计——
+             *     Lot 分摊与手工折让都已经摊进去了。
+             */
+            total_revenue_per_item: components["schemas"]["Money"];
+            /** @description 单位：分。 */
+            unit_price: components["schemas"]["Money"];
+        };
+        /** @description 仪表盘响应：展会信息 + 汇总 + 按商品明细。 */
+        StatsResponse: {
+            event_info: components["schemas"]["Event"];
+            product_details: components["schemas"]["StatsProductSalesItem"][];
+            summary: components["schemas"]["StatsSummary"];
+        };
+        /** @description 销售趋势响应。金额单位：分。 */
+        StatsSalesResponse: {
+            event_name: string;
+            summary: components["schemas"]["StatsProductSalesItem"][];
+            timeseries: components["schemas"]["StatsTimeseriesItem"][];
+            /** @description 单位：分。 */
+            total_revenue: components["schemas"]["Money"];
+        };
+        /** @description 仪表盘汇总。金额单位：分。 */
+        StatsSummary: {
+            /** Format: int64 */
+            completed_orders_count: number;
+            /** Format: int64 */
+            total_items_sold: number;
+            /** @description 单位：分。 */
+            total_revenue: components["schemas"]["Money"];
+        };
+        /** @description 趋势图上的一个时间桶。金额单位：分。 */
+        StatsTimeseriesItem: {
+            date: string;
+            /** @description 单位：分。 */
+            revenue: components["schemas"]["Money"];
+        };
         StocktakeRequest: {
             counts: components["schemas"]["ClosingCountRow"][];
         };
@@ -1025,6 +1409,10 @@ export interface components {
             /** Format: int64 */
             moved: number;
         };
+        UpdateSocietyRequest: {
+            is_home?: boolean | null;
+            name?: string | null;
+        };
     };
     responses: never;
     parameters: never;
@@ -1034,6 +1422,97 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    is_default_admin_password: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 未设置密码时也返回 false */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IsDefaultAdminPasswordResponse"];
+                };
+            };
+        };
+    };
+    login_handler: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description 登录成功；同时 Set-Cookie 下发 access_token_cookie */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            /** @description 请求体不是合法 JSON：纯文本 `JSON Parse Error: …` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description 角色或密码错误 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 令牌创建失败 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    logout_handler: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已退出；同时 Set-Cookie 清除 access_token_cookie */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogoutResponse"];
+                };
+            };
+        };
+    };
     list_channels: {
         parameters: {
             query?: never;
@@ -2405,6 +2884,172 @@ export interface operations {
             };
         };
     };
+    list_event_products: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 展会 id */
+                event_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductEventProduct"][];
+                };
+            };
+        };
+    };
+    add_product_to_event: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 展会 id */
+                event_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductAddRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductEventProduct"];
+                };
+            };
+            /** @description 进货数量或单价为负 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 无权访问这场展会 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 展会不存在或商品编号不在全局商品库 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 该商品已经在本场展会或展会已结算 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    restock_product: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 展会 id */
+                event_id: number;
+                /** @description 场次商品 id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductRestockRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductEventProduct"];
+                };
+            };
+            /** @description 补货数量必须为正 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 无权访问这场展会 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 商品不存在或不属于这场展会 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 展会已结算 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
     quote: {
         parameters: {
             query?: never;
@@ -2450,6 +3095,111 @@ export interface operations {
             };
             /** @description 展会不是「进行中」 */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    get_sales_summary: {
+        parameters: {
+            query?: {
+                product_code?: string | null;
+                start_date?: string | null;
+                end_date?: string | null;
+                interval_minutes?: number | null;
+            };
+            header?: never;
+            path: {
+                /** @description 展会 id */
+                event_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 销售趋势 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatsSalesResponse"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 无权访问这场展会 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 展会不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    download_sales_summary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 展会 id */
+                event_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 销售记录 xlsx */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": number[];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 无权访问这场展会 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 生成或读取 Excel 失败 */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2723,6 +3473,422 @@ export interface operations {
             };
             /** @description 展会不存在 */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    get_event_stats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 展会 id */
+                event_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 仪表盘统计 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatsResponse"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 无权访问这场展会 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 展会不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    update_product: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 场次商品 id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductEventProduct"];
+                };
+            };
+            /** @description 单价不能为负 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 无权访问这场展会 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 商品不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 展会已结算 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    delete_product: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 场次商品 id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductDeleteMessage"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 无权访问这场展会 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 商品不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 商品已有进出记录或展会已结算 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    server_info_handler: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description LAN 的 IP、端口与各入口 URL */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerInfo"];
+                };
+            };
+        };
+    };
+    list_societies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 本社团在前，其余按名字 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Society"][];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    create_society: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSocietyRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Society"];
+                };
+            };
+            /** @description 社团名不能为空 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 需要管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 社团已存在 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    update_society: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 社团 id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSocietyRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Society"];
+                };
+            };
+            /** @description 社团名为空，或试图取消本社团标记 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 需要管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 社团不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 社团名已存在 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    delete_society: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 社团 id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteSocietyResponse"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 需要管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 社团不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 本社团，或仍被商品 / 垫付 / 结算调整引用 */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

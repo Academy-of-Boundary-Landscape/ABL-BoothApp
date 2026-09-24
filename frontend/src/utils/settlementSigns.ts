@@ -3,16 +3,15 @@
 //   SettlementReport 里的 amount    = 对「我应转给」的影响，  to_them 是正数
 // 谁也别想把这两个函数 DRY 成一个——它们看着像，符号正好相反。
 
-import { formatYuan, fromCents, toCents, type Cents } from './money'
+import { cents, formatYuan, type Cents } from './money'
 
 /**
  * 取金额的绝对值用于「我多给 ¥x」这类句式。
  *
- * `Cents` 是 branded number，`-cents` 会退化成裸 number；这里经 fromCents/toCents
- * 往返转回 `Cents`（整数分无损），保持「金额只经 money.ts 换算」的约定。
+ * `Cents` 是 branded number，取负会退化成裸 number，用 `cents()` 标回来。
  */
-function formatMagnitude(cents: Cents): string {
-  return formatYuan(cents < 0 ? toCents(-fromCents(cents)) : cents)
+function formatMagnitude(amount: Cents): string {
+  return formatYuan(amount < 0 ? cents(-amount) : amount)
 }
 
 /**

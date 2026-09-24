@@ -21,8 +21,17 @@ export function fromCents(cents: Cents | null | undefined): number {
 /** 元（用户输入）→ 分。四舍五入到整数分，避免 19.99 * 100 === 1998.9999 这类浮点残渣。 */
 export function toCents(yuan: number | string): Cents {
   const n = Number(yuan)
-  // 全仓唯一的 as Cents：这里就是「元 → 分」的那道门。
+  // 全仓只有这里和 cents() 两处 as Cents：「元 → 分」与「分的运算结果 → 分」两道门。
   return (Number.isFinite(n) ? Math.round(n * 100) : 0) as Cents
+}
+
+/**
+ * 整数分运算的结果 → Cents。`Cents` 做 + - * / 之后会退化成 number，
+ * 合计、分摊、差额算完之后用它标回来（四舍五入到整数分，非有限值记为 0）。
+ * 与 toCents 的区别：toCents 的输入是**元**，这里的输入已经是**分**。
+ */
+export function cents(n: number): Cents {
+  return (Number.isFinite(n) ? Math.round(n) : 0) as Cents
 }
 
 /** 分 → 显示字符串，带两位小数。非法值回落到 '--'，不要让 NaN 上屏。 */

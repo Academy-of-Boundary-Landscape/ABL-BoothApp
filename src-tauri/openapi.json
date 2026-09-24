@@ -12,6 +12,110 @@
     "version": "1"
   },
   "paths": {
+    "/auth/is-default-admin-password": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "管理员密码是否仍是出厂默认值 `admin123`（登录页据此提示改密码）。",
+        "operationId": "is_default_admin_password",
+        "responses": {
+          "200": {
+            "description": "未设置密码时也返回 false",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IsDefaultAdminPasswordResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "登录：管理员校验全局密码，摊主可校验全局密码或展会专属密码。",
+        "description": "成功时在 Body 里回 token，同时下发 HttpOnly 的 `access_token_cookie`。\n`eventId` 只在摊主用「展会专属密码」登录成功时回填。",
+        "operationId": "login_handler",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "登录成功；同时 Set-Cookie 下发 access_token_cookie",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求体不是合法 JSON：纯文本 `JSON Parse Error: …`",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "角色或密码错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "令牌创建失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "退出登录：清掉 HttpOnly 的 `access_token_cookie`。",
+        "operationId": "logout_handler",
+        "responses": {
+          "200": {
+            "description": "已退出；同时 Set-Cookie 清除 access_token_cookie",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/channels": {
       "get": {
         "tags": [
@@ -1951,6 +2055,243 @@
         ]
       }
     },
+    "/events/{event_id}/products": {
+      "get": {
+        "tags": [
+          "product"
+        ],
+        "summary": "列出某场展会全部商品，带现场库存与累计进货。公开接口。",
+        "operationId": "list_event_products",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProductEventProduct"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "product"
+        ],
+        "summary": "把一个全局商品选进某场展会并记首批进货。需要管理员或本场摊主。",
+        "operationId": "add_product_to_event",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductAddRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEventProduct"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "进货数量或单价为负",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "展会不存在或商品编号不在全局商品库",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "该商品已经在本场展会或展会已结算",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/events/{event_id}/products/{id}/restock": {
+      "post": {
+        "tags": [
+          "product"
+        ],
+        "summary": "给某场展会里的商品补货（外部 → 现场仓）。需要管理员或本场摊主。",
+        "operationId": "restock_product",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "场次商品 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductRestockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEventProduct"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "补货数量必须为正",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "商品不存在或不属于这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "展会已结算",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/events/{event_id}/quote": {
       "post": {
         "tags": [
@@ -2023,6 +2364,194 @@
             }
           }
         }
+      }
+    },
+    "/events/{event_id}/sales_summary": {
+      "get": {
+        "tags": [
+          "stats"
+        ],
+        "summary": "销售趋势图数据：按商品汇总 + 可填充空白时段的时间序列。\n支持按商品编号、开始/结束日期筛选，时间粒度 30 或 60 分钟。",
+        "description": "需要管理员，或本场摊主。",
+        "operationId": "get_sales_summary",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "product_code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "start_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "interval_minutes",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "销售趋势",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsSalesResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "展会不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/events/{event_id}/sales_summary/download": {
+      "get": {
+        "tags": [
+          "stats"
+        ],
+        "summary": "导出本场销售记录为 xlsx 文件。展会不存在时不返回 404，文件名回落到\n`Event {id}` 后照常出表（现状如此，见 REPORT 的「形状清理」）。",
+        "description": "需要管理员，或本场摊主。",
+        "operationId": "download_sales_summary",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "销售记录 xlsx",
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "生成或读取 Excel 失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
       }
     },
     "/events/{event_id}/scraps": {
@@ -2408,6 +2937,552 @@
           }
         ]
       }
+    },
+    "/events/{event_id}/stats": {
+      "get": {
+        "tags": [
+          "stats"
+        ],
+        "summary": "展会仪表盘：总额、订单数、售出件数以及按商品汇总。",
+        "description": "需要管理员，或本场摊主。",
+        "operationId": "get_event_stats",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "仪表盘统计",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "展会不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/products/{id}": {
+      "put": {
+        "tags": [
+          "product"
+        ],
+        "summary": "改某场展会里商品的单价。需要管理员或本场摊主。",
+        "operationId": "update_product",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "场次商品 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEventProduct"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "单价不能为负",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "商品不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "展会已结算",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "product"
+        ],
+        "summary": "从某场展会下架商品。需要管理员或本场摊主。",
+        "operationId": "delete_product",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "场次商品 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductDeleteMessage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "商品不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "商品已有进出记录或展会已结算",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/server-info": {
+      "get": {
+        "tags": [
+          "info"
+        ],
+        "summary": "返回本机 LAN 的 IP、端口与各入口 URL，供连接检测与二维码使用。",
+        "operationId": "server_info_handler",
+        "responses": {
+          "200": {
+            "description": "LAN 的 IP、端口与各入口 URL",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/societies": {
+      "get": {
+        "tags": [
+          "society"
+        ],
+        "summary": "社团列表：本社团排第一，其余按名字。选品下拉框里本社团永远在最上面。",
+        "operationId": "list_societies",
+        "responses": {
+          "200": {
+            "description": "本社团在前，其余按名字",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Society"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "society"
+        ],
+        "summary": "新建一个社团。需要管理员。",
+        "operationId": "create_society",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSocietyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Society"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "社团名不能为空",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "社团已存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/societies/{id}": {
+      "put": {
+        "tags": [
+          "society"
+        ],
+        "summary": "修改社团名，或把它设为本社团（旧的会自动降级）。需要管理员。",
+        "operationId": "update_society",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "社团 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSocietyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Society"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "社团名为空，或试图取消本社团标记",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "社团不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "社团名已存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "society"
+        ],
+        "summary": "删除一个社团。仍被商品 / 垫付 / 结算调整引用的不能删。需要管理员。",
+        "operationId": "delete_society",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "社团 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteSocietyResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "社团不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "本社团，或仍被商品 / 垫付 / 结算调整引用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -2687,6 +3762,17 @@
           }
         }
       },
+      "CreateSocietyRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
+      },
       "CreatedEntry": {
         "type": "object",
         "required": [
@@ -2701,6 +3787,54 @@
           "journal_id": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "DeleteSocietyResponse": {
+        "type": "object",
+        "description": "删除社团的响应体。",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "Event": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "date",
+          "status"
+        ],
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "location": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "payment_qr_code_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
           }
         }
       },
@@ -2916,6 +4050,17 @@
           }
         }
       },
+      "IsDefaultAdminPasswordResponse": {
+        "type": "object",
+        "required": [
+          "is_default"
+        ],
+        "properties": {
+          "is_default": {
+            "type": "boolean"
+          }
+        }
+      },
       "LedgerEntryRow": {
         "type": "object",
         "required": [
@@ -2942,6 +4087,70 @@
             "format": "int64"
           },
           "society_name": {
+            "type": "string"
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": [
+          "role",
+          "password"
+        ],
+        "properties": {
+          "eventId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "password": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "required": [
+          "message",
+          "role",
+          "access",
+          "token"
+        ],
+        "properties": {
+          "access": {
+            "type": "string"
+          },
+          "eventId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "message": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        }
+      },
+      "LogoutResponse": {
+        "type": "object",
+        "description": "退出登录的成功体。形状和登录响应里的 `message` 一样，单独建类型只是为了文档。",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "message": {
             "type": "string"
           }
         }
@@ -3528,6 +4737,150 @@
           }
         }
       },
+      "ProductAddRequest": {
+        "type": "object",
+        "required": [
+          "product_code",
+          "initial_stock"
+        ],
+        "properties": {
+          "initial_stock": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "product_code": {
+            "type": "string"
+          },
+          "unit_price": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Money",
+                "description": "单位：分。缺省用 `master_products.default_price`。"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "ProductDeleteMessage": {
+        "type": "object",
+        "description": "删除成功后的固定消息体。字段名 `message` 是既有响应形状的一部分。",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "ProductEventProduct": {
+        "type": "object",
+        "description": "响应体。**没有 `current_stock` / `initial_stock`**：\n`onsite_qty` 是聚合余额，`stocked_qty` 是累计进货（前端库存条的分母）。",
+        "required": [
+          "id",
+          "event_id",
+          "master_product_id",
+          "owner_society_id",
+          "owner_society_name",
+          "product_code",
+          "name",
+          "unit_price",
+          "stocked_qty",
+          "onsite_qty",
+          "tags"
+        ],
+        "properties": {
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "event_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "image_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "master_product_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "onsite_qty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "owner_society_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "owner_society_name": {
+            "type": "string"
+          },
+          "product_code": {
+            "type": "string"
+          },
+          "stocked_qty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "tags": {
+            "type": "string"
+          },
+          "unit_price": {
+            "$ref": "#/components/schemas/Money",
+            "description": "单位：分。"
+          }
+        }
+      },
+      "ProductRestockRequest": {
+        "type": "object",
+        "required": [
+          "qty"
+        ],
+        "properties": {
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ProductUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "unit_price": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Money",
+                "description": "单位：分。\n\n**`initial_stock` 不再接受**：旧接口用 `current_stock += (new - old)` 硬调数字，\n正是 spec 点名的三个互不共享写入方之一。请求体里即使带了 `initial_stock`，\n也会被 serde 默认忽略——改库存必须走进货/盘点。"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "ReconcileRequest": {
         "type": "object",
         "required": [
@@ -3752,6 +5105,51 @@
           }
         }
       },
+      "ServerInfo": {
+        "type": "object",
+        "description": "server-info 的响应：LAN 访问所需的 IP、端口与各入口 URL。\n\n字段按字母序声明：`serde_json` 未开 `preserve_order`，原来的 `json!` 输出\n就是这个顺序，这样序列化出来的字节与迁移前一致。",
+        "required": [
+          "admin_url",
+          "api_base_url",
+          "base_url",
+          "ip",
+          "order_url",
+          "port",
+          "vendor_url"
+        ],
+        "properties": {
+          "admin_url": {
+            "type": "string",
+            "description": "管理员入口。"
+          },
+          "api_base_url": {
+            "type": "string",
+            "description": "API 根路径。"
+          },
+          "base_url": {
+            "type": "string",
+            "description": "LAN 访问的 HTTPS 根 URL。"
+          },
+          "ip": {
+            "type": "string",
+            "description": "给 LAN 设备用的 IP。"
+          },
+          "order_url": {
+            "type": "string",
+            "description": "顾客下单入口。"
+          },
+          "port": {
+            "type": "integer",
+            "format": "int32",
+            "description": "HTTPS 端口。",
+            "minimum": 0
+          },
+          "vendor_url": {
+            "type": "string",
+            "description": "摊主入口。"
+          }
+        }
+      },
       "SettleResponse": {
         "type": "object",
         "required": [
@@ -3856,6 +5254,26 @@
           }
         }
       },
+      "Society": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "is_home"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "is_home": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
       "SocietyBlock": {
         "type": "object",
         "required": [
@@ -3938,6 +5356,141 @@
           }
         }
       },
+      "StatsProductSalesItem": {
+        "type": "object",
+        "required": [
+          "product_id",
+          "product_code",
+          "product_name",
+          "unit_price",
+          "initial_stock",
+          "total_quantity",
+          "total_revenue_per_item"
+        ],
+        "properties": {
+          "initial_stock": {
+            "type": "integer",
+            "format": "int64",
+            "description": "「累计进货」= 从外部进到现场仓的总件数（不是当前余额）。"
+          },
+          "product_code": {
+            "type": "string"
+          },
+          "product_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "product_name": {
+            "type": "string"
+          },
+          "total_quantity": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total_revenue_per_item": {
+            "$ref": "#/components/schemas/Money",
+            "description": "单位：分。**顾客实付合计**（`Σ paid_amount`），不是原价合计——\nLot 分摊与手工折让都已经摊进去了。"
+          },
+          "unit_price": {
+            "$ref": "#/components/schemas/Money",
+            "description": "单位：分。"
+          }
+        }
+      },
+      "StatsResponse": {
+        "type": "object",
+        "description": "仪表盘响应：展会信息 + 汇总 + 按商品明细。",
+        "required": [
+          "event_info",
+          "summary",
+          "product_details"
+        ],
+        "properties": {
+          "event_info": {
+            "$ref": "#/components/schemas/Event"
+          },
+          "product_details": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StatsProductSalesItem"
+            }
+          },
+          "summary": {
+            "$ref": "#/components/schemas/StatsSummary"
+          }
+        }
+      },
+      "StatsSalesResponse": {
+        "type": "object",
+        "description": "销售趋势响应。金额单位：分。",
+        "required": [
+          "event_name",
+          "total_revenue",
+          "summary",
+          "timeseries"
+        ],
+        "properties": {
+          "event_name": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StatsProductSalesItem"
+            }
+          },
+          "timeseries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StatsTimeseriesItem"
+            }
+          },
+          "total_revenue": {
+            "$ref": "#/components/schemas/Money",
+            "description": "单位：分。"
+          }
+        }
+      },
+      "StatsSummary": {
+        "type": "object",
+        "description": "仪表盘汇总。金额单位：分。",
+        "required": [
+          "total_revenue",
+          "completed_orders_count",
+          "total_items_sold"
+        ],
+        "properties": {
+          "completed_orders_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total_items_sold": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total_revenue": {
+            "$ref": "#/components/schemas/Money",
+            "description": "单位：分。"
+          }
+        }
+      },
+      "StatsTimeseriesItem": {
+        "type": "object",
+        "description": "趋势图上的一个时间桶。金额单位：分。",
+        "required": [
+          "date",
+          "revenue"
+        ],
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "revenue": {
+            "$ref": "#/components/schemas/Money",
+            "description": "单位：分。"
+          }
+        }
+      },
       "StocktakeRequest": {
         "type": "object",
         "required": [
@@ -3990,6 +5543,23 @@
           "moved": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "UpdateSocietyRequest": {
+        "type": "object",
+        "properties": {
+          "is_home": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       }

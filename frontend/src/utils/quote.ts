@@ -1,18 +1,15 @@
-import { fromCents, toCents, type Cents } from './money'
+import type { components } from '@/api/schema'
+import { cents, type Cents } from './money'
 
-/** `/quote` 响应里的一个套装实例。 */
-export interface QuoteLot {
-  lot_id?: number
-  name: string
-  price?: Cents | null
-  original_amount?: Cents | null
-}
+type Schemas = components['schemas']
 
-/** `/quote` 响应。 */
-export interface QuoteResponse {
-  gross_amount: Cents
-  solved_amount: Cents
-  lots?: QuoteLot[] | null
+/**
+ * `/quote` 响应里本函数用到的部分。直接取自生成的契约类型——后端改字段名，这里就编译不过。
+ * 用 Pick 而不是整个类型：纯函数只依赖它读的字段，单测也只需要造这几个字段。
+ */
+export type QuoteLot = Pick<Schemas['LotQuoteLot'], 'name' | 'price' | 'original_amount'>
+export type QuoteResponse = Pick<Schemas['LotQuoteResponse'], 'gross_amount' | 'solved_amount'> & {
+  lots: QuoteLot[]
 }
 
 /** 合并后的单条优惠。 */
@@ -46,12 +43,11 @@ export function summarizeQuote(
   }
   // 同一个套装可以套用多次（「任选 3 本 100」买 6 本 = 两个实例）。
   // 按名字合并再带一个次数——列两行一模一样的文字会让人以为系统算重了。
-  // 优惠额在元上累加（Cents 是 branded 类型，直接相减会退化成裸 number）。
-  const byName = new Map<string, { name: string; savedYuan: number; count: number }>()
+  // 优惠额按整数分累加，最后用 cents() 标回 Cents（branded 类型做减法会退化成 number）。
+  const byName = new Map<string, { name: string; saved: number; count: number }>()
   for (const lot of quote.lots || []) {
-    const savedYuan = fromCents(lot.original_amount) - fromCents(lot.price)
-    const entry = byName.get(lot.name) || { name: lot.name, savedYuan: 0, count: 0 }
-    entry.savedYuan += savedYuan
+    const entry = byName.get(lot.name) || { name: lot.name, saved: 0, count: 0 }
+    entry.saved += lot.original_amount - lot.price
     entry.count += 1
     byName.set(lot.name, entry)
   }
@@ -59,7 +55,7 @@ export function summarizeQuote(
     gross: quote.gross_amount,
     payable: quote.solved_amount,
     discounts: [...byName.values()]
-      .filter((d) => d.savedYuan > 0)
-      .map((d) => ({ name: d.name, saved: toCents(d.savedYuan), count: d.count })),
+      .filter((d) => d.saved > 0)
+      .map((d) => ({ name: d.name, saved: cents(d.saved), count: d.count })),
   }
 }

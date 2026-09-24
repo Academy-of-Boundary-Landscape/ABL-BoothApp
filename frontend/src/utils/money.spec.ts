@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { fromCents, toCents, formatCents, formatYuan, type Cents } from './money'
+import { cents, fromCents, toCents, formatCents, formatYuan, type Cents } from './money'
 
 // 测试里构造 Cents 输入允许用 as——生产代码里唯一的 as Cents 在 money.ts 的 toCents()。
 const c = (n: number) => n as Cents
@@ -42,5 +42,14 @@ describe('money', () => {
     // @ts-expect-error 元 → 分只能走 toCents，不能直接断言
     const yuan: Cents = 19.9
     expect(yuan).toBe(19.9)
+  })
+
+  it('cents() re-brands integer-cent arithmetic and rounds stray fractions', () => {
+    // Cents 做 + - * / 之后会退化成 number；分摊、合计之后用 cents() 标回来
+    const a = c(3333)
+    const b = c(1667)
+    expect(cents(a + b)).toBe(5000)
+    expect(cents((a * 2) / 3)).toBe(2222)
+    expect(cents(Number.NaN)).toBe(0)
   })
 })

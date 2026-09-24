@@ -1,4 +1,4 @@
-import { fromCents, toCents, type Cents } from './money'
+import { cents, type Cents } from './money'
 
 /** 参与退款摊分的订单行。 */
 export interface RefundLine {
@@ -11,11 +11,10 @@ export interface RefundLine {
 export type QtyByLine = Record<number, number>
 
 /**
- * 摊分结果是整数分（number），brand 回 `Cents` 只经 `toCents`。
- * 分 → 元 → 分对整数分无损，浮点残渣会被 toCents 的四舍五入吃掉。
+ * 摊分结果是整数分（number），用 `cents()` 标回 `Cents`。
  */
 function brandCents(values: number[]): Cents[] {
-  return values.map((v) => toCents(v / 100))
+  return values.map(cents)
 }
 
 /**
@@ -72,13 +71,12 @@ export function splitRefund(total: Cents, weights: number[], capped: boolean = t
  * `splitRefund`——拿件数当分的上限会把结果截成件数那么小。取整规则和后端
  * `apportion(remaining_paid, &[qty, remaining_qty - qty], None)[0]` 逐分一致。
  *
- * 和 `splitRefund` 一样在元上累加，最后经 `toCents` 落回整数分。
  */
 export function defaultRefundTotal(lines: RefundLine[], qtyByLine: QtyByLine): Cents {
-  const totalYuan = lines.reduce((sumYuan, l) => {
+  const total = lines.reduce((sum, l) => {
     const q = Number(qtyByLine[l.order_line_id] || 0)
-    if (q <= 0 || l.remaining_qty <= 0) return sumYuan
-    return sumYuan + fromCents(splitRefund(l.remaining_paid, [q, l.remaining_qty - q], false)[0])
+    if (q <= 0 || l.remaining_qty <= 0) return sum
+    return sum + (splitRefund(l.remaining_paid, [q, l.remaining_qty - q], false)[0] ?? 0)
   }, 0)
-  return toCents(totalYuan)
+  return cents(total)
 }
