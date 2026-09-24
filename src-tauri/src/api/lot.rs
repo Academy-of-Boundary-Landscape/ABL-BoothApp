@@ -12,18 +12,22 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::{IntoResponse, Json},
-    routing::{get, post, put},
-    Router,
+    response::Json,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
+use utoipa::ToSchema;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::{
     api::guard::{check_read_permission, check_write_permission},
-    domain::pricing::{
-        cart_lines, ensure_event_selling, load_lots, merge_items, price_cart, resolve_cart,
-        CartItemRequest,
+    api::openapi::ApiErrorBody,
+    domain::{
+        money::Money,
+        pricing::{
+            cart_lines, ensure_event_selling, load_lots, merge_items, price_cart, resolve_cart,
+            CartItemRequest,
+        },
     },
     error::{ApiError, ApiResult},
     state::AppState,
@@ -34,33 +38,25 @@ use crate::{
 /// 而不是业务需要——真实套装候选集十几个封顶。
 const MAX_CANDIDATES: usize = 200;
 
-/// ③b 过渡：本模块的路由还没标 utoipa 注解，整体包进 OpenApiRouter——路由照常工作，
-/// 只是文档里没有它的路径。阶段 2 迁移本模块时改为 `routes!(...)` 并删掉 `legacy_router`。
-pub fn router() -> utoipa_axum::router::OpenApiRouter<AppState> {
-    utoipa_axum::router::OpenApiRouter::from(legacy_router())
-}
-
-fn legacy_router() -> Router<AppState> {
-    Router::new()
-        .route("/events/{event_id}/lots", get(list_lots).post(create_lot))
-        // `/lots/preview` 和 `/lots/:lot_id` 字面上重叠，但 matchit 给**静态段**更高
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(list_lots, create_lot))
+        // `/lots/preview` 和 `/lots/{lot_id}` 字面上重叠，但 matchit 给**静态段**更高
         // 优先级，且与注册顺序无关（见 matchit README 的 Routing Priority 一节），
         // 所以 preview 一定能被命中。写在前面只是让人读的时候先看到它。
-        .route("/events/{event_id}/lots/preview", post(preview_lot))
-        .route(
-            "/events/{event_id}/lots/{lot_id}",
-            put(update_lot).delete(delete_lot),
-        )
-        .route("/events/{event_id}/quote", post(quote))
+        .routes(routes!(preview_lot))
+        .routes(routes!(update_lot, delete_lot))
+        .routes(routes!(quote))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct LotResponse {
     id: i64,
     event_id: i64,
     name: String,
     pick_count: i64,
     /// 单位：分。
+    #[schema(value_type = Money)]
     total_price: i64,
     /// 一个套装实例里，同一个候选能不能算多件（默认 false = 每种最多 1 件）。
     allow_repeat: bool,
@@ -70,11 +66,12 @@ struct LotResponse {
     owner_society_name: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct LotPayload {
     name: String,
     pick_count: i64,
     /// 单位：分。
+    #[schema(value_type = Money)]
     total_price: i64,
     /// 老客户端不带这个字段，`serde(default)` 落到 false——**默认限 1**，
     /// 不会因为升级悄悄从「每种 1 件」变成「可同款」。
@@ -234,6 +231,19 @@ type LotListRow = (
     Option<String>,
 );
 
+/// 列出这场展会的全部套装，含候选已被删空的（它们仍需在管理页可见、可删）。
+#[utoipa::path(
+    get,
+    path = "/events/{event_id}/lots",
+    tag = "lot",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = Vec<LotResponse>, description = "按 id 升序；每个套装的候选按 id 升序"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+    ),
+)]
 async fn list_lots(
     State(state): State<AppState>,
     claims: Claims,
@@ -287,12 +297,29 @@ async fn list_lots(
     Ok(Json(out))
 }
 
+/// 新建一个套装（Lot）：候选商品集合 + 要选几件 + 总价，候选必须同一货主。
+#[utoipa::path(
+    post,
+    path = "/events/{event_id}/lots",
+    tag = "lot",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    request_body = LotPayload,
+    security(("bearer" = [])),
+    responses(
+        (status = 201, body = LotResponse),
+        (status = 400, body = ApiErrorBody, description = "名称/件数/价格不合法、候选不属于本场或跨货主、不允许同款但候选种类不够"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "展会不存在"),
+        (status = 409, body = ApiErrorBody, description = "展会已结算，不能再改账"),
+    ),
+)]
 async fn create_lot(
     State(state): State<AppState>,
     claims: Claims,
     Path(event_id): Path<i64>,
     Json(payload): Json<LotPayload>,
-) -> ApiResult<impl IntoResponse> {
+) -> ApiResult<(StatusCode, Json<LotResponse>)> {
     check_write_permission(&claims, event_id)?;
     let name = validate_payload(&payload)?;
 
@@ -334,6 +361,26 @@ async fn create_lot(
     ))
 }
 
+/// 整体替换一个套装的配置：候选集整组重写，不是追加。
+#[utoipa::path(
+    put,
+    path = "/events/{event_id}/lots/{lot_id}",
+    tag = "lot",
+    params(
+        ("event_id" = i64, Path, description = "展会 id"),
+        ("lot_id" = i64, Path, description = "套装 id"),
+    ),
+    request_body = LotPayload,
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = LotResponse),
+        (status = 400, body = ApiErrorBody, description = "名称/件数/价格不合法、候选不属于本场或跨货主、不允许同款但候选种类不够"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "套装或展会不存在"),
+        (status = 409, body = ApiErrorBody, description = "展会已结算，不能再改账"),
+    ),
+)]
 async fn update_lot(
     State(state): State<AppState>,
     claims: Claims,
@@ -386,16 +433,35 @@ async fn update_lot(
     }))
 }
 
+/// 删除一个套装。
+///
 /// 删除永远放行。
 ///
 /// `order_lots.lot_id` 是 `ON DELETE SET NULL`，而名字和价格在下单那一刻就
 /// **快照**进了 `order_lots`——历史订单不受影响。所以这里不需要
 /// 「被引用就不给删」那种守卫（`api/product.rs` 删商品时要，因为那边没有快照）。
+#[utoipa::path(
+    delete,
+    path = "/events/{event_id}/lots/{lot_id}",
+    tag = "lot",
+    params(
+        ("event_id" = i64, Path, description = "展会 id"),
+        ("lot_id" = i64, Path, description = "套装 id"),
+    ),
+    security(("bearer" = [])),
+    responses(
+        (status = 204, description = "已删除"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "套装或展会不存在"),
+        (status = 409, body = ApiErrorBody, description = "展会已结算，不能再改账"),
+    ),
+)]
 async fn delete_lot(
     State(state): State<AppState>,
     claims: Claims,
     Path((event_id, lot_id)): Path<(i64, i64)>,
-) -> ApiResult<impl IntoResponse> {
+) -> ApiResult<StatusCode> {
     check_write_permission(&claims, event_id)?;
 
     let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
@@ -419,27 +485,31 @@ async fn delete_lot(
 // ==========================================
 
 /// 试算请求：一份**还没保存**的套装配置。字段与 `LotPayload` 相同，只是不要名字。
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct LotPreviewRequest {
     pick_count: i64,
     /// 单位：分。
+    #[schema(value_type = Money)]
     total_price: i64,
     #[serde(default)]
     allow_repeat: bool,
     candidate_ids: Vec<i64>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
+#[schema(as = LotPreviewCandidate)]
 struct PreviewCandidate {
     product_id: i64,
     name: String,
     /// 单位：分。
+    #[schema(value_type = Money)]
     unit_price: i64,
     owner_society_id: i64,
     owner_society_name: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
+#[schema(as = LotPreviewMember)]
 struct PreviewMember {
     product_id: i64,
     name: String,
@@ -447,29 +517,34 @@ struct PreviewMember {
 }
 
 /// 顾客可能怎么凑满这个套装的一个极端。
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
+#[schema(as = LotPreviewScenario)]
 struct PreviewScenario {
     /// `"max_discount"`（顾客拿走最贵的那几件）或 `"min_discount"`（最便宜的那几件）。
     kind: &'static str,
     members: Vec<PreviewMember>,
     /// 这些成分按原价的合计（分）。
+    #[schema(value_type = Money)]
     original_amount: i64,
     /// 套装价（分），两个 scenario 相同，放进来是为了这个对象能独立读懂。
+    #[schema(value_type = Money)]
     lot_price: i64,
     /// `original_amount − lot_price`。**可能为负**——那表示这种组合下套装比原价还贵，
     /// 求解器不会套用它。故意保留负数而不是省略字段：调用方（含将来的 LLM）
     /// 判一个符号，比判一个字段在不在要可靠。
+    #[schema(value_type = Money)]
     discount: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
+#[schema(as = LotPreviewWarning)]
 struct PreviewWarning {
     /// 机器读的稳定标识；`message` 是给摊主看的，措辞会变，code 不会。
     code: &'static str,
     message: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct LotPreviewResponse {
     candidates: Vec<PreviewCandidate>,
     scenarios: Vec<PreviewScenario>,
@@ -558,6 +633,20 @@ fn build_scenario(
 /// 这个端点同时服务两个消费方：配置页的实时预览，以及将来接 LLM 辅助配置时
 /// 「提一个方案、立刻看后果」的那一步。**在它之前，配置的后果对人和对机器都是黑箱**——
 /// 摊主只能配完等顾客来薅，这正是 2026-09-24 那个缺陷被发现的方式。
+#[utoipa::path(
+    post,
+    path = "/events/{event_id}/lots/preview",
+    tag = "lot",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    request_body = LotPreviewRequest,
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = LotPreviewResponse, description = "零写入的试算结果"),
+        (status = 400, body = ApiErrorBody, description = "件数/价格不合法、候选不属于本场或跨货主、不允许同款但候选种类不够"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+    ),
+)]
 async fn preview_lot(
     State(state): State<AppState>,
     claims: Claims,
@@ -643,43 +732,53 @@ fn yuan(cents: i64) -> String {
     format!("{sign}¥{}.{:02}", a / 100, a % 100)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
+#[schema(as = LotQuoteRequest)]
 struct QuoteRequest {
     items: Vec<CartItemRequest>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
+#[schema(as = LotQuoteMember)]
 struct QuoteMember {
     product_id: i64,
     qty: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
+#[schema(as = LotQuoteLot)]
 struct QuoteLot {
     lot_id: i64,
     name: String,
     /// 套装价（分）。
+    #[schema(value_type = Money)]
     price: i64,
     /// 成分按原价的合计（分）。
     ///
     /// 前端显示「已应用：XX −YY」时 `YY = original_amount − price`。放在后端算，
     /// 是因为前端再做一遍单价乘法就等于把分摊逻辑抄了半份出去。
+    #[schema(value_type = Money)]
     original_amount: i64,
     members: Vec<QuoteMember>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
+#[schema(as = LotQuoteLine)]
 struct QuoteLine {
     product_id: i64,
     qty: i64,
     /// 进了 `lots` 数组的第几个，`null` = 没进套装。
     lot_index: Option<usize>,
+    #[schema(value_type = Money)]
     allocated_amount: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
+#[schema(as = LotQuoteResponse)]
 struct QuoteResponse {
+    #[schema(value_type = Money)]
     gross_amount: i64,
+    #[schema(value_type = Money)]
     solved_amount: i64,
     lots: Vec<QuoteLot>,
     lines: Vec<QuoteLine>,
@@ -694,6 +793,19 @@ struct QuoteResponse {
 ///
 /// **报价永远不被信任**：下单时服务端用同一份 `price_cart` 独立重算，顾客最终付的
 /// 金额取自**下单响应**而不是这里。两次之间摊主完全可能刚改过 Lot 配置。
+#[utoipa::path(
+    post,
+    path = "/events/{event_id}/quote",
+    tag = "lot",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    request_body = QuoteRequest,
+    responses(
+        (status = 200, body = QuoteResponse, description = "公开、无鉴权、零写入的报价；不查库存"),
+        (status = 400, body = ApiErrorBody, description = "购物车为空/过多、数量非正、金额溢出或组合方式过多"),
+        (status = 404, body = ApiErrorBody, description = "展会或商品不存在"),
+        (status = 409, body = ApiErrorBody, description = "展会不是「进行中」"),
+    ),
+)]
 async fn quote(
     State(state): State<AppState>,
     Path(event_id): Path<i64>,
@@ -1585,6 +1697,280 @@ mod tests {
         assert!(
             error.contains("组合方式过多"),
             "18 个商品各 1 件撞的是状态空间（组合方式），不是件数也不是步数：{body}"
+        );
+    }
+}
+
+/// ③b 形状快照：钉住每个路由的 JSON 形状（键 + 类型），类型化前后必须一行不改照样绿。
+#[cfg(test)]
+mod shape_tests {
+    use crate::test_support::{
+        admin_token, json_request, read_json, seed_event_and_product, shape_of, test_router_with,
+    };
+    use axum::http::StatusCode;
+    use axum::Router;
+    use serde_json::{json, Value};
+    use tower::ServiceExt;
+
+    /// 再加一个**同货主**（本社团）的商品，单价 25.00，返回它的 event_product_id。
+    /// 试算/报价要有一个和 ep_a 不同单价的同货主候选，两个极端才有区别。
+    async fn seed_second_home_product(pool: &sqlx::SqlitePool) -> i64 {
+        sqlx::query(
+            "INSERT INTO master_products (id, product_code, name, default_price, owner_society_id)
+             VALUES (3, 'C', '本子C', 25.0, 1)",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO event_products
+               (id, event_id, master_product_id, owner_society_id, product_code, name, unit_price)
+             VALUES (3, 1, 3, 1, 'C', '本子C', 2500)",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        3
+    }
+
+    /// 进行中的展会 + 三个商品 + 一个「任选 2 件 50」（候选 [A, C]、可同款）的套装，
+    /// 让每个可选字段和每个数组都至少出现一次非空。
+    /// 返回 `(router, dir, event_id, lot_id, ep_a, ep_b)`。
+    async fn seeded() -> (Router, tempfile::TempDir, i64, i64, i64, i64) {
+        let (router, dir, pool) = test_router_with().await;
+        let (event_id, ep_a, ep_b) = seed_event_and_product(&pool).await;
+        let ep_c = seed_second_home_product(&pool).await;
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/lots"),
+            Some(&admin_token()),
+            json!({"name": "任选2件50", "pick_count": 2, "total_price": 5000,
+                   "allow_repeat": true, "candidate_ids": [ep_a, ep_c]}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::CREATED);
+        let lot_id = body["id"].as_i64().unwrap();
+        (router, dir, event_id, lot_id, ep_a, ep_b)
+    }
+
+    async fn call(
+        router: &Router,
+        method: &str,
+        uri: &str,
+        token: Option<&str>,
+        body: Value,
+    ) -> (StatusCode, Value) {
+        let res = router
+            .clone()
+            .oneshot(json_request(method, uri, token, body))
+            .await
+            .unwrap();
+        let status = res.status();
+        (status, read_json(res).await)
+    }
+
+    fn lot_shape() -> Value {
+        json!({
+            "id": "int", "event_id": "int", "name": "string", "pick_count": "int",
+            "total_price": "int", "allow_repeat": "bool",
+            "candidate_ids": ["int"], "owner_society_id": "int", "owner_society_name": "string",
+        })
+    }
+
+    fn preview_shape() -> Value {
+        json!({
+            "candidates": [{"product_id": "int", "name": "string", "unit_price": "int",
+                            "owner_society_id": "int", "owner_society_name": "string"}],
+            "scenarios": [{"kind": "string",
+                           "members": [{"product_id": "int", "name": "string", "qty": "int"}],
+                           "original_amount": "int", "lot_price": "int", "discount": "int"}],
+            "warnings": [{"code": "string", "message": "string"}],
+        })
+    }
+
+    #[tokio::test]
+    async fn shape_list_lots() {
+        let (router, _dir, event_id, _lot_id, _ep_a, _ep_b) = seeded().await;
+        let (s, body) = call(
+            &router,
+            "GET",
+            &format!("/api/events/{event_id}/lots"),
+            Some(&admin_token()),
+            json!(null),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(shape_of(&body), json!([lot_shape()]));
+        // 未登录
+        let (s, body) = call(
+            &router,
+            "GET",
+            &format!("/api/events/{event_id}/lots"),
+            None,
+            json!(null),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::UNAUTHORIZED, json!({"error": "string"}))
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_create_lot() {
+        let (router, _dir, event_id, _lot_id, ep_a, _ep_b) = seeded().await;
+        let t = admin_token();
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/lots"),
+            Some(&t),
+            json!({"name": "新套装", "pick_count": 2, "total_price": 4500,
+                   "allow_repeat": true, "candidate_ids": [ep_a, 3]}),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::CREATED, lot_shape()));
+        // 校验失败：名称不能为空
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/lots"),
+            Some(&t),
+            json!({"name": "  ", "pick_count": 1, "total_price": 100, "candidate_ids": [ep_a]}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::BAD_REQUEST, json!({"error": "string"}))
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_update_lot() {
+        let (router, _dir, event_id, lot_id, ep_a, _ep_b) = seeded().await;
+        let t = admin_token();
+        let (s, body) = call(
+            &router,
+            "PUT",
+            &format!("/api/events/{event_id}/lots/{lot_id}"),
+            Some(&t),
+            json!({"name": "改名", "pick_count": 2, "total_price": 4500,
+                   "allow_repeat": true, "candidate_ids": [ep_a, 3]}),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::OK, lot_shape()));
+        // 不存在的套装
+        let (s, body) = call(
+            &router,
+            "PUT",
+            &format!("/api/events/{event_id}/lots/99999"),
+            Some(&t),
+            json!({"name": "x", "pick_count": 2, "total_price": 4500,
+                   "allow_repeat": true, "candidate_ids": [ep_a, 3]}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::NOT_FOUND, json!({"error": "string"}))
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_delete_lot() {
+        let (router, _dir, event_id, lot_id, _ep_a, _ep_b) = seeded().await;
+        let t = admin_token();
+        let (s, body) = call(
+            &router,
+            "DELETE",
+            &format!("/api/events/{event_id}/lots/{lot_id}"),
+            Some(&t),
+            json!(null),
+        )
+        .await;
+        assert_eq!((s, body), (StatusCode::NO_CONTENT, Value::Null));
+        // 不存在的套装
+        let (s, body) = call(
+            &router,
+            "DELETE",
+            &format!("/api/events/{event_id}/lots/99999"),
+            Some(&t),
+            json!(null),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::NOT_FOUND, json!({"error": "string"}))
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_preview_lot() {
+        let (router, _dir, event_id, _lot_id, ep_a, ep_b) = seeded().await;
+        let t = admin_token();
+        // 套装价 10.00 低于最贵候选 30.00 → 触发 price_below_max_unit_price 警告，
+        // 这样 warnings 数组里有一个非空元素，元素形状才钉得住。
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/lots/preview"),
+            Some(&t),
+            json!({"pick_count": 2, "total_price": 1000, "allow_repeat": true,
+                   "candidate_ids": [ep_a, 3]}),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::OK, preview_shape()));
+        // 跨货主
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/lots/preview"),
+            Some(&t),
+            json!({"pick_count": 2, "total_price": 4000, "candidate_ids": [ep_a, ep_b]}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::BAD_REQUEST, json!({"error": "string"}))
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_quote() {
+        let (router, _dir, event_id, _lot_id, ep_a, _ep_b) = seeded().await;
+        // 3 件 A：2 件进套装、1 件散着 → lines 同时有非空和 null 的 lot_index
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/quote"),
+            None,
+            json!({"items": [{"product_id": ep_a, "quantity": 3}]}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(
+            shape_of(&body),
+            json!({
+                "gross_amount": "int", "solved_amount": "int",
+                "lots": [{"lot_id": "int", "name": "string", "price": "int",
+                          "original_amount": "int",
+                          "members": [{"product_id": "int", "qty": "int"}]}],
+                "lines": [{"product_id": "int", "qty": "int", "lot_index": "int|null",
+                           "allocated_amount": "int"}],
+            })
+        );
+        // 商品不存在
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/quote"),
+            None,
+            json!({"items": [{"product_id": 99999, "quantity": 1}]}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::NOT_FOUND, json!({"error": "string"}))
         );
     }
 }

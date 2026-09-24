@@ -21,7 +21,7 @@ fn overflow() -> ApiError {
 }
 
 /// 请求里的一项。下单与报价的请求体同形，所以只有这一个结构。
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, utoipa::ToSchema)]
 pub struct CartItemRequest {
     pub product_id: i64,
     pub quantity: i64,
