@@ -38,6 +38,13 @@ pub struct GoodsLine {
     pub taken_back: i64,
     /// 还在现场仓的。走完带回之后必须是 0。
     pub on_site: i64,
+    /// 这个商品的原价合计（已扣除退货部分）。spec 8.4 要求「货主明细」按商品列出金额——
+    /// 只给数量等于让社团自己去乘单价，而 Lot 折让之后单价不等于成交价。
+    pub gross: Money,
+    /// Lot 折让 = gross − allocated。
+    pub lot_discount: Money,
+    /// 货主应得（已扣除退货部分）。**用 allocated 不用 paid。**
+    pub allocated: Money,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -288,6 +295,10 @@ mod tests {
             variance: var,
             taken_back: back,
             on_site: on,
+            // 纯函数测试不关心金额，给默认值即可；金额由 api 层按商品查出来透传。
+            gross: Money::ZERO,
+            lot_discount: Money::ZERO,
+            allocated: Money::ZERO,
         }
     }
 

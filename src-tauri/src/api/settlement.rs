@@ -1,7 +1,7 @@
 //! 结算侧：渠道列表、垫付、结算调整、结算单、收摊清点、xlsx 导出。
 //!
 //! **本模块里有三类操作故意不调用 `require_event_open`**：垫付、结算调整、
-//! 收摊清点（后者在 Task 8）。冻结之后它们仍然允许（spec 偏离 3）——「回家翻出一张打印费收据」
+//! 收摊清点。冻结之后它们仍然允许（spec 偏离 3）——「回家翻出一张打印费收据」
 //! 和「回家发现少了一本书」是同一类事件。看见别处都守着就顺手补上去，
 //! 会把有意的例外当成漏掉的守卫。改之前先读 spec 3.2。
 
@@ -435,6 +435,12 @@ struct GoodsRow {
 /// ⚠️ `variance` **不要取反**：恒等式是
 /// `带去 − 带回 = 卖出 + 赠送 + 报废 + 差异 + 现场仓`，盘亏时货走
 /// `现场仓 → 差异`，差异位置净额为正、现场仓同时减少，两边同时变才平。
+///
+/// 这里**不再** `LEFT JOIN journals`。曾经挂着一个
+/// `AND j.event_id = ep.event_id`，但 `j` 在 WHERE 里没有谓词，跨展会的
+/// journal 行会以 NULL-join 存活下来，那个条件什么都没挡，只会让下一个读
+/// 的人以为这里有展会守卫。按展会隔离完全靠下面的 `event_products`
+/// （`ep.event_id = ?`），所以删掉它，顺便少一次 join。
 const GOODS_SQL: &str = r#"
 SELECT ep.owner_society_id, ep.id AS event_product_id, ep.product_code, ep.name,
   COALESCE(SUM(CASE WHEN sm.from_location='外部'   AND sm.to_location='现场仓' THEN sm.qty ELSE 0 END),0) AS brought_in,
@@ -451,7 +457,6 @@ SELECT ep.owner_society_id, ep.id AS event_product_id, ep.product_code, ep.name,
          - SUM(CASE WHEN sm.from_location='现场仓' THEN sm.qty ELSE 0 END),0) AS on_site
 FROM event_products ep
 LEFT JOIN stock_movements sm ON sm.event_product_id = ep.id
-LEFT JOIN journals j ON j.id = sm.journal_id AND j.event_id = ep.event_id
 WHERE ep.event_id = ?
 GROUP BY ep.id
 ORDER BY ep.owner_society_id, ep.id
@@ -494,6 +499,38 @@ LEFT JOIN (
 WHERE o.event_id = ?
 GROUP BY ep.owner_society_id
 "#;
+
+/// `MONEY_SQL` 的同形查询，但按 `event_product_id` 分组——「货主明细」sheet 要按商品
+/// 给出原价 / 折让 / 净额。
+///
+/// `load_input` 里按社团分组的 `MONEY_SQL` **不能删**：`SocietyInput` 的
+/// `gross` / `allocated_net` 仍从它来。两段查询各有各的分组，不要用一段替掉两段——
+/// 按商品分组再在 Rust 里加总，会和按社团分组的取整结果出现分歧。
+const MONEY_BY_PRODUCT_SQL: &str = r#"
+SELECT ol.event_product_id,
+  COALESCE(SUM(ol.unit_price * (ol.qty - COALESCE(r.done_qty, 0))), 0)        AS gross,
+  COALESCE(SUM(ol.allocated_amount - COALESCE(r.done_alloc, 0)), 0)           AS allocated_net
+FROM order_lines ol
+JOIN orders o          ON o.id = ol.order_id AND o.status = 'completed'
+JOIN event_products ep ON ep.id = ol.event_product_id
+LEFT JOIN (
+  SELECT order_line_id,
+         SUM(qty)               AS done_qty,
+         SUM(allocated_amount)  AS done_alloc,
+         SUM(paid_amount)       AS done_paid,
+         SUM(refund_amount)     AS done_refund
+  FROM refunds GROUP BY order_line_id
+) r ON r.order_line_id = ol.id
+WHERE o.event_id = ?
+GROUP BY ol.event_product_id
+"#;
+
+#[derive(sqlx::FromRow)]
+struct MoneyByProductRow {
+    event_product_id: i64,
+    gross: i64,
+    allocated_net: i64,
+}
 
 /// 摊主自掏赠品：kind = `赠送` 的 journal 里 `社团往来:X ↔ 摊主自有` 的净额。
 /// 冲正条目的 kind 也是 `赠送`（`api/inventory.rs` 原样传回去），方向相反，
@@ -540,7 +577,7 @@ struct AdjustmentRow {
 ///
 /// 页面 JSON 和 `settlement.xlsx` 都走这里——「页面显示 1,170、导出写 1,150」
 /// 在结构上不可能发生。
-async fn load_input(state: &AppState, event_id: i64) -> ApiResult<SettlementInput> {
+pub(crate) async fn load_input(state: &AppState, event_id: i64) -> ApiResult<SettlementInput> {
     let event: Option<(String, String, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT name, event_date, stocktaken_at, reconciled_at FROM events WHERE id = ?",
     )
@@ -562,6 +599,13 @@ async fn load_input(state: &AppState, event_id: i64) -> ApiResult<SettlementInpu
         .await?;
 
     let money_rows: Vec<MoneyRow> = sqlx::query_as(MONEY_SQL)
+        .bind(event_id)
+        .fetch_all(&state.db)
+        .await?;
+
+    // 按商品分组的金额，只喂给「货主明细」sheet。一段查询一个分组，和上面
+    // 按社团分组的 `money_rows` 并存，谁也不替谁。
+    let product_money_rows: Vec<MoneyByProductRow> = sqlx::query_as(MONEY_BY_PRODUCT_SQL)
         .bind(event_id)
         .fetch_all(&state.db)
         .await?;
@@ -614,17 +658,28 @@ async fn load_input(state: &AppState, event_id: i64) -> ApiResult<SettlementInpu
         let goods: Vec<GoodsLine> = goods_rows
             .iter()
             .filter(|g| g.owner_society_id == society_id)
-            .map(|g| GoodsLine {
-                event_product_id: g.event_product_id,
-                product_code: g.product_code.clone(),
-                name: g.name.clone(),
-                brought_in: g.brought_in,
-                sold: g.sold,
-                gifted: g.gifted,
-                scrapped: g.scrapped,
-                variance: g.variance,
-                taken_back: g.taken_back,
-                on_site: g.on_site,
+            .map(|g| {
+                // 没有任何销售的商品在这段查询里不出现，三个字段都是 0。
+                let money = product_money_rows
+                    .iter()
+                    .find(|m| m.event_product_id == g.event_product_id);
+                let gross = Money::from_cents(money.map(|m| m.gross).unwrap_or(0));
+                let allocated = Money::from_cents(money.map(|m| m.allocated_net).unwrap_or(0));
+                GoodsLine {
+                    event_product_id: g.event_product_id,
+                    product_code: g.product_code.clone(),
+                    name: g.name.clone(),
+                    brought_in: g.brought_in,
+                    sold: g.sold,
+                    gifted: g.gifted,
+                    scrapped: g.scrapped,
+                    variance: g.variance,
+                    taken_back: g.taken_back,
+                    on_site: g.on_site,
+                    gross,
+                    lot_discount: gross - allocated,
+                    allocated,
+                }
             })
             .collect();
 
@@ -1115,6 +1170,27 @@ fn write_summary_sheet(
     let money_fmt = money_format();
     let mut row: u32 = 0;
 
+    // 导出的工作簿要认得出是哪场展会、手里这份是不是最新的。spec 8.1 的
+    // `last_changed_at` 正是「冻结后仍可追加垫付/调整/清点」的补救措施——
+    // 不写出来，那条补救就丢了。
+    worksheet.write_string_with_format(
+        row,
+        0,
+        format!("{} · {} · 结算单", report.event_name, report.event_date),
+        &header,
+    )?;
+    row += 1;
+    let mut meta = format!(
+        "生成于 {}；最后更新于 {}",
+        report.generated_at,
+        report.last_changed_at.as_deref().unwrap_or("（无记录）")
+    );
+    if !report.stocktaken {
+        meta.push_str("；未盘点，剩余数为账面推算");
+    }
+    worksheet.write_string_with_format(row, 0, meta, &header)?;
+    row += 2; // 空一行再接下面
+
     // warnings 非空时，在第一行写一条醒目的红色提示。结算单自相矛盾却安安静静地
     // 导出去，比不导出更坏。
     if !report.warnings.is_empty() {
@@ -1139,6 +1215,7 @@ fn write_summary_sheet(
         "垫付",
         "调整",
         "我应转给",
+        "备注",
     ];
     for (c, h) in headers.iter().enumerate() {
         worksheet.write_string_with_format(row, c as u16, *h, &header)?;
@@ -1161,6 +1238,23 @@ fn write_summary_sheet(
             write_money(worksheet, row, 1 + i as u16, *m, &money_fmt)?;
         }
         row += 1;
+
+        // spec 8.2 要求「【我垫付】/【调整】逐条列名目与金额」。社团看到
+        // 「垫付 400.00」却不知道是什么，正是母 spec 5.3 要避免的。
+        // 金额写进对应的合计列，调整的日期放「备注」列。
+        for a in &s.advances {
+            worksheet.write_string(row, 0, format!("  垫付：{}", a.label))?;
+            write_money(worksheet, row, 7, a.amount, &money_fmt)?;
+            row += 1;
+        }
+        for a in &s.adjustments {
+            worksheet.write_string(row, 0, format!("  调整：{}", a.label))?;
+            write_money(worksheet, row, 8, a.amount, &money_fmt)?;
+            if let Some(at) = &a.at {
+                worksheet.write_string(row, 10, at.as_str())?;
+            }
+            row += 1;
+        }
     }
 
     row += 1; // 空一行，下面是收摊清点栏
@@ -1201,6 +1295,7 @@ fn write_goods_sheet(
     worksheet.set_name("货主明细")?;
 
     let header = Format::new().set_bold();
+    let money_fmt = money_format();
     let headers = [
         "货主",
         "商品编号",
@@ -1212,6 +1307,9 @@ fn write_goods_sheet(
         "差异",
         "带回",
         "现场仓",
+        "原价",
+        "折让",
+        "净额",
     ];
     for (c, h) in headers.iter().enumerate() {
         worksheet.write_string_with_format(0, c as u16, *h, &header)?;
@@ -1235,6 +1333,11 @@ fn write_goods_sheet(
             for (i, q) in quantities.iter().enumerate() {
                 worksheet.write_number(row, 3 + i as u16, *q as f64)?;
             }
+            // spec 8.2/8.4：按商品给出金额。只给数量等于让社团自己去乘单价，
+            // 而 Lot 折让之后单价不等于成交价，乘出来是错的。
+            write_money(worksheet, row, 10, g.gross, &money_fmt)?;
+            write_money(worksheet, row, 11, g.lot_discount, &money_fmt)?;
+            write_money(worksheet, row, 12, g.allocated, &money_fmt)?;
             row += 1;
         }
     }
@@ -2647,9 +2750,10 @@ mod tests {
 
     #[tokio::test]
     async fn the_xlsx_is_a_real_workbook_with_four_sheets() {
-        // 不解析 xlsx 内容（要引一个读库，不值）。断言三件事：
-        // 状态码、Content-Type、以及 body 是个 zip（xlsx 就是 zip，魔数 PK\x03\x04）。
-        // 数字对不对由 Task 7 的纯函数测试和 Task 8 的端到端测试保证——
+        // 不解析 xlsx 内容（那要引一个读库）；但列出 zip 条目不需要解析器。
+        // 断言状态码、Content-Type、body 是个 zip，以及四个 worksheet 条目都在——
+        // 删掉任何一个 `write_*_sheet` 这条测试都会红。
+        // 数字对不对由 domain/settlement.rs 的纯函数测试和端到端测试保证——
         // 导出和页面渲染的是同一个 SettlementReport，这正是那样设计的理由。
         let (router, _dir, pool) = test_router_with().await;
         let (event_id, _, _) = seed_event_and_product(&pool).await;
@@ -2679,6 +2783,18 @@ mod tests {
             .unwrap();
         assert!(bytes.len() > 1000, "空文件");
         assert_eq!(&bytes[..4], b"PK\x03\x04", "xlsx 应当是个 zip");
+
+        let archive =
+            zip::ZipArchive::new(std::io::Cursor::new(bytes.to_vec())).expect("xlsx 应能当 zip 读");
+        let names: Vec<&str> = archive.file_names().collect();
+        for sheet in [
+            "xl/worksheets/sheet1.xml",
+            "xl/worksheets/sheet2.xml",
+            "xl/worksheets/sheet3.xml",
+            "xl/worksheets/sheet4.xml",
+        ] {
+            assert!(names.contains(&sheet), "缺 {sheet}，实际条目：{names:?}");
+        }
     }
 
     #[tokio::test]
