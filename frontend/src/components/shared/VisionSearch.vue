@@ -224,7 +224,7 @@ import { NButton, NTag } from 'naive-ui'
 
 import { searchByImage } from '@/services/vision'
 import { getImageUrl } from '@/services/url'
-import { useAlert } from '@/services/useAlert'
+import { useFeedback } from '@/composables/useFeedback'
 import { resizeImageFile } from '@/utils/upload'
 import { ApiRequestError, errorMessage, type Schemas } from '@/api/client'
 
@@ -506,8 +506,7 @@ async function doSearch() {
     const isTimeout = err instanceof ApiRequestError && err.message === '请求超时'
     const msg = translateVisionError(raw) || (isTimeout ? '搜索超时，请重试' : '搜索失败')
     errorMsg.value = msg
-    const { showError } = useAlert()
-    showError(msg)
+    useFeedback().alert({ title: '错误', content: msg, type: 'error' })
     emit('search-error', msg)
   } finally {
     isSearching.value = false

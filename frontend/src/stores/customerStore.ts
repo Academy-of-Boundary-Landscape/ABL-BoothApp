@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { api, errorMessage, unwrap, type Schemas } from '@/api/client'
-import { useAlert } from '@/services/useAlert'
+import { useFeedback } from '@/composables/useFeedback'
 import { getImageUrl } from '@/services/url'
 import { summarizeQuote, type QuoteSummary } from '@/utils/quote'
 import { cents, type Cents } from '@/utils/money'
@@ -89,8 +89,11 @@ export const useCustomerStore = defineStore('customer', () => {
       if (existingItem.quantity < product.onsite_qty) {
         existingItem.quantity++
       } else {
-        const { showError } = useAlert()
-        showError(`抱歉，"${product.name}" 库存不足！`)
+        useFeedback().alert({
+          title: '错误',
+          content: `抱歉，"${product.name}" 库存不足！`,
+          type: 'error',
+        })
       }
     } else {
       if (product.onsite_qty > 0) {

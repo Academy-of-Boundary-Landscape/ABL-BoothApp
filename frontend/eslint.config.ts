@@ -37,8 +37,10 @@ export default defineConfigWithVueTs(
     // vue/multi-word-component-names 是给「可复用组件」防止和原生/第三方元素撞名的规则。
     // About.vue / Help.vue 是路由级页面组件，只通过 vue-router 加载，从不作为 <xxx> 标签
     // 被引用，撞名风险为零；改名要联动改 router，不值得。
-    name: 'app/single-word-view-names',
-    files: ['src/views/About.vue', 'src/views/Help.vue'],
+    // Money.vue 是 ④-1 原语层里名字固定的金额原语（spec §5.7），「Money」本身不易与
+    // 原生/第三方标签混淆，内部仍可 `import { Money }` 正常使用。
+    name: 'app/single-word-component-names',
+    files: ['src/views/About.vue', 'src/views/Help.vue', 'src/components/ui/Money.vue'],
     rules: {
       'vue/multi-word-component-names': 'off',
     },

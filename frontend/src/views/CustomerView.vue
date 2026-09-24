@@ -297,7 +297,7 @@
 </template>
 
 <script setup lang="ts">
-import { useAlert } from '@/services/useAlert'
+import { useFeedback } from '@/composables/useFeedback'
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useCustomerStore } from '@/stores/customerStore'
 import { useConnectionCheck } from '@/composables/useConnectionCheck'
@@ -324,14 +324,18 @@ watch(isVisionMode, () => {
 })
 
 function onVisionSelect(hit: Schemas['VisionSearchResult']) {
-  const { showError } = useAlert()
+  const fb = useFeedback()
   const product = (store.products || []).find((p) => p.master_product_id === hit.master_product_id)
   if (!product) {
-    showError(`未找到商品「${hit.name}」，可能不在本场展会中`)
+    fb.alert({
+      title: '错误',
+      content: `未找到商品「${hit.name}」，可能不在本场展会中`,
+      type: 'error',
+    })
     return
   }
   if (product.onsite_qty <= 0) {
-    showError(`「${product.name}」已售罄`)
+    fb.alert({ title: '错误', content: `「${product.name}」已售罄`, type: 'error' })
     return
   }
   store.addToCart(product)
@@ -535,7 +539,7 @@ watch(
 
 // ===== 下单 =====
 async function handleCheckout() {
-  const { showError } = useAlert()
+  const fb = useFeedback()
   if (isCheckingOut.value) return
 
   const itemCount = store.cartItemCount
@@ -559,7 +563,11 @@ async function handleCheckout() {
           store.fetchProductsForEvent()
         }
       } catch (error) {
-        showError((error instanceof Error && error.message) || '下单失败')
+        fb.alert({
+          title: '错误',
+          content: (error instanceof Error && error.message) || '下单失败',
+          type: 'error',
+        })
         store.clearCart()
         store.fetchProductsForEvent()
       } finally {

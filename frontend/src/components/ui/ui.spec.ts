@@ -1,0 +1,239 @@
+import { describe, it, expect, vi } from 'vitest'
+import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
+import { createPinia } from 'pinia'
+import { NButton, NCard, NSpin } from 'naive-ui'
+import AsyncState from './AsyncState.vue'
+import EmptyState from './EmptyState.vue'
+import AppModal from './AppModal.vue'
+import Money from './Money.vue'
+import PageShell from './PageShell.vue'
+import SectionCard from './SectionCard.vue'
+import StatTile from './StatTile.vue'
+import HelpBubble from '@/components/shared/HelpBubble.vue'
+import { cents } from '@/utils/money'
+
+const mountOpts = { global: { plugins: [createPinia()] } }
+const pageShellOpts = {
+  global: {
+    plugins: [createPinia()],
+    components: { RouterLink: { template: '<a><slot /></a>' } },
+  },
+}
+
+// Naive 的 clickoutside（evtd）在 mouseup 上判定，所以遮罩点击要发 mousedown + mouseup。
+function clickMask(el: Element) {
+  el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+  el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+}
+
+describe('AsyncState', () => {
+  const slots = { default: '<p class="ok">ok</p>', empty: '<p class="e">empty</p>' }
+
+  it('loading 优先', () => {
+    const w = mount(AsyncState, {
+      props: { loading: true, error: 'x', empty: true },
+      slots,
+      ...mountOpts,
+    })
+    expect(w.find('.ok').exists()).toBe(false)
+    expect(w.find('.e').exists()).toBe(false)
+    expect(w.findComponent(NSpin).exists()).toBe(true)
+  })
+
+  it('error wins over empty', () => {
+    const w = mount(AsyncState, {
+      props: { error: '加载失败', empty: true },
+      slots,
+      ...mountOpts,
+    })
+    expect(w.text()).toContain('加载失败')
+    expect(w.find('.e').exists()).toBe(false)
+  })
+
+  it('empty 渲染 empty 插槽', () => {
+    const w = mount(AsyncState, { props: { empty: true }, slots, ...mountOpts })
+    expect(w.find('.e').exists()).toBe(true)
+  })
+
+  it('正常渲染 default', () => {
+    const w = mount(AsyncState, { slots, ...mountOpts })
+    expect(w.find('.ok').exists()).toBe(true)
+  })
+
+  it('没有 retry 监听时不显示重试', () => {
+    const w = mount(AsyncState, { props: { error: 'x' }, ...mountOpts })
+    expect(w.text()).not.toContain('重试')
+  })
+
+  it('有 retry 监听时显示并触发', async () => {
+    const onRetry = vi.fn()
+    const w = mount(AsyncState, { props: { error: 'x', onRetry }, ...mountOpts })
+    await w.find('button').trigger('click')
+    expect(onRetry).toHaveBeenCalledOnce()
+  })
+
+  it('缺省 empty 插槽渲染紧凑 EmptyState', () => {
+    const w = mount(AsyncState, { props: { empty: true }, ...mountOpts })
+    expect(w.text()).toContain('暂无数据')
+  })
+})
+
+describe('AppModal', () => {
+  const base = {
+    props: { show: true },
+    global: { plugins: [createPinia()] },
+    attachTo: document.body,
+  }
+
+  it('关闭按钮 emit update:show false', async () => {
+    const w = mount(AppModal, base)
+    await w.findComponent(NButton).trigger('click')
+    expect(w.emitted('update:show')?.[0]).toEqual([false])
+    w.unmount()
+  })
+
+  it('maskClosable=false 时点遮罩不关', async () => {
+    const w = mount(AppModal, { ...base, props: { show: true, maskClosable: false } })
+    await nextTick()
+    const mask = document.querySelector('.n-modal-mask')
+    expect(mask).not.toBeNull()
+    clickMask(mask!)
+    await nextTick()
+    expect(w.emitted('update:show')).toBeUndefined()
+    w.unmount()
+  })
+
+  it('maskClosable 默认点遮罩关闭', async () => {
+    const w = mount(AppModal, base)
+    await nextTick()
+    const mask = document.querySelector('.n-modal-mask')
+    expect(mask).not.toBeNull()
+    clickMask(mask!)
+    await nextTick()
+    expect(w.emitted('update:show')?.[0]).toEqual([false])
+    w.unmount()
+  })
+
+  it('size 映射宽度 480/640/960', () => {
+    const cases = [
+      ['sm', '480px'],
+      ['md', '640px'],
+      ['lg', '960px'],
+    ] as const
+    for (const [size, px] of cases) {
+      const w = mount(AppModal, { ...base, props: { show: true, size } })
+      expect(w.findComponent(NCard).attributes('style')).toContain(px)
+      w.unmount()
+    }
+  })
+})
+
+describe('Money', () => {
+  it.each([
+    [0, '¥0.00'],
+    [-150, '¥-1.50'],
+    [12345, '¥123.45'],
+  ])('value %i → %s', (v, want) => {
+    const w = mount(Money, { props: { value: cents(v) }, ...mountOpts })
+    expect(w.text()).toBe(want)
+  })
+
+  it('signed 给正数加 +', () => {
+    const w = mount(Money, { props: { value: cents(150), signed: true }, ...mountOpts })
+    expect(w.text()).toBe('+¥1.50')
+  })
+
+  it('signed 不给负数加 +', () => {
+    const w = mount(Money, { props: { value: cents(-150), signed: true }, ...mountOpts })
+    expect(w.text()).toBe('¥-1.50')
+  })
+
+  it('strike 加删除线类', () => {
+    const w = mount(Money, { props: { value: cents(150), strike: true }, ...mountOpts })
+    expect(w.find('.money').classes()).toContain('strike')
+  })
+
+  it('null 显示 --', () => {
+    const w = mount(Money, { props: { value: null }, ...mountOpts })
+    expect(w.text()).toBe('--')
+  })
+})
+
+describe('PageShell', () => {
+  it('help 传入时渲染 HelpBubble', () => {
+    const w = mount(PageShell, { props: { title: 'T', help: 'events' }, ...pageShellOpts })
+    expect(w.findComponent(HelpBubble).exists()).toBe(true)
+  })
+
+  it('width=wide 用 --page-wide', () => {
+    const w = mount(PageShell, { props: { title: 'T', width: 'wide' }, ...pageShellOpts })
+    expect(w.find('.page-shell').attributes('style')).toContain('--page-wide')
+  })
+
+  it('width 默认 content', () => {
+    const w = mount(PageShell, { props: { title: 'T' }, ...pageShellOpts })
+    expect(w.find('.page-shell').attributes('style')).toContain('--page-content')
+  })
+
+  it('title 渲染为 h1', () => {
+    const w = mount(PageShell, { props: { title: '展会管理' }, ...pageShellOpts })
+    expect(w.find('h1').text()).toBe('展会管理')
+  })
+})
+
+describe('SectionCard', () => {
+  it('collapsible 点标题切换 collapsed 并 emit', async () => {
+    const onUpdate = vi.fn()
+    const w = mount(SectionCard, {
+      props: { title: '区块', collapsible: true, collapsed: false, 'onUpdate:collapsed': onUpdate },
+      slots: { default: '<p class="body">内容</p>' },
+      ...mountOpts,
+    })
+    expect(w.find('.body').isVisible()).toBe(true)
+    expect(w.find('.section-card__header').attributes('aria-expanded')).toBe('true')
+    await w.find('.section-card__header').trigger('click')
+    expect(onUpdate).toHaveBeenCalledWith(true)
+    expect(w.find('.section-card__header').attributes('aria-expanded')).toBe('false')
+  })
+
+  it('非 collapsible 点标题不 emit', async () => {
+    const onUpdate = vi.fn()
+    const w = mount(SectionCard, {
+      props: { title: '区块', 'onUpdate:collapsed': onUpdate },
+      ...mountOpts,
+    })
+    await w.find('.section-card__header').trigger('click')
+    expect(onUpdate).not.toHaveBeenCalled()
+  })
+})
+
+describe('StatTile', () => {
+  it('value 插槽优先于 value prop', () => {
+    const w = mount(StatTile, {
+      props: { label: '合计', value: '¥10' },
+      slots: { value: '<b class="slot-val">¥20</b>' },
+      ...mountOpts,
+    })
+    expect(w.find('.slot-val').text()).toBe('¥20')
+    expect(w.text()).not.toContain('¥10')
+  })
+})
+
+describe('EmptyState', () => {
+  it('compact 不渲染图标', () => {
+    const w = mount(EmptyState, { props: { title: '暂无数据', compact: true }, ...mountOpts })
+    expect(w.find('.empty-state__icon').exists()).toBe(false)
+    expect(w.text()).toContain('暂无数据')
+  })
+
+  it('默认渲染图标与 action 插槽', () => {
+    const w = mount(EmptyState, {
+      props: { title: '空' },
+      slots: { action: '<button class="do">创建</button>' },
+      ...mountOpts,
+    })
+    expect(w.find('.empty-state__icon').exists()).toBe(true)
+    expect(w.find('.do').exists()).toBe(true)
+  })
+})
