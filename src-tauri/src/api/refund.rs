@@ -13,13 +13,15 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    routing::post,
-    Json, Router,
+    Json,
 };
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::{
     api::guard::{check_read_permission, check_write_permission, require_event_open},
+    api::openapi::ApiErrorBody,
     domain::{
         allocation::apportion,
         channel::normalize,
@@ -33,29 +35,22 @@ use crate::{
     utils::security::Claims,
 };
 
-/// ③b 过渡：本模块的路由还没标 utoipa 注解，整体包进 OpenApiRouter——路由照常工作，
-/// 只是文档里没有它的路径。阶段 2 迁移本模块时改为 `routes!(...)` 并删掉 `legacy_router`。
-pub fn router() -> utoipa_axum::router::OpenApiRouter<AppState> {
-    utoipa_axum::router::OpenApiRouter::from(legacy_router())
+/// 退货路由：同一路径的 POST（创建）与 GET（列表）放在同一个 `routes!` 里。
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new().routes(routes!(create_refund, list_refunds))
 }
 
-fn legacy_router() -> Router<AppState> {
-    Router::new().route(
-        "/events/{event_id}/orders/{order_id}/refunds",
-        post(create_refund).get(list_refunds),
-    )
-}
-
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct RefundRequest {
     channel: String,
     /// 实际退给顾客的总额（分）。省略 = 按各行实付全额退。
     #[serde(default)]
+    #[schema(value_type = Option<Money>)]
     refund_amount: Option<i64>,
     lines: Vec<RefundLineRequest>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct RefundLineRequest {
     order_line_id: i64,
     qty: i64,
@@ -63,11 +58,14 @@ pub struct RefundLineRequest {
     destination: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct RefundResponse {
     journal_id: i64,
+    #[schema(value_type = Money)]
     refund_amount: i64,
+    #[schema(value_type = Money)]
     allocated_total: i64,
+    #[schema(value_type = Money)]
     paid_total: i64,
 }
 
@@ -82,6 +80,29 @@ struct Part {
     destination: Location,
 }
 
+/// 创建一笔退货：逐行冲销货主应得、手工折让与顾客退款，记一条退货 journal。
+///
+/// 只能退**已完成**的订单；待处理/已取消的订单会被拒绝。展会已结算（冻结）后
+/// `require_event_open` 会挡住退货。
+#[utoipa::path(
+    post,
+    path = "/events/{event_id}/orders/{order_id}/refunds",
+    tag = "refund",
+    params(
+        ("event_id" = i64, Path, description = "展会 id"),
+        ("order_id" = i64, Path, description = "订单 id"),
+    ),
+    request_body = RefundRequest,
+    security(("bearer" = [])),
+    responses(
+        (status = 201, body = RefundResponse, description = "退货已记账"),
+        (status = 400, body = ApiErrorBody, description = "渠道为空、退行重复、去向不认识、数量非正、退款为负或超过实付、订单状态不对、订单行不属于该订单"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "订单不存在或展会不存在"),
+        (status = 409, body = ApiErrorBody, description = "可退数量不足、没有本社团、或展会已结算"),
+    ),
+)]
 async fn create_refund(
     State(state): State<AppState>,
     claims: Claims,
@@ -309,13 +330,14 @@ async fn create_refund(
     ))
 }
 
-#[derive(Serialize, sqlx::FromRow)]
+#[derive(Serialize, sqlx::FromRow, ToSchema)]
 pub struct RefundHistoryRow {
     id: i64,
     order_line_id: i64,
     product_code: String,
     name: String,
     qty: i64,
+    #[schema(value_type = Money)]
     refund_amount: i64,
     channel: String,
     destination: String,
@@ -324,7 +346,7 @@ pub struct RefundHistoryRow {
 
 /// 可退的行。**同一个商品可能出现多行**（按 Lot 归属拆的），
 /// 所以前端不要按 `event_product_id` 去重（②-2 交接契约第 3 条）。
-#[derive(Serialize, sqlx::FromRow)]
+#[derive(Serialize, sqlx::FromRow, ToSchema)]
 pub struct RefundableLine {
     order_line_id: i64,
     event_product_id: i64,
@@ -334,16 +356,38 @@ pub struct RefundableLine {
     qty: i64,
     refunded_qty: i64,
     remaining_qty: i64,
+    #[schema(value_type = Money)]
     remaining_allocated: i64,
+    #[schema(value_type = Money)]
     remaining_paid: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct RefundListResponse {
     history: Vec<RefundHistoryRow>,
     lines: Vec<RefundableLine>,
 }
 
+/// 一张订单的退货历史，以及每一行的可退余量。
+///
+/// 按 `order_lines` 逐行返回——同一个商品可能因套装归属拆成多行，前端不要按
+/// `event_product_id` 去重。订单不属于这场展会时返回 404（而不是空列表）。
+#[utoipa::path(
+    get,
+    path = "/events/{event_id}/orders/{order_id}/refunds",
+    tag = "refund",
+    params(
+        ("event_id" = i64, Path, description = "展会 id"),
+        ("order_id" = i64, Path, description = "订单 id"),
+    ),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = RefundListResponse, description = "退货历史与可退行"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "订单不存在或不属于这场展会"),
+    ),
+)]
 async fn list_refunds(
     State(state): State<AppState>,
     claims: Claims,
@@ -1207,5 +1251,180 @@ mod tests {
         let with_lot = lines.iter().filter(|l| !l["lot_name"].is_null()).count();
         let without_lot = lines.iter().filter(|l| l["lot_name"].is_null()).count();
         assert_eq!((with_lot, without_lot), (1, 1), "一行有套装名、一行没有");
+    }
+}
+
+#[cfg(test)]
+mod shape_tests {
+    use crate::test_support::{
+        admin_token, json_request, place, read_json, seed_event_and_product, seed_lot_repeat,
+        shape_of, test_router_with,
+    };
+    use axum::http::StatusCode;
+    use axum::Router;
+    use serde_json::{json, Value};
+    use tower::ServiceExt;
+
+    /// 一张已完成的订单，外加一笔退货历史和一行套装。
+    ///
+    /// 套装是刻意的：`RefundableLine::lot_name` 是响应里唯一的可选字段，
+    /// 没有套装时它永远是 `null`，形状快照就钉不住它。返回
+    /// `(router, dir, event_id, order_id, 还有剩余可退的套装行 id)`。
+    async fn seeded() -> (Router, tempfile::TempDir, i64, i64, i64) {
+        let (router, dir, pool) = test_router_with().await;
+        let (event_id, ep_a, ep_b) = seed_event_and_product(&pool).await;
+        // 3 件 A + 1 件 B，其中 2 件 A 走套装 ⇒ 同一个商品拆成「套装内 / 散买」两行。
+        seed_lot_repeat(&pool, event_id, "任选2件50", 2, 5000, &[ep_a]).await;
+        let order_id = place(
+            &router,
+            event_id,
+            json!([
+                {"product_id": ep_a, "quantity": 3},
+                {"product_id": ep_b, "quantity": 1}
+            ]),
+        )
+        .await;
+        let (s, _) = call(
+            &router,
+            "PUT",
+            &format!("/api/events/{event_id}/orders/{order_id}/status"),
+            Some(&admin_token()),
+            json!({"status": "completed", "channel": "微信"}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK, "完成订单失败");
+
+        // 退套装行的 1 件，让 `history` 非空；套装行还剩 1 件，成功路径继续用。
+        let line_id: i64 =
+            sqlx::query_scalar("SELECT id FROM order_lines WHERE order_id = ? ORDER BY id LIMIT 1")
+                .bind(order_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let (s, _) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/orders/{order_id}/refunds"),
+            Some(&admin_token()),
+            json!({"channel": "微信",
+                   "lines": [{"order_line_id": line_id, "qty": 1, "destination": "现场仓"}]}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::CREATED, "种子退货失败");
+
+        (router, dir, event_id, order_id, line_id)
+    }
+
+    async fn call(
+        router: &Router,
+        method: &str,
+        uri: &str,
+        token: Option<&str>,
+        body: Value,
+    ) -> (StatusCode, Value) {
+        let res = router
+            .clone()
+            .oneshot(json_request(method, uri, token, body))
+            .await
+            .unwrap();
+        let status = res.status();
+        (status, read_json(res).await)
+    }
+
+    #[tokio::test]
+    async fn shape_create_refund() {
+        let (router, _dir, event_id, order_id, line_id) = seeded().await;
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/orders/{order_id}/refunds"),
+            Some(&admin_token()),
+            json!({"channel": "微信",
+                   "lines": [{"order_line_id": line_id, "qty": 1, "destination": "损耗"}]}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::CREATED);
+        assert_eq!(
+            shape_of(&body),
+            json!({
+                "journal_id": "int",
+                "refund_amount": "int",
+                "allocated_total": "int",
+                "paid_total": "int",
+            })
+        );
+
+        // 错误分支：一行都不选走 400，错误体是标准的 {"error": "..."}。
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/orders/{order_id}/refunds"),
+            Some(&admin_token()),
+            json!({"channel": "微信", "lines": []}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::BAD_REQUEST, json!({"error": "string"}))
+        );
+
+        // 错误分支：上一笔已经把这行退光，再退是 409。
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/orders/{order_id}/refunds"),
+            Some(&admin_token()),
+            json!({"channel": "微信",
+                   "lines": [{"order_line_id": line_id, "qty": 5, "destination": "现场仓"}]}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::CONFLICT, json!({"error": "string"}))
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_list_refunds() {
+        let (router, _dir, event_id, order_id, _) = seeded().await;
+        let (s, body) = call(
+            &router,
+            "GET",
+            &format!("/api/events/{event_id}/orders/{order_id}/refunds"),
+            Some(&admin_token()),
+            json!(null),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(
+            shape_of(&body),
+            json!({
+                "history": [{
+                    "id": "int", "order_line_id": "int", "product_code": "string",
+                    "name": "string", "qty": "int", "refund_amount": "int",
+                    "channel": "string", "destination": "string", "occurred_at": "string",
+                }],
+                "lines": [{
+                    "order_line_id": "int", "event_product_id": "int",
+                    "product_code": "string", "name": "string", "lot_name": "null|string",
+                    "qty": "int", "refunded_qty": "int", "remaining_qty": "int",
+                    "remaining_allocated": "int", "remaining_paid": "int",
+                }],
+            })
+        );
+
+        // 错误分支：别的展会读这张订单 ⇒ 404，错误体是标准的 {"error": "..."}。
+        let (s, body) = call(
+            &router,
+            "GET",
+            &format!("/api/events/2/orders/{order_id}/refunds"),
+            Some(&admin_token()),
+            json!(null),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::NOT_FOUND, json!({"error": "string"}))
+        );
     }
 }
