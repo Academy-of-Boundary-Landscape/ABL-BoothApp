@@ -17,7 +17,8 @@
   `import { api, unwrap, errorMessage } from '@/api/client'`；`x = await unwrap(api.GET('/path/{id}', { params: { path: { id } } }))`
   （路径不带 `/api`；FormData 作 body 时允许 `body: fd as never` 并注释「multipart」；二进制下载加 `parseAs: 'blob'`）。
 - 错误信息：`err.response?.data?.error || '文案'` → `errorMessage(err, '文案')`，**文案一字不改**。
-- 金额：类型是 `Cents`（`@/utils/money`）；显示走 `formatYuan` / `formatCents`；用户输入 → `toCents()`。
+- 金额：类型是 `Cents`（`@/utils/money`）；显示走 `formatYuan` / `formatCents`；用户输入的元 → `toCents()`；
+  对 Cents 做运算（合计、差额）后用 `cents(n)` 标回。不要自己写 `as Cents`。
 - naive-ui 类型从 `naive-ui` 导入（`DataTableColumns<Row>`、`FormInst`、`SelectOption`、`FormRules` 等）；模板 ref：`ref<FormInst | null>(null)`。
 - 禁止 `any`；`@ts-expect-error` 只限第三方类型缺陷并写原因。
 - **行为零变化**。不要重构、不要拆组件、不要改样式和文案。不要起 dev server，不要 `npm install`。

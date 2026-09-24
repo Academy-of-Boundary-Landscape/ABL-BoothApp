@@ -23,7 +23,8 @@ const list = await unwrap(api.GET('/events', { params: { query: { status: 'ongoi
 - FormData 直接作为 `body` 传（类型上可能需要 `body: fd as never`——**这是唯一允许的 `as`**，并在旁边注释「multipart」）。
   原始字节要显式带 `headers: { 'Content-Type': 'application/octet-stream' }`。二进制下载加 `parseAs: 'blob'`。
 - state 类型直接用生成的 schema：`ref<Schemas['EventResponse'][]>([])`，**不要**手写重复的 interface。
-- 金额字段在 schema 里已经是 `Cents`（`@/utils/money`）；需要从用户输入构造金额时用 `toCents()`。
+- 金额字段在 schema 里已经是 `Cents`（`@/utils/money`）。用户输入的**元** → `toCents(yuan)`；
+  对 Cents 做 + − × ÷（合计、差额）之后结果退化成 number，用 `cents(n)` 标回 Cents。不要自己写 `as Cents`。
 
 ## 规则
 - 用 `git mv x.js x.ts` 改名（被沙箱拒绝就用普通 `mv`）。
