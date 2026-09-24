@@ -64,7 +64,7 @@ pub struct Event {
 // ==========================================
 // 社团（货主的单位）
 // ==========================================
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct Society {
     pub id: i64,
     pub name: String,
