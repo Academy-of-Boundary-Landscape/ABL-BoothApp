@@ -8,4 +8,5 @@ pub mod channel;
 pub mod ledger;
 pub mod money;
 pub mod pricing;
+pub mod settlement;
 pub mod solver;
