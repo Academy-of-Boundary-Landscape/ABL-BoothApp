@@ -67,6 +67,14 @@ pub struct LotDef {
     pub pick_count: i64,
     pub total_price: Money,
     pub candidates: Vec<i64>,
+    /// 一个套装实例里，同一个候选能不能算多件。
+    ///
+    /// `false`（默认）= 每种最多 1 件，「甲+乙合购」「任选 3 本不同的」是这一类。
+    /// `true` = 不限，「同一本买 3 本 80」「任选 3 本、同款也行」是这一类。
+    ///
+    /// **求解器推不出摊主想要哪一种**，所以它必须是输入。少了它，
+    /// 「候选 {114 元, 33 元} 任选 2 件 100 元」会被拿 2 件 114 的去薅。
+    pub allow_repeat: bool,
 }
 
 /// 求解结果里的一个 Lot **实例**。同一个 Lot 可以出现多次
@@ -106,12 +114,17 @@ enum Choice {
 ///
 /// 「按 cursor 单调推进」保证每个多重集**只被枚举一次**——不这么做的话
 /// (甲1,乙2) 和 (乙2,甲1) 会各算一遍。
+///
+/// `allow_repeat` 决定同一个位置能不能出多件；`forced` 是 `best()` 里已经被强制
+/// 拿走一件的那个位置（它一件都不能再出），两者配合见下面的 `max`。
 #[allow(clippy::too_many_arguments)]
 fn enumerate_picks(
     positions: &[usize],
     state: &[i64],
     need: i64,
     cursor: usize,
+    allow_repeat: bool,
+    forced: usize,
     current: &mut Vec<(usize, i64)>,
     out: &mut Vec<Vec<(usize, i64)>>,
     steps: &mut u64,
@@ -128,7 +141,15 @@ fn enumerate_picks(
         return Ok(());
     }
     let pos = positions[cursor];
-    let max = state[pos].min(need);
+    // 不允许重复时每种最多 1 件；而 `forced` 那一件已经在 best() 里被强制拿走了，
+    // 所以它一件都不能再出（`state` 传进来时它已经减过 1，减不能代替这条约束）。
+    let max = if allow_repeat {
+        state[pos].min(need)
+    } else if pos == forced {
+        0
+    } else {
+        state[pos].min(need).min(1)
+    };
     for take in 0..=max {
         if take > 0 {
             current.push((pos, take));
@@ -138,6 +159,8 @@ fn enumerate_picks(
             state,
             need - take,
             cursor + 1,
+            allow_repeat,
+            forced,
             current,
             out,
             steps,
@@ -200,6 +223,8 @@ impl Search<'_> {
                 &base,
                 need,
                 0,
+                self.lots[li].allow_repeat,
+                first,
                 &mut current,
                 &mut combos,
                 &mut self.steps,
@@ -246,11 +271,18 @@ pub fn solve(cart: &[CartLine], lots: &[LotDef]) -> ApiResult<Solution> {
     let usable: Vec<&LotDef> = lots
         .iter()
         .filter(|lot| {
-            let avail: i64 = lot
-                .candidates
-                .iter()
-                .filter_map(|c| in_cart.get(c).map(|l| l.qty))
-                .sum();
+            let avail: i64 = if lot.allow_repeat {
+                lot.candidates
+                    .iter()
+                    .filter_map(|c| in_cart.get(c).map(|l| l.qty))
+                    .sum()
+            } else {
+                // 每种最多 1 件，所以能凑出来的上限是「购物车里有几种候选」。
+                lot.candidates
+                    .iter()
+                    .filter(|c| in_cart.contains_key(c))
+                    .count() as i64
+            };
             lot.pick_count > 0 && avail >= lot.pick_count
         })
         .collect();
@@ -396,6 +428,9 @@ mod tests {
     }
 
     /// 造一个 Lot。`candidates` 是 event_product_id 列表。
+    ///
+    /// 默认 `allow_repeat: false`（每种最多 1 件）——**这是模型的默认语义**，
+    /// 所以绝大多数测试用这个 helper。需要「同款能拿多件」的测试用 `lot_repeat`。
     fn lot(id: i64, pick: i64, cents: i64, candidates: &[i64]) -> LotDef {
         LotDef {
             id,
@@ -403,6 +438,15 @@ mod tests {
             pick_count: pick,
             total_price: Money::from_cents(cents),
             candidates: candidates.to_vec(),
+            allow_repeat: false,
+        }
+    }
+
+    /// 同上，但允许同一个候选在一个套装实例里拿多件。
+    fn lot_repeat(id: i64, pick: i64, cents: i64, candidates: &[i64]) -> LotDef {
+        LotDef {
+            allow_repeat: true,
+            ..lot(id, pick, cents, candidates)
         }
     }
 
@@ -452,9 +496,10 @@ mod tests {
 
     #[test]
     fn the_same_lot_applies_twice_when_the_cart_allows() {
-        // 「任选 3 本 100」买 6 本 = 200，不是 100
+        // 「任选 3 本 100」买 6 本 = 200，不是 100。
+        // 候选只有一种、任选 3 件 ⇒ 必须显式允许同款重复才成立。
         let cart = [line(1, 6, 4000)];
-        let lots = [lot(7, 3, 10000, &[1])];
+        let lots = [lot_repeat(7, 3, 10000, &[1])];
         let sol = solve(&cart, &lots).unwrap();
         assert_eq!(sol.solved_total, Money::from_cents(20000));
         assert_eq!(sol.lots.len(), 2);
@@ -506,20 +551,61 @@ mod tests {
     #[test]
     fn an_oversized_cart_is_refused_rather_than_hanging() {
         // /quote 是公开未鉴权端点，Tauri 进程和 UI 是同一个进程——CPU 打满就是界面卡死。
+        // 候选只有一种、任选 3 件 ⇒ 这条依赖同款重复；改成不允许重复它会被提前判为
+        // 凑不出而直接返回，绕开了这里要测的件数上限守卫。
         let cart = [line(1, 301, 100)];
-        let lots = [lot(7, 3, 200, &[1])];
+        let lots = [lot_repeat(7, 3, 200, &[1])];
         let err = solve(&cart, &lots).unwrap_err();
         assert!(matches!(err, ApiError::BadRequest(_)));
     }
 
     #[test]
     fn items_outside_every_lot_do_not_enter_the_search_space() {
-        // 不参与任何 Lot 的商品按原价固定，不该把状态空间撑爆
+        // 不参与任何 Lot 的商品按原价固定，不该把状态空间撑爆。
+        // 候选只有一种、任选 2 件 ⇒ 这条依赖同款重复，必须显式允许。
         let cart = [line(1, 2, 4000), line(99, 1000, 100)];
-        let lots = [lot(7, 2, 6000, &[1])];
+        let lots = [lot_repeat(7, 2, 6000, &[1])];
         let sol = solve(&cart, &lots).unwrap();
         assert_eq!(sol.solved_total, Money::from_cents(6000 + 100_000));
         assert_eq!(sol.lots.len(), 1);
         assert_eq!(sol.leftovers, vec![(99, 1000)]);
+    }
+
+    #[test]
+    fn a_fixed_bundle_is_not_satisfied_by_two_of_the_same_item() {
+        // 2026-09-24 真机验出来的缺陷。候选 {nl 114, shit 33}、任选 2 件、套装 100。
+        // 摊主想说「nl+shit 一起 100」。买 2×nl + 1×shit 时，
+        // 「拿 2 件 nl 进套装」= 133 曾经胜出——那不是摊主的意思。
+        let cart = [line(1, 2, 11400), line(2, 1, 3300)];
+        let lots = [lot(7, 2, 10000, &[1, 2])]; // allow_repeat = false
+        let sol = solve(&cart, &lots).unwrap();
+        assert_eq!(
+            sol.solved_total,
+            Money::from_cents(21400),
+            "套装 100 + 多出来那件 nl 原价 114"
+        );
+        assert_eq!(sol.lots.len(), 1);
+        assert_eq!(sol.lots[0].members, vec![(1, 1), (2, 1)], "每种恰好 1 件");
+        assert_eq!(sol.leftovers, vec![(1, 1)]);
+    }
+
+    #[test]
+    fn the_same_bundle_with_repeat_allowed_still_takes_two_of_one() {
+        // 同样的输入，勾上「可以拿同款」之后行为回到原样——这是摊主主动选的。
+        let cart = [line(1, 2, 11400), line(2, 1, 3300)];
+        let lots = [lot_repeat(7, 2, 10000, &[1, 2])]; // allow_repeat = true
+        let sol = solve(&cart, &lots).unwrap();
+        assert_eq!(sol.solved_total, Money::from_cents(13300));
+        assert_eq!(sol.lots[0].members, vec![(1, 2)]);
+    }
+
+    #[test]
+    fn a_no_repeat_lot_needs_as_many_distinct_candidates_as_it_picks() {
+        // 候选只有一种、任选 3 件、不允许重复 → 永远凑不出，不该进搜索空间。
+        let cart = [line(1, 5, 4000)];
+        let lots = [lot(7, 3, 10000, &[1])];
+        let sol = solve(&cart, &lots).unwrap();
+        assert_eq!(sol.solved_total, Money::from_cents(20000), "5 件全按原价");
+        assert!(sol.lots.is_empty());
     }
 }

@@ -150,6 +150,8 @@ pub async fn load_lots(conn: &mut SqliteConnection, event_id: i64) -> ApiResult<
                 pick_count,
                 total_price: Money::from_cents(total_price),
                 candidates: vec![candidate],
+                // Task 3 会从 `lots.allow_repeat` 读；这里先保住 Task 2 的编译。
+                allow_repeat: false,
             }),
         }
     }
@@ -341,6 +343,7 @@ mod tests {
             pick_count: 2,
             total_price: Money::from_cents(4000),
             candidates: vec![1, 2],
+            allow_repeat: false,
         }];
         let priced = price_cart(&cart, &lots).unwrap();
         assert_eq!(priced.gross, Money::from_cents(5000));
@@ -362,6 +365,7 @@ mod tests {
             pick_count: 2,
             total_price: Money::from_cents(6000),
             candidates: vec![1],
+            allow_repeat: true,
         }];
         let priced = price_cart(&cart, &lots).unwrap();
         assert_eq!(priced.gross, Money::from_cents(12000));
@@ -401,6 +405,7 @@ mod tests {
             pick_count: 3,
             total_price: Money::from_cents(10000),
             candidates: vec![1, 2, 3, 4],
+            allow_repeat: false,
         }];
         let priced = price_cart(&cart, &lots).unwrap();
         let sum: Money = priced.lines.iter().map(|l| l.allocated).sum();
