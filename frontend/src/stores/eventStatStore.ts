@@ -48,8 +48,7 @@ export const useEventStatStore = defineStore('eventStat', () => {
     isLoading.value = true
     error.value = null
     try {
-      const response = await unwrap<Schemas['StatsSalesResponse']>(
-        // @ts-expect-error openapi-fetch 的 Readable<T> 把 branded Cents 展平成对象类型（第三方类型缺陷）
+      const response = await unwrap(
         api.GET('/events/{event_id}/sales_summary', {
           params: {
             path: { event_id: eventId },

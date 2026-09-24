@@ -49,8 +49,7 @@ export const useCustomerStore = defineStore('customer', () => {
     isLoading.value = true
     error.value = null
     try {
-      const list = await unwrap<Schemas['ProductEventProduct'][]>(
-        // @ts-expect-error openapi-fetch 的 Readable<> 会把 branded Cents 展平成对象，与 schema 的 Cents 不兼容（第三方类型缺陷）
+      const list = await unwrap(
         api.GET('/events/{event_id}/products', { params: { path: { event_id: eventId } } })
       )
       products.value = list.map((product) => ({
@@ -70,9 +69,7 @@ export const useCustomerStore = defineStore('customer', () => {
     const eventId = activeEventId.value
     if (!eventId) return
     try {
-      const data = await unwrap<Schemas['EventResponse']>(
-        api.GET('/events/{id}', { params: { path: { id: eventId } } })
-      )
+      const data = await unwrap(api.GET('/events/{id}', { params: { path: { id: eventId } } }))
       activeEvent.value = {
         ...data,
         qrcode_url: getImageUrl(data.qrcode_url ?? ''),
@@ -133,8 +130,7 @@ export const useCustomerStore = defineStore('customer', () => {
 
     try {
       // 成功后返回订单数据，让视图可以触发后续操作（如弹窗）
-      return await unwrap<Schemas['OrderResponse']>(
-        // @ts-expect-error openapi-fetch 的 Readable<> 会把 branded Cents 展平成对象，与 schema 的 Cents 不兼容（第三方类型缺陷）
+      return await unwrap(
         api.POST('/events/{event_id}/orders', {
           params: { path: { event_id: eventId } },
           body: orderData,
@@ -194,8 +190,7 @@ export const useCustomerStore = defineStore('customer', () => {
     if (!eventId) return
     const items = cart.value.map((item) => ({ product_id: item.id, quantity: item.quantity }))
     try {
-      const data = await unwrap<Schemas['LotQuoteResponse']>(
-        // @ts-expect-error openapi-fetch 的 Readable<> 会把 branded Cents 展平成对象，与 schema 的 Cents 不兼容（第三方类型缺陷）
+      const data = await unwrap(
         api.POST('/events/{event_id}/quote', {
           params: { path: { event_id: eventId } },
           body: { items },

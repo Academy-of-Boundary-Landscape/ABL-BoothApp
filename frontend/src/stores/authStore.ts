@@ -50,9 +50,7 @@ export const useAuthStore = defineStore('auth', () => {
       // 发送原始对象，让 client 统一序列化为 JSON
       // 显式给出响应类型：`unwrap` 从 `FetchResponse` 联合里推断时会把
       // 错误分支的 `data?: never` 一起并进来，导致返回值被推断成 `T | undefined`。
-      const responseData = await unwrap<Schemas['LoginResponse']>(
-        api.POST('/auth/login', { body: payload })
-      )
+      const responseData = await unwrap(api.POST('/auth/login', { body: payload }))
 
       // 2. 根据后端返回的数据，构建并更新前端的用户状态对象
       const userData: AuthUser = {

@@ -36,8 +36,7 @@ export const useOrderStore = defineStore('order', () => {
     if (!eventId) return // 如果没有活动展会，则不执行
 
     try {
-      const list = await unwrap<Schemas['OrderResponse'][]>(
-        // @ts-expect-error openapi-fetch 的 Readable<> 会把 branded Cents 展平成对象，与 schema 的 Cents 不兼容（第三方类型缺陷）
+      const list = await unwrap(
         api.GET('/events/{event_id}/orders', {
           params: { path: { event_id: eventId }, query: { status: 'pending' } },
         })
@@ -103,8 +102,7 @@ export const useOrderStore = defineStore('order', () => {
       if (Number.isFinite(finalAmount)) payload.final_amount = finalAmount
       // 空数组也不传：后端对非 completed 的转换会拒绝这个字段，少传少一处可能。
       if (unapplyLotIds?.length) payload.unapply_lot_ids = unapplyLotIds
-      await unwrap<Schemas['OrderResponse']>(
-        // @ts-expect-error openapi-fetch 的 Readable<> 会把 branded Cents 展平成对象，与 schema 的 Cents 不兼容（第三方类型缺陷）
+      await unwrap(
         api.PUT('/events/{event_id}/orders/{order_id}/status', {
           params: { path: { event_id: eventId, order_id: orderId } },
           body: payload,
@@ -127,8 +125,7 @@ export const useOrderStore = defineStore('order', () => {
     const eventId = activeEventId.value
     if (!eventId) return
     try {
-      const list = await unwrap<Schemas['OrderResponse'][]>(
-        // @ts-expect-error openapi-fetch 的 Readable<> 会把 branded Cents 展平成对象，与 schema 的 Cents 不兼容（第三方类型缺陷）
+      const list = await unwrap(
         api.GET('/events/{event_id}/orders', {
           params: { path: { event_id: eventId }, query: { status: 'completed' } },
         })
@@ -143,8 +140,7 @@ export const useOrderStore = defineStore('order', () => {
     if (!eventId) return
     try {
       // 调用同一个 API 端点，但传入不同的状态
-      await unwrap<Schemas['OrderResponse']>(
-        // @ts-expect-error openapi-fetch 的 Readable<> 会把 branded Cents 展平成对象，与 schema 的 Cents 不兼容（第三方类型缺陷）
+      await unwrap(
         api.PUT('/events/{event_id}/orders/{order_id}/status', {
           params: { path: { event_id: eventId, order_id: orderId } },
           body: { status: 'cancelled' },

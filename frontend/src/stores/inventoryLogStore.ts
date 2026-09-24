@@ -55,7 +55,7 @@ export const useInventoryLogStore = defineStore('inventoryLog', () => {
     payload: Schemas['InventoryLogRequest']
   ): Promise<Schemas['InventoryLogResponse']> {
     try {
-      const entry = await unwrap<Schemas['InventoryLogResponse']>(
+      const entry = await unwrap(
         api.POST('/events/{event_id}/gifts', {
           params: { path: { event_id: eventId } },
           body: payload,
@@ -75,7 +75,7 @@ export const useInventoryLogStore = defineStore('inventoryLog', () => {
     payload: Schemas['InventoryLogRequest']
   ): Promise<Schemas['InventoryLogResponse']> {
     try {
-      const entry = await unwrap<Schemas['InventoryLogResponse']>(
+      const entry = await unwrap(
         api.POST('/events/{event_id}/scraps', {
           params: { path: { event_id: eventId } },
           body: payload,

@@ -4,7 +4,7 @@ import { api, unwrap, type Schemas } from '@/api/client'
  * 查询 Vision 运行时状态
  */
 export function getVisionStatus(): Promise<Schemas['VisionStatusResponse']> {
-  return unwrap<Schemas['VisionStatusResponse']>(api.GET('/vision/status'))
+  return unwrap(api.GET('/vision/status'))
 }
 
 /**
@@ -37,7 +37,7 @@ export function searchByImage(
   }
   if (opts.roi) fd.append('roi', JSON.stringify(opts.roi))
 
-  return unwrap<Schemas['VisionSearchResponse']>(
+  return unwrap(
     api.POST('/vision/search', {
       // 旧 axios 的 per-request timeout: 15000——用调用方 signal 保留，与全局 30s 取先到者。
       signal: AbortSignal.timeout(15_000),
@@ -50,16 +50,14 @@ export function searchByImage(
  * 触发索引重建
  */
 export function rebuildIndex(forceFull = false): Promise<Schemas['VisionRebuildResponse']> {
-  return unwrap<Schemas['VisionRebuildResponse']>(
-    api.POST('/vision/rebuild', { body: { force_full: forceFull } })
-  )
+  return unwrap(api.POST('/vision/rebuild', { body: { force_full: forceFull } }))
 }
 
 /**
  * 获取可用模型列表
  */
 export function listModels(): Promise<Schemas['VisionModelsResponse']> {
-  return unwrap<Schemas['VisionModelsResponse']>(api.GET('/vision/models'))
+  return unwrap(api.GET('/vision/models'))
 }
 
 /**
@@ -69,16 +67,14 @@ export function installModel(
   modelId: string,
   source?: string
 ): Promise<Schemas['VisionInstallModelResponse']> {
-  return unwrap<Schemas['VisionInstallModelResponse']>(
-    api.POST('/vision/models/install', { body: { model_id: modelId, source } })
-  )
+  return unwrap(api.POST('/vision/models/install', { body: { model_id: modelId, source } }))
 }
 
 /**
  * 轮询模型安装进度
  */
 export function getInstallTask(taskId: string): Promise<Schemas['VisionInstallTaskResponse']> {
-  return unwrap<Schemas['VisionInstallTaskResponse']>(
+  return unwrap(
     api.GET('/vision/models/tasks/{task_id}', { params: { path: { task_id: taskId } } })
   )
 }
@@ -87,9 +83,7 @@ export function getInstallTask(taskId: string): Promise<Schemas['VisionInstallTa
  * 激活模型
  */
 export function activateModel(modelId: string): Promise<Schemas['VisionActivateModelResponse']> {
-  return unwrap<Schemas['VisionActivateModelResponse']>(
-    api.POST('/vision/models/activate', { body: { model_id: modelId } })
-  )
+  return unwrap(api.POST('/vision/models/activate', { body: { model_id: modelId } }))
 }
 
 // ==================== 商品视觉图管理 ====================
@@ -100,7 +94,7 @@ export function activateModel(modelId: string): Promise<Schemas['VisionActivateM
 export function listProductImages(
   masterProductId: number
 ): Promise<Schemas['MasterProductImageDto'][]> {
-  return unwrap<Schemas['MasterProductImageDto'][]>(
+  return unwrap(
     api.GET('/master-products/{id}/images', { params: { path: { id: masterProductId } } })
   )
 }
@@ -116,7 +110,7 @@ export function addProductImage(
   const fd = new FormData()
   fd.append('image', imageFile)
   fd.append('kind', kind)
-  return unwrap<Schemas['MasterProductImageResponse']>(
+  return unwrap(
     api.POST('/master-products/{id}/images', {
       params: { path: { id: masterProductId } },
       body: fd as never, // multipart
@@ -131,7 +125,7 @@ export function deleteProductImage(
   masterProductId: number,
   imageId: number
 ): Promise<Schemas['DeleteMasterProductImageResponse']> {
-  return unwrap<Schemas['DeleteMasterProductImageResponse']>(
+  return unwrap(
     api.DELETE('/master-products/{id}/images/{image_id}', {
       params: { path: { id: masterProductId, image_id: imageId } },
     })

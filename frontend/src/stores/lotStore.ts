@@ -20,8 +20,7 @@ export const useLotStore = defineStore('lot', () => {
     isLoading.value = true
     error.value = null
     try {
-      const list = await unwrap<Schemas['LotResponse'][]>(
-        // @ts-expect-error openapi-fetch 的 Readable<> 会把 branded Cents 展平成对象，与 schema 的 Cents 不兼容（第三方类型缺陷）
+      const list = await unwrap(
         api.GET('/events/{event_id}/lots', { params: { path: { event_id: Number(eventId) } } })
       )
       lots.value = Array.isArray(list) ? list : []
@@ -35,8 +34,7 @@ export const useLotStore = defineStore('lot', () => {
 
   async function createLot(eventId: string | number, payload: Schemas['LotPayload']) {
     try {
-      const created = await unwrap<Schemas['LotResponse']>(
-        // @ts-expect-error openapi-fetch 的 Readable<> 会把 branded Cents 展平成对象，与 schema 的 Cents 不兼容（第三方类型缺陷）
+      const created = await unwrap(
         api.POST('/events/{event_id}/lots', {
           params: { path: { event_id: Number(eventId) } },
           body: payload,
@@ -56,8 +54,7 @@ export const useLotStore = defineStore('lot', () => {
     payload: Schemas['LotPayload']
   ) {
     try {
-      const updated = await unwrap<Schemas['LotResponse']>(
-        // @ts-expect-error openapi-fetch 的 Readable<> 会把 branded Cents 展平成对象，与 schema 的 Cents 不兼容（第三方类型缺陷）
+      const updated = await unwrap(
         api.PUT('/events/{event_id}/lots/{lot_id}', {
           params: { path: { event_id: Number(eventId), lot_id: lotId } },
           body: payload,
@@ -94,8 +91,7 @@ export const useLotStore = defineStore('lot', () => {
    * 「试算说行、保存说不行」比没有试算更糟。
    */
   async function previewLot(eventId: string | number, payload: Schemas['LotPreviewRequest']) {
-    return await unwrap<Schemas['LotPreviewResponse']>(
-      // @ts-expect-error openapi-fetch 的 Readable<> 会把 branded Cents 展平成对象，与 schema 的 Cents 不兼容（第三方类型缺陷）
+    return await unwrap(
       api.POST('/events/{event_id}/lots/preview', {
         params: { path: { event_id: Number(eventId) } },
         body: payload,

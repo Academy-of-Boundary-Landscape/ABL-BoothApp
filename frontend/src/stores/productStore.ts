@@ -82,7 +82,7 @@ export const useProductStore = defineStore('masterProduct', () => {
     isLoading.value = true
     error.value = null
     try {
-      const list = await unwrap<Schemas['MasterProduct'][]>(
+      const list = await unwrap(
         api.GET('/master-products', {
           params: { query: showInactive.value ? { all: true } : {} },
         })
@@ -104,9 +104,7 @@ export const useProductStore = defineStore('masterProduct', () => {
     try {
       // 组件已经准备好了 FormData，我们直接发送即可
       // multipart：FormData 原样作为 body 传，类型上用 never 绕过表单字段检查
-      const created = await unwrap<Schemas['MasterProduct']>(
-        api.POST('/master-products', { body: formData as never })
-      )
+      const created = await unwrap(api.POST('/master-products', { body: formData as never }))
       const product = { ...created, image_url: getImageUrl(created.image_url ?? '') }
       masterProducts.value.unshift(product)
       return product
@@ -121,7 +119,7 @@ export const useProductStore = defineStore('masterProduct', () => {
     try {
       // 使用 POST 发送 FormData 来更新，以获得更好的兼容性
       // multipart：FormData 原样作为 body 传，类型上用 never 绕过表单字段检查
-      const updated = await unwrap<Schemas['MasterProduct']>(
+      const updated = await unwrap(
         api.POST('/master-products/{id}', {
           params: { path: { id: productId } },
           body: formData as never,
@@ -144,7 +142,7 @@ export const useProductStore = defineStore('masterProduct', () => {
   async function toggleProductStatus(product: Schemas['MasterProduct']) {
     try {
       const newStatus = !product.is_active
-      const updated = await unwrap<Schemas['MasterProduct']>(
+      const updated = await unwrap(
         api.PUT('/master-products/{id}/status', {
           params: { path: { id: product.id } },
           body: { is_active: newStatus },

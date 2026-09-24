@@ -19,8 +19,7 @@ export const useClosingStore = defineStore('closing', () => {
   async function fetchState(eventId: number) {
     isLoading.value = true
     try {
-      state.value = await unwrap<Schemas['ClosingState']>(
-        // @ts-expect-error openapi-fetch 的 Readable<T> 会把 branded Cents 映射成结构对象、丢掉 number 底型（第三方类型缺陷）
+      state.value = await unwrap(
         api.GET('/events/{event_id}/closing', { params: { path: { event_id: eventId } } })
       )
     } catch (e) {

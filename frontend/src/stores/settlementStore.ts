@@ -25,8 +25,7 @@ export const useSettlementStore = defineStore('settlement', () => {
   async function fetchReport(eventId: number) {
     isLoading.value = true
     try {
-      report.value = await unwrap<Schemas['SettlementReport']>(
-        // @ts-expect-error openapi-fetch 的 Readable<T> 会把 branded Cents 映射成结构对象、丢掉 number 底型（第三方类型缺陷）
+      report.value = await unwrap(
         api.GET('/events/{event_id}/settlement', { params: { path: { event_id: eventId } } })
       )
     } catch (e) {
@@ -39,8 +38,7 @@ export const useSettlementStore = defineStore('settlement', () => {
 
   async function fetchAdvances(eventId: number) {
     try {
-      const data = await unwrap<Schemas['LedgerEntryRow'][]>(
-        // @ts-expect-error openapi-fetch 的 Readable<T> 会把 branded Cents 映射成结构对象、丢掉 number 底型（第三方类型缺陷）
+      const data = await unwrap(
         api.GET('/events/{event_id}/advances', { params: { path: { event_id: eventId } } })
       )
       advances.value = Array.isArray(data) ? data : []
@@ -52,8 +50,7 @@ export const useSettlementStore = defineStore('settlement', () => {
 
   async function fetchAdjustments(eventId: number) {
     try {
-      const data = await unwrap<Schemas['LedgerEntryRow'][]>(
-        // @ts-expect-error openapi-fetch 的 Readable<T> 会把 branded Cents 映射成结构对象、丢掉 number 底型（第三方类型缺陷）
+      const data = await unwrap(
         api.GET('/events/{event_id}/adjustments', { params: { path: { event_id: eventId } } })
       )
       adjustments.value = Array.isArray(data) ? data : []
@@ -76,7 +73,7 @@ export const useSettlementStore = defineStore('settlement', () => {
     payload: Schemas['AdvanceRequest']
   ): Promise<Schemas['CreatedEntry']> {
     try {
-      const entry = await unwrap<Schemas['CreatedEntry']>(
+      const entry = await unwrap(
         api.POST('/events/{event_id}/advances', {
           params: { path: { event_id: eventId } },
           body: payload,
@@ -110,7 +107,7 @@ export const useSettlementStore = defineStore('settlement', () => {
     payload: Schemas['AdjustmentRequest']
   ): Promise<Schemas['CreatedEntry']> {
     try {
-      const entry = await unwrap<Schemas['CreatedEntry']>(
+      const entry = await unwrap(
         api.POST('/events/{event_id}/adjustments', {
           params: { path: { event_id: eventId } },
           body: payload,
@@ -144,7 +141,7 @@ export const useSettlementStore = defineStore('settlement', () => {
     counts: Schemas['ReconcileRequest']['counts']
   ): Promise<Schemas['ReconcileResponse']> {
     try {
-      const res = await unwrap<Schemas['ReconcileResponse']>(
+      const res = await unwrap(
         api.POST('/events/{event_id}/settlement/reconcile', {
           params: { path: { event_id: eventId } },
           body: { counts },

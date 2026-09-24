@@ -17,7 +17,7 @@ export const useSocietyStore = defineStore('society', () => {
     isLoading.value = true
     error.value = null
     try {
-      const response = await unwrap<Schemas['Society'][]>(api.GET('/societies'))
+      const response = await unwrap(api.GET('/societies'))
       societies.value = Array.isArray(response) ? response : []
     } catch (err) {
       error.value = '无法加载社团列表。'
@@ -29,7 +29,7 @@ export const useSocietyStore = defineStore('society', () => {
 
   async function createSociety(name: string) {
     try {
-      const response = await unwrap<Schemas['Society']>(api.POST('/societies', { body: { name } }))
+      const response = await unwrap(api.POST('/societies', { body: { name } }))
       societies.value.push(response)
       return response
     } catch (err) {
@@ -40,7 +40,7 @@ export const useSocietyStore = defineStore('society', () => {
 
   async function updateSociety(id: number, payload: Schemas['UpdateSocietyRequest']) {
     try {
-      const response = await unwrap<Schemas['Society']>(
+      const response = await unwrap(
         api.PUT('/societies/{id}', { params: { path: { id } }, body: payload })
       )
       const index = societies.value.findIndex((s) => s.id === id)

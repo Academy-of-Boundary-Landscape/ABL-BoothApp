@@ -29,8 +29,7 @@ export const useEventDetailStore = defineStore('eventDetail', () => {
     isLoading.value = true
     error.value = null
     try {
-      const response = await unwrap<Schemas['ProductEventProduct'][]>(
-        // @ts-expect-error openapi-fetch 的 Readable<T> 把 branded Cents 展平（第三方类型缺陷）
+      const response = await unwrap(
         api.GET('/events/{event_id}/products', { params: { path: { event_id: eventId } } })
       )
       products.value = response.map((product) => ({
@@ -48,8 +47,7 @@ export const useEventDetailStore = defineStore('eventDetail', () => {
   // 为展会添加一个商品
   async function addProductToEvent(eventId: number, productData: Schemas['ProductAddRequest']) {
     try {
-      const response = await unwrap<Schemas['ProductEventProduct']>(
-        // @ts-expect-error openapi-fetch 的 Readable<T> 把 branded Cents 展平（第三方类型缺陷）
+      const response = await unwrap(
         api.POST('/events/{event_id}/products', {
           params: { path: { event_id: eventId } },
           body: productData,
@@ -70,8 +68,7 @@ export const useEventDetailStore = defineStore('eventDetail', () => {
     productData: Schemas['ProductUpdateRequest']
   ) {
     try {
-      const response = await unwrap<Schemas['ProductEventProduct']>(
-        // @ts-expect-error openapi-fetch 的 Readable<T> 把 branded Cents 展平（第三方类型缺陷）
+      const response = await unwrap(
         api.PUT('/products/{id}', {
           params: { path: { id: productId } },
           body: productData,
@@ -99,8 +96,7 @@ export const useEventDetailStore = defineStore('eventDetail', () => {
     try {
       const payload: Schemas['ProductRestockRequest'] = { qty }
       if (note) payload.note = note
-      const response = await unwrap<Schemas['ProductEventProduct']>(
-        // @ts-expect-error openapi-fetch 的 Readable<T> 把 branded Cents 展平（第三方类型缺陷）
+      const response = await unwrap(
         api.POST('/events/{event_id}/products/{id}/restock', {
           params: { path: { event_id: eventId, id: productId } },
           body: payload,
@@ -133,8 +129,7 @@ export const useEventDetailStore = defineStore('eventDetail', () => {
     error.value = null
     try {
       // 不带 status 参数，获取所有订单
-      const response = await unwrap<Schemas['OrderResponse'][]>(
-        // @ts-expect-error openapi-fetch 的 Readable<T> 把 branded Cents 展平（第三方类型缺陷）
+      const response = await unwrap(
         api.GET('/events/{event_id}/orders', { params: { path: { event_id: eventId } } })
       )
       allOrders.value = processOrders(response)
@@ -161,8 +156,7 @@ export const useEventDetailStore = defineStore('eventDetail', () => {
       if (Number.isFinite(finalAmount)) payload.final_amount = finalAmount
       // 空数组也不传：后端对非 completed 的转换会拒绝这个字段，少传少一处可能。
       if (unapplyLotIds?.length) payload.unapply_lot_ids = unapplyLotIds
-      const response = await unwrap<Schemas['OrderResponse']>(
-        // @ts-expect-error openapi-fetch 的 Readable<T> 把 branded Cents 展平（第三方类型缺陷）
+      const response = await unwrap(
         api.PUT('/events/{event_id}/orders/{order_id}/status', {
           params: { path: { event_id: eventId, order_id: orderId } },
           body: payload,

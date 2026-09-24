@@ -45,7 +45,7 @@ export const useEventStore = defineStore('event', () => {
   async function createEvent(eventData: FormData) {
     // ... 此函数保持不变 ...
     try {
-      const response = await unwrap<Schemas['EventResponse']>(
+      const response = await unwrap(
         // multipart：契约是 CreateEventForm，实际发 FormData
         api.POST('/events', { body: eventData as never })
       )
@@ -62,7 +62,7 @@ export const useEventStore = defineStore('event', () => {
   async function updateEventStatus(eventId: number, newStatus: Schemas['EventStatus']) {
     try {
       console.log('尝试更新展会状态', eventId, newStatus)
-      const response = await unwrap<Schemas['EventResponse']>(
+      const response = await unwrap(
         api.PUT('/events/{id}/status', {
           params: { path: { id: eventId } },
           body: { status: newStatus },
@@ -85,7 +85,7 @@ export const useEventStore = defineStore('event', () => {
       // 使用 POST 方法发送 FormData，兼容性更好
       // Axios 会自动为 FormData 设置正确的 Content-Type
       // console.log('尝试更新展会信息', eventId, formData);
-      const response = await unwrap<Schemas['EventResponse']>(
+      const response = await unwrap(
         // multipart：契约是 UpdateEventForm，实际发 FormData
         api.POST('/events/{id}', {
           params: { path: { id: eventId } },

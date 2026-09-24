@@ -20,7 +20,7 @@ export const LEGACY_EXPORT_FILENAME = 'legacy_v1_export.xlsx'
 async function downloadLegacyXlsx(): Promise<Blob> {
   try {
     // 显式给出响应类型：见 authStore.login 的同款说明（unwrap 会推断出 `T | undefined`）。
-    return await unwrap<Blob>(api.GET('/legacy/export.xlsx', { parseAs: 'blob' }))
+    return await unwrap(api.GET('/legacy/export.xlsx', { parseAs: 'blob' }))
   } catch (e) {
     if (e instanceof ApiRequestError) {
       // 旧代码是手动 fetch + `下载失败: <status> <text>`；这里保持同样的形状，

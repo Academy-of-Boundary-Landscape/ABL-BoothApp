@@ -186,7 +186,7 @@ export const useSyncStore = defineStore('sync', () => {
   async function postRawZip(uint8: Uint8Array): Promise<Schemas['SyncImportResponse']> {
     const t0 = performance.now()
     feLog(`postRawZip: about to api.post (${uint8.byteLength} bytes)`)
-    const response = await unwrap<Schemas['SyncImportResponse']>(
+    const response = await unwrap(
       api.POST('/sync/import-products-raw', {
         // 原始字节：契约把 application/octet-stream 生成为 number[]，
         // 但只有原样发 Uint8Array 才会走 client 的 raw bodySerializer。
