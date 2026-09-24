@@ -87,7 +87,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, h, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { NAlert, NButton, NProgress, useDialog, useMessage } from 'naive-ui'
 
@@ -99,14 +99,14 @@ import {
   validateFileSize,
 } from '@/utils/upload'
 
-const emit = defineEmits(['imported'])
+const emit = defineEmits<{ (e: 'imported'): void }>()
 
 const syncStore = useSyncStore()
 const dialog = useDialog()
 const message = useMessage()
 
 const isCollapsed = ref(false)
-const importFileInputRef = ref(null)
+const importFileInputRef = ref<HTMLInputElement | null>(null)
 const syncMessage = ref('')
 const syncError = ref('')
 const isDragging = ref(false)
@@ -115,7 +115,7 @@ const isExporting = computed(() => syncStore.isExporting)
 const isImporting = computed(() => syncStore.isImporting)
 const importProgress = ref(0)
 const importStatus = ref('')
-let importProgressTimer = null
+let importProgressTimer: ReturnType<typeof setInterval> | null = null
 
 function startImportProgress() {
   importProgress.value = 5
@@ -136,8 +136,8 @@ function startImportProgress() {
   }, 800)
 }
 
-function stopImportProgress(success) {
-  clearInterval(importProgressTimer)
+function stopImportProgress(success: boolean) {
+  if (importProgressTimer !== null) clearInterval(importProgressTimer)
   importProgressTimer = null
   if (success) {
     importProgress.value = 100
@@ -155,20 +155,20 @@ watch(isImporting, (val) => {
 })
 
 let dragCounter = 0
-let tauriUnlisten = null
-let globalDropCleanup = null
+let tauriUnlisten: (() => void) | null = null
+let globalDropCleanup: (() => void) | null = null
 
 function clearSyncHints() {
   syncMessage.value = ''
   syncError.value = ''
 }
 
-function isAllowedPackName(name) {
+function isAllowedPackName(name: string) {
   const lowered = String(name || '').toLowerCase()
   return lowered.endsWith('.boothpack') || lowered.endsWith('.zip')
 }
 
-function rejectInvalidFile(name) {
+function rejectInvalidFile(name: string) {
   syncError.value = '请选择 .boothpack 或 .zip 文件'
   showUploadDialog(
     '文件类型不支持',
@@ -176,7 +176,7 @@ function rejectInvalidFile(name) {
   )
 }
 
-function validatePackFile(file, displayName) {
+function validatePackFile(file: File, displayName: string) {
   if (!isAllowedPackName(displayName)) {
     rejectInvalidFile(displayName)
     return false
@@ -184,8 +184,9 @@ function validatePackFile(file, displayName) {
 
   const validation = validateFileSize(file, SYNC_IMPORT_LIMIT_MB)
   if (!validation.ok) {
-    syncError.value = validation.message
-    showUploadDialog('导入文件过大', validation.message)
+    const validationMessage = validation.message ?? ''
+    syncError.value = validationMessage
+    showUploadDialog('导入文件过大', validationMessage)
     return false
   }
 
@@ -197,13 +198,14 @@ function triggerImport() {
   importFileInputRef.value?.click?.()
 }
 
-async function handleImportFile(event) {
-  const file = event.target?.files?.[0]
+async function handleImportFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
   if (!file) return
   if (validatePackFile(file, file.name)) {
     await confirmAndImport({ kind: 'file', file, displayName: file.name })
   }
-  event.target.value = ''
+  input.value = ''
 }
 
 async function handleExport() {
@@ -215,18 +217,30 @@ async function handleExport() {
       message.success(`已成功导出商品包：${filename}`, { duration: 5000, closable: true })
     }
   } catch (error) {
-    const msg = error?.message || '导出失败'
+    const msg = error instanceof Error && error.message ? error.message : '导出失败'
     syncError.value = msg
     message.error(`导出失败：${msg}`, { duration: 5000, closable: true })
   }
 }
 
-async function confirmAndImport({ kind, file, path, displayName }) {
+type ImportTarget =
+  | { kind: 'file'; file: File; displayName: string }
+  | { kind: 'path'; path: string; displayName: string }
+
+function runImport(target: ImportTarget) {
+  return target.kind === 'file'
+    ? syncStore.importProducts(target.file)
+    : syncStore.importProductsFromPath(target.path)
+}
+
+async function confirmAndImport(target: ImportTarget) {
   const name =
-    displayName || (kind === 'path' ? String(path).split(/[/\\]/).pop() : file?.name) || 'unknown'
+    target.displayName ||
+    (target.kind === 'path' ? String(target.path).split(/[/\\]/).pop() : target.file?.name) ||
+    'unknown'
 
   dialog.warning({
-    title: kind === 'path' ? '检测到文件拖入' : '确认导入',
+    title: target.kind === 'path' ? '检测到文件拖入' : '确认导入',
     content: () =>
       h('div', { style: 'white-space: pre-line;' }, [
         `文件名：${name}`,
@@ -246,10 +260,7 @@ async function confirmAndImport({ kind, file, path, displayName }) {
       clearSyncHints()
       startImportProgress()
       try {
-        const result =
-          kind === 'file'
-            ? await syncStore.importProducts(file)
-            : await syncStore.importProductsFromPath(path)
+        const result = await runImport(target)
 
         stopImportProgress(true)
         const pCount = result?.products_count ?? 0
@@ -268,7 +279,7 @@ async function confirmAndImport({ kind, file, path, displayName }) {
   })
 }
 
-function onDragEnter(event) {
+function onDragEnter(event: DragEvent) {
   event.stopPropagation()
   dragCounter += 1
   isDragging.value = true
@@ -278,13 +289,13 @@ function onDragOver() {
   isDragging.value = true
 }
 
-function onDragLeave(event) {
+function onDragLeave(event: DragEvent) {
   event.stopPropagation()
   dragCounter = Math.max(0, dragCounter - 1)
   if (dragCounter === 0) isDragging.value = false
 }
 
-async function onDrop(event) {
+async function onDrop(event: DragEvent) {
   dragCounter = 0
   isDragging.value = false
 
@@ -300,7 +311,7 @@ onMounted(async () => {
   try {
     const { listen } = await import('@tauri-apps/api/event')
     tauriUnlisten = await listen('boothpack-file-drop', async (event) => {
-      const paths = Array.isArray(event.payload) ? event.payload : []
+      const paths = Array.isArray(event.payload) ? (event.payload as unknown[]) : []
       const path = paths[0]
       if (!path) return
 
@@ -310,13 +321,13 @@ onMounted(async () => {
         return
       }
 
-      await confirmAndImport({ kind: 'path', path, displayName: name })
+      await confirmAndImport({ kind: 'path', path: String(path), displayName: name })
     })
   } catch (error) {
     console.warn('failed to register tauri drag-drop listener', error)
   }
 
-  const preventDefault = (event) => {
+  const preventDefault = (event: Event) => {
     event.preventDefault()
   }
 
@@ -329,7 +340,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  clearInterval(importProgressTimer)
+  if (importProgressTimer !== null) clearInterval(importProgressTimer)
   if (typeof tauriUnlisten === 'function') {
     tauriUnlisten()
   }
