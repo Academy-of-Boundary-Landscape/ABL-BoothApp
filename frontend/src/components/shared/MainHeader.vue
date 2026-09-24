@@ -69,7 +69,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { NIcon } from 'naive-ui'
@@ -86,7 +86,7 @@ const closeIfMobile = () => {
 
 const toggleCollapse = () => {
   isCollapsed.value = !isCollapsed.value
-  localStorage.setItem('header_collapsed', isCollapsed.value)
+  localStorage.setItem('header_collapsed', String(isCollapsed.value))
   if (isCollapsed.value) {
     isOpen.value = false
   }

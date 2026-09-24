@@ -14,20 +14,18 @@
   </n-popover>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue'
 import { NPopover } from 'naive-ui'
 import { helpContent } from '@/config/helpContent'
 
-const props = defineProps({
-  page: { type: String, required: true },
-})
+const props = defineProps<{ page: string }>()
 
 const content = computed(() => helpContent[props.page] || { title: '帮助', tips: [] })
 
 // 先转义 HTML 特殊字符，再把 **xxx** 替换为 <strong>xxx</strong>
 // 内容来自仓库内静态 JS 文件，不是用户输入，但仍做 escape 防御
-function renderTip(raw) {
+function renderTip(raw: string) {
   const escaped = String(raw)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

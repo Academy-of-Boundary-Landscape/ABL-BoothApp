@@ -108,12 +108,13 @@
   </draggable>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import draggable from 'vuedraggable'
 import { NCard, NImage, NSkeleton } from 'naive-ui'
 import { useThemeStore } from '@/stores/themeStore'
 import { formatYuan } from '@/utils/money'
+import type { Schemas } from '@/api/client'
 
 const themeStore = useThemeStore()
 
@@ -123,20 +124,27 @@ const mediaPadPercent = computed(() => {
   return themeStore.productImageAspect === '1:1' ? '100%' : '133.33%'
 })
 
-const props = defineProps({
-  products: { type: Array, default: () => [] },
-  cardSize: {
-    type: String,
-    default: 'medium',
-    validator: (v) => ['small', 'medium', 'large'].includes(v),
-  },
-  editable: { type: Boolean, default: false },
-})
+const props = withDefaults(
+  defineProps<{
+    products?: Schemas['ProductEventProduct'][]
+    cardSize?: 'small' | 'medium' | 'large'
+    editable?: boolean
+  }>(),
+  {
+    products: () => [],
+    cardSize: 'medium',
+    editable: false,
+  }
+)
 
-const emit = defineEmits(['addToCart', 'update:products', 'order-changed'])
+const emit = defineEmits<{
+  (e: 'addToCart', product: Schemas['ProductEventProduct']): void
+  (e: 'update:products', products: Schemas['ProductEventProduct'][]): void
+  (e: 'order-changed'): void
+}>()
 
-const localList = ref([])
-const animatingIds = ref(new Set())
+const localList = ref<Schemas['ProductEventProduct'][]>([])
+const animatingIds = ref(new Set<number>())
 
 watch(
   () => props.products,
@@ -148,7 +156,7 @@ watch(
   { immediate: true }
 )
 
-function handleCardClick(product) {
+function handleCardClick(product: Schemas['ProductEventProduct']) {
   if (props.editable) return
   if (product?.onsite_qty <= 0) return
   // Trigger add-to-cart animation

@@ -114,27 +114,44 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { NButton } from 'naive-ui'
-import { formatYuan } from '@/utils/money'
+import { formatYuan, type Cents } from '@/utils/money'
+import type { Schemas } from '@/api/client'
+import type { QuoteDiscount } from '@/utils/quote'
 
-const props = defineProps({
-  cart: { type: Array, required: true },
-  /** 原价合计（分） */
-  total: { type: Number, required: true },
-  /** 折后应付（分）。报价失败时等于 total。 */
-  payable: { type: Number, required: true },
-  /** [{ name, saved, count }] */
-  discounts: { type: Array, default: () => [] },
-  /** 报价失败时的提示。非空就必须显示——不能让顾客以为原价就是应付价。 */
-  quoteNotice: { type: String, default: null },
-  /** 报价在途（debounce/请求中）。为真时 payable 只是原价，不能结算。 */
-  quotePending: { type: Boolean, default: false },
-  isCheckingOut: { type: Boolean, default: false },
-})
+// 与 customerStore 里的同名别名保持一致：场次商品 + 数量。
+type CartItem = Schemas['ProductEventProduct'] & { quantity: number }
 
-defineEmits(['addToCart', 'removeFromCart', 'checkout'])
+const props = withDefaults(
+  defineProps<{
+    cart: CartItem[]
+    /** 原价合计（分） */
+    total: Cents
+    /** 折后应付（分）。报价失败时等于 total。 */
+    payable: Cents
+    /** [{ name, saved, count }] */
+    discounts?: QuoteDiscount[]
+    /** 报价失败时的提示。非空就必须显示——不能让顾客以为原价就是应付价。 */
+    quoteNotice?: string | null
+    /** 报价在途（debounce/请求中）。为真时 payable 只是原价，不能结算。 */
+    quotePending?: boolean
+    isCheckingOut?: boolean
+  }>(),
+  {
+    discounts: () => [],
+    quoteNotice: null,
+    quotePending: false,
+    isCheckingOut: false,
+  }
+)
+
+defineEmits<{
+  (e: 'addToCart', item: CartItem): void
+  (e: 'removeFromCart', id: number): void
+  (e: 'checkout'): void
+}>()
 
 const isMobile = ref(false)
 const expanded = ref(false)
@@ -158,7 +175,7 @@ function toggleCart() {
   }
 }
 
-function syncBodyScrollLock(locked) {
+function syncBodyScrollLock(locked: boolean) {
   if (typeof document === 'undefined') return
   document.body.style.overflow = locked ? 'hidden' : ''
 }

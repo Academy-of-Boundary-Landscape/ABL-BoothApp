@@ -48,23 +48,26 @@
   </Transition>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { NButton } from 'naive-ui'
-import { formatYuan } from '@/utils/money'
+import { formatYuan, type Cents } from '@/utils/money'
 
 const AUTO_CLOSE_SECONDS = 90
 
-const emit = defineEmits(['close'])
-const props = defineProps({
-  show: { type: Boolean, required: true },
-  total: { type: Number, required: true },
-  qrCodeUrls: { type: Array, default: () => [] },
-})
+const emit = defineEmits<{ (e: 'close'): void }>()
+const props = withDefaults(
+  defineProps<{
+    show: boolean
+    total: Cents
+    qrCodeUrls?: string[]
+  }>(),
+  { qrCodeUrls: () => [] }
+)
 
 const countdown = ref(0)
 const progress = computed(() => (countdown.value / AUTO_CLOSE_SECONDS) * 100)
-let countdownTimer = null
+let countdownTimer: ReturnType<typeof setInterval> | null = null
 
 function startCountdown() {
   stopCountdown()
@@ -79,7 +82,7 @@ function startCountdown() {
 }
 
 function stopCountdown() {
-  clearInterval(countdownTimer)
+  clearInterval(countdownTimer ?? undefined)
   countdownTimer = null
 }
 

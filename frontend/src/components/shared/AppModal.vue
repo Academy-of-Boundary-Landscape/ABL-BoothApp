@@ -31,16 +31,11 @@
   </n-modal>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { NModal, NCard, NButton } from 'naive-ui'
 // 定义组件可以接收的 props 和可以触发的 events
-defineProps({
-  show: {
-    type: Boolean,
-    required: true,
-  },
-})
-defineEmits(['close'])
+defineProps<{ show: boolean }>()
+defineEmits<{ (e: 'close'): void }>()
 </script>
 
 <style scoped>

@@ -23,10 +23,10 @@
   </Transition>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/authStore'
-import api from '@/services/api'
+import { api, unwrap } from '@/api/client'
 import { MIGRATION_NOTICE_SEEN_KEY, shouldShowMigrationNotice } from '@/utils/migrationNotice'
 import { exportLegacyXlsx } from '@/utils/legacyExport'
 
@@ -51,7 +51,7 @@ async function checkStatus() {
   if (seen) return
 
   try {
-    const { data } = await api.get('/legacy/status')
+    const data = await unwrap(api.GET('/legacy/status'))
     if (shouldShowMigrationNotice(data, seen)) {
       // 「弹过之后」立刻标记：这份 v1 备份不会再变，提示只打扰一次。
       localStorage.setItem(MIGRATION_NOTICE_SEEN_KEY, '1')
@@ -83,7 +83,7 @@ async function exportLegacy() {
     if (ok) alert('导出成功')
   } catch (e) {
     console.error('下载旧数据失败:', e)
-    alert(e?.message || '下载失败')
+    alert((e instanceof Error && e.message) || '下载失败')
   } finally {
     exporting.value = false
   }

@@ -17,7 +17,7 @@
   </Transition>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { useAlertStore } from '@/stores/alertStore'
 
 const alertStore = useAlertStore()

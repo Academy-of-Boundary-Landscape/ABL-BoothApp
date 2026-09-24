@@ -63,9 +63,9 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { NButton, NImage, NTag, NUpload } from 'naive-ui'
+import { NButton, NImage, NTag, NUpload, type UploadFileInfo } from 'naive-ui'
 
 import ImageCropper from '@/components/shared/ImageCropper.vue'
 import { getImageUrl } from '@/services/url'
@@ -77,50 +77,42 @@ import {
   validateFileSize,
 } from '@/utils/upload'
 
-const props = defineProps({
-  modelValue: {
-    type: File,
-    default: null,
-  },
-  initialImageUrl: {
-    type: String,
-    default: '',
-  },
-  label: {
-    type: String,
-    default: '图片上传',
-  },
-  maxWidth: {
-    type: Number,
-    default: 200,
-  },
-  maxHeight: {
-    type: Number,
-    default: 200,
-  },
-  maxFileSizeMb: {
-    type: Number,
-    default: IMAGE_UPLOAD_LIMIT_MB,
-  },
-  // ===== 裁剪相关 =====
-  cropEnabled: {
-    type: Boolean,
-    default: false,
-  },
-  cropDefaultAspect: {
-    type: String,
-    default: 'free', // 'free' | '1:1' | '3:4'
-  },
-})
+const props = withDefaults(
+  defineProps<{
+    modelValue?: File | null
+    initialImageUrl?: string
+    label?: string
+    maxWidth?: number
+    maxHeight?: number
+    maxFileSizeMb?: number
+    // ===== 裁剪相关 =====
+    cropEnabled?: boolean
+    cropDefaultAspect?: string
+  }>(),
+  {
+    modelValue: null,
+    initialImageUrl: '',
+    label: '图片上传',
+    maxWidth: 200,
+    maxHeight: 200,
+    maxFileSizeMb: IMAGE_UPLOAD_LIMIT_MB,
+    cropEnabled: false,
+    cropDefaultAspect: 'free', // 'free' | '1:1' | '3:4'
+  }
+)
 
-const emit = defineEmits(['update:modelValue', 'image-removed', 'invalid-file'])
+const emit = defineEmits<{
+  (e: 'update:modelValue', file: File | null): void
+  (e: 'image-removed'): void
+  (e: 'invalid-file', message: string): void
+}>()
 
-const previewUrl = ref(null)
+const previewUrl = ref<string | null>(null)
 const errorMessage = ref('')
 
-// 裁剪器状态
+// 裁剪器状态。`undefined` 与原先的 null 等价：ImageCropper 只判断真值。
 const cropperShow = ref(false)
-const cropperFile = ref(null)
+const cropperFile = ref<File>()
 
 const displayInitialUrl = computed(() => getImageUrl(props.initialImageUrl))
 
@@ -138,17 +130,18 @@ watch(
   }
 )
 
-async function onUploadChange({ file }) {
+async function onUploadChange({ file }: { file: UploadFileInfo }) {
   const raw = file?.file ?? null
   if (!raw) return
 
   const validation = validateFileSize(raw, props.maxFileSizeMb)
   if (!validation.ok) {
     resetState()
-    errorMessage.value = validation.message
+    // validateFileSize 在 !ok 时必定带 message
+    errorMessage.value = validation.message!
     emit('update:modelValue', null)
-    emit('invalid-file', validation.message)
-    showUploadDialog('上传文件过大', validation.message)
+    emit('invalid-file', validation.message!)
+    showUploadDialog('上传文件过大', validation.message!)
     return
   }
 
@@ -171,7 +164,7 @@ async function onUploadChange({ file }) {
   finalizeFile(raw)
 }
 
-function finalizeFile(f) {
+function finalizeFile(f: File) {
   if (previewUrl.value) {
     URL.revokeObjectURL(previewUrl.value)
   }
@@ -180,20 +173,20 @@ function finalizeFile(f) {
 }
 
 // ===== 裁剪器回调 =====
-function onCropConfirm(croppedFile) {
+function onCropConfirm(croppedFile: File) {
   cropperShow.value = false
-  cropperFile.value = null
+  cropperFile.value = undefined
   finalizeFile(croppedFile)
 }
-function onCropSkip(originalFile) {
+function onCropSkip(originalFile: File) {
   cropperShow.value = false
-  cropperFile.value = null
+  cropperFile.value = undefined
   finalizeFile(originalFile)
 }
 function onCropClose() {
   // 用户取消 → 不提交，清空 cropperFile
   cropperShow.value = false
-  cropperFile.value = null
+  cropperFile.value = undefined
 }
 
 function removeImage() {

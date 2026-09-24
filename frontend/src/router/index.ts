@@ -19,6 +19,15 @@ import About from '../views/About.vue'
 import Help from '../views/Help.vue'
 import NotFound from '../views/NotFound.vue'
 import ServerError from '../views/ServerError.vue'
+
+// beforeEach 里读取的 meta 字段；显式声明，免得 `to.meta.*` 退化成 unknown。
+declare module 'vue-router' {
+  interface RouteMeta {
+    requiresAuth?: boolean
+    role?: string
+  }
+}
+
 const routes = [
   // --- 路由组 1: 管理后台 ---
   // 所有 /admin 开头的路径都会使用 AdminLayout 布局
@@ -163,7 +172,8 @@ router.beforeEach((to, from, next) => {
     }
 
     if (requiredRole === 'vendor') {
-      const eventId = to.params.id
+      // `:id` 只会有单个值；params 的类型允许 string[]，先收窄再交给 store。
+      const eventId = Array.isArray(to.params.id) ? to.params.id[0] : to.params.id
       if (authStore.canAccessVendorPage(eventId)) {
         hasPermission = true
       }

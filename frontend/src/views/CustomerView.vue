@@ -296,7 +296,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { useAlert } from '@/services/useAlert'
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useCustomerStore } from '@/stores/customerStore'
@@ -305,24 +305,25 @@ import ProductGrid from '@/components/customer/ProductGrid.vue'
 import ShoppingCart from '@/components/customer/ShoppingCart.vue'
 import PaymentModal from '@/components/customer/PaymentModal.vue'
 import VisionSearch from '@/components/shared/VisionSearch.vue'
-import { formatYuan } from '@/utils/money'
+import { cents, formatYuan, type Cents } from '@/utils/money'
+import type { Schemas } from '@/api/client'
 import { NScrollbar, NSpin, NSlider, NButton, useDialog } from 'naive-ui'
 
-const props = defineProps({ id: { type: String, required: true } })
+const props = defineProps<{ id: string }>()
 const store = useCustomerStore()
 const dialog = useDialog()
 const { isConnected } = useConnectionCheck()
 
 // ===================== 模式切换 =====================
 const isVisionMode = ref(false)
-const numericEventId = computed(() => parseInt(props.id, 10) || null)
+const numericEventId = computed(() => parseInt(props.id, 10) || undefined)
 
 // 切换模式时重新展示引导
 watch(isVisionMode, () => {
   if (!showAttractScreen.value) triggerGuide()
 })
 
-function onVisionSelect(hit) {
+function onVisionSelect(hit: Schemas['VisionSearchResult']) {
   const { showError } = useAlert()
   const product = (store.products || []).find((p) => p.master_product_id === hit.master_product_id)
   if (!product) {
@@ -338,14 +339,14 @@ function onVisionSelect(hit) {
 
 // ===================== 传统模式 =====================
 const showPaymentModal = ref(false)
-const orderTotal = ref(0)
+const orderTotal = ref<Cents>(cents(0))
 const isCheckingOut = ref(false)
 const selectedCategory = ref('')
 const isEditMode = ref(false)
 const showAdminControls = ref(localStorage.getItem('customer_admin_controls') === 'true')
 function toggleAdminControls() {
   showAdminControls.value = !showAdminControls.value
-  localStorage.setItem('customer_admin_controls', showAdminControls.value)
+  localStorage.setItem('customer_admin_controls', String(showAdminControls.value))
   if (!showAdminControls.value && isEditMode.value) {
     isEditMode.value = false
     saveOrderToLocal()
@@ -353,7 +354,8 @@ function toggleAdminControls() {
 }
 const cardSizeIndex = ref(1)
 const userTouchedCardSize = ref(false)
-const cardSize = computed(() => ['small', 'medium', 'large'][cardSizeIndex.value] || 'medium')
+const CARD_SIZES = ['small', 'medium', 'large'] as const
+const cardSize = computed(() => CARD_SIZES[cardSizeIndex.value] || 'medium')
 function onCardSizeUserChange() {
   userTouchedCardSize.value = true
 }
@@ -374,17 +376,19 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('resize', syncLayout)
   ACTIVITY_EVENTS.forEach((e) => window.removeEventListener(e, onUserActivity))
-  clearTimeout(idleTimer)
-  clearTimeout(guideTimer)
+  clearTimeout(idleTimer ?? undefined)
+  clearTimeout(guideTimer ?? undefined)
 })
 
 const categoryOptions = computed(() => {
-  const cats = (store.products || []).map((p) => p.category).filter((c) => c && c.trim())
+  const cats = (store.products || [])
+    .map((p) => p.category)
+    .filter((c): c is string => !!c && !!c.trim())
   return [...new Set(cats)]
 })
 
 const allTags = computed(() => {
-  const counts = new Map()
+  const counts = new Map<string, number>()
   ;(store.products || []).forEach((p) => {
     ;(p.tags || '')
       .split(',')
@@ -399,27 +403,28 @@ const allTags = computed(() => {
     .map(([tag]) => tag)
 })
 
-const selectedTag = ref(null)
+const selectedTag = ref<string | null>(null)
 
 // ===== 排序 =====
 const STORAGE_KEY = computed(() => `my_shop_custom_order::event::${props.id}`)
 
-function readSavedIds() {
+function readSavedIds(): number[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY.value)
-    const ids = JSON.parse(raw || '[]')
-    return Array.isArray(ids) ? ids : []
+    const ids: unknown = JSON.parse(raw || '[]')
+    if (!Array.isArray(ids)) return []
+    return ids.filter((id): id is number => typeof id === 'number')
   } catch {
     return []
   }
 }
 
-function applySavedOrder(list, savedIds) {
+function applySavedOrder(list: Schemas['ProductEventProduct'][], savedIds: number[]) {
   if (!savedIds?.length) return [...list]
   const pos = new Map(savedIds.map((id, i) => [id, i]))
   return [...list].sort((a, b) => {
-    const ia = pos.has(a.id) ? pos.get(a.id) : Number.POSITIVE_INFINITY
-    const ib = pos.has(b.id) ? pos.get(b.id) : Number.POSITIVE_INFINITY
+    const ia = pos.get(a.id) ?? Number.POSITIVE_INFINITY
+    const ib = pos.get(b.id) ?? Number.POSITIVE_INFINITY
     return ia - ib
   })
 }
@@ -429,7 +434,7 @@ const baseOrderedProducts = computed(() => {
   return applySavedOrder(all, readSavedIds())
 })
 
-const mutableProducts = ref([])
+const mutableProducts = ref<Schemas['ProductEventProduct'][]>([])
 
 watch(
   [baseOrderedProducts, selectedCategory, selectedTag],
@@ -457,14 +462,14 @@ function saveOrderToLocal() {
   const fullBase = baseOrderedProducts.value
   const draggedSubsetIds = mutableProducts.value.map((p) => p.id)
 
-  let mergedIds
+  let mergedIds: number[]
   if (!cat) {
     mergedIds = draggedSubsetIds
   } else {
     const subsetIdSet = new Set(draggedSubsetIds)
     const baseIds = fullBase.map((p) => p.id)
     const queue = [...draggedSubsetIds]
-    mergedIds = baseIds.map((id) => (subsetIdSet.has(id) ? queue.shift() : id))
+    mergedIds = baseIds.map((id) => (subsetIdSet.has(id) ? queue.shift()! : id))
   }
 
   try {
@@ -478,10 +483,10 @@ function saveOrderToLocal() {
 const IDLE_TIMEOUT_MS = 60_000 // 60 秒无操作显示吸引屏
 const showAttractScreen = ref(true) // 初始就显示吸引屏
 const showGuideBar = ref(false)
-let idleTimer = null
+let idleTimer: ReturnType<typeof setTimeout> | null = null
 
 function resetIdleTimer() {
-  clearTimeout(idleTimer)
+  clearTimeout(idleTimer ?? undefined)
   idleTimer = setTimeout(() => {
     showAttractScreen.value = true
     store.clearCart() // 顾客之间自动清空购物车
@@ -498,15 +503,15 @@ function dismissAttractScreen() {
   triggerGuide()
 }
 
-function enterWithMode(vision) {
+function enterWithMode(vision: boolean) {
   isVisionMode.value = vision
   dismissAttractScreen()
 }
 
-let guideTimer = null
+let guideTimer: ReturnType<typeof setTimeout> | null = null
 function triggerGuide() {
   showGuideBar.value = true
-  clearTimeout(guideTimer)
+  clearTimeout(guideTimer ?? undefined)
   guideTimer = setTimeout(() => {
     showGuideBar.value = false
   }, 8000)
@@ -554,7 +559,7 @@ async function handleCheckout() {
           store.fetchProductsForEvent()
         }
       } catch (error) {
-        showError(error?.message || '下单失败')
+        showError((error instanceof Error && error.message) || '下单失败')
         store.clearCart()
         store.fetchProductsForEvent()
       } finally {

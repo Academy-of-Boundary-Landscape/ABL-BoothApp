@@ -11,13 +11,20 @@
   </div>
 </template>
 
-<script setup>
-defineProps({
-  icon: { type: String, default: '📭' },
-  title: { type: String, required: true },
-  desc: { type: String, default: '' },
-  hint: { type: String, default: '' },
-})
+<script setup lang="ts">
+withDefaults(
+  defineProps<{
+    icon?: string
+    title: string
+    desc?: string
+    hint?: string
+  }>(),
+  {
+    icon: '📭',
+    desc: '',
+    hint: '',
+  }
+)
 </script>
 
 <style scoped>
