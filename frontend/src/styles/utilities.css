@@ -1,0 +1,5 @@
+/* 有重复证据的极少量工具类 */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}

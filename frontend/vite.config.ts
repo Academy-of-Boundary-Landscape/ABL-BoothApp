@@ -1,6 +1,8 @@
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import postcssCustomMedia from 'postcss-custom-media'
+import postcssGlobalData from '@csstools/postcss-global-data'
 
 export default defineConfig(({ mode }) => {
   return {
@@ -33,6 +35,18 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       minify: 'esbuild',
+    },
+    css: {
+      // styles/media.css 定义 custom media；global-data 把定义注入每个文件
+      // （SFC 的 <style> 也适用），postcss-custom-media 负责展开成真实媒体查询。
+      postcss: {
+        plugins: [
+          postcssGlobalData({
+            files: [fileURLToPath(new URL('./src/styles/media.css', import.meta.url))],
+          }),
+          postcssCustomMedia(),
+        ],
+      },
     },
     test: {
       environment: 'jsdom',

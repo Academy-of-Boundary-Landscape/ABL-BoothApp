@@ -1,0 +1,15 @@
+/* 全局基线。颜色与字体来自 config/theme.ts 注入的 CSS 变量。 */
+body {
+  background-color: var(--bg-color);
+  color: var(--primary-text-color);
+  font-family: var(--font-family);
+  margin: 0;
+}
+
+#app {
+  max-width: min(1600px, 100%);
+  margin: 0 auto;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}

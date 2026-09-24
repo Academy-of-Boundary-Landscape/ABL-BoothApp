@@ -7,7 +7,7 @@ import { createPinia } from 'pinia'
 // 3. 导入你的根组件、路由和全局样式
 import App from './App.vue'
 import router from './router'
-import './assets/main.css'
+import '@/styles/index.css'
 
 // 4. 创建 Vue 应用实例
 const app = createApp(App)

@@ -113,8 +113,8 @@
         ><EditEventForm v-if="selectedEvent" ref="editForm" :event="selectedEvent"
       /></template>
       <template #footer>
-        <button type="button" class="btn" @click="closeEditModal">取消</button>
-        <button type="button" class="btn btn-primary" @click="handleUpdateEvent">保存更改</button>
+        <n-button @click="closeEditModal">取消</n-button>
+        <n-button type="primary" @click="handleUpdateEvent">保存更改</n-button>
       </template>
     </AppModal>
   </div>
@@ -470,16 +470,6 @@ async function handleUpdateEvent() {
   color: var(--text-muted);
 }
 
-.btn-secondary {
-  background-color: var(--btn-secondary);
-  border-color: var(--btn-secondary);
-  color: var(--text-white);
-  padding: 8px 12px;
-  height: fit-content; /* 让按钮高度与输入框匹配 */
-}
-.btn-secondary:hover {
-  background-color: var(--btn-secondary-hover);
-}
 .no-results-message {
   text-align: center;
   padding: 2rem 1.5rem;

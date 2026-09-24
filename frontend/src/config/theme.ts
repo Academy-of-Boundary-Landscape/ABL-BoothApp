@@ -36,7 +36,6 @@ export interface ThemeColors {
     warningAlt: string
     warningHover: string
     error: string
-    errorAlt: string
     errorHover: string
     info: string
     infoHover: string
@@ -44,15 +43,12 @@ export interface ThemeColors {
   }
   border: {
     base: string
-    hover: string
     focus: string
     light: string
-    dark: string
     divider: string
   }
   special: {
     overlay: string
-    shadow: string
     tooltipBg: string
     highlight: string
     delete: string
@@ -64,10 +60,6 @@ export interface ThemeColors {
       success: string
       warning: string
       error: string
-    }
-    button: {
-      secondary: string
-      secondaryHover: string
     }
     order: {
       completed: string
@@ -107,14 +99,42 @@ export interface DesignTokens {
     lg: string
     xl: string
   }
+  /** 断点（px）。CSS 侧见 styles/media.css，两处数值必须一致（theme.spec.ts 校验）。 */
+  breakpoints: {
+    phone: number
+    tablet: number
+  }
+  /** 页宽档位 */
+  pageWidth: {
+    narrow: string
+    content: string
+    wide: string
+  }
+  /** 字重 */
+  fontWeight: {
+    regular: number
+    medium: number
+    bold: number
+  }
+  /** 行高（无单位） */
+  lineHeight: {
+    tight: number
+    base: number
+  }
 }
 
 /**
- * Naive UI common 覆盖项。naive-ui 的 `ThemeCommonVars` 里没有
- * `borderColorHover` / `borderColorPressed`（原配置保留了这两项，是无效键），
- * 为原样保留运行时对象，这里用索引签名放宽类型。
+ * 全局字体栈（不打包字体文件，离线 + 体积考虑，见 spec §4.4）。
+ * generateCSSVariables 输出为 --font-family，Naive 主题也用它。
  */
-type NaiveCommonOverrides = NonNullable<GlobalThemeOverrides['common']> & Record<string, string>
+export const fontFamily =
+  "system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif"
+
+/**
+ * Naive UI common 覆盖项。已知无效的 `borderColorHover` / `borderColorPressed`
+ * 在 ThemeCommonVars 中不存在，已删除（spec §4.3）。
+ */
+type NaiveCommonOverrides = NonNullable<GlobalThemeOverrides['common']>
 
 // 深色主题配置（当前主题）
 export const darkTheme: ThemeColors = {
@@ -155,7 +175,6 @@ export const darkTheme: ThemeColors = {
     warningAlt: '#FB8C00', // 警告替代色
     warningHover: '#D48E1A', // 警告悬停
     error: '#F44336', // 错误/取消
-    errorAlt: '#D0021B', // 错误替代色
     errorHover: '#A00114', // 错误悬停
     info: '#4A90E2', // 信息
     infoHover: '#357ABD', // 信息悬停
@@ -165,17 +184,14 @@ export const darkTheme: ThemeColors = {
   // === 边框颜色 ===
   border: {
     base: '#2C2C2C', // 基础边框
-    hover: '#3A3A3A', // 悬停边框
     focus: '#3A3A3A', // 聚焦边框
     light: '#444444', // 浅色边框
-    dark: '#555555', // 深色边框
     divider: '#2C2C2C', // 分割线
   },
 
   // === 特殊颜色 ===
   special: {
     overlay: 'rgba(0, 0, 0, 0.4)', // 遮罩层
-    shadow: 'rgba(0, 0, 0, 0.2)', // 阴影
     tooltipBg: 'rgba(0, 0, 0, 0.75)', // 提示框背景
     highlight: '#FFDF57', // 高亮/强调
     delete: '#DC3545', // 删除按钮
@@ -189,10 +205,6 @@ export const darkTheme: ThemeColors = {
       success: '#50E3C2', // 成功边框
       warning: '#F5A623', // 警告边框
       error: '#D0021B', // 错误边框
-    },
-    button: {
-      secondary: '#555555', // 次要按钮
-      secondaryHover: '#666666', // 次要按钮悬停
     },
     order: {
       completed: '#555555', // 已完成订单
@@ -243,7 +255,6 @@ export const lightTheme: ThemeColors = {
     warningAlt: '#D97706',
     warningHover: '#B45309',
     error: '#EF4444',
-    errorAlt: '#DC2626',
     errorHover: '#B91C1C',
     info: '#3B82F6',
     infoHover: '#2563EB',
@@ -255,19 +266,14 @@ export const lightTheme: ThemeColors = {
     // 关键修改：加深基础边框颜色。
     // 原来的 E5E7EB 在某些显示器上几乎看不见，改为 E2E4E8
     base: '#E2E4E8',
-    hover: '#9CA3AF', // 悬停时明显变深
     focus: '#00A99D', // 聚焦颜色
     light: '#F3F4F6', // 极浅分割线
-    dark: '#6B7280', // 深色边框
     divider: '#EEF0F2', // 内容分割线，比背景稍深
   },
 
   // === 特殊颜色 ===
   special: {
     overlay: 'rgba(0, 0, 0, 0.4)',
-    // 关键修改：加深阴影颜色。
-    // 浅色模式主要靠阴影区分层级，0.08 太淡了，改为 0.1
-    shadow: 'rgba(0, 0, 0, 0.1)',
     tooltipBg: '#1F2937', // Tooltip 保持深色背景
     highlight: '#FEF3C7',
     delete: '#EF4444',
@@ -281,10 +287,6 @@ export const lightTheme: ThemeColors = {
       success: '#10B981',
       warning: '#F59E0B',
       error: '#EF4444',
-    },
-    button: {
-      secondary: '#F3F4F6', // 次要按钮背景
-      secondaryHover: '#E5E7EB', // 悬停加深
     },
     order: {
       completed: '#F3F4F6',
@@ -333,6 +335,33 @@ export const tokens: DesignTokens = {
     lg: '0 8px 24px rgba(0,0,0,0.15)', // modal、抽屉
     xl: '0 12px 32px rgba(0,0,0,0.2)', // 拖拽中
   },
+
+  // 断点（≤ phone 手机；≤ tablet 平板，含手机）。
+  // styles/media.css 的 custom media 与这里必须一致（theme.spec.ts 校验）。
+  breakpoints: {
+    phone: 640,
+    tablet: 1024,
+  },
+
+  // 页宽档位
+  pageWidth: {
+    narrow: '640px',
+    content: '960px',
+    wide: '1280px',
+  },
+
+  // 字重
+  fontWeight: {
+    regular: 400,
+    medium: 500,
+    bold: 600,
+  },
+
+  // 行高（无单位）
+  lineHeight: {
+    tight: 1.3,
+    base: 1.6,
+  },
 }
 
 // 生成 CSS 变量
@@ -369,12 +398,28 @@ export function generateCSSVariables(theme: ThemeColors): string {
     --shadow-lg: ${t.shadow.lg};
     --shadow-xl: ${t.shadow.xl};
 
+    /* ===== 页宽 ===== */
+    --page-narrow: ${t.pageWidth.narrow};
+    --page-content: ${t.pageWidth.content};
+    --page-wide: ${t.pageWidth.wide};
+
+    /* ===== 字重 ===== */
+    --weight-regular: ${t.fontWeight.regular};
+    --weight-medium: ${t.fontWeight.medium};
+    --weight-bold: ${t.fontWeight.bold};
+
+    /* ===== 行高 ===== */
+    --leading-tight: ${t.lineHeight.tight};
+    --leading-base: ${t.lineHeight.base};
+
+    /* ===== 字体栈 ===== */
+    --font-family: ${fontFamily};
+
     /* 背景色 */
     --bg-color: ${theme.background.primary};
     --bg-secondary: ${theme.background.secondary};
     --card-bg-color: ${theme.background.card};
     --bg-elevated: ${theme.background.elevated};
-    --input-bg-color: ${theme.background.input};
 
     /* 文本颜色 */
     --primary-text-color: ${theme.text.primary};
@@ -387,8 +432,6 @@ export function generateCSSVariables(theme: ThemeColors): string {
 
     /* 主题色 */
     --accent-color: ${theme.primary.base};
-    --accent-color-hover: ${theme.primary.hover};
-    --accent-color-pressed: ${theme.primary.pressed};
     --accent-color-dark: ${theme.primary.dark};
     --accent-color-light: ${theme.primary.light};
 
@@ -399,7 +442,6 @@ export function generateCSSVariables(theme: ThemeColors): string {
     --warning-color-alt: ${theme.status.warningAlt};
     --warning-color-hover: ${theme.status.warningHover};
     --error-color: ${theme.status.error};
-    --error-color-alt: ${theme.status.errorAlt};
     --error-color-hover: ${theme.status.errorHover};
     --info-color: ${theme.status.info};
     --info-color-hover: ${theme.status.infoHover};
@@ -407,15 +449,11 @@ export function generateCSSVariables(theme: ThemeColors): string {
 
     /* 边框颜色 */
     --border-color: ${theme.border.base};
-    --border-color-hover: ${theme.border.hover};
-    --border-color-focus: ${theme.border.focus};
     --border-color-light: ${theme.border.light};
-    --border-color-dark: ${theme.border.dark};
     --divider-color: ${theme.border.divider};
 
     /* 特殊颜色 */
     --overlay-color: ${theme.special.overlay};
-    --shadow-color: ${theme.special.shadow};
     --tooltip-bg: ${theme.special.tooltipBg};
     --highlight-color: ${theme.special.highlight};
     --delete-color: ${theme.special.delete};
@@ -429,14 +467,13 @@ export function generateCSSVariables(theme: ThemeColors): string {
     --alert-success: ${theme.components.alert.success};
     --alert-warning: ${theme.components.alert.warning};
     --alert-error: ${theme.components.alert.error};
-    --btn-secondary: ${theme.components.button.secondary};
-    --btn-secondary-hover: ${theme.components.button.secondaryHover};
     --order-completed: ${theme.components.order.completed};
   `
 }
 
 // 生成 Naive UI 主题覆盖配置（包含常用组件的主色同步）
 export function generateNaiveUITheme(theme: ThemeColors): GlobalThemeOverrides {
+  const t = tokens
   const primary = theme.primary
   const text = theme.text
   const common: NaiveCommonOverrides = {
@@ -454,13 +491,20 @@ export function generateNaiveUITheme(theme: ThemeColors): GlobalThemeOverrides {
     tableColor: theme.background.card,
     inputColor: theme.background.input,
     borderColor: theme.border.base,
-    borderColorHover: theme.border.hover,
-    borderColorPressed: theme.border.focus,
     dividerColor: theme.border.divider,
     successColor: theme.status.success,
     errorColor: theme.status.error,
     warningColor: theme.status.warning,
     infoColor: theme.status.info,
+    // 几何项与 token 同步（spec §4.3），不再用 Naive 自己的一套
+    borderRadius: t.radius.md,
+    borderRadiusSmall: t.radius.sm,
+    fontSize: t.font.base,
+    fontSizeSmall: t.font.sm,
+    fontSizeMedium: t.font.base,
+    fontSizeLarge: t.font.md,
+    fontFamily,
+    lineHeight: String(t.lineHeight.base),
   }
   return {
     common,
@@ -530,6 +574,12 @@ export function generateNaiveUITheme(theme: ThemeColors): GlobalThemeOverrides {
       colorInfo: primary.light,
       titleTextColorInfo: primary.base,
       contentTextColorInfo: text.secondary,
+    },
+    Card: {
+      borderRadius: t.radius.lg,
+    },
+    Dialog: {
+      borderRadius: t.radius.lg,
     },
   }
 }
