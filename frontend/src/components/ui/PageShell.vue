@@ -8,7 +8,10 @@
           </h1>
           <HelpBubble v-if="help" :page="help" />
         </div>
-        <p v-if="subtitle" class="page-shell__subtitle">{{ subtitle }}</p>
+        <div v-if="$slots.subtitle" class="page-shell__subtitle">
+          <slot name="subtitle" />
+        </div>
+        <p v-else-if="subtitle" class="page-shell__subtitle">{{ subtitle }}</p>
       </div>
       <div v-if="$slots.actions" class="page-shell__actions">
         <slot name="actions" />

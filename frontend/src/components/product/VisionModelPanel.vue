@@ -1,5 +1,10 @@
 <template>
-  <SectionCard title="AI 视觉识别" collapsible v-model:collapsed="isCollapsed">
+  <SectionCard
+    class="vision-container"
+    title="AI 视觉识别"
+    collapsible
+    v-model:collapsed="isCollapsed"
+  >
     <template #extra>
       <span class="help-wrap" @click.stop>
         <HelpBubble page="vision" />

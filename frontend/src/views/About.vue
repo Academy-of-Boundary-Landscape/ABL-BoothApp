@@ -154,7 +154,7 @@
             <template #header>
               <n-flex align="center" size="small">
                 <n-icon color="#d03050"><GiftOutline /></n-icon>
-                <span style="font-weight: var(--weight-bold); color: var(--primary-text-color)"
+                <span style="font-weight: var(--weight-bold); color: var(--n-text-color)"
                   >永久免费声明</span
                 >
               </n-flex>
@@ -335,7 +335,7 @@ import {
   NAlert,
   NBlockquote,
 } from 'naive-ui'
-import { api, unwrap } from '@/api/client'
+import { api, unwrap, errorMessage } from '@/api/client'
 import { copyLink as copyLinkUtil } from '@/services/clipboard'
 import { onMounted, ref } from 'vue'
 import { useFeedback } from '@/composables/useFeedback'
@@ -419,7 +419,7 @@ const copyLink = async (url: string, label: string) => {
     fb.success(`已复制${label}链接`)
   } catch (err) {
     console.error('复制失败:', err)
-    fb.error(err, `复制${label}失败，请检查权限`)
+    fb.error(`复制${label}失败，请检查权限`)
   }
 }
 
@@ -442,7 +442,7 @@ const resetDatabase = async () => {
         }, 1500)
       } catch (err) {
         stopLoading()
-        fb.error(err, '重置失败')
+        fb.error(errorMessage(err, '重置失败'))
       }
     },
   })

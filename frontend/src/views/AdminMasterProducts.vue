@@ -72,9 +72,9 @@ async function refreshProducts(reason = '') {
   await store.fetchMasterProducts()
 
   if (reason === 'created') {
-    fb.success('已添加商品，列表已刷新')
+    fb.success('已添加商品，列表已刷新', { duration: 2500, closable: true })
   } else if (reason === 'imported') {
-    fb.success('已导入数据包，列表已刷新')
+    fb.success('已导入数据包，列表已刷新', { duration: 2500, closable: true })
   }
 }
 

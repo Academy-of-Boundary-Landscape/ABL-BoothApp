@@ -1,9 +1,14 @@
 <template>
-  <PageShell
-    title="展会结算"
-    subtitle="录垫付、结算调整和收摊清点。金额框里填「元」，提交时换算成「分」；业务规则由后端判定，这里只负责把后端那句话原样显示出来。"
-    width="wide"
-  >
+  <PageShell title="展会结算" width="wide">
+    <template #subtitle>
+      <p v-if="store.report" class="event-title">
+        {{ store.report.event_name }} · {{ store.report.event_date }}
+      </p>
+      <p class="header-desc">
+        录垫付、结算调整和收摊清点。金额框里填「元」，提交时换算成「分」；
+        业务规则由后端判定，这里只负责把后端那句话原样显示出来。
+      </p>
+    </template>
     <template #actions>
       <n-space class="header-actions">
         <n-button :disabled="!store.report" @click="reloadReport">刷新</n-button>
@@ -25,10 +30,6 @@
       <p v-for="(w, i) in store.report.warnings" :key="i" class="warning-line">⚠ {{ w }}</p>
       <p class="warning-line muted">说明某笔账记错了，核对无误后再导出。</p>
     </n-alert>
-
-    <p v-if="store.report" class="event-title">
-      {{ store.report.event_name }} · {{ store.report.event_date }}
-    </p>
 
     <AsyncState :loading="store.isLoading && !store.report" loading-text="正在加载结算数据...">
       <n-alert v-if="store.error" type="error" class="store-error" :bordered="false">
@@ -726,8 +727,13 @@ onUnmounted(() => {
 
 <style scoped>
 .event-title {
+  margin: 0;
   color: var(--primary-text-color);
   font-weight: var(--weight-bold);
+}
+.header-desc {
+  margin: 0;
+  line-height: var(--leading-base);
 }
 .header-actions {
   flex: 0 0 auto;

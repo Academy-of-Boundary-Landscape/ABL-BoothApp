@@ -1,5 +1,11 @@
 <template>
-  <PageShell title="待处理订单" :subtitle="eventSubtitle" width="wide">
+  <PageShell title="待处理订单" width="wide">
+    <template #subtitle>
+      <template v-if="eventName">
+        当前展会: <strong>{{ eventName }}</strong>
+      </template>
+      <template v-else>正在加载展会信息...</template>
+    </template>
     <template #actions>
       <router-link to="/admin" class="back-link">← 管理后台</router-link>
       <div class="header-actions">
@@ -147,10 +153,6 @@ const eventName = computed(() => {
   return event ? event.name : `展会 #${props.id}`
 })
 
-const eventSubtitle = computed(() =>
-  eventName.value ? `当前展会: ${eventName.value}` : '正在加载展会信息...'
-)
-
 const isEventSettled = computed(() => {
   const event = eventStore.events.find((e) => e.id === parseInt(String(props.id), 10))
   return event?.status === '已结算'
@@ -192,7 +194,7 @@ watch(
     // 只有当数量增加，且不是第一次初始化加载时才响铃
     if (isInitialized.value && newCount > oldCount) {
       playNoticeSound()
-      fb.info('收到新订单！')
+      fb.info('收到新订单！', { keepAliveOnHover: true })
     }
 
     // 首次加载后标记为已初始化

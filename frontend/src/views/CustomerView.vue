@@ -546,6 +546,7 @@ async function handleCheckout() {
     content: `共 ${itemCount} 件商品，合计 ${formatYuan(totalAmount)}`,
     positiveText: '确认下单',
     negativeText: '再看看',
+    type: 'info',
     onConfirm: async () => {
       isCheckingOut.value = true
       try {

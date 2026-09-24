@@ -484,7 +484,7 @@ const copyLink = async (url: string, label: string) => {
     fb.success(`已复制${label}`)
   } catch (err) {
     console.error('复制失败:', err)
-    fb.error(err, `复制${label}失败，请检查权限`)
+    fb.error(`复制${label}失败，请检查权限`)
   }
 }
 </script>

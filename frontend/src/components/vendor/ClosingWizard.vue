@@ -356,7 +356,7 @@ async function cancelAll() {
     // 失败的会留在重新拉回来的列表里，逐条把后端那句话显示出来。
     // 放在 finally 里：即使上面的刷新也失败，摊主仍要知道是哪几单没取消掉。
     for (const f of failed) {
-      fb.error(`#${f.id}：${f.msg}`)
+      fb.error(`#${f.id}：${f.msg}`, undefined, { duration: 6000 })
     }
   }
 }

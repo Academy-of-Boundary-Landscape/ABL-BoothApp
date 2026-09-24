@@ -1,6 +1,6 @@
 <template>
   <div class="empty-state" :class="{ 'empty-state--compact': compact }">
-    <div v-if="!compact" class="empty-state__icon">{{ icon }}</div>
+    <div v-if="!compact && icon" class="empty-state__icon">{{ icon }}</div>
     <div class="empty-state__title">{{ title }}</div>
     <div v-if="desc || $slots.desc" class="empty-state__desc">
       <slot name="desc">{{ desc }}</slot>

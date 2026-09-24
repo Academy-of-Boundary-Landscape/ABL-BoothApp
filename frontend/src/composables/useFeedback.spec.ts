@@ -13,7 +13,7 @@ interface CapturedCall {
 }
 interface DialogCaptured {
   title?: string
-  content?: string
+  content?: unknown
   positiveText?: string
   negativeText?: string
   onPositiveClick?: () => unknown
@@ -81,6 +81,7 @@ beforeEach(() => {
   mock.instances.length = 0
   mock.dialog.warning.mockClear()
   mock.dialog.error.mockClear()
+  mock.dialog.info.mockClear()
   mock.message.success.mockClear()
   mock.message.loading.mockClear()
 })
@@ -119,7 +120,7 @@ describe('useFeedback', () => {
   it('useFeedback works outside component setup', () => {
     const fb = useFeedback()
     expect(() => fb.success('ok')).not.toThrow()
-    expect(mock.message.success).toHaveBeenCalledWith('ok')
+    expect(mock.message.success).toHaveBeenCalledWith('ok', undefined)
   })
 
   it('confirm 确认 → true，取消 → false', async () => {
@@ -245,5 +246,38 @@ describe('useFeedback', () => {
     expect(mock.dialog.warning).toHaveBeenCalledTimes(1)
     opts.onClose?.()
     await expect(p).resolves.toBeUndefined()
+  })
+
+  it('toast 可选项原样透传（时长 / 可关闭 / 悬停保持）', () => {
+    const fb = useFeedback()
+    fb.success('导出成功', { duration: 5000, closable: true })
+    expect(mock.messageCalls.at(-1)).toEqual({
+      method: 'success',
+      args: ['导出成功', { duration: 5000, closable: true }],
+    })
+    fb.info('收到新订单！', { keepAliveOnHover: true })
+    expect(mock.messageCalls.at(-1)!.args[1]).toEqual({ keepAliveOnHover: true })
+    fb.error(new Error('boom'), '失败', { duration: 6000 })
+    expect(mock.messageCalls.at(-1)).toEqual({
+      method: 'error',
+      args: ['boom', { duration: 6000 }],
+    })
+  })
+
+  it('confirm 的 type 覆盖 danger 推出的类型；content 可为渲染函数', () => {
+    const fb = useFeedback()
+    const render = () => 'x'
+    void fb.confirm({ title: '确认下单', type: 'info', danger: true, content: render })
+    expect(mock.dialog.info).toHaveBeenCalledTimes(1)
+    expect(mock.dialog.error).not.toHaveBeenCalled()
+    expect(mock.dialogCalls.at(-1)!.content).toBe(render)
+  })
+
+  it('alert 的 positiveText 缺省「确认」，可自定义', () => {
+    const fb = useFeedback()
+    void fb.alert({ content: 'a' })
+    expect(mock.dialogCalls.at(-1)!.positiveText).toBe('确认')
+    void fb.alert({ content: 'b', type: 'error', positiveText: '知道了' })
+    expect(mock.dialogCalls.at(-1)!.positiveText).toBe('知道了')
   })
 })

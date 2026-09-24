@@ -278,6 +278,17 @@ describe('PageShell', () => {
     const w = mount(PageShell, { props: { title: '展会管理' }, ...pageShellOpts })
     expect(w.find('h1').text()).toBe('展会管理')
   })
+
+  it('subtitle 插槽优先于 subtitle prop（可放富文本）', () => {
+    const w = mount(PageShell, {
+      props: { title: 'T', subtitle: '纯文本' },
+      slots: { subtitle: '说明，<strong class="em">重点</strong>' },
+      ...pageShellOpts,
+    })
+    const sub = w.find('.page-shell__subtitle')
+    expect(sub.find('.em').text()).toBe('重点')
+    expect(w.text()).not.toContain('纯文本')
+  })
 })
 
 describe('SectionCard', () => {
@@ -333,5 +344,10 @@ describe('EmptyState', () => {
     })
     expect(w.find('.empty-state__icon').exists()).toBe(true)
     expect(w.find('.do').exists()).toBe(true)
+  })
+
+  it('icon 传空串不渲染图标占位', () => {
+    const w = mount(EmptyState, { props: { title: '暂无已完成订单', icon: '' }, ...mountOpts })
+    expect(w.find('.empty-state__icon').exists()).toBe(false)
   })
 })

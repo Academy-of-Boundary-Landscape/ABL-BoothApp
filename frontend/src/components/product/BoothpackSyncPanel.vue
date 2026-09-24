@@ -77,7 +77,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, h, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { NAlert, NButton, NProgress } from 'naive-ui'
 import { SectionCard } from '@/components/ui'
 import { useFeedback } from '@/composables/useFeedback'
@@ -204,12 +204,12 @@ async function handleExport() {
     const { filename } = await syncStore.exportProducts()
     syncMessage.value = filename ? `已导出：${filename}` : '已取消导出'
     if (filename) {
-      fb.success(`已成功导出商品包：${filename}`)
+      fb.success(`已成功导出商品包：${filename}`, { duration: 5000, closable: true })
     }
   } catch (error) {
     const msg = error instanceof Error && error.message ? error.message : '导出失败'
     syncError.value = msg
-    fb.error(`导出失败：${msg}`)
+    fb.error(`导出失败：${msg}`, undefined, { duration: 5000, closable: true })
   }
 }
 
@@ -231,13 +231,20 @@ async function confirmAndImport(target: ImportTarget) {
 
   await fb.confirm({
     title: target.kind === 'path' ? '检测到文件拖入' : '确认导入',
-    content: `文件名：${name}\n\n确认要导入吗？这会覆盖或更新现有商品数据。\n建议先导出当前数据作为备份。`,
+    content: () =>
+      h('div', { style: 'white-space: pre-line;' }, [
+        `文件名：${name}`,
+        '\n\n',
+        '确认要导入吗？这会覆盖或更新现有商品数据。',
+        '\n',
+        '建议先导出当前数据作为备份。',
+      ]),
     positiveText: '确认导入',
     negativeText: '取消',
     onConfirm: async () => {
       if (isImporting.value) {
-        fb.info('正在导入中，请稍候')
-        return
+        fb.info('正在导入中，请稍候', { duration: 2000, closable: true })
+        return false
       }
 
       clearSyncHints()
@@ -249,7 +256,10 @@ async function confirmAndImport(target: ImportTarget) {
         const pCount = result?.products_count ?? 0
         const iCount = result?.images_count ?? 0
         syncMessage.value = `导入成功，更新了 ${pCount} 条商品、${iCount} 张图片。`
-        fb.success(`导入成功，已更新 ${pCount} 条商品、${iCount} 张图片`)
+        fb.success(`导入成功，已更新 ${pCount} 条商品、${iCount} 张图片`, {
+          duration: 5000,
+          closable: true,
+        })
         emit('imported')
       } catch (error) {
         stopImportProgress(false)

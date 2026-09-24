@@ -1,9 +1,10 @@
 <template>
-  <PageShell
-    title="套装与优惠"
-    subtitle="套装 = 从一组候选商品里按一个总价卖。选「这几样各 1 件凑齐」就是甲+乙合购； 选「任选 N 件、可以拿同款」就是同一本也能买 3 本。 候选商品必须属于同一个货主——替别的社团让价不是摊主能单方面决定的。"
-    width="content"
-  >
+  <PageShell title="套装与优惠" width="content">
+    <template #subtitle>
+      套装 = 从一组候选商品里按一个总价卖。选「这几样各 1 件凑齐」就是甲+乙合购； 选「任选 N
+      件、可以拿同款」就是同一本也能买 3 本。
+      <strong>候选商品必须属于同一个货主</strong>——替别的社团让价不是摊主能单方面决定的。
+    </template>
     <SectionCard
       title="新建套装"
       collapsible

@@ -1,6 +1,6 @@
 // composables/useFeedback.ts —— 反馈（toast / 确认 / 模态提示）的唯一入口。
 // 基于 createDiscreteApi：不依赖组件 setup 上下文，store 里也能用；主题跟随 themeStore。
-import { computed } from 'vue'
+import { computed, type VNodeChild } from 'vue'
 import { createDiscreteApi, darkTheme, type ConfigProviderProps } from 'naive-ui'
 import { useThemeStore } from '@/stores/themeStore'
 
@@ -33,12 +33,22 @@ export function errorText(e: unknown, fallback?: string): string {
   return fallback ?? '操作失败'
 }
 
+/** toast 的可选项，原样透传给 Naive message（只收用得到的几项）。 */
+export interface MessageOptions {
+  duration?: number
+  closable?: boolean
+  keepAliveOnHover?: boolean
+}
+
 export interface ConfirmOptions {
   title: string
-  content?: string
+  /** 字符串，或渲染函数（需要换行/富文本时，例如 `() => h('div', { style: 'white-space: pre-line' }, …)`）。 */
+  content?: string | (() => VNodeChild)
   positiveText?: string
   negativeText?: string
   danger?: boolean
+  /** 对话框类型（图标与确认按钮配色）；缺省按 `danger` 取 error / warning。 */
+  type?: 'info' | 'success' | 'warning' | 'error'
   /**
    * 点击确认时执行的操作，接到 Naive dialog 的 `onPositiveClick` 上并原样返回其返回值。
    * 返回 Promise 时确认按钮 loading、弹窗等 Promise 结束才关；返回 / resolve 为 `false`
@@ -48,10 +58,10 @@ export interface ConfirmOptions {
 }
 
 export interface Feedback {
-  success(msg: string): void
-  info(msg: string): void
-  warning(msg: string): void
-  error(e: unknown, fallback?: string): void
+  success(msg: string, opts?: MessageOptions): void
+  info(msg: string, opts?: MessageOptions): void
+  warning(msg: string, opts?: MessageOptions): void
+  error(e: unknown, fallback?: string, opts?: MessageOptions): void
   /** 常驻 loading 提示（duration: 0），返回销毁函数。 */
   loading(msg: string): () => void
   confirm(opts: ConfirmOptions): Promise<boolean>
@@ -59,22 +69,24 @@ export interface Feedback {
     title?: string
     content: string
     type?: 'info' | 'success' | 'warning' | 'error'
+    /** 确认按钮文字，缺省「确认」。 */
+    positiveText?: string
   }): Promise<void>
 }
 
 export function useFeedback(): Feedback {
   return {
-    success(msg) {
-      discrete().message.success(msg)
+    success(msg, opts) {
+      discrete().message.success(msg, opts)
     },
-    info(msg) {
-      discrete().message.info(msg)
+    info(msg, opts) {
+      discrete().message.info(msg, opts)
     },
-    warning(msg) {
-      discrete().message.warning(msg)
+    warning(msg, opts) {
+      discrete().message.warning(msg, opts)
     },
-    error(e, fallback) {
-      discrete().message.error(errorText(e, fallback))
+    error(e, fallback, opts) {
+      discrete().message.error(errorText(e, fallback), opts)
     },
     loading(msg) {
       const instance = discrete().message.loading(msg, { duration: 0 })
@@ -126,7 +138,7 @@ export function useFeedback(): Feedback {
           return result
         }
 
-        instance = discrete().dialog[opts.danger ? 'error' : 'warning']({
+        instance = discrete().dialog[opts.type ?? (opts.danger ? 'error' : 'warning')]({
           title: opts.title,
           content: opts.content,
           positiveText: opts.positiveText ?? '确定',
@@ -149,7 +161,7 @@ export function useFeedback(): Feedback {
         discrete().dialog[opts.type ?? 'info']({
           title: opts.title,
           content: opts.content,
-          positiveText: '确认',
+          positiveText: opts.positiveText ?? '确认',
           onPositiveClick: settle,
           onNegativeClick: settle,
           onClose: settle,

@@ -460,6 +460,7 @@ async function handleDelete(product: Schemas['ProductEventProduct']) {
           content:
             (error instanceof Error ? error.message : String(error)) || '无法下架商品，请稍后重试',
           type: 'error',
+          positiveText: '知道了',
         })
       }
     },

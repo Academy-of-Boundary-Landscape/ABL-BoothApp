@@ -4,6 +4,7 @@
     title="v1.2 更新了账本模型"
     size="sm"
     :mask-closable="false"
+    :close-on-esc="false"
     :closable="false"
   >
     <div class="migration-box">
