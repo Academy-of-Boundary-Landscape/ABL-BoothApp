@@ -44,6 +44,25 @@
           </n-button>
           <n-button v-if="editingId" quaternary @click="resetForm">取消编辑</n-button>
         </div>
+
+        <!-- 配置的后果本来是黑箱：摊主配完只能等顾客来薅。把「顾客最多 / 最少能怎么拿」
+             摆在表单正下方，**切换上面那个模式时这几个数字当场变**——语义靠看见后果
+             理解，不靠读文字解释「重复」是什么意思。 -->
+        <div v-if="previewError" class="preview preview-problem">{{ previewError }}</div>
+        <div v-else-if="preview" class="preview">
+          <p class="preview-line muted">
+            候选：{{
+              preview.candidates.map((c) => `${c.name} ${formatYuan(c.unit_price)}`).join(' · ')
+            }}
+          </p>
+          <p v-for="s in scenarioLines" :key="s.kind" class="preview-line">
+            {{ s.label }}：<strong>{{ describeMembers(s.members) }}</strong> 原价
+            {{ formatYuan(s.original_amount) }} → 付 {{ formatYuan(s.lot_price) }}
+            <span v-if="s.discount > 0" class="gave">你让 {{ formatYuan(s.discount) }}</span>
+            <span v-else class="not-applied">这种组合不会套用（比原价贵）</span>
+          </p>
+          <p v-for="w in preview.warnings" :key="w.code" class="preview-warn">⚠ {{ w.message }}</p>
+        </div>
       </CollapsibleSection>
 
       <div v-if="store.isLoading" class="loading-message">正在加载套装列表...</div>
@@ -98,7 +117,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import {
   NInput,
   NInputNumber,
@@ -136,6 +155,86 @@ const candidateOptions = computed(() =>
     value: p.id,
   }))
 )
+
+// --- 试算 ---
+// 后端 `/lots/preview` 是只读的 dry-run，走的是和创建完全相同的校验。
+const preview = ref(null)
+const previewError = ref(null)
+let previewSeq = 0
+let previewTimer = null
+
+// 表单填到能试算了没有。不完整时不发请求——那只会得到一句「至少要有一个候选商品」，
+// 摊主还在填就弹错话，比不说话更烦。
+const previewable = computed(
+  () =>
+    Number.isFinite(form.value.pickCount) &&
+    form.value.pickCount >= 1 &&
+    form.value.candidateIds.length > 0 &&
+    Number.isFinite(form.value.priceYuan)
+)
+
+function schedulePreview() {
+  if (previewTimer) clearTimeout(previewTimer)
+  // **在途请求必须作废。** 少了这一句，上一份配置的试算结果会落在新表单上——
+  // 顾客端购物车踩过一模一样的坑（见 customerStore 的 scheduleQuote）。
+  previewSeq += 1
+  if (!previewable.value) {
+    preview.value = null
+    previewError.value = null
+    return
+  }
+  previewTimer = setTimeout(runPreview, 300)
+}
+
+async function runPreview() {
+  const seq = (previewSeq += 1)
+  try {
+    const data = await store.previewLot(props.id, {
+      pick_count: form.value.pickCount,
+      total_price: toCents(form.value.priceYuan),
+      allow_repeat: form.value.allowRepeat,
+      candidate_ids: form.value.candidateIds,
+    })
+    if (seq !== previewSeq) return
+    preview.value = data
+    previewError.value = null
+  } catch (error) {
+    if (seq !== previewSeq) return
+    preview.value = null
+    // 后端原文：跨货主、候选数不够、件数超范围，都是摊主按「新建」会看到的同一句话。
+    previewError.value = error.message
+  }
+}
+
+// 名字不影响试算结果，所以不进依赖——否则打字时会白发一串请求。
+watch(
+  () =>
+    JSON.stringify([
+      form.value.pickCount,
+      form.value.priceYuan,
+      form.value.allowRepeat,
+      form.value.candidateIds,
+    ]),
+  schedulePreview,
+  { immediate: true }
+)
+
+/// 只有一种凑法时（固定组合），两个极端是同一个组合——列两行一样的只会让人
+/// 以为自己看错了，合成一行并换个说法。
+const scenarioLines = computed(() => {
+  const sc = preview.value?.scenarios ?? []
+  if (sc.length === 2 && sc[0].original_amount === sc[1].original_amount) {
+    return [{ ...sc[0], label: '顾客只能这样拿' }]
+  }
+  return sc.map((s) => ({
+    ...s,
+    label: s.kind === 'max_discount' ? '顾客最多能这样拿' : '顾客最少能这样拿',
+  }))
+})
+
+function describeMembers(members) {
+  return members.map((m) => (m.qty > 1 ? `${m.name} ×${m.qty}` : m.name)).join(' + ')
+}
 
 function candidateNames(lot) {
   if (!lot.candidate_ids.length) return '（候选已被删除）'
@@ -220,7 +319,10 @@ onMounted(async () => {
 })
 // 从 A 展会的套装页跳到 B 展会时，先渲染的是上一场的套装（候选名还会显示成 #id），
 // 直到 fetchLots 返回。离开就清掉，别让旧展会的数据越界显示。
-onUnmounted(() => store.resetStore())
+onUnmounted(() => {
+  if (previewTimer) clearTimeout(previewTimer)
+  store.resetStore()
+})
 </script>
 
 <style scoped>
@@ -260,6 +362,42 @@ onUnmounted(() => store.resetStore())
 }
 .mode {
   flex: 1 1 100%;
+}
+
+.preview {
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--accent-color);
+  border-radius: var(--radius-sm);
+  background-color: var(--card-bg-color);
+}
+.preview-problem {
+  border-left-color: var(--error-color);
+  color: var(--error-color);
+}
+.preview-line {
+  margin: 0 0 0.25rem;
+  font-size: var(--font-sm);
+  line-height: 1.6;
+}
+.preview-line.muted {
+  color: var(--text-muted);
+}
+.preview-line:last-child {
+  margin-bottom: 0;
+}
+.gave {
+  color: var(--warning-color);
+}
+.not-applied {
+  color: var(--text-disabled);
+}
+.preview-warn {
+  margin: 0.5rem 0 0;
+  font-size: var(--font-sm);
+  line-height: 1.5;
+  color: var(--warning-color);
 }
 
 .table-wrapper {

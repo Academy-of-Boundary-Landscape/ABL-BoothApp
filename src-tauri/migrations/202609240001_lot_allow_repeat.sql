@@ -10,3 +10,14 @@
 -- 顾客当场会问；猜成「不限」→ 摊主静默少收钱。
 ALTER TABLE lots ADD COLUMN allow_repeat INTEGER NOT NULL DEFAULT 0
     CHECK (allow_repeat IN (0, 1));
+
+-- 回填：候选种类 < pick_count 的 Lot **只有在允许重复时才有意义**（比如
+-- 「同一本买 3 本 80」是候选 1 种、任选 3 件）。这类配置的原意不含糊，
+-- 默认成 0 会让它们升级后静默失效——套装再也套不上，而且摊主一改就被
+-- 新的 400 校验挡住，除非他猜到要去勾「可同款」。
+--
+-- 候选种类 >= pick_count 的那些**是真的含糊**（既可能想说固定组合，也可能想说
+-- 任选同款），保持默认 0——猜错的方向要选「套装套不上」而不是「静默少收钱」。
+UPDATE lots
+SET allow_repeat = 1
+WHERE (SELECT COUNT(*) FROM lot_candidates WHERE lot_candidates.lot_id = lots.id) < pick_count;

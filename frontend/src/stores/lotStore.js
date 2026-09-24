@@ -63,10 +63,36 @@ export const useLotStore = defineStore('lot', () => {
     }
   }
 
+  /**
+   * 试算一份**还没保存**的配置：它会被顾客怎么用、你最多让多少、哪里可能配错了。
+   *
+   * 只读，不动 `lots`。后端走的是和创建完全相同的校验，所以这里的错误原文
+   * 就是摊主按「新建」会看到的那一句——**原样抛出去，不要换成通用文案**，
+   * 「试算说行、保存说不行」比没有试算更糟。
+   */
+  async function previewLot(eventId, payload) {
+    try {
+      const response = await api.post(`/events/${eventId}/lots/preview`, payload)
+      return response.data
+    } catch (err) {
+      throw new Error(err.response?.data?.error || '试算失败。')
+    }
+  }
+
   function resetStore() {
     lots.value = []
     error.value = null
   }
 
-  return { lots, isLoading, error, fetchLots, createLot, updateLot, deleteLot, resetStore }
+  return {
+    lots,
+    isLoading,
+    error,
+    fetchLots,
+    createLot,
+    updateLot,
+    deleteLot,
+    previewLot,
+    resetStore,
+  }
 })

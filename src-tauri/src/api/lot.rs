@@ -1,6 +1,9 @@
 //! Lot = 候选商品集合 + 要选几件(N) + 总价（spec 4.1）。
 //!
-//! 「固定成分」是「任选 N」的特例（N = 候选集大小），模型里只有一个概念，不是两套并行。
+//! **「固定成分」不是「任选 N」的特例。** spec 4.1 曾经这么写，2026-09-24 的真机验证
+//! 证明它是错的：候选集大小 = N 只保证「最多能拿满」，不等于「每种恰好一件」——
+//! 候选 {nl ¥114, shit ¥33}、任选 2 件、套装 ¥100，顾客拿 2 件 nl 同样满足「任选 2 件」，
+//! 于是 ¥228 的货按 ¥100 走掉。两者的差别由 `allow_repeat` 显式声明，求解器推不出来。
 //!
 //! **单品不在这张表里。** 单品在求解器眼里是「候选集只有自己、N = 1、价格就是单价」的
 //! 退化 Lot，那是求解器**输入归一化**的事，不是模型的事——管理员眼里仍然是
@@ -34,6 +37,10 @@ const MAX_CANDIDATES: usize = 200;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/events/:event_id/lots", get(list_lots).post(create_lot))
+        // `/lots/preview` 和 `/lots/:lot_id` 字面上重叠，但 matchit 给**静态段**更高
+        // 优先级，且与注册顺序无关（见 matchit README 的 Routing Priority 一节），
+        // 所以 preview 一定能被命中。写在前面只是让人读的时候先看到它。
+        .route("/events/:event_id/lots/preview", post(preview_lot))
         .route(
             "/events/:event_id/lots/:lot_id",
             put(update_lot).delete(delete_lot),
@@ -86,7 +93,21 @@ async fn ensure_event_open(conn: &mut SqliteConnection, event_id: i64) -> ApiRes
     }
 }
 
-/// 校验候选集：非空、去重、全部属于本展会、**全部同一货主**。返回 (去重后的 id, 货主 id, 货主名)。
+/// 一个候选商品。
+///
+/// `validate_candidates` 返回整行而不是只返回 id，是因为 `/lots/preview` 要用
+/// **单价和名字**算出「顾客最多 / 最少能怎么拿」。让它和创建走同一个校验函数，
+/// 是为了不出现「试算说行、保存说不行」——那种不一致比没有试算更糟。
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct CandidateRow {
+    id: i64,
+    name: String,
+    unit_price: i64,
+    owner_society_id: i64,
+    owner_society_name: String,
+}
+
+/// 校验候选集：非空、去重、全部属于本展会、**全部同一货主**。返回按 id 升序的候选行。
 ///
 /// 同一货主是 spec 4.1 的硬约束：Lot 是摊主配的，代卖社团一样没参与这个决定，
 /// 把他们的本子圈进「任选 3 本 100」等于替他们让价。将来真有两家事先谈好的联合套装，
@@ -95,7 +116,7 @@ async fn validate_candidates(
     conn: &mut SqliteConnection,
     event_id: i64,
     candidate_ids: &[i64],
-) -> ApiResult<(Vec<i64>, i64, String)> {
+) -> ApiResult<Vec<CandidateRow>> {
     let mut ids: Vec<i64> = candidate_ids.to_vec();
     ids.sort_unstable();
     ids.dedup();
@@ -107,13 +128,17 @@ async fn validate_candidates(
     }
 
     let placeholders = vec!["?"; ids.len()].join(",");
+    // ORDER BY 是契约的一部分：`/lots/preview` 的响应顺序、以及并列单价时挑哪一件，
+    // 都要求同输入同输出。`IN (...)` 本身不保证顺序。
     let sql = format!(
-        "SELECT ep.id, ep.owner_society_id, s.name
+        "SELECT ep.id, ep.name, ep.unit_price,
+                ep.owner_society_id, s.name AS owner_society_name
          FROM event_products ep
          JOIN societies s ON s.id = ep.owner_society_id
-         WHERE ep.event_id = ? AND ep.id IN ({placeholders})"
+         WHERE ep.event_id = ? AND ep.id IN ({placeholders})
+         ORDER BY ep.id"
     );
-    let mut q = sqlx::query_as::<_, (i64, i64, String)>(sqlx::AssertSqlSafe(sql)).bind(event_id);
+    let mut q = sqlx::query_as::<_, CandidateRow>(sqlx::AssertSqlSafe(sql)).bind(event_id);
     for id in &ids {
         q = q.bind(*id);
     }
@@ -124,14 +149,35 @@ async fn validate_candidates(
             "候选商品不存在或不属于本场展会".into(),
         ));
     }
-    let owner = rows[0].1;
-    if rows.iter().any(|(_, o, _)| *o != owner) {
+    let owner = rows[0].owner_society_id;
+    if rows.iter().any(|r| r.owner_society_id != owner) {
         return Err(ApiError::BadRequest(
             "套装的候选商品必须属于同一个货主——替别的社团让价不是摊主能单方面决定的".into(),
         ));
     }
-    let owner_name = rows[0].2.clone();
-    Ok((ids, owner, owner_name))
+    Ok(rows)
+}
+
+/// 只校验两个数字。抽出来是因为 `/lots/preview` 收的是一份**还没起名**的配置，
+/// 它要走和创建完全一样的数字校验，但不该被「名称不能为空」挡住。
+fn validate_numbers(pick_count: i64, total_price: i64) -> ApiResult<()> {
+    if pick_count <= 0 {
+        return Err(ApiError::BadRequest("「要选几件」必须是正数".into()));
+    }
+    // 上限 1000 件。`/lots/preview` 要算「单价 × pick_count」求最坏组合的原价，
+    // 没有这条上限那就是个溢出口；而摊位上一个套装选上千件本来就不存在。
+    if pick_count > 1000 {
+        return Err(ApiError::BadRequest("「要选几件」超出合理范围".into()));
+    }
+    if total_price < 0 {
+        return Err(ApiError::BadRequest("套装价格不能为负".into()));
+    }
+    // 上限 100 万元（分）。求解器在 `solver::best()` 里对套装价做 checked 加法，
+    // 没有这条，一个 i64::MAX 的套装价会让那条加法溢出。
+    if total_price > 100_000_000 {
+        return Err(ApiError::BadRequest("套装价格超出合理范围".into()));
+    }
+    Ok(())
 }
 
 fn validate_payload(payload: &LotPayload) -> ApiResult<String> {
@@ -139,28 +185,25 @@ fn validate_payload(payload: &LotPayload) -> ApiResult<String> {
     if name.is_empty() {
         return Err(ApiError::BadRequest("套装名称不能为空".into()));
     }
-    if payload.pick_count <= 0 {
-        return Err(ApiError::BadRequest("「要选几件」必须是正数".into()));
-    }
-    if payload.total_price < 0 {
-        return Err(ApiError::BadRequest("套装价格不能为负".into()));
-    }
-    // 上限 100 万元（分）。求解器在 `solver::best()` 里对套装价做 checked 加法，
-    // 没有这条，一个 i64::MAX 的套装价会让那条加法溢出。
-    if payload.total_price > 100_000_000 {
-        return Err(ApiError::BadRequest("套装价格超出合理范围".into()));
-    }
+    validate_numbers(payload.pick_count, payload.total_price)?;
     // 候选集大小**这里不查**：它和 `allow_repeat` 绑定——不允许重复时候选必须
     // 至少 pick_count 种，允许重复时一种就够（「买 3 本同款 100」）。
-    // 那条校验需要候选集，所以放在 `validate_candidates` 拿到 ids 之后。
+    // 那条校验需要候选集，所以放在 `validate_candidates` 拿到候选之后。
     Ok(name)
 }
 
 /// 不允许同款重复时，一个套装实例里每种候选最多 1 件，所以候选种类必须至少等于
 /// 「要选几件」；否则这个套装永远凑不出，是配置错误而不是运行时情况——当场拒绝，
 /// 别让它静默地永远不生效。`validate_payload` 看不到候选集，所以这条独立出来。
-fn validate_candidate_count(payload: &LotPayload, ids: &[i64]) -> ApiResult<()> {
-    if !payload.allow_repeat && (ids.len() as i64) < payload.pick_count {
+///
+/// 它同时是 `extreme_picks` 的前置条件：不允许重复时那里要取「最贵的 N 种」，
+/// 候选种类不够就会越界。
+fn validate_candidate_count(
+    allow_repeat: bool,
+    pick_count: i64,
+    n_candidates: usize,
+) -> ApiResult<()> {
+    if !allow_repeat && (n_candidates as i64) < pick_count {
         return Err(ApiError::BadRequest(
             "不允许同款重复时，候选商品数不能少于「要选几件」——否则这个套装永远套不上".into(),
         ));
@@ -265,9 +308,11 @@ async fn create_lot(
 
     let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
     ensure_event_open(&mut tx, event_id).await?;
-    let (ids, owner, owner_name) =
-        validate_candidates(&mut tx, event_id, &payload.candidate_ids).await?;
-    validate_candidate_count(&payload, &ids)?;
+    let candidates = validate_candidates(&mut tx, event_id, &payload.candidate_ids).await?;
+    validate_candidate_count(payload.allow_repeat, payload.pick_count, candidates.len())?;
+    let ids: Vec<i64> = candidates.iter().map(|c| c.id).collect();
+    let owner = candidates[0].owner_society_id;
+    let owner_name = candidates[0].owner_society_name.clone();
 
     let lot_id: i64 = sqlx::query_scalar(
         "INSERT INTO lots (event_id, name, pick_count, total_price, allow_repeat)
@@ -319,9 +364,11 @@ async fn update_lot(
             .await?;
     exists.ok_or_else(|| ApiError::NotFound("套装不存在".into()))?;
 
-    let (ids, owner, owner_name) =
-        validate_candidates(&mut tx, event_id, &payload.candidate_ids).await?;
-    validate_candidate_count(&payload, &ids)?;
+    let candidates = validate_candidates(&mut tx, event_id, &payload.candidate_ids).await?;
+    validate_candidate_count(payload.allow_repeat, payload.pick_count, candidates.len())?;
+    let ids: Vec<i64> = candidates.iter().map(|c| c.id).collect();
+    let owner = candidates[0].owner_society_id;
+    let owner_name = candidates[0].owner_society_name.clone();
 
     sqlx::query(
         "UPDATE lots SET name = ?, pick_count = ?, total_price = ?, allow_repeat = ? WHERE id = ?",
@@ -375,6 +422,234 @@ async fn delete_lot(
         return Err(ApiError::NotFound("套装不存在".into()));
     }
     Ok(StatusCode::NO_CONTENT)
+}
+
+// ==========================================
+// 套装试算（配置时的 dry-run）
+// ==========================================
+
+/// 试算请求：一份**还没保存**的套装配置。字段与 `LotPayload` 相同，只是不要名字。
+#[derive(Deserialize)]
+struct LotPreviewRequest {
+    pick_count: i64,
+    /// 单位：分。
+    total_price: i64,
+    #[serde(default)]
+    allow_repeat: bool,
+    candidate_ids: Vec<i64>,
+}
+
+#[derive(Serialize)]
+struct PreviewCandidate {
+    product_id: i64,
+    name: String,
+    /// 单位：分。
+    unit_price: i64,
+    owner_society_id: i64,
+    owner_society_name: String,
+}
+
+#[derive(Serialize)]
+struct PreviewMember {
+    product_id: i64,
+    name: String,
+    qty: i64,
+}
+
+/// 顾客可能怎么凑满这个套装的一个极端。
+#[derive(Serialize)]
+struct PreviewScenario {
+    /// `"max_discount"`（顾客拿走最贵的那几件）或 `"min_discount"`（最便宜的那几件）。
+    kind: &'static str,
+    members: Vec<PreviewMember>,
+    /// 这些成分按原价的合计（分）。
+    original_amount: i64,
+    /// 套装价（分），两个 scenario 相同，放进来是为了这个对象能独立读懂。
+    lot_price: i64,
+    /// `original_amount − lot_price`。**可能为负**——那表示这种组合下套装比原价还贵，
+    /// 求解器不会套用它。故意保留负数而不是省略字段：调用方（含将来的 LLM）
+    /// 判一个符号，比判一个字段在不在要可靠。
+    discount: i64,
+}
+
+#[derive(Serialize)]
+struct PreviewWarning {
+    /// 机器读的稳定标识；`message` 是给摊主看的，措辞会变，code 不会。
+    code: &'static str,
+    message: String,
+}
+
+#[derive(Serialize)]
+struct LotPreviewResponse {
+    candidates: Vec<PreviewCandidate>,
+    scenarios: Vec<PreviewScenario>,
+    warnings: Vec<PreviewWarning>,
+}
+
+/// 一种凑法：`(候选在 `candidates` 里的下标, 件数)`。
+/// 抽成别名是为了过 `clippy::type_complexity`，语义就是内联的那个元组向量。
+type Combo = Vec<(usize, i64)>;
+
+/// 顾客可能怎么凑满这个套装的两个极端，返回 `(最贵组合, 最便宜组合)`。
+///
+/// **不跑求解器**：极端组合排个序就定了——允许重复时是「最贵那件 × N」和
+/// 「最便宜那件 × N」；不允许时是「最贵的 N 种」和「最便宜的 N 种」。
+/// 走求解器反而要造一个假购物车，还要处理它的三条规模上限。
+///
+/// 并列单价按 `id` 升序取，保证同输入同输出（`validate_candidates` 已按 id 排好序）。
+///
+/// 前置条件：`candidates` 非空；不允许重复时 `candidates.len() >= pick_count`
+/// （由 `validate_candidate_count` 保证）。
+fn extreme_picks(
+    candidates: &[CandidateRow],
+    pick_count: i64,
+    allow_repeat: bool,
+) -> (Combo, Combo) {
+    let mut by_price: Vec<usize> = (0..candidates.len()).collect();
+    by_price.sort_by(|a, b| {
+        candidates[*b]
+            .unit_price
+            .cmp(&candidates[*a].unit_price)
+            .then(candidates[*a].id.cmp(&candidates[*b].id))
+    });
+
+    if allow_repeat {
+        let most = by_price[0];
+        let least = by_price[by_price.len() - 1];
+        (vec![(most, pick_count)], vec![(least, pick_count)])
+    } else {
+        let n = pick_count as usize;
+        let max: Vec<(usize, i64)> = by_price[..n].iter().map(|i| (*i, 1)).collect();
+        let min: Vec<(usize, i64)> = by_price[by_price.len() - n..]
+            .iter()
+            .map(|i| (*i, 1))
+            .collect();
+        (max, min)
+    }
+}
+
+/// 把 `(下标, 件数)` 组合变成响应里的一个 scenario。成分按商品 id 升序。
+fn build_scenario(
+    kind: &'static str,
+    combo: &Combo,
+    candidates: &[CandidateRow],
+    lot_price: i64,
+) -> ApiResult<PreviewScenario> {
+    let overflow = || ApiError::BadRequest("金额溢出".into());
+    let mut members: Vec<PreviewMember> = Vec::with_capacity(combo.len());
+    let mut original: i64 = 0;
+    for (idx, qty) in combo {
+        let c = &candidates[*idx];
+        let row = c.unit_price.checked_mul(*qty).ok_or_else(overflow)?;
+        original = original.checked_add(row).ok_or_else(overflow)?;
+        members.push(PreviewMember {
+            product_id: c.id,
+            name: c.name.clone(),
+            qty: *qty,
+        });
+    }
+    members.sort_by_key(|m| m.product_id);
+    Ok(PreviewScenario {
+        kind,
+        members,
+        original_amount: original,
+        lot_price,
+        discount: original - lot_price,
+    })
+}
+
+/// 试算一份还没保存的套装配置：它会被顾客怎么用、你最多让多少、哪里可能配错了。
+///
+/// **零写入**，走和 `create_lot` 完全相同的校验（同一个 `validate_numbers` /
+/// `validate_candidates` / `validate_candidate_count`），所以「跨货主」「候选不属于
+/// 本场展会」「不允许重复但候选数不够」这些错，试算和保存报的是同一个 400——
+/// 不会出现「试算说行、保存说不行」。
+///
+/// 这个端点同时服务两个消费方：配置页的实时预览，以及将来接 LLM 辅助配置时
+/// 「提一个方案、立刻看后果」的那一步。**在它之前，配置的后果对人和对机器都是黑箱**——
+/// 摊主只能配完等顾客来薅，这正是 2026-09-24 那个缺陷被发现的方式。
+async fn preview_lot(
+    State(state): State<AppState>,
+    claims: Claims,
+    Path(event_id): Path<i64>,
+    Json(payload): Json<LotPreviewRequest>,
+) -> ApiResult<Json<LotPreviewResponse>> {
+    check_write_permission(&claims, event_id)?;
+    validate_numbers(payload.pick_count, payload.total_price)?;
+
+    let mut conn = state.db.acquire().await?;
+    let candidates = validate_candidates(&mut conn, event_id, &payload.candidate_ids).await?;
+    validate_candidate_count(payload.allow_repeat, payload.pick_count, candidates.len())?;
+
+    let (max_combo, min_combo) =
+        extreme_picks(&candidates, payload.pick_count, payload.allow_repeat);
+    let max_scenario =
+        build_scenario("max_discount", &max_combo, &candidates, payload.total_price)?;
+    let min_scenario =
+        build_scenario("min_discount", &min_combo, &candidates, payload.total_price)?;
+
+    let mut warnings: Vec<PreviewWarning> = Vec::new();
+
+    // 最贵的候选。`candidates` 非空由 validate_candidates 保证。
+    let dearest = candidates
+        .iter()
+        .max_by(|a, b| a.unit_price.cmp(&b.unit_price).then(b.id.cmp(&a.id)))
+        .expect("候选集非空");
+    if payload.total_price < dearest.unit_price {
+        warnings.push(PreviewWarning {
+            code: "price_below_max_unit_price",
+            // 只警告不拒绝：亏本引流套装是真实存在的玩法，而在判断题上设硬门禁
+            // 迟早会挡住合理用法。试算把它摆到摊主眼前就够了。
+            message: format!(
+                "套装价 {} 低于最贵候选「{}」的单价 {}——等于两件卖得比一件还便宜",
+                yuan(payload.total_price),
+                dearest.name,
+                yuan(dearest.unit_price)
+            ),
+        });
+    }
+
+    if max_scenario.discount <= 0 {
+        warnings.push(PreviewWarning {
+            code: "never_applies",
+            message: format!(
+                "任何组合下套装价都不低于原价（最划算的一种也只是 {} 对 {}），这个套装永远不会被套用",
+                yuan(max_scenario.original_amount),
+                yuan(payload.total_price)
+            ),
+        });
+    } else if min_scenario.discount < 0 {
+        warnings.push(PreviewWarning {
+            code: "sometimes_skipped",
+            message: format!(
+                "顾客只拿最便宜的那几件时（原价 {}）比套装价 {} 还便宜，这种组合不会套用套装",
+                yuan(min_scenario.original_amount),
+                yuan(payload.total_price)
+            ),
+        });
+    }
+
+    Ok(Json(LotPreviewResponse {
+        candidates: candidates
+            .iter()
+            .map(|c| PreviewCandidate {
+                product_id: c.id,
+                name: c.name.clone(),
+                unit_price: c.unit_price,
+                owner_society_id: c.owner_society_id,
+                owner_society_name: c.owner_society_name.clone(),
+            })
+            .collect(),
+        scenarios: vec![max_scenario, min_scenario],
+        warnings,
+    }))
+}
+
+/// 分 → 「¥19.90」。只给 `warnings` 的人话文案用；响应里的金额字段一律是分。
+fn yuan(cents: i64) -> String {
+    let sign = if cents < 0 { "-" } else { "" };
+    let a = cents.abs();
+    format!("{sign}¥{}.{:02}", a / 100, a % 100)
 }
 
 #[derive(Deserialize)]
@@ -1017,5 +1292,235 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::CONFLICT);
+    }
+
+    /// 再加一个**同货主**（本社团）的商品，单价 25.00，返回它的 event_product_id。
+    /// 试算的两个极端只有在候选单价不同的时候才有区别。
+    async fn seed_second_home_product(pool: &sqlx::SqlitePool) -> i64 {
+        sqlx::query(
+            "INSERT INTO master_products (id, product_code, name, default_price, owner_society_id)
+             VALUES (3, 'C', '本子C', 25.0, 1)",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO event_products
+               (id, event_id, master_product_id, owner_society_id, product_code, name, unit_price)
+             VALUES (3, 1, 3, 1, 'C', '本子C', 2500)",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        3
+    }
+
+    #[tokio::test]
+    async fn previewing_a_fixed_bundle_shows_the_one_combination_it_allows() {
+        // 不允许同款：候选 {30.00, 25.00}、任选 2 件 → 只有一种凑法，两个极端相同。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        let ep_c = seed_second_home_product(&pool).await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/lots/preview"),
+                Some(&admin_token()),
+                json!({"pick_count": 2, "total_price": 4000,
+                       "allow_repeat": false, "candidate_ids": [ep_a, ep_c]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = read_json(res).await;
+
+        let sc = body["scenarios"].as_array().unwrap();
+        assert_eq!(sc.len(), 2);
+        assert_eq!(sc[0]["kind"], "max_discount");
+        assert_eq!(sc[0]["original_amount"], 5500, "30.00 + 25.00");
+        assert_eq!(sc[0]["discount"], 1500);
+        assert_eq!(
+            sc[1]["original_amount"], 5500,
+            "只有一种凑法，最省和最贵是同一个"
+        );
+        assert_eq!(
+            body["warnings"].as_array().unwrap().len(),
+            0,
+            "4000 高于最贵候选 3000，也确实在打折，没什么可警告的"
+        );
+    }
+
+    #[tokio::test]
+    async fn previewing_with_repeat_allowed_shows_the_two_extremes_diverging() {
+        // 同一份候选，勾上「可同款」之后最贵组合变成「30.00 × 2」，最省变成「25.00 × 2」。
+        // **切换那个开关会让这两个数字当场变**——这正是配置页要让摊主看见的东西。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        let ep_c = seed_second_home_product(&pool).await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/lots/preview"),
+                Some(&admin_token()),
+                json!({"pick_count": 2, "total_price": 4000,
+                       "allow_repeat": true, "candidate_ids": [ep_a, ep_c]}),
+            ))
+            .await
+            .unwrap();
+        let body = read_json(res).await;
+        let sc = body["scenarios"].as_array().unwrap();
+
+        assert_eq!(sc[0]["original_amount"], 6000, "最贵的拿两件：30.00 × 2");
+        assert_eq!(
+            sc[0]["members"],
+            json!([{"product_id": ep_a, "name": "本子A", "qty": 2}])
+        );
+        assert_eq!(sc[1]["original_amount"], 5000, "最便宜的拿两件：25.00 × 2");
+        assert_eq!(
+            sc[1]["members"],
+            json!([{"product_id": ep_c, "name": "本子C", "qty": 2}])
+        );
+    }
+
+    #[tokio::test]
+    async fn preview_warns_when_the_lot_costs_less_than_its_dearest_candidate() {
+        // 2026-09-24 真机那组数字：nl 114.00 / shit 33.00、任选 2 件、套装 100.00。
+        // 允许同款时顾客能拿 2 件 nl（原价 228.00）只付 100.00。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        sqlx::query("UPDATE event_products SET unit_price = 11400 WHERE id = ?")
+            .bind(ep_a)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let ep_c = seed_second_home_product(&pool).await;
+        sqlx::query("UPDATE event_products SET unit_price = 3300 WHERE id = ?")
+            .bind(ep_c)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/lots/preview"),
+                Some(&admin_token()),
+                json!({"pick_count": 2, "total_price": 10000,
+                       "allow_repeat": true, "candidate_ids": [ep_a, ep_c]}),
+            ))
+            .await
+            .unwrap();
+        let body = read_json(res).await;
+
+        assert_eq!(body["scenarios"][0]["original_amount"], 22800, "nl × 2");
+        assert_eq!(body["scenarios"][0]["discount"], 12800, "摊主让了 128.00");
+        assert_eq!(body["scenarios"][1]["original_amount"], 6600, "shit × 2");
+        assert_eq!(
+            body["scenarios"][1]["discount"], -3400,
+            "这种组合套装比原价贵，负数就是「不会套用」"
+        );
+
+        let codes: Vec<&str> = body["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|w| w["code"].as_str().unwrap())
+            .collect();
+        assert!(
+            codes.contains(&"price_below_max_unit_price"),
+            "两件卖得比一件还便宜"
+        );
+        assert!(
+            codes.contains(&"sometimes_skipped"),
+            "最便宜那种组合不会套用"
+        );
+    }
+
+    #[tokio::test]
+    async fn preview_refuses_exactly_what_create_would_refuse() {
+        // 试算必须和创建同一套校验，否则会出现「试算说行、保存说不行」。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, ep_b) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+
+        // 跨货主
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/lots/preview"),
+                Some(&token),
+                json!({"pick_count": 2, "total_price": 4000, "candidate_ids": [ep_a, ep_b]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST, "跨货主");
+
+        // 不允许同款但候选只有一种
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/lots/preview"),
+                Some(&token),
+                json!({"pick_count": 2, "total_price": 4000,
+                       "allow_repeat": false, "candidate_ids": [ep_a]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST, "候选种类不够");
+
+        // 件数超出合理范围（也是 preview 里乘法的溢出闸）
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/lots/preview"),
+                Some(&token),
+                json!({"pick_count": 1001, "total_price": 4000,
+                       "allow_repeat": true, "candidate_ids": [ep_a]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST, "pick_count 上限");
+    }
+
+    #[tokio::test]
+    async fn preview_writes_nothing_and_needs_a_token() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/lots/preview"),
+                None,
+                json!({"pick_count": 1, "total_price": 100, "candidate_ids": [ep_a]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED, "配置面的东西不公开");
+
+        let _ = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/lots/preview"),
+                Some(&admin_token()),
+                json!({"pick_count": 1, "total_price": 100, "candidate_ids": [ep_a]}),
+            ))
+            .await
+            .unwrap();
+        let lots: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM lots")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(lots, 0, "试算是只读的");
     }
 }
