@@ -115,7 +115,8 @@
             <span class="line-tag">【钱】</span>
             <span class="line-body">
               商品原价 {{ formatYuan(s.gross) }} · Lot折让 {{ formatSigned(s.lot_discount) }} ·
-              手工折让 {{ formatSigned(s.manual_discount) }} → 净额 {{ formatYuan(s.net) }}
+              {{ manualDiscountLabel(s.manual_discount) }} {{ formatSigned(s.manual_discount) }} →
+              净额 {{ formatYuan(s.net) }}
               <!-- 这两项是「我应转给」的加项，xlsx 里有、网页上原来漏了。
                    非零时才出现，否则默认全 0 的行会淹没真正的数字。 -->
               <template v-if="s.refund_kept"> · 退货保留 {{ formatYuan(s.refund_kept) }}</template>
@@ -129,7 +130,7 @@
             <span class="line-tag">【我垫付】</span>
             <span class="line-body">
               <template v-if="s.advances.length">
-                {{ advanceSummary(s.advances) }} = {{ formatYuan(s.advances_total) }}
+                {{ advanceSummary(s.advances) }} = {{ formatSigned(s.advances_total) }}
               </template>
               <template v-else>（无）</template>
             </span>
@@ -393,6 +394,7 @@ import { formatYuan, toCents, fromCents } from '@/utils/money'
 import {
   describeEntryAdjustment,
   describeReportAdjustment,
+  manualDiscountLabel,
 } from '@/utils/settlementSigns'
 import { toAbsoluteApiUrl } from '@/services/url'
 import { save } from '@tauri-apps/plugin-dialog'
@@ -490,7 +492,8 @@ function formatSigned(cents) {
 }
 
 function advanceSummary(entries) {
-  return entries.map((a) => `${a.label} ${formatYuan(a.amount)}`).join(' + ')
+  // 垫付是「我应转给」的减项，逐条也带上符号，和右边那个 = 合计对得上。
+  return entries.map((a) => `${a.label} ${formatSigned(a.amount)}`).join(' + ')
 }
 
 function adjustmentSummary(entries) {
