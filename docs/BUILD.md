@@ -139,6 +139,16 @@ create temp dir: NotFound
 `TMPDIR=/path/that/exists cargo test ...`）。在沙箱 / 容器里 `/tmp` 有时是每次命令
 一份的临时挂载，机器默认的 `TMPDIR=/tmp/<user>` 可能并不存在。
 
+更坑的是：**某些沙箱环境里 `/tmp` 不跨 shell 调用保留**——上一条命令里 `mkdir` 出来的
+目录，下一条命令里可能又没了。于是 150+ 个用 `tempfile` 的测试会一起挂在
+`create temp dir: NotFound`，而报错完全看不出是环境问题。可照抄的做法是把
+`mkdir -p "$TMPDIR"` 和 cargo 命令写在**同一条命令**里，让建目录和跑测试发生在同一个
+shell、同一份挂载视图内：
+
+```bash
+TMPDIR=/path/to/real/dir sh -c 'mkdir -p "$TMPDIR" && cd src-tauri && tauri-env linux cargo test --workspace'
+```
+
 ## 安装包内容
 
 ### Windows NSIS 安装包
