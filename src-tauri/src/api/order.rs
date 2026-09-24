@@ -9,16 +9,17 @@
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    response::{IntoResponse, Json},
-    routing::{get, post, put},
-    Router,
+    response::Json,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::{query, query_as, query_scalar, SqlitePool};
 use std::collections::HashMap;
+use utoipa::{IntoParams, ToSchema};
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::{
     api::guard::{check_read_permission, check_write_permission},
+    api::openapi::ApiErrorBody,
     db::models::OrderRow,
     domain::{
         allocation::apply_manual_adjustment,
@@ -37,35 +38,25 @@ use crate::{
     utils::security::Claims,
 };
 
-/// ③b 过渡：本模块的路由还没标 utoipa 注解，整体包进 OpenApiRouter——路由照常工作，
-/// 只是文档里没有它的路径。阶段 2 迁移本模块时改为 `routes!(...)` 并删掉 `legacy_router`。
-pub fn router() -> utoipa_axum::router::OpenApiRouter<AppState> {
-    utoipa_axum::router::OpenApiRouter::from(legacy_router())
-}
-
-fn legacy_router() -> Router<AppState> {
-    Router::new()
-        // 公开：顾客下单，无需 token
-        .route("/events/{event_id}/orders", post(create_order))
-        // 管理员/摊主：查看订单列表
-        .route("/events/{event_id}/orders", get(list_orders))
-        // 管理员/摊主：更新订单状态（完成 / 取消）
-        .route(
-            "/events/{event_id}/orders/{order_id}/status",
-            put(update_order_status),
-        )
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(create_order, list_orders))
+        .routes(routes!(update_order_status))
 }
 
 // ==========================================
 // 请求 / 响应结构
 // ==========================================
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct CreateOrderRequest {
     items: Vec<CartItemRequest>,
 }
 
-#[derive(Deserialize)]
+/// 改订单状态的请求体。schema 名加 `Order` 前缀：`UpdateStatusRequest` 这种名字
+/// 还会出现在别的模块，重名会在 openapi.json 里互相覆盖且不报错。
+#[derive(Deserialize, ToSchema)]
+#[schema(as = OrderUpdateStatusRequest)]
 struct UpdateStatusRequest {
     status: String,
     channel: Option<String>,
@@ -73,6 +64,7 @@ struct UpdateStatusRequest {
     ///
     /// 落点是「确认收款」这一步（spec 4.3）：现场的手势本来就是
     /// 「报个数、收钱、点完成」，拆成两步只会多一次忘记。
+    #[schema(value_type = Option<Money>)]
     final_amount: Option<i64>,
     /// 要拆掉的套装实例（`order_lots.id`）。
     ///
@@ -82,7 +74,7 @@ struct UpdateStatusRequest {
     unapply_lot_ids: Option<Vec<i64>>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, IntoParams)]
 struct ListOrdersQuery {
     status: Option<String>,
 }
@@ -90,7 +82,7 @@ struct ListOrdersQuery {
 /// 订单响应：`{...order, items: [...]}`。
 /// `order` 是 `OrderRow` 摊平后的字段，`created_at` 经 serde rename 成 `timestamp`
 /// （前端读的是 timestamp，见 db/models.rs 的注释，别动）。
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct OrderResponse {
     #[serde(flatten)]
     order: OrderRow,
@@ -98,16 +90,19 @@ struct OrderResponse {
     lots: Vec<OrderLotResponse>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct OrderItemResponse {
     id: i64,
     product_id: i64,
     quantity: i64,
     product_name: String,
     /// 单位：分（展示端除以 100 是前端 Task 8 的事）。
+    #[schema(value_type = Money)]
     product_price: i64,
     product_image_url: Option<String>,
+    #[schema(value_type = Money)]
     allocated_amount: i64,
+    #[schema(value_type = Money)]
     paid_amount: i64,
     /// 这一行进了哪个套装。`None` = 散卖。
     ///
@@ -151,16 +146,18 @@ impl From<OrderItemRow> for OrderItemResponse {
 ///
 /// `id` 是 `order_lots.id` 而不是 `lots.id`——同一个套装可以套用多次
 /// （「任选3本100」买 6 本 = 两个实例），拆的时候必须能指到具体是哪一次。
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct OrderLotResponse {
     id: i64,
     /// 原始 Lot 的 id。套装被删掉后是 null（`ON DELETE SET NULL`），名字和价格仍在。
     lot_id: Option<i64>,
     name: String,
     /// 套装价（分），下单那一刻的快照。
+    #[schema(value_type = Money)]
     price: i64,
     /// 成分按原价的合计（分）。**摊主拆掉它时应收会回到这个数**，
     /// 收款弹窗靠它在本地把新的应收算出来，不必多一次往返。
+    #[schema(value_type = Money)]
     original_amount: i64,
 }
 
@@ -264,11 +261,26 @@ async fn load_order_response(pool: &SqlitePool, order_id: i64) -> ApiResult<Orde
 // ==========================================
 // 1. 创建订单（公开，BEGIN IMMEDIATE）
 // ==========================================
+
+/// 顾客下单（公开接口，不需要 token）。要求展会处于「进行中」。
+#[utoipa::path(
+    post,
+    path = "/events/{event_id}/orders",
+    tag = "order",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    request_body = CreateOrderRequest,
+    responses(
+        (status = 201, body = OrderResponse),
+        (status = 400, body = ApiErrorBody, description = "购物车为空、数量非正或金额溢出"),
+        (status = 404, body = ApiErrorBody, description = "展会或商品不存在"),
+        (status = 409, body = ApiErrorBody, description = "库存不足，或展会不是「进行中」"),
+    ),
+)]
 async fn create_order(
     State(state): State<AppState>,
     Path(event_id): Path<i64>,
     Json(payload): Json<CreateOrderRequest>,
-) -> ApiResult<impl IntoResponse> {
+) -> ApiResult<(StatusCode, Json<OrderResponse>)> {
     // 不需要展会守卫：下单要求更严的「进行中」，守卫在 ensure_event_selling，不能放宽成「不是已结算」
     let merged = merge_items(&payload.items)?;
 
@@ -426,6 +438,23 @@ async fn create_order(
 // ==========================================
 // 2. 查看订单列表（管理员/摊主）
 // ==========================================
+
+/// 本场展会的订单列表，可按 `status` 过滤。需要管理员或这场展会的摊主。
+#[utoipa::path(
+    get,
+    path = "/events/{event_id}/orders",
+    tag = "order",
+    params(
+        ListOrdersQuery,
+        ("event_id" = i64, Path, description = "展会 id"),
+    ),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = Vec<OrderResponse>),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+    ),
+)]
 async fn list_orders(
     State(state): State<AppState>,
     claims: Claims,
@@ -498,6 +527,27 @@ async fn list_orders(
 // ==========================================
 // 3. 更新订单状态（完成 / 取消）
 // ==========================================
+
+/// 完成或取消一张订单。需要管理员或这场展会的摊主。
+#[utoipa::path(
+    put,
+    path = "/events/{event_id}/orders/{order_id}/status",
+    tag = "order",
+    params(
+        ("event_id" = i64, Path, description = "展会 id"),
+        ("order_id" = i64, Path, description = "订单 id"),
+    ),
+    request_body = UpdateStatusRequest,
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = OrderResponse),
+        (status = 400, body = ApiErrorBody, description = "未知状态、实收为负、缺渠道或要拆的套装不属于这张订单"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "订单不存在"),
+        (status = 409, body = ApiErrorBody, description = "订单已取消/已完成，或展会已结算"),
+    ),
+)]
 async fn update_order_status(
     State(state): State<AppState>,
     claims: Claims,
@@ -2083,5 +2133,245 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
+}
+
+/// ③b 形状快照：钉住每个路由的 JSON 形状（键 + 类型），类型化前后必须一行不改照样绿。
+#[cfg(test)]
+mod shape_tests {
+    use crate::test_support::{
+        admin_token, json_request, place, read_json, seed_event_and_product, shape_of,
+        test_router_with,
+    };
+    use axum::http::StatusCode;
+    use axum::Router;
+    use serde_json::{json, Value};
+    use tower::ServiceExt;
+
+    /// 一场有套装、有散卖、有已完成单的展会：让每个可选字段和每个数组至少出现一次非空。
+    ///
+    /// 返回还没完成的 pending 订单 id（它带一个套装实例）。
+    async fn seeded() -> (Router, tempfile::TempDir, i64, i64) {
+        let (router, dir, pool) = test_router_with().await;
+        let (event_id, ep_a, ep_b) = seed_event_and_product(&pool).await;
+        // 图片 URL 非空：否则 OrderItemResponse.product_image_url 恒为 "null"，钉不住 string。
+        sqlx::query("UPDATE master_products SET image_url = '/uploads/x.png'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        // ep_a 上一个「任选 2 件 50」：下单 3 件会拆成 2 件进套装 + 1 件散卖，
+        // items 里 lot_name 同时出现 string 与 null，lots 非空且 lot_id 非 null。
+        crate::test_support::seed_lot_repeat(&pool, event_id, "任选2件50", 2, 5000, &[ep_a]).await;
+        let pending = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_a, "quantity": 3}]),
+        )
+        .await;
+        // 已完成单：让 channel / completed_at 在列表里出现 string（与 pending 的 null 合并）。
+        let done = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_b, "quantity": 1}]),
+        )
+        .await;
+        let (s, _) = call(
+            &router,
+            "PUT",
+            &format!("/api/events/{event_id}/orders/{done}/status"),
+            Some(&admin_token()),
+            json!({"status": "completed", "channel": "微信"}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        (router, dir, event_id, pending)
+    }
+
+    async fn call(
+        router: &Router,
+        method: &str,
+        uri: &str,
+        token: Option<&str>,
+        body: Value,
+    ) -> (StatusCode, Value) {
+        let res = router
+            .clone()
+            .oneshot(json_request(method, uri, token, body))
+            .await
+            .unwrap();
+        let status = res.status();
+        (status, read_json(res).await)
+    }
+
+    fn lot_shape() -> Value {
+        json!([{
+            "id": "int", "lot_id": "int", "name": "string",
+            "price": "int", "original_amount": "int",
+        }])
+    }
+
+    /// 一条订单响应的形状。`channel`/`completed_at` 用调用方给的类型名（pending 是
+    /// `"null"`，completed 是 `"string"`，列表合并是 `"null|string"`）。
+    fn order_shape(channel: &str, completed_at: &str, lots: Value) -> Value {
+        json!({
+            "id": "int", "event_id": "int", "status": "string", "channel": channel,
+            "gross_amount": "int", "solved_amount": "int", "final_amount": "int",
+            "timestamp": "string", "completed_at": completed_at,
+            "items": [{
+                "id": "int", "product_id": "int", "quantity": "int", "product_name": "string",
+                "product_price": "int", "product_image_url": "string",
+                "allocated_amount": "int", "paid_amount": "int", "lot_name": "null|string",
+            }],
+            "lots": lots,
+        })
+    }
+
+    #[tokio::test]
+    async fn shape_create_order() {
+        let (router, _dir, event_id, _) = seeded().await;
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/orders"),
+            None, // 下单是公开接口
+            json!({"items": [{"product_id": 1, "quantity": 3}]}),
+        )
+        .await;
+        println!(
+            "shape_create_order {}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::CREATED);
+        assert_eq!(shape_of(&body), order_shape("null", "null", lot_shape()));
+
+        // 库存不足：409 + 标准错误体
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/orders"),
+            None,
+            json!({"items": [{"product_id": 1, "quantity": 999}]}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::CONFLICT, json!({"error": "string"}))
+        );
+
+        // 商品不存在或不属于本场：404 + 标准错误体
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/orders"),
+            None,
+            json!({"items": [{"product_id": 999999, "quantity": 1}]}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::NOT_FOUND, json!({"error": "string"}))
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_list_orders() {
+        let (router, _dir, event_id, _) = seeded().await;
+        let (s, body) = call(
+            &router,
+            "GET",
+            &format!("/api/events/{event_id}/orders"),
+            Some(&admin_token()),
+            json!(null),
+        )
+        .await;
+        println!(
+            "shape_list_orders {}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::OK);
+        // pending（channel/completed_at = null）与 completed（string）合并成并集。
+        assert_eq!(
+            shape_of(&body),
+            json!([order_shape("null|string", "null|string", lot_shape())])
+        );
+
+        // 未登录：401 + 标准错误体
+        let (s, body) = call(
+            &router,
+            "GET",
+            &format!("/api/events/{event_id}/orders"),
+            None,
+            json!(null),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::UNAUTHORIZED, json!({"error": "string"}))
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_update_order_status() {
+        let (router, _dir, event_id, pending) = seeded().await;
+        let uri = format!("/api/events/{event_id}/orders/{pending}/status");
+        let (s, body) = call(
+            &router,
+            "PUT",
+            &uri,
+            Some(&admin_token()),
+            json!({"status": "completed", "channel": "现金"}),
+        )
+        .await;
+        println!(
+            "shape_update_order_status {}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(
+            shape_of(&body),
+            order_shape("string", "string", lot_shape())
+        );
+
+        // 未知状态：400
+        let (s, body) = call(
+            &router,
+            "PUT",
+            &uri,
+            Some(&admin_token()),
+            json!({"status": "nope"}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::BAD_REQUEST, json!({"error": "string"}))
+        );
+
+        // 订单不存在：404
+        let (s, body) = call(
+            &router,
+            "PUT",
+            &format!("/api/events/{event_id}/orders/999999/status"),
+            Some(&admin_token()),
+            json!({"status": "cancelled"}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::NOT_FOUND, json!({"error": "string"}))
+        );
+
+        // 已完成的订单重复完成：409
+        let (s, body) = call(
+            &router,
+            "PUT",
+            &uri,
+            Some(&admin_token()),
+            json!({"status": "completed", "channel": "现金"}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::CONFLICT, json!({"error": "string"}))
+        );
     }
 }
