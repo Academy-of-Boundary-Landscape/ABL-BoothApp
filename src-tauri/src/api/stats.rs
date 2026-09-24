@@ -497,11 +497,6 @@ async fn download_sales_summary(
     .unwrap_or_default();
 
     use axum::http::header::{HeaderMap, HeaderValue};
-    use std::fs;
-
-    let temp_dir = std::env::temp_dir();
-    let filename = format!("sales_report_{}.xlsx", event_id);
-    let temp_file = temp_dir.join(&filename);
 
     // --- Excel 生成逻辑 ---
     let mut workbook = Workbook::new();
@@ -698,30 +693,25 @@ async fn download_sales_summary(
     );
 
     // 保存
-    match workbook.save(&temp_file) {
-        Ok(_) => match fs::read(&temp_file) {
-            Ok(buf) => {
-                let _ = fs::remove_file(&temp_file);
-                let mut headers = HeaderMap::new();
-                headers.insert(
-                    axum::http::header::CONTENT_TYPE,
-                    HeaderValue::from_static(
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    ),
-                );
-                let download_filename = format!("sales_report_event_{}.xlsx", event_id);
-                headers.insert(
-                    axum::http::header::CONTENT_DISPOSITION,
-                    HeaderValue::from_str(&format!(
-                        "attachment; filename=\"{}\"",
-                        download_filename
-                    ))
+    // 直接在内存里生成。以前写到系统临时目录下的固定文件名 `sales_report_{id}.xlsx`
+    // 再读回来删掉——同一场展会两个下载同时进行时，一个删了另一个正要读的文件，返回 500。
+    match workbook.save_to_buffer() {
+        Ok(buf) => {
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                axum::http::header::CONTENT_TYPE,
+                HeaderValue::from_static(
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                ),
+            );
+            let download_filename = format!("sales_report_event_{}.xlsx", event_id);
+            headers.insert(
+                axum::http::header::CONTENT_DISPOSITION,
+                HeaderValue::from_str(&format!("attachment; filename=\"{}\"", download_filename))
                     .unwrap_or_else(|_| HeaderValue::from_static("attachment")),
-                );
-                (headers, buf).into_response()
-            }
-            Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Failed to read excel").into_response(),
-        },
+            );
+            (headers, buf).into_response()
+        }
         Err(e) => {
             eprintln!("Excel generation error: {}", e);
             (
@@ -1279,6 +1269,26 @@ mod shape_tests {
             (s, body.as_str()),
             (StatusCode::NOT_FOUND, "Event not found")
         );
+    }
+
+    /// 两台设备同时导出同一场展会：以前写的是系统临时目录下的固定文件名，
+    /// 一个下载读完就删，另一个读到一半文件没了，返回 500。
+    // 多线程运行时：handler 里的文件读写是同步的，单线程下它们不会交错，复现不出来。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+    async fn concurrent_downloads_of_the_same_event_both_succeed() {
+        let (router, _dir, _pool, event_id) = seeded().await;
+        let t = admin_token();
+        let uri = format!("/api/events/{event_id}/sales_summary/download");
+        let mut set = tokio::task::JoinSet::new();
+        for _ in 0..200 {
+            let req = router
+                .clone()
+                .oneshot(json_request("GET", &uri, Some(&t), json!(null)));
+            set.spawn(req);
+        }
+        while let Some(res) = set.join_next().await {
+            assert_eq!(res.unwrap().unwrap().status(), StatusCode::OK);
+        }
     }
 
     #[tokio::test]
