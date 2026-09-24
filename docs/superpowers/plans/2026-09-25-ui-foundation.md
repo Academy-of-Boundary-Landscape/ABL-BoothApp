@@ -676,3 +676,70 @@ import { useViewport } from '@/composables/useViewport'
 `VisionSearch.vue` / `CustomerView.vue` 的 `useAlert` 行、`EventList.vue` 的 `.btn`——worker 在这些文件上看到的是已改过的版本，
 只需做剩余迁移。`ChannelSelect.vue` / `SocietySelect.vue` 无 style，不分配；`components/ui/` 由 Task 2 写成门禁合规，不分配。
 Task 3 Step 6 出违规清单后若某个 worker 的违规数明显偏多（> 均值 1.5 倍），在派发前把它的一个文件挪给最少的 worker。
+
+---
+
+## 执行后记（2026-09-25）
+
+`1.2-dev` 上 `957ee63..` 本轮共 21 个提交（含 6 个 worker 合并）。执行者：Task 1–3、批次 M（6 个 worker 并行）、修复轮全部由 **dsh-flash（deepseek-flash）** 实现；
+审查是 Claude：地基合审 1 次（sonnet）、批次合审 2 份（sonnet，各看 3 个 worker）、终审 1 次（opus，**直接修**）。修复只派了一轮，没有「审查-修改」来回。
+
+### 偏离 plan 的裁定
+
+- Task 1–3 原写「Claude 执行」，改派 dsh-flash（用户要求 worker 活交给 flash），审查合并成一次。
+- 保留零引用的 `--space-*`（门禁与迁移依赖它们）；`#app` 的 `1600px` 改 `min(1600px, 100%)`（终审后改为带理由的行内豁免）。
+- stylelint 实装为 **17.15**（plan 写 16），recommended 18 多出的 `declaration-property-value-keyword-no-deprecated` 一并清零。
+- 修复轮后不派 scoped re-review，由 opus 终审覆盖。
+
+### 迁移暴露的原语缺口（已补，只加不改）
+
+批次审查发现，机械迁移在三个地方**必然**改变行为，原因是原语表达力不够，而不是 worker 做错了。于是在原语上补了能力，并逐处还原：
+
+| 缺口 | 补的能力 | 还原了什么 |
+|---|---|---|
+| `AsyncState` 加载时整块替换内容 | `overlay` | 覆盖式 spinner（加载时旧表格仍可见） |
+| `confirm()` 只能返回布尔 | `onConfirm` | `dialog.onPositiveClick` 的「操作结束才关、return false 不关」 |
+| 没有常驻 loading 提示 | `loading(msg) → destroy` | 重置数据库期间的「正在重置…」 |
+| `AppModal` 靠隐式 attrs 透传 | `closable` / `closeOnEsc` / `after-enter|leave`，`#header` 整行可排版 | 自写 overlay 没有 ×、下载中禁止 Esc、相机结果弹窗头部两端对齐 |
+| toast 无法定制 | `success/info/warning/error` 可选 duration/closable/keepAliveOnHover | 各处原有的时长与关闭按钮 |
+| 副标题只能纯文本 | `PageShell #subtitle` | 加粗的展会名、结算页页头里的日期 |
+
+**教训**：「机械迁移、不改行为」这个约束，只有在原语能表达旧行为的全部变体时才做得到。原语是从「重复的样式」归纳出来的，但旧代码里藏着很多交互上的细微差别，比如确认框是否等待操作完成、toast 挂几秒。这些在样式统计里看不见，只有逐文件对照原代码才会暴露。
+
+### 量化对账（口径同 spec §3）
+
+| 指标 | 前 | 后 |
+|---|---|---|
+| 前端总行数（`.vue` + `.ts`） | 26 905 | 26 549 |
+| `<style>` 块总行数 | 9 082 | 7 746（−15%） |
+| `.vue` 中 `px` 字面量 | 1 142 | 443（余下多为内容尺寸 width/height 与豁免） |
+| `.vue` 中 hex / `rgb(a)(` | 38 / 38 | 22 / 0（hex 全在模板/脚本数据：色板、SVG） |
+| `@media` 写法 | 10 种断点 | 4 个 custom media |
+| 页面 `max-width` | 19 种 | 页宽由 `PageShell` 3 档接管 |
+| 反馈 API | `useMessage` 28 / `useDialog` 24 / `alert(` 11 / `confirm(` 3 / `GlobalAlert` | 全部收进 `useFeedback()` |
+| `window.innerWidth` | 5 | 0（`useViewport`） |
+| 行内豁免 | — | stylelint 29 条、边界 2 条，每条带理由 |
+| 前端测试 | 218 | 245 |
+
+style 行数只降了 15%，因为**机械迁移保留了布局类**（grid/flex/定位），只把其中的值换成 token。真正的收缩要等 ④-2 按页面重写。本轮的收益在「值域统一且锁死」：任何新写的颜色、字号、间距、断点、页宽都只能来自 token，这一点由门禁强制。
+
+### 门禁
+
+`npm run lint` = eslint + stylelint + `check-ui-boundary.mjs`，CI 的 `frontend` job 原样生效。
+真红测试：页面里写 `color: #fff` → exit 2；写 `alert('x')` → 边界脚本 exit 1。
+终审又堵了一批绕过写法（文件级 disable、`oklch()` / 系统色、同名覆盖 token 变量、`-webkit-` 变体、rem 页宽、`@container`、`globalThis.alert`、`import * as naive` 等），每条都有 fixture。
+
+**仍然拦不住的**（spec 有意不管，或者代价太高）：`width` 用 px 设页宽；`var(--写错的名字)`（存量两处：`CustomerView` 的 `--text-color`、`AdminEventStat` 的 `--overlay-light`，修了会变色，留给 ④-2）；模板属性里的颜色（`<n-icon color="#…">`）与 inline `style`。
+
+### 需要用户拍板 / 留给 ④-2
+
+1. **删除类确认框的颜色**：7 处原来是 warning（黄），按 brief 迁成了 `danger: true`（红）。想还原的话，每处传 `type: 'warning'` 就行，一行的事。
+2. **手机上 `AppModal` 全屏**（spec 规定的）：相机识别的结果弹窗在手机上会盖住整个取景画面，原来是浮在上面的。
+3. `VendorView` 的「← 管理后台」从标题旁挪进了操作区；`AdminEventSettlement` 的警示条从页头上方挪到了页头下方。`PageShell` 没有对应的位置，留给 ④-2 的 IA 重排。
+4. `PaymentModal`（全屏收款码页）仍是自写 overlay，没有换成 `AppModal`。
+5. 页宽档位取整：720→960、1080/1100→1280、680/720/760→640、500→480。
+6. 视觉上的预期变化：Naive 组件的字号从 14px 变成 15.2px（`--font-base`），圆角统一；页面从左对齐改为居中；`EmptyState` 的图标从 48px 缩到 32px。
+
+### 真机
+
+④-1 没有改交互，真机验证并入 ④-2 结束时的 beta。**③b 留下的真机清单（路线图附录四）仍然没走。**
