@@ -11,13 +11,15 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    routing::{get, post},
-    Json, Router,
+    Json,
 };
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::{
     api::guard::{check_read_permission, check_write_permission, require_event_open},
+    api::openapi::ApiErrorBody,
     domain::{
         ledger::{
             onsite_balance, post_journal, reverse_journal, Account, JournalKind, Location,
@@ -30,29 +32,15 @@ use crate::{
     utils::security::Claims,
 };
 
-/// ③b 过渡：本模块的路由还没标 utoipa 注解，整体包进 OpenApiRouter——路由照常工作，
-/// 只是文档里没有它的路径。阶段 2 迁移本模块时改为 `routes!(...)` 并删掉 `legacy_router`。
-pub fn router() -> utoipa_axum::router::OpenApiRouter<AppState> {
-    utoipa_axum::router::OpenApiRouter::from(legacy_router())
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(list_gifts, create_gift))
+        .routes(routes!(list_scraps, create_scrap))
+        .routes(routes!(reverse_entry))
 }
 
-fn legacy_router() -> Router<AppState> {
-    Router::new()
-        .route(
-            "/events/{event_id}/gifts",
-            get(list_gifts).post(create_gift),
-        )
-        .route(
-            "/events/{event_id}/scraps",
-            get(list_scraps).post(create_scrap),
-        )
-        .route(
-            "/events/{event_id}/journals/{journal_id}/reverse",
-            post(reverse_entry),
-        )
-}
-
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
+#[schema(as = InventoryLogRequest)]
 pub struct LogRequest {
     event_product_id: i64,
     qty: i64,
@@ -64,14 +52,16 @@ pub struct LogRequest {
     vendor_pays: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
+#[schema(as = InventoryLogResponse)]
 pub struct LogResponse {
     journal_id: i64,
 }
 
 /// 一条登记记录。`vendor_paid` 由「这条 journal 有没有资金腿」推出来，
 /// 不另存一列——存两处就会有一处先腐烂。
-#[derive(Serialize, sqlx::FromRow)]
+#[derive(Serialize, sqlx::FromRow, ToSchema)]
+#[schema(as = InventoryLogEntry)]
 pub struct LogEntry {
     journal_id: i64,
     occurred_at: String,
@@ -85,6 +75,23 @@ pub struct LogEntry {
     vendor_paid: bool,
 }
 
+/// 登记一笔赠送。默认由货主自己承担；`vendor_pays = true` 时摊主按原价补给货主。
+#[utoipa::path(
+    post,
+    path = "/events/{event_id}/gifts",
+    tag = "inventory",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    request_body = LogRequest,
+    security(("bearer" = [])),
+    responses(
+        (status = 201, body = LogResponse, description = "登记成功"),
+        (status = 400, body = ApiErrorBody, description = "数量非正或金额溢出"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "商品不在这场展会里，或展会不存在"),
+        (status = 409, body = ApiErrorBody, description = "现场仓余量不足，或展会已结算"),
+    ),
+)]
 async fn create_gift(
     State(state): State<AppState>,
     claims: Claims,
@@ -103,6 +110,23 @@ async fn create_gift(
     .await
 }
 
+/// 登记一笔报废。报废没有「谁买单」，请求里的 `vendor_pays` 恒被忽略。
+#[utoipa::path(
+    post,
+    path = "/events/{event_id}/scraps",
+    tag = "inventory",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    request_body = LogRequest,
+    security(("bearer" = [])),
+    responses(
+        (status = 201, body = LogResponse, description = "登记成功"),
+        (status = 400, body = ApiErrorBody, description = "数量非正或金额溢出"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "商品不在这场展会里，或展会不存在"),
+        (status = 409, body = ApiErrorBody, description = "现场仓余量不足，或展会已结算"),
+    ),
+)]
 async fn create_scrap(
     State(state): State<AppState>,
     claims: Claims,
@@ -229,6 +253,19 @@ WHERE j.event_id = ?
 ORDER BY j.id DESC
 "#;
 
+/// 这场展会的赠送列表。已被冲正的原条目和冲正条目都不出现。
+#[utoipa::path(
+    get,
+    path = "/events/{event_id}/gifts",
+    tag = "inventory",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = Vec<LogEntry>, description = "按 journal id 倒序"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+    ),
+)]
 async fn list_gifts(
     State(state): State<AppState>,
     claims: Claims,
@@ -237,6 +274,19 @@ async fn list_gifts(
     list_entries(state, claims, event_id, JournalKind::Gift).await
 }
 
+/// 这场展会的报废列表。已被冲正的原条目和冲正条目都不出现。
+#[utoipa::path(
+    get,
+    path = "/events/{event_id}/scraps",
+    tag = "inventory",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = Vec<LogEntry>, description = "按 journal id 倒序"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+    ),
+)]
 async fn list_scraps(
     State(state): State<AppState>,
     claims: Claims,
@@ -265,6 +315,24 @@ async fn list_entries(
 /// **只接受这两种 kind。** 销售和收款有自己的冲正通道（取消订单，
 /// `reverse_order_journals`），进货和盘点没有撤销语义（记错了就再记一条反向的）。
 /// 不设这道闸，这个端点就成了一个能把任何 journal 冲掉的万能口子。
+#[utoipa::path(
+    post,
+    path = "/events/{event_id}/journals/{journal_id}/reverse",
+    tag = "inventory",
+    params(
+        ("event_id" = i64, Path, description = "展会 id"),
+        ("journal_id" = i64, Path, description = "要撤销的 journal id"),
+    ),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = LogResponse, description = "撤销成功，返回冲正 journal 的 id"),
+        (status = 400, body = ApiErrorBody, description = "这条 journal 不是赠送或报废"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "记录不存在，或展会不存在"),
+        (status = 409, body = ApiErrorBody, description = "这条记录已经撤销过了，或展会已结算"),
+    ),
+)]
 async fn reverse_entry(
     State(state): State<AppState>,
     claims: Claims,
@@ -795,5 +863,300 @@ mod tests {
         assert_eq!(rows[0]["product_code"], "A");
         assert!(rows[0]["note"].is_null(), "没写备注时 note 是 null，不该炸");
         assert_eq!(rows[0]["vendor_paid"], false, "报废从来没有资金腿");
+    }
+}
+
+/// ③b 形状快照：钉住每个路由的 JSON 形状（键 + 类型），类型化前后必须一行不改照样绿。
+#[cfg(test)]
+mod shape_tests {
+    use crate::test_support::{
+        admin_token, json_request, read_json, seed_event_and_product, shape_of, test_router_with,
+        vendor_token,
+    };
+    use axum::http::StatusCode;
+    use axum::Router;
+    use serde_json::{json, Value};
+    use tower::ServiceExt;
+
+    /// 一场有赠送、有报废的展会，让可选字段 `note` 的 null 和非 null 都出现一次。
+    ///
+    /// 返回 `(router, dir, event_id, ep_a, ep_b, gift_journal_id)`；`gift_journal_id`
+    /// 是第一条（带备注、自掏）赠送的 journal。
+    async fn seeded() -> (Router, tempfile::TempDir, i64, i64, i64, i64) {
+        let (router, dir, pool) = test_router_with().await;
+        let (event_id, ep_a, ep_b) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+
+        // 带备注、自掏的赠送（note 非 null、vendor_paid = true）
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/gifts"),
+            Some(&token),
+            json!({"event_product_id": ep_b, "qty": 2, "note": "送给隔壁摊", "vendor_pays": true}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::CREATED);
+        let gift_journal = body["journal_id"].as_i64().unwrap();
+
+        // 不带备注的赠送（note 为 null、vendor_paid = false）
+        let (s, _) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/gifts"),
+            Some(&token),
+            json!({"event_product_id": ep_a, "qty": 1}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::CREATED);
+
+        // 带备注的报废、不带备注的报废（note 同时出现 string 和 null）
+        for (ep, note) in [(ep_a, Some("压坏了")), (ep_b, None)] {
+            let mut payload = json!({"event_product_id": ep, "qty": 1});
+            if let Some(n) = note {
+                payload["note"] = json!(n);
+            }
+            let (s, _) = call(
+                &router,
+                "POST",
+                &format!("/api/events/{event_id}/scraps"),
+                Some(&token),
+                payload,
+            )
+            .await;
+            assert_eq!(s, StatusCode::CREATED);
+        }
+
+        (router, dir, event_id, ep_a, ep_b, gift_journal)
+    }
+
+    async fn call(
+        router: &Router,
+        method: &str,
+        uri: &str,
+        token: Option<&str>,
+        body: Value,
+    ) -> (StatusCode, Value) {
+        let res = router
+            .clone()
+            .oneshot(json_request(method, uri, token, body))
+            .await
+            .unwrap();
+        let status = res.status();
+        (status, read_json(res).await)
+    }
+
+    fn error_shape() -> Value {
+        json!({"error": "string"})
+    }
+
+    /// 一条赠送 / 报废记录。`note` 可为 null，`vendor_paid` 由有没有资金腿推出来。
+    fn entry_shape() -> Value {
+        json!([{
+            "journal_id": "int",
+            "occurred_at": "string",
+            "event_product_id": "int",
+            "product_code": "string",
+            "name": "string",
+            "owner_society_id": "int",
+            "owner_name": "string",
+            "qty": "int",
+            "note": "null|string",
+            "vendor_paid": "bool",
+        }])
+    }
+
+    fn created_shape() -> Value {
+        json!({"journal_id": "int"})
+    }
+
+    #[tokio::test]
+    async fn shape_list_gifts() {
+        let (router, _dir, event_id, _, _, _) = seeded().await;
+        let (s, body) = call(
+            &router,
+            "GET",
+            &format!("/api/events/{event_id}/gifts"),
+            Some(&admin_token()),
+            json!(null),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(shape_of(&body), entry_shape());
+
+        // 401：没有 token
+        let (s, body) = call(
+            &router,
+            "GET",
+            &format!("/api/events/{event_id}/gifts"),
+            None,
+            json!(null),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::UNAUTHORIZED, error_shape())
+        );
+
+        // 403：vendor token 钉在另一场展会上
+        let (s, body) = call(
+            &router,
+            "GET",
+            &format!("/api/events/{event_id}/gifts"),
+            Some(&vendor_token(event_id + 1)),
+            json!(null),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::FORBIDDEN, error_shape()));
+    }
+
+    #[tokio::test]
+    async fn shape_list_scraps() {
+        let (router, _dir, event_id, _, _, _) = seeded().await;
+        let (s, body) = call(
+            &router,
+            "GET",
+            &format!("/api/events/{event_id}/scraps"),
+            Some(&admin_token()),
+            json!(null),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(shape_of(&body), entry_shape());
+
+        // 403：vendor token 钉在另一场展会上
+        let (s, body) = call(
+            &router,
+            "GET",
+            &format!("/api/events/{event_id}/scraps"),
+            Some(&vendor_token(event_id + 1)),
+            json!(null),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::FORBIDDEN, error_shape()));
+    }
+
+    #[tokio::test]
+    async fn shape_create_gift() {
+        let (router, _dir, event_id, ep_a, _, _) = seeded().await;
+        let token = admin_token();
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/gifts"),
+            Some(&token),
+            json!({"event_product_id": ep_a, "qty": 1}),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::CREATED, created_shape()));
+
+        // 400：数量必须为正
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/gifts"),
+            Some(&token),
+            json!({"event_product_id": ep_a, "qty": 0}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::BAD_REQUEST, error_shape())
+        );
+
+        // 403：vendor token 钉在另一场展会上
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/gifts"),
+            Some(&vendor_token(event_id + 1)),
+            json!({"event_product_id": ep_a, "qty": 1}),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::FORBIDDEN, error_shape()));
+
+        // 404：商品不在这场展会里
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/gifts"),
+            Some(&token),
+            json!({"event_product_id": 99999, "qty": 1}),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::NOT_FOUND, error_shape()));
+
+        // 409：现场仓余量不足
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/gifts"),
+            Some(&token),
+            json!({"event_product_id": ep_a, "qty": 999}),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::CONFLICT, error_shape()));
+    }
+
+    #[tokio::test]
+    async fn shape_create_scrap() {
+        let (router, _dir, event_id, ep_a, _, _) = seeded().await;
+        let token = admin_token();
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/scraps"),
+            Some(&token),
+            json!({"event_product_id": ep_a, "qty": 1}),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::CREATED, created_shape()));
+
+        // 409：现场仓余量不足
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/scraps"),
+            Some(&token),
+            json!({"event_product_id": ep_a, "qty": 999}),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::CONFLICT, error_shape()));
+    }
+
+    #[tokio::test]
+    async fn shape_reverse_entry() {
+        let (router, _dir, event_id, _, _, gift_journal) = seeded().await;
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/journals/{gift_journal}/reverse"),
+            Some(&admin_token()),
+            json!(null),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::OK, created_shape()));
+
+        // 404：记录不存在（也覆盖了「冲正一条冲正」的 404 路径）
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/journals/99999/reverse"),
+            Some(&admin_token()),
+            json!(null),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::NOT_FOUND, error_shape()));
+
+        // 409：重复撤销同一条
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/journals/{gift_journal}/reverse"),
+            Some(&admin_token()),
+            json!(null),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::CONFLICT, error_shape()));
     }
 }
