@@ -226,7 +226,7 @@ POST /events/:id/journals/:jid/reverse
 
 `vendor_pays: true` 时追加一条 `社团往来:<货主> → 摊主自有`，金额 `unit_price × qty`（**方向见偏离 2，别写成垫付那个方向**）。`unit_price` 取 `event_products.unit_price`（展会内的快照价，不是 `master_products.default_price`）。
 
-数量不得超过当前现场仓余额，超了 400。
+数量不得超过当前现场仓余额，超了 **409**（请求没毛病，是世界的状态不允许——`ApiError::Conflict` 的判据）。
 
 **撤销走 `reverse_journal()`，不做编辑。** 撤销端点只接受本展会的、kind 为 `赠送` 或 `报废` 的 journal——不能拿它去冲销售或收款，那两个各有自己的通道。`journals` 上的偏索引保证一条 journal 只能被冲正一次。
 
