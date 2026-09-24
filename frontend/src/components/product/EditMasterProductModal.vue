@@ -1,244 +1,234 @@
 <template>
-  <n-modal
+  <AppModal
     :show="show"
-    :mask-closable="true"
+    title="编辑商品"
+    size="md"
     @update:show="
       (val) => {
         if (!val) handleClose()
       }
     "
   >
-    <n-card :bordered="true" size="medium" class="edit-modal-card">
-      <template #header>
-        <div class="modal-header">
-          <h3 class="modal-title">编辑商品</h3>
-          <n-button quaternary circle size="small" @click="handleClose">×</n-button>
-        </div>
-      </template>
-
-      <div v-if="localProduct" class="modal-body">
-        <n-tabs v-model:value="activeTab" type="line" animated>
-          <!-- ==================== Tab 1: 基本信息 ==================== -->
-          <n-tab-pane name="info" tab="基本信息">
-            <form class="edit-form" @submit.prevent="handleUpdate">
-              <div class="form-layout">
-                <div class="form-fields">
-                  <div class="form-grid">
-                    <div class="form-group">
-                      <label>商品编号:</label>
-                      <n-input v-model:value="localProduct.product_code" clearable required />
-                    </div>
-                    <div class="form-group">
-                      <label>商品名称:</label>
-                      <n-input v-model:value="localProduct.name" clearable required />
-                    </div>
-                    <div class="form-group">
-                      <label>默认价格（元）:</label>
-                      <n-input-number
-                        v-model:value="localProduct.default_price"
-                        :step="0.01"
-                        :precision="2"
-                        :show-button="false"
-                        required
-                        style="width: 100%"
-                      />
-                    </div>
-                    <div class="form-group">
-                      <label>商品分类:</label>
-                      <n-select
-                        v-model:value="localProduct.category"
-                        :options="store.categoryOptions"
-                        filterable
-                        tag
-                        clearable
-                        placeholder="可选择已有分类，或直接输入新分类"
-                      />
-                    </div>
-                    <div class="form-group">
-                      <label>所属社团:</label>
-                      <SocietySelect v-model="localProduct.owner_society_id" />
-                      <span class="hint">只影响之后上架到展会的货，已上架的保持原归属</span>
-                    </div>
-
-                    <div class="form-group" style="grid-column: 1 / -1">
-                      <label>标签:</label>
-                      <n-select
-                        v-model:value="localProduct.tags"
-                        :options="store.tagOptions"
-                        placeholder="选择或输入标签（如角色名、系列）"
-                        filterable
-                        tag
-                        multiple
-                        clearable
-                      />
-                    </div>
+    <div v-if="localProduct" class="modal-body">
+      <n-tabs v-model:value="activeTab" type="line" animated>
+        <!-- ==================== Tab 1: 基本信息 ==================== -->
+        <n-tab-pane name="info" tab="基本信息">
+          <form class="edit-form" @submit.prevent="handleUpdate">
+            <div class="form-layout">
+              <div class="form-fields">
+                <div class="form-grid">
+                  <div class="form-group">
+                    <label>商品编号:</label>
+                    <n-input v-model:value="localProduct.product_code" clearable required />
                   </div>
-                </div>
+                  <div class="form-group">
+                    <label>商品名称:</label>
+                    <n-input v-model:value="localProduct.name" clearable required />
+                  </div>
+                  <div class="form-group">
+                    <label>默认价格（元）:</label>
+                    <n-input-number
+                      v-model:value="localProduct.default_price"
+                      :step="0.01"
+                      :precision="2"
+                      :show-button="false"
+                      required
+                      style="width: 100%"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label>商品分类:</label>
+                    <n-select
+                      v-model:value="localProduct.category"
+                      :options="store.categoryOptions"
+                      filterable
+                      tag
+                      clearable
+                      placeholder="可选择已有分类，或直接输入新分类"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label>所属社团:</label>
+                    <SocietySelect v-model="localProduct.owner_society_id" />
+                    <span class="hint">只影响之后上架到展会的货，已上架的保持原归属</span>
+                  </div>
 
-                <div class="form-media">
-                  <ImageUploader
-                    label="更换商品预览图"
-                    :initial-image-url="localProduct.image_url ?? ''"
-                    v-model="editFormFile"
-                    crop-enabled
-                    :crop-default-aspect="themeStore.productImageAspect"
-                    @image-removed="handleImageRemoval"
-                    @invalid-file="handleInvalidFile"
-                  />
+                  <div class="form-group" style="grid-column: 1 / -1">
+                    <label>标签:</label>
+                    <n-select
+                      v-model:value="localProduct.tags"
+                      :options="store.tagOptions"
+                      placeholder="选择或输入标签（如角色名、系列）"
+                      filterable
+                      tag
+                      multiple
+                      clearable
+                    />
+                  </div>
                 </div>
               </div>
-              <p v-if="editError" class="error-message">{{ editError }}</p>
-            </form>
-          </n-tab-pane>
 
-          <!-- ==================== Tab 2: 识别用图片 ==================== -->
-          <n-tab-pane name="gallery" tab="识别用图片">
-            <div class="gallery-section">
-              <n-alert
-                v-if="visionModelReady === false"
-                :bordered="false"
-                type="warning"
-                class="gallery-hint"
-              >
-                <strong>⚠ 尚未激活 AI 视觉模型。</strong>
-                现在上传的图片会暂存但无法生成识别向量（状态为"未嵌入"）。 请先到「控制台 → AI
-                视觉识别」下载并激活一个模型，之后再回来构建索引。
-              </n-alert>
-              <n-alert :bordered="false" type="info" class="gallery-hint">
-                上传商品不同角度的照片，系统会用这些图片学习识别该商品。
-                <br /><strong>建议：</strong>每个商品上传
-                <strong>1~3 张</strong>不同角度的接近正方形的照片（商品居中、背景简洁）。
-                <br /><strong>📐 上传时会依次弹出裁剪框</strong>（多选时每张单独处理）——把商品框进
-                1:1 方框里识别更准；不想裁剪可以点"跳过（使用原图）"。
-              </n-alert>
-
-              <!-- 加载中 -->
-              <div v-if="galleryLoading" class="gallery-loading">
-                <n-spin size="small" /> 加载中...
+              <div class="form-media">
+                <ImageUploader
+                  label="更换商品预览图"
+                  :initial-image-url="localProduct.image_url ?? ''"
+                  v-model="editFormFile"
+                  crop-enabled
+                  :crop-default-aspect="themeStore.productImageAspect"
+                  @image-removed="handleImageRemoval"
+                  @invalid-file="handleInvalidFile"
+                />
               </div>
-
-              <template v-else>
-                <!-- 图片网格 -->
-                <div class="gallery-grid">
-                  <div v-for="img in galleryImages" :key="img.id" class="gallery-item">
-                    <div class="gallery-thumb">
-                      <n-image
-                        :src="resolveUrl(img.image_url)"
-                        :alt="img.kind"
-                        object-fit="cover"
-                        class="gallery-img"
-                      />
-                    </div>
-                    <div class="gallery-item-footer">
-                      <div class="footer-tags">
-                        <n-tag size="tiny" :type="kindTagType(img.kind)">
-                          {{ kindLabel(img.kind) }}
-                        </n-tag>
-                        <n-tag
-                          size="tiny"
-                          :type="img.has_embedding ? 'success' : 'warning'"
-                          :bordered="false"
-                        >
-                          {{ img.has_embedding ? '已嵌入' : '未嵌入' }}
-                        </n-tag>
-                      </div>
-                      <n-button
-                        size="tiny"
-                        type="error"
-                        tertiary
-                        :disabled="galleryDeleting === img.id"
-                        :loading="galleryDeleting === img.id"
-                        @click="handleDeleteImage(img)"
-                      >
-                        删除
-                      </n-button>
-                    </div>
-                  </div>
-
-                  <!-- 添加按钮 -->
-                  <div
-                    class="gallery-item gallery-add"
-                    :class="{ 'gallery-add--uploading': galleryUploading }"
-                    @click="!galleryUploading && triggerGalleryUpload()"
-                  >
-                    <div class="gallery-add-inner">
-                      <n-spin v-if="galleryUploading" size="small" />
-                      <template v-else>
-                        <span class="gallery-add-icon">+</span>
-                        <span class="gallery-add-text">添加图片</span>
-                      </template>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- 空状态（仅在没有任何图片时） -->
-                <div v-if="galleryImages.length === 0" class="gallery-empty">
-                  还没有识别用图片。点击上方 "+"
-                  添加商品照片，或在「基本信息」中上传预览图后会自动同步过来。
-                </div>
-
-                <!-- 图片数量提示 -->
-                <div v-else class="gallery-count">已有 {{ galleryImages.length }} 张识别用图片</div>
-              </template>
-
-              <input
-                ref="galleryFileRef"
-                type="file"
-                accept="image/*"
-                multiple
-                class="hidden-input"
-                @change="handleGalleryFileSelected"
-              />
-
-              <!-- 识别图批量上传的裁剪器（每张弹出，可跳过使用原图） -->
-              <ImageCropper
-                :show="galleryCropperShow"
-                :file="galleryCropperFile"
-                default-aspect="1:1"
-                :batch-label="galleryCropperBatchLabel"
-                @confirm="onGalleryCropConfirm"
-                @skip="onGalleryCropSkip"
-                @close="onGalleryCropClose"
-              />
-
-              <p v-if="galleryError" class="error-message">{{ galleryError }}</p>
             </div>
-          </n-tab-pane>
-        </n-tabs>
-      </div>
+            <p v-if="editError" class="form-error">{{ editError }}</p>
+          </form>
+        </n-tab-pane>
 
-      <div v-else class="empty-hint">未选择要编辑的商品</div>
-
-      <template #footer>
-        <div class="modal-footer">
-          <n-space justify="end">
-            <n-button @click="handleClose">
-              {{ activeTab === 'gallery' ? '关闭' : '取消' }}
-            </n-button>
-            <n-button
-              v-if="activeTab === 'info'"
-              type="primary"
-              :loading="isUpdating"
-              :disabled="isUpdating || !localProduct"
-              @click="handleUpdate"
+        <!-- ==================== Tab 2: 识别用图片 ==================== -->
+        <n-tab-pane name="gallery" tab="识别用图片">
+          <div class="gallery-section">
+            <n-alert
+              v-if="visionModelReady === false"
+              :bordered="false"
+              type="warning"
+              class="gallery-hint"
             >
-              {{ isUpdating ? '保存中...' : '保存更改' }}
-            </n-button>
-            <n-button v-else-if="activeTab === 'gallery'" type="primary" @click="handleClose">
-              保存并退出
-            </n-button>
-          </n-space>
-        </div>
-      </template>
-    </n-card>
-  </n-modal>
+              <strong>⚠ 尚未激活 AI 视觉模型。</strong>
+              现在上传的图片会暂存但无法生成识别向量（状态为"未嵌入"）。 请先到「控制台 → AI
+              视觉识别」下载并激活一个模型，之后再回来构建索引。
+            </n-alert>
+            <n-alert :bordered="false" type="info" class="gallery-hint">
+              上传商品不同角度的照片，系统会用这些图片学习识别该商品。
+              <br /><strong>建议：</strong>每个商品上传
+              <strong>1~3 张</strong>不同角度的接近正方形的照片（商品居中、背景简洁）。
+              <br /><strong>📐 上传时会依次弹出裁剪框</strong>（多选时每张单独处理）——把商品框进 1:1
+              方框里识别更准；不想裁剪可以点"跳过（使用原图）"。
+            </n-alert>
+
+            <!-- 加载中 -->
+            <div v-if="galleryLoading" class="gallery-loading">
+              <n-spin size="small" /> 加载中...
+            </div>
+
+            <template v-else>
+              <!-- 图片网格 -->
+              <div class="gallery-grid">
+                <div v-for="img in galleryImages" :key="img.id" class="gallery-item">
+                  <div class="gallery-thumb">
+                    <n-image
+                      :src="resolveUrl(img.image_url)"
+                      :alt="img.kind"
+                      object-fit="cover"
+                      class="gallery-img"
+                    />
+                  </div>
+                  <div class="gallery-item-footer">
+                    <div class="footer-tags">
+                      <n-tag size="tiny" :type="kindTagType(img.kind)">
+                        {{ kindLabel(img.kind) }}
+                      </n-tag>
+                      <n-tag
+                        size="tiny"
+                        :type="img.has_embedding ? 'success' : 'warning'"
+                        :bordered="false"
+                      >
+                        {{ img.has_embedding ? '已嵌入' : '未嵌入' }}
+                      </n-tag>
+                    </div>
+                    <n-button
+                      size="tiny"
+                      type="error"
+                      tertiary
+                      :disabled="galleryDeleting === img.id"
+                      :loading="galleryDeleting === img.id"
+                      @click="handleDeleteImage(img)"
+                    >
+                      删除
+                    </n-button>
+                  </div>
+                </div>
+
+                <!-- 添加按钮 -->
+                <div
+                  class="gallery-item gallery-add"
+                  :class="{ 'gallery-add--uploading': galleryUploading }"
+                  @click="!galleryUploading && triggerGalleryUpload()"
+                >
+                  <div class="gallery-add-inner">
+                    <n-spin v-if="galleryUploading" size="small" />
+                    <template v-else>
+                      <span class="gallery-add-icon">+</span>
+                      <span class="gallery-add-text">添加图片</span>
+                    </template>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 空状态（仅在没有任何图片时） -->
+              <div v-if="galleryImages.length === 0" class="gallery-empty">
+                还没有识别用图片。点击上方 "+"
+                添加商品照片，或在「基本信息」中上传预览图后会自动同步过来。
+              </div>
+
+              <!-- 图片数量提示 -->
+              <div v-else class="gallery-count">已有 {{ galleryImages.length }} 张识别用图片</div>
+            </template>
+
+            <input
+              ref="galleryFileRef"
+              type="file"
+              accept="image/*"
+              multiple
+              class="hidden-input"
+              @change="handleGalleryFileSelected"
+            />
+
+            <!-- 识别图批量上传的裁剪器（每张弹出，可跳过使用原图） -->
+            <ImageCropper
+              :show="galleryCropperShow"
+              :file="galleryCropperFile"
+              default-aspect="1:1"
+              :batch-label="galleryCropperBatchLabel"
+              @confirm="onGalleryCropConfirm"
+              @skip="onGalleryCropSkip"
+              @close="onGalleryCropClose"
+            />
+
+            <p v-if="galleryError" class="form-error">{{ galleryError }}</p>
+          </div>
+        </n-tab-pane>
+      </n-tabs>
+    </div>
+
+    <div v-else class="modal-empty">未选择要编辑的商品</div>
+
+    <template #footer>
+      <div class="modal-footer">
+        <n-space justify="end">
+          <n-button @click="handleClose">
+            {{ activeTab === 'gallery' ? '关闭' : '取消' }}
+          </n-button>
+          <n-button
+            v-if="activeTab === 'info'"
+            type="primary"
+            :loading="isUpdating"
+            :disabled="isUpdating || !localProduct"
+            @click="handleUpdate"
+          >
+            {{ isUpdating ? '保存中...' : '保存更改' }}
+          </n-button>
+          <n-button v-else-if="activeTab === 'gallery'" type="primary" @click="handleClose">
+            保存并退出
+          </n-button>
+        </n-space>
+      </div>
+    </template>
+  </AppModal>
 </template>
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import {
-  NModal,
-  NCard,
   NButton,
   NInput,
   NInputNumber,
@@ -251,6 +241,8 @@ import {
   NImage,
   NSpin,
 } from 'naive-ui'
+import { AppModal } from '@/components/ui'
+import { useFeedback } from '@/composables/useFeedback'
 
 import ImageUploader from '@/components/shared/ImageUploader.vue'
 import SocietySelect from '@/components/shared/SocietySelect.vue'
@@ -293,6 +285,7 @@ const props = withDefaults(
 const emit = defineEmits<{ (e: 'close'): void; (e: 'updated'): void }>()
 const store = useProductStore()
 const themeStore = useThemeStore()
+const fb = useFeedback()
 
 const activeTab = ref('info')
 const isUpdating = ref(false)
@@ -532,9 +525,10 @@ async function handleDeleteImage(img: Schemas['MasterProductImageDto']) {
 
   // 如果是主图同步过来的，给个提示
   if (img.kind === 'legacy_main') {
-    const ok = confirm(
-      '这是从商品预览图自动同步的图片。删除后如需恢复，请在「基本信息」中重新上传预览图。确认删除？'
-    )
+    const ok = await fb.confirm({
+      title:
+        '这是从商品预览图自动同步的图片。删除后如需恢复，请在「基本信息」中重新上传预览图。确认删除？',
+    })
     if (!ok) return
   }
 
@@ -552,27 +546,12 @@ async function handleDeleteImage(img: Schemas['MasterProductImageDto']) {
 </script>
 
 <style scoped>
-.edit-modal-card {
-  width: 680px;
-  max-width: 92vw;
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.modal-title {
-  margin: 0;
-}
-
 .modal-body {
-  padding: 0.5rem 0;
+  padding: var(--space-sm) 0;
 }
 
 .modal-footer {
-  border-top: 1px solid var(--border-color);
-  padding-top: 0.75rem;
+  padding-top: var(--space-md);
 }
 
 .hidden-input {
@@ -583,41 +562,41 @@ async function handleDeleteImage(img: Schemas['MasterProductImageDto']) {
 .edit-form {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: var(--space-lg);
 }
 .form-layout {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: var(--space-lg);
 }
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
+  gap: var(--space-lg);
 }
 .form-group {
   display: flex;
   flex-direction: column;
 }
 label {
-  margin-bottom: 0.5rem;
-  font-weight: 500;
+  margin-bottom: var(--space-sm);
+  font-weight: var(--weight-medium);
 }
-.error-message {
+.form-error {
   color: var(--error-color);
-  margin-top: 0.25rem;
+  margin-top: var(--space-xs);
   font-size: var(--font-base);
 }
-.empty-hint {
+.modal-empty {
   color: var(--text-muted);
-  padding: 1rem 0;
+  padding: var(--space-lg) 0;
 }
 
 /* ===== 识别用图片 Tab ===== */
 .gallery-section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-md);
 }
 .gallery-hint {
   font-size: var(--font-sm);
@@ -625,16 +604,16 @@ label {
 .gallery-loading {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-sm);
   color: var(--text-muted);
-  padding: 16px 0;
+  padding: var(--space-lg) 0;
   font-size: var(--font-sm);
 }
 
 .gallery-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 10px;
+  gap: var(--space-sm);
 }
 
 .gallery-item {
@@ -666,12 +645,12 @@ label {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 6px;
-  gap: 4px;
+  padding: var(--space-xs) var(--space-sm);
+  gap: var(--space-xs);
 }
 .footer-tags {
   display: flex;
-  gap: 3px;
+  gap: var(--space-xs);
   flex-wrap: wrap;
   min-width: 0;
 }
@@ -701,11 +680,11 @@ label {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-xs);
   color: var(--text-muted);
 }
 .gallery-add-icon {
-  font-size: 1.8rem;
+  font-size: var(--font-2xl);
   line-height: 1;
 }
 .gallery-add-text {
@@ -715,7 +694,7 @@ label {
 .gallery-empty {
   color: var(--text-muted);
   font-size: var(--font-sm);
-  padding: 8px 0;
+  padding: var(--space-sm) 0;
   text-align: center;
 }
 
@@ -725,7 +704,7 @@ label {
   text-align: right;
 }
 
-@media (max-width: 640px) {
+@media (--phone) {
   .form-grid {
     grid-template-columns: 1fr;
   }
@@ -735,8 +714,8 @@ label {
 }
 .hint {
   display: block;
-  margin-top: 4px;
-  font-size: 12px;
+  margin-top: var(--space-xs);
+  font-size: var(--font-xs);
   color: var(--text-muted);
 }
 </style>

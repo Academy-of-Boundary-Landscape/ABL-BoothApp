@@ -1,145 +1,141 @@
 <template>
-  <div class="vision-container">
-    <div class="section-header" @click="isCollapsed = !isCollapsed">
-      <h2>
-        AI 视觉识别
-        <span class="help-wrap" @click.stop>
-          <HelpBubble page="vision" />
-        </span>
-      </h2>
-      <n-button text class="toggle-btn">
+  <SectionCard title="AI 视觉识别" collapsible v-model:collapsed="isCollapsed">
+    <template #extra>
+      <span class="help-wrap" @click.stop>
+        <HelpBubble page="vision" />
+      </span>
+      <n-button text class="toggle-btn" @click="isCollapsed = !isCollapsed">
         {{ isCollapsed ? '展开' : '折叠' }}
       </n-button>
-    </div>
+    </template>
 
-    <transition name="expand">
-      <div v-show="!isCollapsed" class="section-body">
-        <!-- 运行时状态 -->
-        <div class="status-bar">
-          <div class="status-item">
-            <span class="status-label">状态</span>
-            <n-tag :type="statusTagType" size="small" round>{{ statusText }}</n-tag>
-          </div>
-          <div class="status-item">
-            <span class="status-label">当前模型</span>
-            <span class="status-value">{{ status.model_id || '-' }}</span>
-          </div>
-          <div class="status-item">
-            <span class="status-label">索引数量</span>
-            <span class="status-value">{{ status.index_size ?? '-' }}</span>
-          </div>
-          <div class="status-item">
-            <span class="status-label">最后构建</span>
-            <span class="status-value">{{ status.last_rebuild_at || '-' }}</span>
-          </div>
-          <div class="status-item status-item--wide">
-            <span class="status-label">推理设备</span>
-            <n-tag
-              :type="status.execution_provider?.includes('DirectML') ? 'success' : 'default'"
-              size="small"
-            >
-              {{ status.execution_provider || '-' }}
-            </n-tag>
-          </div>
-          <div class="status-item status-item--wide">
-            <span class="status-label">设备选择</span>
-            <n-select
-              size="small"
-              :value="epConfigured"
-              :options="epOptions"
-              :style="{ minWidth: '220px' }"
-              @update:value="handleEpChange"
-            />
-          </div>
+    <div class="vision-body">
+      <!-- 运行时状态 -->
+      <div class="status-bar">
+        <div class="status-item">
+          <span class="status-label">状态</span>
+          <n-tag :type="statusTagType" size="small" round>{{ statusText }}</n-tag>
         </div>
-
-        <!-- 行动指引（基于当前状态） -->
-        <n-alert
-          v-if="nextAction"
-          :type="nextAction.type"
-          :bordered="false"
-          class="next-action-hint"
-        >
-          <div class="next-action-content">
-            <span>{{ nextAction.text }}</span>
-            <n-button
-              v-if="nextAction.link"
-              size="tiny"
-              type="primary"
-              @click="goToLink(nextAction.link)"
-            >
-              {{ nextAction.linkLabel }}
-            </n-button>
-          </div>
-        </n-alert>
-
-        <!-- 操作按钮 -->
-        <div class="action-row">
-          <n-tooltip trigger="hover" placement="top">
-            <template #trigger>
-              <n-button
-                type="primary"
-                :loading="isRebuilding"
-                :disabled="isRebuilding"
-                @click="handleRebuild(false)"
-              >
-                增量构建索引
-              </n-button>
-            </template>
-            只处理新上传 / 未嵌入的图片，日常用这个
-          </n-tooltip>
-          <n-tooltip trigger="hover" placement="top">
-            <template #trigger>
-              <n-button
-                type="warning"
-                secondary
-                :loading="isRebuilding"
-                :disabled="isRebuilding"
-                @click="handleRebuild(true)"
-              >
-                全量重建索引
-              </n-button>
-            </template>
-            清空索引后重新处理所有图片。换模型或索引出错时使用
-          </n-tooltip>
-          <n-button secondary @click="refreshStatus">刷新状态</n-button>
+        <div class="status-item">
+          <span class="status-label">当前模型</span>
+          <span class="status-value">{{ status.model_id || '-' }}</span>
         </div>
-
-        <!-- 重建进度条 -->
-        <div v-if="isRebuilding && rebuildTotal > 0" class="rebuild-progress">
-          <div class="progress-label">
-            正在处理图片嵌入... {{ rebuildProcessed }} / {{ rebuildTotal }}
-          </div>
-          <n-progress
-            type="line"
-            :percentage="rebuildPercentage"
-            :show-indicator="true"
-            indicator-placement="inside"
+        <div class="status-item">
+          <span class="status-label">索引数量</span>
+          <span class="status-value">{{ status.index_size ?? '-' }}</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">最后构建</span>
+          <span class="status-value">{{ status.last_rebuild_at || '-' }}</span>
+        </div>
+        <div class="status-item status-item--wide">
+          <span class="status-label">推理设备</span>
+          <n-tag
+            :type="status.execution_provider?.includes('DirectML') ? 'success' : 'default'"
+            size="small"
+          >
+            {{ status.execution_provider || '-' }}
+          </n-tag>
+        </div>
+        <div class="status-item status-item--wide">
+          <span class="status-label">设备选择</span>
+          <n-select
+            size="small"
+            :value="epConfigured"
+            :options="epOptions"
+            :style="{ minWidth: '220px' }"
+            @update:value="handleEpChange"
           />
         </div>
+      </div>
 
-        <n-alert
-          v-if="actionMsg"
-          :type="actionMsgType"
-          :bordered="false"
-          closable
-          class="action-alert"
-          @close="actionMsg = ''"
+      <!-- 行动指引（基于当前状态） -->
+      <n-alert v-if="nextAction" :type="nextAction.type" :bordered="false" class="next-action-hint">
+        <div class="next-action-content">
+          <span>{{ nextAction.text }}</span>
+          <n-button
+            v-if="nextAction.link"
+            size="tiny"
+            type="primary"
+            @click="goToLink(nextAction.link)"
+          >
+            {{ nextAction.linkLabel }}
+          </n-button>
+        </div>
+      </n-alert>
+
+      <!-- 操作按钮 -->
+      <div class="action-row">
+        <n-tooltip trigger="hover" placement="top">
+          <template #trigger>
+            <n-button
+              type="primary"
+              :loading="isRebuilding"
+              :disabled="isRebuilding"
+              @click="handleRebuild(false)"
+            >
+              增量构建索引
+            </n-button>
+          </template>
+          只处理新上传 / 未嵌入的图片，日常用这个
+        </n-tooltip>
+        <n-tooltip trigger="hover" placement="top">
+          <template #trigger>
+            <n-button
+              type="warning"
+              secondary
+              :loading="isRebuilding"
+              :disabled="isRebuilding"
+              @click="handleRebuild(true)"
+            >
+              全量重建索引
+            </n-button>
+          </template>
+          清空索引后重新处理所有图片。换模型或索引出错时使用
+        </n-tooltip>
+        <n-button secondary @click="refreshStatus">刷新状态</n-button>
+      </div>
+
+      <!-- 重建进度条 -->
+      <div v-if="isRebuilding && rebuildTotal > 0" class="rebuild-progress">
+        <div class="progress-label">
+          正在处理图片嵌入... {{ rebuildProcessed }} / {{ rebuildTotal }}
+        </div>
+        <n-progress
+          type="line"
+          :percentage="rebuildPercentage"
+          :show-indicator="true"
+          indicator-placement="inside"
+        />
+      </div>
+
+      <n-alert
+        v-if="actionMsg"
+        :type="actionMsgType"
+        :bordered="false"
+        closable
+        class="action-alert"
+        @close="actionMsg = ''"
+      >
+        {{ actionMsg }}
+      </n-alert>
+
+      <!-- 模型列表 -->
+      <div class="model-list">
+        <h3 class="sub-title">可用模型</h3>
+        <div v-if="loadError" class="model-error">
+          <span>{{ loadError }}</span>
+          <n-button size="tiny" secondary @click="refreshStatus">重新加载</n-button>
+        </div>
+        <AsyncState
+          v-else
+          :loading="modelsLoading && models.length === 0"
+          :empty="models.length === 0"
+          loading-text="加载中..."
         >
-          {{ actionMsg }}
-        </n-alert>
-
-        <!-- 模型列表 -->
-        <div class="model-list">
-          <h3 class="sub-title">可用模型</h3>
-          <div v-if="loadError" class="empty-hint empty-hint--error">
-            <span>{{ loadError }}</span>
-            <n-button size="tiny" secondary @click="refreshStatus">重新加载</n-button>
-          </div>
-          <div v-else-if="modelsLoading && models.length === 0" class="empty-hint">加载中...</div>
-          <div v-else-if="models.length === 0" class="empty-hint">
-            暂无可用模型，请检查后端服务是否正常运行
-          </div>
+          <template #empty>
+            <EmptyState compact title="暂无可用模型，请检查后端服务是否正常运行" />
+          </template>
 
           <div
             v-for="m in models"
@@ -199,36 +195,38 @@
               </template>
             </div>
           </div>
-        </div>
-
-        <!-- 安装进度 -->
-        <div v-if="installTask" class="install-progress">
-          <div class="progress-label">
-            安装 {{ installTask.model_id }}:
-            <span :class="'progress-status--' + installTask.status">{{ installTask.status }}</span>
-          </div>
-          <n-progress
-            type="line"
-            :percentage="installTask.progress"
-            :status="
-              installTask.status === 'failed'
-                ? 'error'
-                : installTask.status === 'completed'
-                  ? 'success'
-                  : 'default'
-            "
-          />
-          <div v-if="installTask.error" class="progress-error">{{ installTask.error }}</div>
-        </div>
+        </AsyncState>
       </div>
-    </transition>
-  </div>
+
+      <!-- 安装进度 -->
+      <div v-if="installTask" class="install-progress">
+        <div class="progress-label">
+          安装 {{ installTask.model_id }}:
+          <span :class="'progress-status--' + installTask.status">{{ installTask.status }}</span>
+        </div>
+        <n-progress
+          type="line"
+          :percentage="installTask.progress"
+          :status="
+            installTask.status === 'failed'
+              ? 'error'
+              : installTask.status === 'completed'
+                ? 'success'
+                : 'default'
+          "
+        />
+        <div v-if="installTask.error" class="progress-error">{{ installTask.error }}</div>
+      </div>
+    </div>
+  </SectionCard>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, type RouteLocationRaw } from 'vue-router'
 import { NButton, NTag, NAlert, NProgress, NSelect, NTooltip, type SelectOption } from 'naive-ui'
+import { AsyncState, EmptyState, SectionCard } from '@/components/ui'
+import { useFeedback } from '@/composables/useFeedback'
 import {
   getVisionStatus,
   listModels,
@@ -241,6 +239,7 @@ import { api, unwrap, errorMessage, type Schemas } from '@/api/client'
 import HelpBubble from '@/components/shared/HelpBubble.vue'
 
 const router = useRouter()
+const fb = useFeedback()
 
 function goToLink(to: RouteLocationRaw) {
   router.push(to)
@@ -521,7 +520,8 @@ async function handleActivate(modelId: string) {
 
 // ===== 模型删除 =====
 async function handleDelete(modelId: string) {
-  if (!confirm(`确认删除模型 ${modelId}？`)) return
+  const ok = await fb.confirm({ title: `确认删除模型 ${modelId}？` })
+  if (!ok) return
   actionMsg.value = ''
   try {
     await unwrap(
@@ -548,29 +548,6 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.vision-container {
-  background: var(--card-bg-color);
-  border: 2px solid var(--border-color);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  cursor: pointer;
-  user-select: none;
-  padding: 0.75rem 1rem;
-}
-.section-header h2 {
-  margin: 0;
-  color: var(--accent-color);
-  font-size: var(--font-lg);
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
 .help-wrap {
   display: inline-flex;
   align-items: center;
@@ -579,27 +556,25 @@ onBeforeUnmount(() => {
   color: var(--accent-color);
 }
 
-.section-body {
-  padding: 1rem;
-  border-top: 2px solid var(--border-color);
+.vision-body {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--space-md);
 }
 
 /* 状态栏 */
 .status-bar {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px 24px;
-  padding: 10px 14px;
+  gap: var(--space-lg) var(--space-xl);
+  padding: var(--space-sm) var(--space-md);
   background: var(--bg-secondary);
   border-radius: var(--radius-md);
 }
 .status-item {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-sm);
 }
 .status-item--wide {
   flex-basis: 100%;
@@ -610,14 +585,14 @@ onBeforeUnmount(() => {
 }
 .status-value {
   font-size: var(--font-sm);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   color: var(--primary-text-color);
 }
 
 /* 操作 */
 .action-row {
   display: flex;
-  gap: 10px;
+  gap: var(--space-sm);
   flex-wrap: wrap;
 }
 .action-alert {
@@ -628,20 +603,20 @@ onBeforeUnmount(() => {
 .sub-title {
   margin: 0;
   font-size: var(--font-base);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   color: var(--primary-text-color);
 }
 .model-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 .model-card {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   background: var(--bg-color);
@@ -658,92 +633,89 @@ onBeforeUnmount(() => {
 .model-header {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-sm);
   flex-wrap: wrap;
 }
 .model-name {
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   font-size: var(--font-md);
   color: var(--primary-text-color);
 }
 .model-desc {
   font-size: var(--font-sm);
   color: var(--text-muted);
-  margin-top: 4px;
+  margin-top: var(--space-xs);
   line-height: 1.4;
 }
 .model-specs {
   display: flex;
-  gap: 6px;
-  margin-top: 8px;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
   flex-wrap: wrap;
 }
 .spec-chip {
-  font-size: 11px;
-  padding: 2px 8px;
+  font-size: var(--font-xs);
+  padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-pill);
   background: var(--bg-secondary);
   color: var(--text-muted);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   white-space: nowrap;
 }
 .spec-chip--size {
-  background: var(--primary-bg-subtle, rgba(99, 102, 241, 0.08));
-  color: var(--primary-text, #4f46e5);
+  background: var(--accent-color-light);
+  color: var(--primary-text-color);
   font-variant-numeric: tabular-nums;
 }
 .model-actions {
   display: flex;
-  gap: 6px;
+  gap: var(--space-sm);
   flex-shrink: 0;
   align-self: center;
 }
-.empty-hint {
-  color: var(--text-muted);
+.model-error {
+  color: var(--error-color);
   font-size: var(--font-sm);
-  padding: 8px 0;
-}
-.empty-hint--error {
+  padding: var(--space-sm) 0;
   display: flex;
   align-items: center;
-  gap: 12px;
-  color: var(--n-error-color, #d03050);
+  gap: var(--space-md);
 }
 .next-action-hint {
-  margin: 10px 0;
+  margin: var(--space-sm) 0;
 }
 .next-action-content {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-md);
   flex-wrap: wrap;
 }
 
 /* 重建进度 */
 .rebuild-progress {
-  padding: 10px 14px;
+  padding: var(--space-sm) var(--space-md);
   border: 1px solid var(--accent-color);
   border-radius: var(--radius-md);
   background: var(--hover-bg-color);
 }
 .rebuild-progress .progress-label {
   font-size: var(--font-sm);
-  margin-bottom: 6px;
+  margin-bottom: var(--space-sm);
   color: var(--primary-text-color);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 /* 安装进度 */
 .install-progress {
-  padding: 10px 14px;
+  padding: var(--space-sm) var(--space-md);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   background: var(--bg-secondary);
 }
 .progress-label {
   font-size: var(--font-sm);
-  margin-bottom: 6px;
+  margin-bottom: var(--space-sm);
   color: var(--primary-text-color);
 }
 .progress-status--downloading {
@@ -756,25 +728,8 @@ onBeforeUnmount(() => {
   color: var(--error-color);
 }
 .progress-error {
-  margin-top: 4px;
+  margin-top: var(--space-xs);
   font-size: var(--font-sm);
   color: var(--error-color);
-}
-
-/* 展开动画 */
-.expand-enter-active,
-.expand-leave-active {
-  transition: all 0.3s ease;
-  overflow: hidden;
-}
-.expand-enter-from,
-.expand-leave-to {
-  max-height: 0;
-  opacity: 0;
-}
-.expand-enter-to,
-.expand-leave-from {
-  max-height: 1200px;
-  opacity: 1;
 }
 </style>

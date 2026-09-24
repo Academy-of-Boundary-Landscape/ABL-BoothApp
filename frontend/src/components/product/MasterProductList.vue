@@ -1,5 +1,10 @@
 <template>
-  <CollapsibleSection title="商品列表" v-model:collapsed="isListCollapsed" class="list-container">
+  <SectionCard
+    title="商品列表"
+    collapsible
+    v-model:collapsed="isListCollapsed"
+    class="list-container"
+  >
     <div class="search-section">
       <div class="search-header">
         <h3>搜索和过滤</h3>
@@ -52,10 +57,8 @@
       </n-checkbox>
     </div>
 
-    <n-spin :show="store.isLoading">
-      <div v-if="store.error" class="error-message">{{ store.error }}</div>
-
-      <div v-else-if="filteredProducts.length" class="table-wrapper">
+    <AsyncState :loading="store.isLoading" :error="store.error" :empty="!filteredProducts.length">
+      <div class="table-scroll">
         <table class="product-table">
           <thead>
             <tr>
@@ -103,7 +106,7 @@
                     size="small"
                     :bordered="false"
                     type="info"
-                    style="margin: 2px"
+                    style="margin: var(--space-xs)"
                   >
                     {{ tag.trim() }}
                   </n-tag>
@@ -123,7 +126,7 @@
                   type="info"
                   tertiary
                   @click="$emit('edit', product, 'gallery')"
-                  style="margin-left: 8px"
+                  style="margin-left: var(--space-sm)"
                   :title="'直接打开识别图 Tab'"
                 >
                   识别图
@@ -133,7 +136,7 @@
                   :type="product.is_active ? 'error' : 'success'"
                   tertiary
                   @click="$emit('toggleStatus', product)"
-                  style="margin-left: 8px"
+                  style="margin-left: var(--space-sm)"
                 >
                   {{ product.is_active ? '停用' : '启用' }}
                 </n-button>
@@ -143,25 +146,26 @@
         </table>
       </div>
 
-      <p v-else-if="hasActiveFilters">当前筛选条件下没有找到匹配的商品。</p>
-      <EmptyGuide
-        v-else
-        icon="🛍️"
-        title="全局商品库为空"
-        desc="先在这里添加你的制品信息（名称、价格、图片），之后就能在每场展会中快速上架。"
-        hint="在上方表单中创建你的第一个商品"
-      />
-    </n-spin>
-  </CollapsibleSection>
+      <template #empty>
+        <p v-if="hasActiveFilters">当前筛选条件下没有找到匹配的商品。</p>
+        <EmptyState
+          v-else
+          icon="🛍️"
+          title="全局商品库为空"
+          desc="先在这里添加你的制品信息（名称、价格、图片），之后就能在每场展会中快速上架。"
+          hint="在上方表单中创建你的第一个商品"
+        />
+      </template>
+    </AsyncState>
+  </SectionCard>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useProductStore } from '@/stores/productStore'
-import { NButton, NCheckbox, NImage, NInput, NInputNumber, NSelect, NSpin, NTag } from 'naive-ui'
-import EmptyGuide from '@/components/shared/EmptyGuide.vue'
-import CollapsibleSection from '@/components/shared/CollapsibleSection.vue'
+import { NButton, NCheckbox, NImage, NInput, NInputNumber, NSelect, NTag } from 'naive-ui'
+import { AsyncState, EmptyState, SectionCard } from '@/components/ui'
 import type { Schemas } from '@/api/client'
 
 const store = useProductStore()
@@ -239,30 +243,30 @@ watch(
 
 <style scoped>
 .list-container {
-  margin-bottom: 2rem;
+  margin-bottom: var(--space-2xl);
 }
 
-/* section 外壳样式已由 CollapsibleSection 组件统一提供 */
+/* section 外壳样式已由 SectionCard 组件统一提供 */
 
 .search-section {
-  margin-bottom: 1.5rem;
-  padding-bottom: 1.5rem;
+  margin-bottom: var(--space-xl);
+  padding-bottom: var(--space-xl);
   border-bottom: 1px solid var(--border-color);
 }
 
 .search-header {
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-lg);
 }
 
 .search-header h3 {
   margin: 0;
   color: var(--accent-color);
   font-size: var(--font-md);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
 }
 
 .search-hint {
-  margin: 0.5rem 0 0;
+  margin: var(--space-sm) 0 0;
   color: var(--text-muted);
   font-size: var(--font-sm);
 }
@@ -271,7 +275,7 @@ watch(
   display: grid;
   grid-template-columns: minmax(220px, 1.8fr) minmax(150px, 1fr) minmax(120px, 0.8fr) auto;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-md);
 }
 
 .search-input,
@@ -289,12 +293,12 @@ watch(
 }
 
 .filter-options {
-  margin-top: 1rem;
-  padding-top: 1rem;
+  margin-top: var(--space-lg);
+  padding-top: var(--space-lg);
   border-top: 1px solid var(--border-color);
   display: flex;
   flex-wrap: wrap;
-  gap: 20px;
+  gap: var(--space-lg);
 }
 
 .show-inactive-checkbox {
@@ -305,13 +309,7 @@ watch(
 .checkbox-label {
   color: var(--primary-text-color);
   font-size: var(--font-base);
-  margin-left: 0.5rem;
-}
-
-.table-wrapper {
-  width: 100%;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
+  margin-left: var(--space-sm);
 }
 
 .product-table {
@@ -325,16 +323,16 @@ watch(
 }
 
 .product-table th {
-  padding: 12px 16px;
+  padding: var(--space-md) var(--space-lg);
   background-color: var(--card-bg-color);
   color: var(--primary-text-color);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   border-bottom: 2px solid var(--accent-color);
   white-space: nowrap;
 }
 
 .product-table td {
-  padding: 12px 16px;
+  padding: var(--space-md) var(--space-lg);
   border-bottom: 1px solid var(--border-color);
   color: var(--secondary-text-color);
   vertical-align: middle;
@@ -406,32 +404,32 @@ watch(
   text-decoration: line-through;
 }
 
-@media (max-width: 768px) {
+@media (--phone) {
   .search-section {
-    margin-bottom: 1rem;
-    padding-bottom: 1rem;
+    margin-bottom: var(--space-lg);
+    padding-bottom: var(--space-lg);
   }
   .search-header h3 {
-    font-size: 0.95rem;
+    font-size: var(--font-base);
   }
   .search-hint {
-    font-size: 0.8rem;
+    font-size: var(--font-sm);
   }
   .search-box {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 8px;
+    gap: var(--space-sm);
   }
   .clear-btn {
     justify-self: stretch;
     grid-column: 1 / -1;
   }
   .product-table {
-    font-size: 0.85rem;
+    font-size: var(--font-sm);
     min-width: 760px;
   }
   .product-table th,
   .product-table td {
-    padding: 10px 12px;
+    padding: var(--space-sm) var(--space-md);
   }
   .preview-img {
     width: 60px;
@@ -441,48 +439,48 @@ watch(
     width: 60px;
     height: 60px;
     line-height: 60px;
-    font-size: 0.75rem;
+    font-size: var(--font-xs);
   }
 }
 
-@media (max-width: 480px) {
+@media (--phone) {
   .list-container {
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-xl);
   }
   .search-section {
-    margin-bottom: 0.75rem;
-    padding-bottom: 0.75rem;
+    margin-bottom: var(--space-md);
+    padding-bottom: var(--space-md);
   }
   .search-header h3 {
-    font-size: 0.9rem;
+    font-size: var(--font-sm);
   }
   .search-hint {
-    font-size: 0.75rem;
+    font-size: var(--font-xs);
   }
   .search-box {
     grid-template-columns: 1fr;
-    gap: 6px;
+    gap: var(--space-sm);
   }
   .clear-btn {
     grid-column: auto;
   }
   .filter-options {
-    margin-top: 0.75rem;
-    padding-top: 0.75rem;
+    margin-top: var(--space-md);
+    padding-top: var(--space-md);
   }
   .checkbox-label {
-    font-size: 0.85rem;
+    font-size: var(--font-sm);
   }
   .product-table {
-    font-size: 0.75rem;
+    font-size: var(--font-xs);
     min-width: 600px;
   }
   .product-table th,
   .product-table td {
-    padding: 8px 10px;
+    padding: var(--space-sm);
   }
   .product-table th {
-    font-size: 0.7rem;
+    font-size: var(--font-xs);
   }
   .preview-img {
     width: 50px;
@@ -492,11 +490,11 @@ watch(
     width: 50px;
     height: 50px;
     line-height: 50px;
-    font-size: 0.7rem;
+    font-size: var(--font-xs);
   }
   .action-cell :deep(.n-button) {
-    font-size: 0.75rem;
-    padding: 4px 8px;
+    font-size: var(--font-xs);
+    padding: var(--space-xs) var(--space-sm);
   }
 }
 </style>
