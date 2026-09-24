@@ -73,7 +73,7 @@
                 <div class="form-media">
                   <ImageUploader
                     label="更换商品预览图"
-                    :initial-image-url="localProduct.image_url"
+                    :initial-image-url="localProduct.image_url ?? ''"
                     v-model="editFormFile"
                     crop-enabled
                     :crop-default-aspect="themeStore.productImageAspect"
@@ -229,7 +229,7 @@
   </n-modal>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, watch } from 'vue'
 import {
   NModal,
@@ -252,6 +252,7 @@ import ImageCropper from '@/components/shared/ImageCropper.vue'
 import { useProductStore } from '@/stores/productStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { getImageUrl } from '@/services/url'
+import { errorMessage, type Schemas } from '@/api/client'
 import {
   listProductImages,
   addProductImage,
@@ -268,21 +269,30 @@ import {
 
 const GALLERY_RESIZE_PX = 512
 
-const props = defineProps({
-  show: { type: Boolean, default: false },
-  product: { type: Object, default: null },
-  initialTab: { type: String, default: 'info' },
-})
+/** 编辑态：tags 在表单里是数组，default_price 允许被 n-input-number 清空。 */
+type EditableProduct = Omit<Schemas['MasterProduct'], 'tags' | 'default_price'> & {
+  tags: string[]
+  default_price: number | null
+}
 
-const emit = defineEmits(['close', 'updated'])
+const props = withDefaults(
+  defineProps<{
+    show?: boolean
+    product?: Schemas['MasterProduct'] | null
+    initialTab?: string
+  }>(),
+  { show: false, product: null, initialTab: 'info' }
+)
+
+const emit = defineEmits<{ (e: 'close'): void; (e: 'updated'): void }>()
 const store = useProductStore()
 const themeStore = useThemeStore()
 
 const activeTab = ref('info')
 const isUpdating = ref(false)
 const editError = ref('')
-const localProduct = ref(null)
-const editFormFile = ref(null)
+const localProduct = ref<EditableProduct | null>(null)
+const editFormFile = ref<File | undefined>(undefined)
 const isImageRemovedForEdit = ref(false)
 
 // ===== 基本信息 Tab =====
@@ -291,7 +301,7 @@ watch(
   (product) => {
     if (!product) {
       localProduct.value = null
-      editFormFile.value = null
+      editFormFile.value = undefined
       isImageRemovedForEdit.value = false
       editError.value = ''
       return
@@ -300,7 +310,7 @@ watch(
       ...product,
       tags: (product.tags || '').split(',').filter(Boolean),
     }
-    editFormFile.value = null
+    editFormFile.value = undefined
     isImageRemovedForEdit.value = false
     editError.value = ''
     // product 变化时立即加载识别用图片
@@ -314,7 +324,7 @@ watch(
   (visible) => {
     if (!visible) {
       editError.value = ''
-      editFormFile.value = null
+      editFormFile.value = undefined
       isImageRemovedForEdit.value = false
       activeTab.value = 'info'
       galleryImages.value = []
@@ -328,7 +338,7 @@ watch(
   }
 )
 
-function handleInvalidFile(message) {
+function handleInvalidFile(message: string) {
   editError.value = message
 }
 function handleImageRemoval() {
@@ -378,13 +388,13 @@ async function handleUpdate() {
 }
 
 // ===== 识别用图片 Tab =====
-const galleryImages = ref([])
+const galleryImages = ref<Schemas['MasterProductImageDto'][]>([])
 const galleryLoading = ref(false)
 const galleryUploading = ref(false)
 const galleryError = ref('')
-const galleryDeleting = ref(null)
-const galleryFileRef = ref(null)
-const visionModelReady = ref(null) // null = 未检查，true = 有激活模型，false = 无
+const galleryDeleting = ref<number | null>(null)
+const galleryFileRef = ref<HTMLInputElement | null>(null)
+const visionModelReady = ref<boolean | null>(null) // null = 未检查，true = 有激活模型，false = 无
 
 async function checkVisionModelReady() {
   try {
@@ -395,12 +405,12 @@ async function checkVisionModelReady() {
   }
 }
 
-function resolveUrl(url) {
+function resolveUrl(url: string) {
   return getImageUrl(url)
 }
 
-function kindLabel(kind) {
-  const map = {
+function kindLabel(kind: string) {
+  const map: Record<string, string> = {
     legacy_main: '主图',
     gallery: '识别图',
     feedback: '反馈',
@@ -409,7 +419,7 @@ function kindLabel(kind) {
   return map[kind] || kind
 }
 
-function kindTagType(kind) {
+function kindTagType(kind: string): 'default' | 'error' | 'info' {
   if (kind === 'legacy_main') return 'default'
   if (kind === 'feedback_incorrect') return 'error'
   return 'info'
@@ -435,9 +445,10 @@ function triggerGalleryUpload() {
   galleryFileRef.value?.click()
 }
 
-async function handleGalleryFileSelected(e) {
-  const files = Array.from(e.target.files || [])
-  e.target.value = ''
+async function handleGalleryFileSelected(e: Event) {
+  const input = e.target as HTMLInputElement
+  const files = Array.from(input.files || [])
+  input.value = ''
   if (!files.length || !localProduct.value) return
 
   galleryError.value = ''
@@ -463,7 +474,8 @@ async function handleGalleryFileSelected(e) {
 
       // AI 识别图强制缩放到 512px，减少存储和推理预处理开销
       const resized = await resizeImageFile(processedFile, GALLERY_RESIZE_PX)
-      await addProductImage(localProduct.value.id, resized, 'gallery')
+      // resizeImageFile 对 File 输入必定返回 File；Blob 分支只对应 Blob 输入，这里不会走到。
+      await addProductImage(localProduct.value.id, resized as File, 'gallery')
     }
     await loadGallery()
   } catch (err) {
@@ -475,11 +487,11 @@ async function handleGalleryFileSelected(e) {
 
 // ===== 识别图裁剪器：Promise-based 顺序处理 =====
 const galleryCropperShow = ref(false)
-const galleryCropperFile = ref(null)
+const galleryCropperFile = ref<File | undefined>(undefined)
 const galleryCropperBatchLabel = ref('')
-let galleryCropperResolve = null
+let galleryCropperResolve: ((value: File | null) => void) | null = null
 
-function openGalleryCropper(file, batchLabel) {
+function openGalleryCropper(file: File, batchLabel: string): Promise<File | null> {
   return new Promise((resolve) => {
     galleryCropperResolve = resolve
     galleryCropperFile.value = file
@@ -487,26 +499,26 @@ function openGalleryCropper(file, batchLabel) {
     galleryCropperShow.value = true
   })
 }
-function resolveGalleryCropper(value) {
+function resolveGalleryCropper(value: File | null) {
   galleryCropperShow.value = false
-  galleryCropperFile.value = null
+  galleryCropperFile.value = undefined
   galleryCropperBatchLabel.value = ''
   if (galleryCropperResolve) {
     galleryCropperResolve(value)
     galleryCropperResolve = null
   }
 }
-function onGalleryCropConfirm(croppedFile) {
+function onGalleryCropConfirm(croppedFile: File) {
   resolveGalleryCropper(croppedFile)
 }
-function onGalleryCropSkip(originalFile) {
+function onGalleryCropSkip(originalFile: File) {
   resolveGalleryCropper(originalFile)
 }
 function onGalleryCropClose() {
   resolveGalleryCropper(null)
 }
 
-async function handleDeleteImage(img) {
+async function handleDeleteImage(img: Schemas['MasterProductImageDto']) {
   if (!localProduct.value) return
 
   // 如果是主图同步过来的，给个提示
@@ -523,7 +535,7 @@ async function handleDeleteImage(img) {
     await deleteProductImage(localProduct.value.id, img.id)
     galleryImages.value = galleryImages.value.filter((i) => i.id !== img.id)
   } catch (err) {
-    galleryError.value = err.response?.data?.error || '删除失败'
+    galleryError.value = errorMessage(err, '删除失败')
   } finally {
     galleryDeleting.value = null
   }

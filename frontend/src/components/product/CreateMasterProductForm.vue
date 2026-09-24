@@ -100,7 +100,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref } from 'vue'
 import { NButton, NCard, NInput, NInputNumber, NSelect } from 'naive-ui'
 
@@ -109,7 +109,16 @@ import { useProductStore } from '@/stores/productStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { IMAGE_UPLOAD_LIMIT_MB, normalizeUploadError } from '@/utils/upload'
 
-const emit = defineEmits(['created'])
+/** 表单内部状态：价格是元（数字）、标签是数组，与 multipart 契约的字符串字段不同。 */
+interface CreateFormState {
+  product_code: string
+  name: string
+  default_price: number | null
+  category: string
+  tags: string[]
+}
+
+const emit = defineEmits<{ (e: 'created'): void }>()
 const store = useProductStore()
 const themeStore = useThemeStore()
 
@@ -117,7 +126,7 @@ const isCreating = ref(false)
 const createError = ref('')
 const isFormExpanded = ref(true)
 
-const createFormData = ref({
+const createFormData = ref<CreateFormState>({
   product_code: '',
   name: '',
   default_price: null,
@@ -125,9 +134,9 @@ const createFormData = ref({
   tags: [],
 })
 
-const createFormFile = ref(null)
+const createFormFile = ref<File | undefined>(undefined)
 
-function handleInvalidFile(message) {
+function handleInvalidFile(message: string) {
   createError.value = message
 }
 
@@ -166,7 +175,7 @@ async function handleCreate() {
       category: '',
       tags: [],
     }
-    createFormFile.value = null
+    createFormFile.value = undefined
     emit('created')
   } catch (error) {
     createError.value = normalizeUploadError(error, IMAGE_UPLOAD_LIMIT_MB)

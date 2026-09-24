@@ -30,10 +30,11 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { NSpace, useMessage } from 'naive-ui'
 import { useProductStore } from '@/stores/productStore'
+import type { Schemas } from '@/api/client'
 
 import CreateMasterProductForm from '@/components/product/CreateMasterProductForm.vue'
 import BoothpackSyncPanel from '@/components/product/BoothpackSyncPanel.vue'
@@ -44,10 +45,10 @@ import HelpBubble from '@/components/shared/HelpBubble.vue'
 const store = useProductStore()
 
 const isEditModalVisible = ref(false)
-const editableProduct = ref(null)
+const editableProduct = ref<Schemas['MasterProduct'] | null>(null)
 const editInitialTab = ref('info')
 
-function openEditModal(product, initialTab = 'info') {
+function openEditModal(product: Schemas['MasterProduct'], initialTab = 'info') {
   editableProduct.value = product
   editInitialTab.value = initialTab
   isEditModalVisible.value = true
@@ -63,12 +64,12 @@ async function onProductUpdated() {
   await store.fetchMasterProducts()
 }
 
-async function handleToggleStatus(product) {
+async function handleToggleStatus(product: Schemas['MasterProduct']) {
   try {
     await store.toggleProductStatus(product)
     message.success(`已${product.is_active ? '停用' : '启用'}：${product.name}`)
   } catch (err) {
-    message.error(err?.message || '操作失败')
+    message.error(err instanceof Error && err.message ? err.message : '操作失败')
   }
 }
 const message = useMessage()

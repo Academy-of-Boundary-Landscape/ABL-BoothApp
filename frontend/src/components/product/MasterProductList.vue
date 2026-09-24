@@ -155,22 +155,26 @@
   </CollapsibleSection>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useProductStore } from '@/stores/productStore'
 import { NButton, NCheckbox, NImage, NInput, NInputNumber, NSelect, NSpin, NTag } from 'naive-ui'
 import EmptyGuide from '@/components/shared/EmptyGuide.vue'
 import CollapsibleSection from '@/components/shared/CollapsibleSection.vue'
+import type { Schemas } from '@/api/client'
 
 const store = useProductStore()
 const route = useRoute()
 
-defineEmits(['edit', 'toggleStatus'])
+defineEmits<{
+  (e: 'edit', product: Schemas['MasterProduct'], initialTab?: string): void
+  (e: 'toggleStatus', product: Schemas['MasterProduct']): void
+}>()
 
 const isListCollapsed = ref(false)
 const selectedCategory = ref('')
-const maxPrice = ref(null)
+const maxPrice = ref<number | null>(null)
 const onlyMissingVisionImages = ref(false)
 
 const hasActiveFilters = computed(() => {
@@ -207,13 +211,13 @@ function handleClearFilters() {
   onlyMissingVisionImages.value = false
 }
 
-function visionTagLabel(count) {
+function visionTagLabel(count: number | null | undefined) {
   const n = Number(count || 0)
   if (n === 0) return '未上传'
   return `${n} 张`
 }
 
-function visionTagType(count) {
+function visionTagType(count: number | null | undefined): 'error' | 'warning' | 'success' {
   const n = Number(count || 0)
   if (n === 0) return 'error'
   if (n < 3) return 'warning'
