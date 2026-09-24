@@ -4,6 +4,57 @@
 import type { Cents } from '@/utils/money'
 
 export interface paths {
+    "/admin/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 修改管理员登录密码。需要管理员。 */
+        put: operations["admin.update_admin_password"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/reset-database": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 清空全部业务数据、删除上传的图片并把密码恢复为默认值（危险操作）。需要管理员。 */
+        put: operations["admin.reset_database_handler"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/vendor-default-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 修改全局默认摊主密码。需要管理员。 */
+        put: operations["admin.update_vendor_default_password"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/is-default-admin-password": {
         parameters: {
             query?: never;
@@ -12,7 +63,7 @@ export interface paths {
             cookie?: never;
         };
         /** 管理员密码是否仍是出厂默认值 `admin123`（登录页据此提示改密码）。 */
-        get: operations["is_default_admin_password"];
+        get: operations["auth.is_default_admin_password"];
         put?: never;
         post?: never;
         delete?: never;
@@ -35,7 +86,7 @@ export interface paths {
          * @description 成功时在 Body 里回 token，同时下发 HttpOnly 的 `access_token_cookie`。
          *     `eventId` 只在摊主用「展会专属密码」登录成功时回填。
          */
-        post: operations["login_handler"];
+        post: operations["auth.login_handler"];
         delete?: never;
         options?: never;
         head?: never;
@@ -52,7 +103,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** 退出登录：清掉 HttpOnly 的 `access_token_cookie`。 */
-        post: operations["logout_handler"];
+        post: operations["auth.logout_handler"];
         delete?: never;
         options?: never;
         head?: never;
@@ -71,9 +122,27 @@ export interface paths {
          * @description 挂在 `/api/channels` 而不是 `/api/events/:id/channels`：它按定义就是跨展会的。
          *     这是防「微信」和「微信支付」分裂成两个账户的那一条（②-1/②-2 交接段第 3 条）。
          */
-        get: operations["list_channels"];
+        get: operations["settlement.list_channels"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 展会列表，可选按 `status` 过滤。公开接口。 */
+        get: operations["event.list_events"];
+        put?: never;
+        /** 创建展会（multipart 表单，可传多张收款码）。需要管理员。 */
+        post: operations["event.create_event"];
         delete?: never;
         options?: never;
         head?: never;
@@ -88,13 +157,13 @@ export interface paths {
             cookie?: never;
         };
         /** 这场展会的结算调整列表。金额带符号：负 = 我要多给他们。 */
-        get: operations["list_adjustments"];
+        get: operations["settlement.list_adjustments"];
         put?: never;
         /**
          * 登记一笔结算调整。方向由 `direction` 表达，金额恒为正。
          * @description 展会已结算后仍可调用（冻结例外：垫付、结算调整、收摊清点三类）。
          */
-        post: operations["create_adjustment"];
+        post: operations["settlement.create_adjustment"];
         delete?: never;
         options?: never;
         head?: never;
@@ -115,7 +184,7 @@ export interface paths {
          * 删除一笔结算调整——写一条冲正 journal，原记录保留。
          * @description 展会已结算后仍可调用（冻结例外：垫付、结算调整、收摊清点三类）。
          */
-        delete: operations["delete_adjustment"];
+        delete: operations["settlement.delete_adjustment"];
         options?: never;
         head?: never;
         patch?: never;
@@ -129,13 +198,13 @@ export interface paths {
             cookie?: never;
         };
         /** 这场展会的垫付列表。 */
-        get: operations["list_advances"];
+        get: operations["settlement.list_advances"];
         put?: never;
         /**
          * 登记一笔垫付（摊主替货主掏的钱）。
          * @description 展会已结算后仍可调用（冻结例外：垫付、结算调整、收摊清点三类）。
          */
-        post: operations["create_advance"];
+        post: operations["settlement.create_advance"];
         delete?: never;
         options?: never;
         head?: never;
@@ -156,7 +225,7 @@ export interface paths {
          * 删除一笔垫付——写一条冲正 journal，原记录保留。
          * @description 展会已结算后仍可调用（冻结例外：垫付、结算调整、收摊清点三类）。
          */
-        delete: operations["delete_advance"];
+        delete: operations["settlement.delete_advance"];
         options?: never;
         head?: never;
         patch?: never;
@@ -173,7 +242,7 @@ export interface paths {
          * 收摊向导的当前状态：待处理订单、现场仓余量、盘点时间与推进阻断项。
          * @description **能不能进下一步由后端说了算**——`blockers` 非空就挡住。
          */
-        get: operations["get_closing"];
+        get: operations["closing.get_closing"];
         put?: never;
         post?: never;
         delete?: never;
@@ -195,7 +264,7 @@ export interface paths {
          * 结束展会：把状态置为「已结算」，账本从此冻结。
          * @description 盘点可跳过；结算单靠 `stocktaken_at` 是否为 null 区分「没盘点」。
          */
-        post: operations["settle"];
+        post: operations["closing.settle"];
         delete?: never;
         options?: never;
         head?: never;
@@ -215,7 +284,7 @@ export interface paths {
          * 提交盘点实数。**收全量**：现场仓余额非 0 的商品必须全部出现，数过一致的也要报。
          * @description 盘亏/盘盈写差异腿，只动货不动钱。零差异时不写 journal，但仍落 `stocktaken_at`。
          */
-        post: operations["stocktake"];
+        post: operations["closing.stocktake"];
         delete?: never;
         options?: never;
         head?: never;
@@ -232,7 +301,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** 把现场仓余货全部带回（现场仓 → 外部）。全卖光时是空操作，不写 journal。 */
-        post: operations["takeback"];
+        post: operations["closing.takeback"];
         delete?: never;
         options?: never;
         head?: never;
@@ -247,10 +316,10 @@ export interface paths {
             cookie?: never;
         };
         /** 这场展会的赠送列表。已被冲正的原条目和冲正条目都不出现。 */
-        get: operations["list_gifts"];
+        get: operations["inventory.list_gifts"];
         put?: never;
         /** 登记一笔赠送。默认由货主自己承担；`vendor_pays = true` 时摊主按原价补给货主。 */
-        post: operations["create_gift"];
+        post: operations["inventory.create_gift"];
         delete?: never;
         options?: never;
         head?: never;
@@ -272,7 +341,7 @@ export interface paths {
          *     `reverse_order_journals`），进货和盘点没有撤销语义（记错了就再记一条反向的）。
          *     不设这道闸，这个端点就成了一个能把任何 journal 冲掉的万能口子。
          */
-        post: operations["reverse_entry"];
+        post: operations["inventory.reverse_entry"];
         delete?: never;
         options?: never;
         head?: never;
@@ -287,10 +356,10 @@ export interface paths {
             cookie?: never;
         };
         /** 列出这场展会的全部套装，含候选已被删空的（它们仍需在管理页可见、可删）。 */
-        get: operations["list_lots"];
+        get: operations["lot.list_lots"];
         put?: never;
         /** 新建一个套装（Lot）：候选商品集合 + 要选几件 + 总价，候选必须同一货主。 */
-        post: operations["create_lot"];
+        post: operations["lot.create_lot"];
         delete?: never;
         options?: never;
         head?: never;
@@ -317,7 +386,7 @@ export interface paths {
          *     「提一个方案、立刻看后果」的那一步。**在它之前，配置的后果对人和对机器都是黑箱**——
          *     摊主只能配完等顾客来薅，这正是 2026-09-24 那个缺陷被发现的方式。
          */
-        post: operations["preview_lot"];
+        post: operations["lot.preview_lot"];
         delete?: never;
         options?: never;
         head?: never;
@@ -333,7 +402,7 @@ export interface paths {
         };
         get?: never;
         /** 整体替换一个套装的配置：候选集整组重写，不是追加。 */
-        put: operations["update_lot"];
+        put: operations["lot.update_lot"];
         post?: never;
         /**
          * 删除一个套装。
@@ -343,7 +412,7 @@ export interface paths {
          *     **快照**进了 `order_lots`——历史订单不受影响。所以这里不需要
          *     「被引用就不给删」那种守卫（`api/product.rs` 删商品时要，因为那边没有快照）。
          */
-        delete: operations["delete_lot"];
+        delete: operations["lot.delete_lot"];
         options?: never;
         head?: never;
         patch?: never;
@@ -357,10 +426,10 @@ export interface paths {
             cookie?: never;
         };
         /** 本场展会的订单列表，可按 `status` 过滤。需要管理员或这场展会的摊主。 */
-        get: operations["list_orders"];
+        get: operations["order.list_orders"];
         put?: never;
         /** 顾客下单（公开接口，不需要 token）。要求展会处于「进行中」。 */
-        post: operations["create_order"];
+        post: operations["order.create_order"];
         delete?: never;
         options?: never;
         head?: never;
@@ -379,14 +448,14 @@ export interface paths {
          * @description 按 `order_lines` 逐行返回——同一个商品可能因套装归属拆成多行，前端不要按
          *     `event_product_id` 去重。订单不属于这场展会时返回 404（而不是空列表）。
          */
-        get: operations["list_refunds"];
+        get: operations["refund.list_refunds"];
         put?: never;
         /**
          * 创建一笔退货：逐行冲销货主应得、手工折让与顾客退款，记一条退货 journal。
          * @description 只能退**已完成**的订单；待处理/已取消的订单会被拒绝。展会已结算（冻结）后
          *     `require_event_open` 会挡住退货。
          */
-        post: operations["create_refund"];
+        post: operations["refund.create_refund"];
         delete?: never;
         options?: never;
         head?: never;
@@ -402,7 +471,7 @@ export interface paths {
         };
         get?: never;
         /** 完成或取消一张订单。需要管理员或这场展会的摊主。 */
-        put: operations["update_order_status"];
+        put: operations["order.update_order_status"];
         post?: never;
         delete?: never;
         options?: never;
@@ -418,10 +487,10 @@ export interface paths {
             cookie?: never;
         };
         /** 列出某场展会全部商品，带现场库存与累计进货。公开接口。 */
-        get: operations["list_event_products"];
+        get: operations["product.list_event_products"];
         put?: never;
         /** 把一个全局商品选进某场展会并记首批进货。需要管理员或本场摊主。 */
-        post: operations["add_product_to_event"];
+        post: operations["product.add_product_to_event"];
         delete?: never;
         options?: never;
         head?: never;
@@ -438,7 +507,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** 给某场展会里的商品补货（外部 → 现场仓）。需要管理员或本场摊主。 */
-        post: operations["restock_product"];
+        post: operations["product.restock_product"];
         delete?: never;
         options?: never;
         head?: never;
@@ -464,7 +533,7 @@ export interface paths {
          *     **报价永远不被信任**：下单时服务端用同一份 `price_cart` 独立重算，顾客最终付的
          *     金额取自**下单响应**而不是这里。两次之间摊主完全可能刚改过 Lot 配置。
          */
-        post: operations["quote"];
+        post: operations["lot.quote"];
         delete?: never;
         options?: never;
         head?: never;
@@ -483,7 +552,7 @@ export interface paths {
          *     支持按商品编号、开始/结束日期筛选，时间粒度 30 或 60 分钟。
          * @description 需要管理员，或本场摊主。
          */
-        get: operations["get_sales_summary"];
+        get: operations["stats.get_sales_summary"];
         put?: never;
         post?: never;
         delete?: never;
@@ -504,7 +573,7 @@ export interface paths {
          *     `Event {id}` 后照常出表（现状如此，见 REPORT 的「形状清理」）。
          * @description 需要管理员，或本场摊主。
          */
-        get: operations["download_sales_summary"];
+        get: operations["stats.download_sales_summary"];
         put?: never;
         post?: never;
         delete?: never;
@@ -521,10 +590,10 @@ export interface paths {
             cookie?: never;
         };
         /** 这场展会的报废列表。已被冲正的原条目和冲正条目都不出现。 */
-        get: operations["list_scraps"];
+        get: operations["inventory.list_scraps"];
         put?: never;
         /** 登记一笔报废。报废没有「谁买单」，请求里的 `vendor_pays` 恒被忽略。 */
-        post: operations["create_scrap"];
+        post: operations["inventory.create_scrap"];
         delete?: never;
         options?: never;
         head?: never;
@@ -539,7 +608,7 @@ export interface paths {
             cookie?: never;
         };
         /** 结算单。页面与 xlsx 导出渲染的是同一个 `SettlementReport`。 */
-        get: operations["get_settlement"];
+        get: operations["settlement.get_settlement"];
         put?: never;
         post?: never;
         delete?: never;
@@ -556,7 +625,7 @@ export interface paths {
             cookie?: never;
         };
         /** 结算单导出为四 sheet 的 xlsx。 */
-        get: operations["download_settlement_xlsx"];
+        get: operations["settlement.download_settlement_xlsx"];
         put?: never;
         post?: never;
         delete?: never;
@@ -578,7 +647,7 @@ export interface paths {
          * 收摊清点：按渠道填实际到手，差额记到摊主名下。
          * @description 展会已结算后仍可调用（冻结例外：垫付、结算调整、收摊清点三类）。必须覆盖这场展会用过的每个渠道，且每个渠道只出现一次。
          */
-        post: operations["reconcile"];
+        post: operations["settlement.reconcile"];
         delete?: never;
         options?: never;
         head?: never;
@@ -596,8 +665,178 @@ export interface paths {
          * 展会仪表盘：总额、订单数、售出件数以及按商品汇总。
          * @description 需要管理员，或本场摊主。
          */
-        get: operations["get_event_stats"];
+        get: operations["stats.get_event_stats"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/events/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 单个展会详情。公开接口。 */
+        get: operations["event.get_event"];
+        /** 更新展会（multipart 表单；POST 与 PUT 等价）。需要管理员。 */
+        put: operations["event.update_event.put"];
+        /** 更新展会（multipart 表单；POST 与 PUT 等价）。需要管理员。 */
+        post: operations["event.update_event.post"];
+        /** 删除展会，连同它的账一起级联删除。需要管理员。 */
+        delete: operations["event.delete_event"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/events/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 修改展会状态（筹备 / 进行中）。需要管理员。
+         * @description 已结算的展会不能通过这里解冻，也不能直接改成已结算——必须走收摊流程。
+         */
+        put: operations["event.update_status"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/legacy/export.xlsx": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 把备份库里的展会 / 订单 / 明细导成三张 sheet 的 xlsx。需要管理员。
+         * @description 金额**按老库的元原样写进单元格**，不换算成分——老库那一侧就是元，
+         *     中间多一次 ×100 / ÷100 只会引入浮点误差。
+         *
+         *     错误体是原样的 `text/plain`（不是 `{"error": ...}`），保持既有形状不变。
+         */
+        get: operations["legacy.export_legacy_xlsx"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/legacy/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** v1 备份的状态与行数。需要管理员。 */
+        get: operations["legacy.get_legacy_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/master-products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 全局商品库列表。默认只列上架商品，`?all=true` 连停用的一起返回。 */
+        get: operations["master_product.list_products"];
+        put?: never;
+        /** 新建一个全局商品（multipart 表单，`image` 为可选文件字段）。需要管理员。 */
+        post: operations["master_product.create_product"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/master-products/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 修改一个全局商品（multipart 表单；为兼容旧前端同时挂 POST 与 PUT）。需要管理员。 */
+        put: operations["master_product.update_product.put"];
+        /** 修改一个全局商品（multipart 表单；为兼容旧前端同时挂 POST 与 PUT）。需要管理员。 */
+        post: operations["master_product.update_product.post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/master-products/{id}/images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 列出某个全局商品的全部识别图。 */
+        get: operations["master_product.list_product_images"];
+        put?: never;
+        /** 给全局商品加一张识别图（multipart，`image` 为必填文件字段）。需要管理员。 */
+        post: operations["master_product.add_product_image"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/master-products/{id}/images/{image_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 修改一张识别图（multipart；为兼容旧前端同时挂 POST 与 PUT）。需要管理员。 */
+        put: operations["master_product.update_product_image.put"];
+        /** 修改一张识别图（multipart；为兼容旧前端同时挂 POST 与 PUT）。需要管理员。 */
+        post: operations["master_product.update_product_image.post"];
+        /** 删除一张识别图。需要管理员。 */
+        delete: operations["master_product.delete_product_image"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/master-products/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 上架 / 下架一个全局商品。需要管理员。 */
+        put: operations["master_product.update_status"];
         post?: never;
         delete?: never;
         options?: never;
@@ -614,10 +853,10 @@ export interface paths {
         };
         get?: never;
         /** 改某场展会里商品的单价。需要管理员或本场摊主。 */
-        put: operations["update_product"];
+        put: operations["product.update_product"];
         post?: never;
         /** 从某场展会下架商品。需要管理员或本场摊主。 */
-        delete: operations["delete_product"];
+        delete: operations["product.delete_product"];
         options?: never;
         head?: never;
         patch?: never;
@@ -631,7 +870,7 @@ export interface paths {
             cookie?: never;
         };
         /** 返回本机 LAN 的 IP、端口与各入口 URL，供连接检测与二维码使用。 */
-        get: operations["server_info_handler"];
+        get: operations["info.server_info_handler"];
         put?: never;
         post?: never;
         delete?: never;
@@ -648,10 +887,10 @@ export interface paths {
             cookie?: never;
         };
         /** 社团列表：本社团排第一，其余按名字。选品下拉框里本社团永远在最上面。 */
-        get: operations["list_societies"];
+        get: operations["society.list_societies"];
         put?: never;
         /** 新建一个社团。需要管理员。 */
-        post: operations["create_society"];
+        post: operations["society.create_society"];
         delete?: never;
         options?: never;
         head?: never;
@@ -667,10 +906,235 @@ export interface paths {
         };
         get?: never;
         /** 修改社团名，或把它设为本社团（旧的会自动降级）。需要管理员。 */
-        put: operations["update_society"];
+        put: operations["society.update_society"];
         post?: never;
         /** 删除一个社团。仍被商品 / 垫付 / 结算调整引用的不能删。需要管理员。 */
-        delete: operations["delete_society"];
+        delete: operations["society.delete_society"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sync/export-products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 导出商品库与识别图片为 `.boothpack`（zip）压缩包。需要管理员。 */
+        get: operations["sync.export_products"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sync/import-products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 以 `multipart/form-data` 上传 `.boothpack` 并导入商品库（向后兼容的老路径）。需要管理员。 */
+        post: operations["sync.import_products"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sync/import-products-raw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 以 `application/octet-stream` 原始字节上传 `.boothpack` 并导入（Tauri webview 主用）。需要管理员。 */
+        post: operations["sync.import_products_raw"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vision/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 保存一次以图搜图的用户反馈（正确/纠错），并把图片加入识别索引。 */
+        post: operations["vision.save_feedback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vision/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 列出注册表中的所有 Vision 模型及其安装/激活状态。 */
+        get: operations["vision.list_models"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vision/models/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 激活一个已安装的 Vision 模型，并触发索引重建。 */
+        post: operations["vision.activate_model"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vision/models/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 安装（下载）一个 Vision 模型，返回后台任务 id。 */
+        post: operations["vision.install_model"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vision/models/tasks/{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询模型安装任务的状态。 */
+        get: operations["vision.get_install_task"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vision/models/{model_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 删除一个已安装且非当前激活的 Vision 模型文件。 */
+        delete: operations["vision.delete_model"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vision/rebuild": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 触发 Vision 索引重建；请求体可选，`force_full` 决定全量还是增量。 */
+        post: operations["vision.rebuild_index"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vision/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 以图搜图：multipart 上传查询图片，返回按相似度排序的商品候选。
+         * @description 索引未就绪或正在重建时返回 503；`mode` 为 `order`/`admin_event` 时 `event_id` 必填。
+         */
+        post: operations["vision.search_by_image"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vision/settings/ep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取 Vision 推理设备（execution provider）配置与可用 GPU 列表。 */
+        get: operations["vision.get_ep_setting"];
+        /** 设置 Vision 推理设备并立即重新加载模型。 */
+        put: operations["vision.set_ep_setting"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vision/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Vision 运行时状态：模型、索引版本/大小、重建进度与当前推理设备。 */
+        get: operations["vision.get_vision_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -680,6 +1144,12 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description 仅用于 OpenAPI 文档：`add_product_image` 的 multipart 表单字段。 */
+        AddProductImageForm: {
+            /** Format: binary */
+            image?: string | null;
+            kind?: string | null;
+        };
         AdjustmentRequest: {
             /** @description 分，必须为正。符号由 `direction` 决定。 */
             amount: components["schemas"]["Money"];
@@ -693,6 +1163,20 @@ export interface components {
             label: string;
             /** Format: int64 */
             society_id: number;
+        };
+        /**
+         * @description 管理员密码 / 默认摊主密码更新成功的响应。
+         *
+         *     两个接口共用；`#[schema(as = ...)]` 加模块前缀，避免和别的模块的同名 schema 在
+         *     openapi.json 里互相覆盖。
+         */
+        AdminMessageResponse: {
+            message: string;
+        };
+        /** @description 数据库重置成功的响应。`warning` 给前端弹窗展示「数据已清空」。 */
+        AdminResetDatabaseResponse: {
+            message: string;
+            warning: string;
         };
         AdvanceRequest: {
             /** @description 分，必须为正。方向是固定的（摊主掏钱给社团），不需要符号。 */
@@ -766,6 +1250,28 @@ export interface components {
             status: string;
             stocktaken_at?: string | null;
         };
+        /** @description 仅用于 OpenAPI 文档：创建展会的 multipart 表单字段。 */
+        CreateEventForm: {
+            date: string;
+            location?: string | null;
+            name: string;
+            /** Format: binary */
+            payment_qr_code_alipay?: string | null;
+            /** Format: binary */
+            payment_qr_code_wechat?: string | null;
+            vendor_password?: string | null;
+        };
+        /** @description 仅用于 OpenAPI 文档：`create_product` 的 multipart 表单字段。 */
+        CreateMasterProductForm: {
+            category?: string | null;
+            /** @description 元，不是分（老字段，`f64`）。 */
+            default_price: string;
+            /** Format: binary */
+            image?: string | null;
+            name: string;
+            product_code: string;
+            tags: string;
+        };
         CreateOrderRequest: {
             items: components["schemas"]["CartItemRequest"][];
         };
@@ -778,6 +1284,12 @@ export interface components {
             /** Format: int64 */
             journal_id: number;
         };
+        /** @description 删除识别图的响应。 */
+        DeleteMasterProductImageResponse: {
+            /** Format: int64 */
+            deleted_image_id: number;
+            ok: boolean;
+        };
         /** @description 删除社团的响应体。 */
         DeleteSocietyResponse: {
             message: string;
@@ -789,6 +1301,25 @@ export interface components {
             location?: string | null;
             name: string;
             payment_qr_code_path?: string | null;
+            status: string;
+        };
+        /** @description `DELETE /events/{id}` 的成功响应体。 */
+        EventDeletedResponse: {
+            message: string;
+        };
+        EventResponse: {
+            date: string;
+            /** Format: int64 */
+            id: number;
+            location?: string | null;
+            name: string;
+            /** @description 向后兼容：保留单个 URL（取第一个），旧前端不会崩 */
+            qrcode_url?: string | null;
+            /** @description 新字段：所有收款码 URL 数组 */
+            qrcode_urls: string[];
+            status: string;
+        };
+        EventUpdateStatusRequest: {
             status: string;
         };
         /**
@@ -858,6 +1389,14 @@ export interface components {
             /** Format: int64 */
             variance: number;
         };
+        /** @description 仅用于 OpenAPI 文档：multipart 表单的字段。 */
+        ImportProductsForm: {
+            /**
+             * Format: binary
+             * @description `.boothpack` / `.zip` 文件内容。
+             */
+            file: string;
+        };
         /**
          * @description 一条登记记录。`vendor_paid` 由「这条 journal 有没有资金腿」推出来，
          *     不另存一列——存两处就会有一处先腐烂。
@@ -906,6 +1445,20 @@ export interface components {
             /** Format: int64 */
             owner_society_id: number;
             society_name: string;
+        };
+        /** @description `/status` 的响应。计数是给前端「有没有值得打扰用户的历史数据」判断用的。 */
+        LegacyStatus: {
+            /** Format: int64 */
+            event_count: number;
+            has_backup: boolean;
+            /**
+             * Format: int64
+             * @description `order_items` 的**明细行数**，不是 `SUM(quantity)` 的件数——别拿它写
+             *     「你有 N 件历史商品」这类文案。
+             */
+            item_count: number;
+            /** Format: int64 */
+            order_count: number;
         };
         LoginRequest: {
             /** Format: int64 */
@@ -1048,6 +1601,48 @@ export interface components {
             pick_count: number;
             /** @description 单位：分。 */
             total_price: components["schemas"]["Money"];
+        };
+        MasterProduct: {
+            category?: string | null;
+            /** Format: double */
+            default_price: number;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            image_count?: number | null;
+            image_url?: string | null;
+            is_active: boolean;
+            name: string;
+            /**
+             * Format: int64
+             * @description 归属社团的**默认值**。选品时会被快照到 `event_products.owner_society_id`，
+             *     之后改这里不影响已有展会的账（spec 3.1）。
+             */
+            owner_society_id?: number;
+            product_code: string;
+            tags?: string;
+        };
+        MasterProductImageDto: {
+            created_at: string;
+            has_embedding: boolean;
+            /** Format: int64 */
+            id: number;
+            image_url: string;
+            kind: string;
+            /** Format: int64 */
+            master_product_id: number;
+        };
+        /** @description 新增 / 修改识别图后返回的字段。 */
+        MasterProductImageResponse: {
+            /** Format: int64 */
+            id: number;
+            image_url: string;
+            kind: string;
+            /** Format: int64 */
+            master_product_id: number;
+        };
+        MasterProductUpdateStatusRequest: {
+            is_active: boolean;
         };
         /**
          * Format: cents
@@ -1403,15 +1998,204 @@ export interface components {
              */
             journal_id?: number | null;
         };
+        /** @description 导入成功后的响应体。 */
+        SyncImportResponse: {
+            images_count: number;
+            message: string;
+            products_count: number;
+        };
         TakebackResponse: {
             /** Format: int64 */
             journal_id?: number | null;
             /** Format: int64 */
             moved: number;
         };
+        UpdateAdminPasswordRequest: {
+            newPassword: string;
+            oldPassword: string;
+        };
+        /** @description 仅用于 OpenAPI 文档：更新展会的 multipart 表单字段。 */
+        UpdateEventForm: {
+            date?: string | null;
+            location?: string | null;
+            name?: string | null;
+            /** Format: binary */
+            payment_qr_code_alipay?: string | null;
+            /** Format: binary */
+            payment_qr_code_wechat?: string | null;
+            remove_payment_qr_code?: boolean | null;
+            vendor_password?: string | null;
+        };
+        /** @description 仅用于 OpenAPI 文档：`update_product` 的 multipart 表单字段。 */
+        UpdateMasterProductForm: {
+            category?: string | null;
+            /** @description 元，不是分（老字段，`f64`）。 */
+            default_price?: string | null;
+            /** Format: binary */
+            image?: string | null;
+            name?: string | null;
+            product_code?: string | null;
+            remove_image?: boolean | null;
+            tags?: string | null;
+        };
+        /** @description 仅用于 OpenAPI 文档：`update_product_image` 的 multipart 表单字段。 */
+        UpdateProductImageForm: {
+            /** Format: binary */
+            image?: string | null;
+            kind?: string | null;
+        };
         UpdateSocietyRequest: {
             is_home?: boolean | null;
             name?: string | null;
+        };
+        UpdateVendorPasswordRequest: {
+            newPassword: string;
+        };
+        VisionActivateModelRequest: {
+            model_id: string;
+        };
+        VisionActivateModelResponse: {
+            active_model_id: string;
+            ok: boolean;
+            rebuild_started: boolean;
+        };
+        VisionDeleteModelResponse: {
+            deleted_model_id: string;
+            ok: boolean;
+        };
+        VisionEpSettingResponse: {
+            active: string;
+            configured: string;
+            gpu_devices: components["schemas"]["VisionGpuDevice"][];
+            platform: string;
+        };
+        /** @description 仅用于 OpenAPI 文档：`/feedback` 的 multipart 表单字段。 */
+        VisionFeedbackForm: {
+            /** @description 用户选中的商品 id，必填。 */
+            chosen_master_product_id: string;
+            /**
+             * Format: binary
+             * @description 反馈图片，必填。
+             */
+            image: string;
+            /** @description `1`/`true`/`TRUE`/`True` 表示识别正确，缺省正确。 */
+            is_correct?: string | null;
+        };
+        VisionFeedbackResponse: {
+            /** Format: int64 */
+            image_id: number;
+            image_url: string;
+            kind: string;
+            ok: boolean;
+        };
+        VisionGpuDevice: {
+            /** Format: int32 */
+            device_id: number;
+            name: string;
+        };
+        VisionInstallModelRequest: {
+            model_id: string;
+            source?: string | null;
+        };
+        VisionInstallModelResponse: {
+            model_id: string;
+            ok: boolean;
+            source: string;
+            task_id: string;
+        };
+        VisionInstallTaskResponse: {
+            error?: string | null;
+            message?: string | null;
+            model_id: string;
+            /** Format: int32 */
+            progress: number;
+            status: string;
+            task_id: string;
+        };
+        VisionModelItem: {
+            description?: string | null;
+            dim: number;
+            input_size: number;
+            installed: boolean;
+            is_active: boolean;
+            model_id: string;
+            model_version: string;
+            /** Format: double */
+            size_mb?: number | null;
+            tier?: string | null;
+        };
+        VisionModelsResponse: {
+            active_model_id: string;
+            models: components["schemas"]["VisionModelItem"][];
+        };
+        VisionRebuildRequest: {
+            force_full?: boolean | null;
+        };
+        VisionRebuildResponse: {
+            force_full: boolean;
+            message: string;
+            ok: boolean;
+        };
+        /** @description 仅用于 OpenAPI 文档：`/search` 的 multipart 表单字段。 */
+        VisionSearchForm: {
+            /** @description mode 为 order/admin_event 时必填。 */
+            event_id?: string | null;
+            /**
+             * Format: binary
+             * @description 查询图片，必填。
+             */
+            image: string;
+            /** @description JSON 数组或逗号分隔的商品 id。 */
+            master_product_ids?: string | null;
+            /** @description `order` | `admin_event` | `admin_master`。 */
+            mode?: string | null;
+            /** @description ROI JSON：`{"x":..,"y":..,"w":..,"h":..}`。 */
+            roi?: string | null;
+            /** @description 返回前 K 个结果，1..=20，缺省 5。 */
+            top_k?: string | null;
+        };
+        VisionSearchResponse: {
+            /** Format: int64 */
+            index_version: number;
+            is_uncertain: boolean;
+            model_id: string;
+            model_version: string;
+            results: components["schemas"]["VisionSearchResult"][];
+        };
+        VisionSearchResult: {
+            /** Format: int64 */
+            master_product_id: number;
+            name: string;
+            product_code: string;
+            /** Format: float */
+            score: number;
+            thumb_url?: string | null;
+        };
+        VisionSetEpRequest: {
+            execution_provider: string;
+        };
+        VisionSetEpResponse: {
+            active: string;
+            execution_provider: string;
+            message: string;
+            ok: boolean;
+        };
+        VisionStatusResponse: {
+            execution_provider: string;
+            /** Format: int64 */
+            index_size: number;
+            /** Format: int64 */
+            index_version: number;
+            is_ready: boolean;
+            is_rebuilding: boolean;
+            last_rebuild_at?: string | null;
+            model_id: string;
+            model_version: string;
+            reason?: string | null;
+            /** Format: int64 */
+            rebuild_processed: number;
+            /** Format: int64 */
+            rebuild_total: number;
         };
     };
     responses: never;
@@ -1422,7 +2206,174 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    is_default_admin_password: {
+    "admin.update_admin_password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAdminPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description 管理员密码已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMessageResponse"];
+                };
+            };
+            /** @description 新密码少于 4 位 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 需要管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description settings 缺行或数据库写入失败（部分分支为纯文本） */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "admin.reset_database_handler": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 数据库已完全重置 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminResetDatabaseResponse"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 需要管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 清理上传目录或数据库事务失败（部分分支为纯文本） */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "admin.update_vendor_default_password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateVendorPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description 默认摊主密码已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMessageResponse"];
+                };
+            };
+            /** @description 新密码少于 4 位 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 需要管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 数据库写入失败（返回纯文本，非 error 形状） */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "auth.is_default_admin_password": {
         parameters: {
             query?: never;
             header?: never;
@@ -1442,7 +2393,7 @@ export interface operations {
             };
         };
     };
-    login_handler: {
+    "auth.login_handler": {
         parameters: {
             query?: never;
             header?: never;
@@ -1493,7 +2444,7 @@ export interface operations {
             };
         };
     };
-    logout_handler: {
+    "auth.logout_handler": {
         parameters: {
             query?: never;
             header?: never;
@@ -1513,7 +2464,7 @@ export interface operations {
             };
         };
     };
-    list_channels: {
+    "settlement.list_channels": {
         parameters: {
             query?: never;
             header?: never;
@@ -1551,7 +2502,88 @@ export interface operations {
             };
         };
     };
-    list_adjustments: {
+    "event.list_events": {
+        parameters: {
+            query?: {
+                status?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 按 event_date 倒序 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventResponse"][];
+                };
+            };
+        };
+    };
+    "event.create_event": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["CreateEventForm"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventResponse"];
+                };
+            };
+            /** @description 缺少 name 或 date */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 需要管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 保存上传文件或写库失败 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "settlement.list_adjustments": {
         parameters: {
             query?: never;
             header?: never;
@@ -1591,7 +2623,7 @@ export interface operations {
             };
         };
     };
-    create_adjustment: {
+    "settlement.create_adjustment": {
         parameters: {
             query?: never;
             header?: never;
@@ -1653,7 +2685,7 @@ export interface operations {
             };
         };
     };
-    delete_adjustment: {
+    "settlement.delete_adjustment": {
         parameters: {
             query?: never;
             header?: never;
@@ -1712,7 +2744,7 @@ export interface operations {
             };
         };
     };
-    list_advances: {
+    "settlement.list_advances": {
         parameters: {
             query?: never;
             header?: never;
@@ -1752,7 +2784,7 @@ export interface operations {
             };
         };
     };
-    create_advance: {
+    "settlement.create_advance": {
         parameters: {
             query?: never;
             header?: never;
@@ -1814,7 +2846,7 @@ export interface operations {
             };
         };
     };
-    delete_advance: {
+    "settlement.delete_advance": {
         parameters: {
             query?: never;
             header?: never;
@@ -1873,7 +2905,7 @@ export interface operations {
             };
         };
     };
-    get_closing: {
+    "closing.get_closing": {
         parameters: {
             query?: never;
             header?: never;
@@ -1922,7 +2954,7 @@ export interface operations {
             };
         };
     };
-    settle: {
+    "closing.settle": {
         parameters: {
             query?: never;
             header?: never;
@@ -1980,7 +3012,7 @@ export interface operations {
             };
         };
     };
-    stocktake: {
+    "closing.stocktake": {
         parameters: {
             query?: never;
             header?: never;
@@ -2051,7 +3083,7 @@ export interface operations {
             };
         };
     };
-    takeback: {
+    "closing.takeback": {
         parameters: {
             query?: never;
             header?: never;
@@ -2109,7 +3141,7 @@ export interface operations {
             };
         };
     };
-    list_gifts: {
+    "inventory.list_gifts": {
         parameters: {
             query?: never;
             header?: never;
@@ -2150,7 +3182,7 @@ export interface operations {
             };
         };
     };
-    create_gift: {
+    "inventory.create_gift": {
         parameters: {
             query?: never;
             header?: never;
@@ -2222,7 +3254,7 @@ export interface operations {
             };
         };
     };
-    reverse_entry: {
+    "inventory.reverse_entry": {
         parameters: {
             query?: never;
             header?: never;
@@ -2292,7 +3324,7 @@ export interface operations {
             };
         };
     };
-    list_lots: {
+    "lot.list_lots": {
         parameters: {
             query?: never;
             header?: never;
@@ -2333,7 +3365,7 @@ export interface operations {
             };
         };
     };
-    create_lot: {
+    "lot.create_lot": {
         parameters: {
             query?: never;
             header?: never;
@@ -2404,7 +3436,7 @@ export interface operations {
             };
         };
     };
-    preview_lot: {
+    "lot.preview_lot": {
         parameters: {
             query?: never;
             header?: never;
@@ -2458,7 +3490,7 @@ export interface operations {
             };
         };
     };
-    update_lot: {
+    "lot.update_lot": {
         parameters: {
             query?: never;
             header?: never;
@@ -2531,7 +3563,7 @@ export interface operations {
             };
         };
     };
-    delete_lot: {
+    "lot.delete_lot": {
         parameters: {
             query?: never;
             header?: never;
@@ -2590,7 +3622,7 @@ export interface operations {
             };
         };
     };
-    list_orders: {
+    "order.list_orders": {
         parameters: {
             query?: {
                 status?: string | null;
@@ -2632,7 +3664,7 @@ export interface operations {
             };
         };
     };
-    create_order: {
+    "order.create_order": {
         parameters: {
             query?: never;
             header?: never;
@@ -2685,7 +3717,7 @@ export interface operations {
             };
         };
     };
-    list_refunds: {
+    "refund.list_refunds": {
         parameters: {
             query?: never;
             header?: never;
@@ -2737,7 +3769,7 @@ export interface operations {
             };
         };
     };
-    create_refund: {
+    "refund.create_refund": {
         parameters: {
             query?: never;
             header?: never;
@@ -2811,7 +3843,7 @@ export interface operations {
             };
         };
     };
-    update_order_status: {
+    "order.update_order_status": {
         parameters: {
             query?: never;
             header?: never;
@@ -2884,7 +3916,7 @@ export interface operations {
             };
         };
     };
-    list_event_products: {
+    "product.list_event_products": {
         parameters: {
             query?: never;
             header?: never;
@@ -2906,7 +3938,7 @@ export interface operations {
             };
         };
     };
-    add_product_to_event: {
+    "product.add_product_to_event": {
         parameters: {
             query?: never;
             header?: never;
@@ -2977,7 +4009,7 @@ export interface operations {
             };
         };
     };
-    restock_product: {
+    "product.restock_product": {
         parameters: {
             query?: never;
             header?: never;
@@ -3050,7 +4082,7 @@ export interface operations {
             };
         };
     };
-    quote: {
+    "lot.quote": {
         parameters: {
             query?: never;
             header?: never;
@@ -3104,7 +4136,7 @@ export interface operations {
             };
         };
     };
-    get_sales_summary: {
+    "stats.get_sales_summary": {
         parameters: {
             query?: {
                 product_code?: string | null;
@@ -3159,7 +4191,7 @@ export interface operations {
             };
         };
     };
-    download_sales_summary: {
+    "stats.download_sales_summary": {
         parameters: {
             query?: never;
             header?: never;
@@ -3209,7 +4241,7 @@ export interface operations {
             };
         };
     };
-    list_scraps: {
+    "inventory.list_scraps": {
         parameters: {
             query?: never;
             header?: never;
@@ -3250,7 +4282,7 @@ export interface operations {
             };
         };
     };
-    create_scrap: {
+    "inventory.create_scrap": {
         parameters: {
             query?: never;
             header?: never;
@@ -3322,7 +4354,7 @@ export interface operations {
             };
         };
     };
-    get_settlement: {
+    "settlement.get_settlement": {
         parameters: {
             query?: never;
             header?: never;
@@ -3371,7 +4403,7 @@ export interface operations {
             };
         };
     };
-    download_settlement_xlsx: {
+    "settlement.download_settlement_xlsx": {
         parameters: {
             query?: never;
             header?: never;
@@ -3420,7 +4452,7 @@ export interface operations {
             };
         };
     };
-    reconcile: {
+    "settlement.reconcile": {
         parameters: {
             query?: never;
             header?: never;
@@ -3482,7 +4514,7 @@ export interface operations {
             };
         };
     };
-    get_event_stats: {
+    "stats.get_event_stats": {
         parameters: {
             query?: never;
             header?: never;
@@ -3532,7 +4564,959 @@ export interface operations {
             };
         };
     };
-    update_product: {
+    "event.get_event": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 展会 id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventResponse"];
+                };
+            };
+            /** @description 展会不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "event.update_event.put": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 展会 id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["UpdateEventForm"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventResponse"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 需要管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 展会不存在（现状为纯文本响应） */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 上传或写库失败 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "event.update_event.post": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 展会 id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["UpdateEventForm"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventResponse"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 需要管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 展会不存在（现状为纯文本响应） */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 上传或写库失败 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "event.delete_event": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 展会 id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 删除成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventDeletedResponse"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 需要管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 展会不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 数据库错误 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "event.update_status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 展会 id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EventUpdateStatusRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventResponse"];
+                };
+            };
+            /** @description 状态值不合法，或试图直接改成已结算 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 需要管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 展会不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 已结算的展会不能解冻 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "legacy.export_legacy_xlsx": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 三张 sheet 的 xlsx 二进制流 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": number[];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 需要管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 没有可导出的历史数据 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description 生成或读回 xlsx 失败 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+        };
+    };
+    "legacy.get_legacy_status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 备份是否存在，以及老库里的展会 / 订单 / 明细行数 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegacyStatus"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 需要管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "master_product.list_products": {
+        parameters: {
+            query?: {
+                all?: boolean | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MasterProduct"][];
+                };
+            };
+        };
+    };
+    "master_product.create_product": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["CreateMasterProductForm"];
+            };
+        };
+        responses: {
+            /** @description 创建成功 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MasterProduct"];
+                };
+            };
+            /** @description 缺少 product_code 或 name */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 需要管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description product_code 已存在 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 上传或数据库错误（纯文本） */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+        };
+    };
+    "master_product.update_product.put": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 商品 id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["UpdateMasterProductForm"];
+            };
+        };
+        responses: {
+            /** @description 更新成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MasterProduct"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 需要管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 商品不存在（纯文本） */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description product_code 已存在 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 数据库错误（纯文本） */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+        };
+    };
+    "master_product.update_product.post": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 商品 id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["UpdateMasterProductForm"];
+            };
+        };
+        responses: {
+            /** @description 更新成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MasterProduct"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 需要管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 商品不存在（纯文本） */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description product_code 已存在 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 数据库错误（纯文本） */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+        };
+    };
+    "master_product.list_product_images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 商品 id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MasterProductImageDto"][];
+                };
+            };
+            /** @description 数据库错误（纯文本） */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+        };
+    };
+    "master_product.add_product_image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 商品 id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["AddProductImageForm"];
+            };
+        };
+        responses: {
+            /** @description 添加成功 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MasterProductImageResponse"];
+                };
+            };
+            /** @description 缺少 image 字段 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 需要管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 上传或数据库错误 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "master_product.update_product_image.put": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 商品 id */
+                id: number;
+                /** @description 识别图 id */
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["UpdateProductImageForm"];
+            };
+        };
+        responses: {
+            /** @description 更新成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MasterProductImageResponse"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 需要管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 识别图不存在（纯文本） */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description 上传或数据库错误 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "master_product.update_product_image.post": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 商品 id */
+                id: number;
+                /** @description 识别图 id */
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["UpdateProductImageForm"];
+            };
+        };
+        responses: {
+            /** @description 更新成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MasterProductImageResponse"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 需要管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 识别图不存在（纯文本） */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description 上传或数据库错误 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "master_product.delete_product_image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 商品 id */
+                id: number;
+                /** @description 识别图 id */
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 删除成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteMasterProductImageResponse"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 需要管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 识别图不存在（纯文本） */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description 数据库错误 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "master_product.update_status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 商品 id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MasterProductUpdateStatusRequest"];
+            };
+        };
+        responses: {
+            /** @description 更新成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MasterProduct"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 需要管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 数据库错误（纯文本） */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+        };
+    };
+    "product.update_product": {
         parameters: {
             query?: never;
             header?: never;
@@ -3603,7 +5587,7 @@ export interface operations {
             };
         };
     };
-    delete_product: {
+    "product.delete_product": {
         parameters: {
             query?: never;
             header?: never;
@@ -3661,7 +5645,7 @@ export interface operations {
             };
         };
     };
-    server_info_handler: {
+    "info.server_info_handler": {
         parameters: {
             query?: never;
             header?: never;
@@ -3681,7 +5665,7 @@ export interface operations {
             };
         };
     };
-    list_societies: {
+    "society.list_societies": {
         parameters: {
             query?: never;
             header?: never;
@@ -3710,7 +5694,7 @@ export interface operations {
             };
         };
     };
-    create_society: {
+    "society.create_society": {
         parameters: {
             query?: never;
             header?: never;
@@ -3769,7 +5753,7 @@ export interface operations {
             };
         };
     };
-    update_society: {
+    "society.update_society": {
         parameters: {
             query?: never;
             header?: never;
@@ -3840,7 +5824,7 @@ export interface operations {
             };
         };
     };
-    delete_society: {
+    "society.delete_society": {
         parameters: {
             query?: never;
             header?: never;
@@ -3894,6 +5878,528 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "sync.export_products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": number[];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 需要管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 读取数据或打包失败 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+        };
+    };
+    "sync.import_products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["ImportProductsForm"];
+            };
+        };
+        responses: {
+            /** @description 导入成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncImportResponse"];
+                };
+            };
+            /** @description 没有 file 字段或读取上传字节失败 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 需要管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "sync.import_products_raw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": number[];
+            };
+        };
+        responses: {
+            /** @description 导入成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncImportResponse"];
+                };
+            };
+            /** @description zip 或 catalog.json 无效 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 需要管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 数据库写入或 zip 处理失败 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+        };
+    };
+    "vision.save_feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["VisionFeedbackForm"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisionFeedbackResponse"];
+                };
+            };
+            /** @description 缺少图片或 chosen_master_product_id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 商品不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 上传或数据库失败 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "vision.list_models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisionModelsResponse"];
+                };
+            };
+        };
+    };
+    "vision.activate_model": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VisionActivateModelRequest"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisionActivateModelResponse"];
+                };
+            };
+            /** @description 模型不存在或未安装 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "vision.install_model": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VisionInstallModelRequest"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisionInstallModelResponse"];
+                };
+            };
+            /** @description source 不受支持、模型不存在或已安装 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "vision.get_install_task": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 安装任务 id */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisionInstallTaskResponse"];
+                };
+            };
+            /** @description 任务不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "vision.delete_model": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 模型 id */
+                model_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisionDeleteModelResponse"];
+                };
+            };
+            /** @description 不能删除激活模型、模型不存在或未安装 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "vision.rebuild_index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["VisionRebuildRequest"] | null;
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisionRebuildResponse"];
+                };
+            };
+            /** @description 索引正在重建 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "vision.search_by_image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["VisionSearchForm"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisionSearchResponse"];
+                };
+            };
+            /** @description 缺少图片、mode/roi/master_product_ids 非法 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 识别超时 */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 上传或推理失败 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 索引重建中、未就绪或并发已满 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "vision.get_ep_setting": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisionEpSettingResponse"];
+                };
+            };
+        };
+    };
+    "vision.set_ep_setting": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VisionSetEpRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisionSetEpResponse"];
+                };
+            };
+            /** @description EP 取值非法 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 配置保存或加载失败 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "vision.get_vision_status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisionStatusResponse"];
                 };
             };
         };

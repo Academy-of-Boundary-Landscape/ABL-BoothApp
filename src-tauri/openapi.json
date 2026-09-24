@@ -18,7 +18,7 @@
           "admin"
         ],
         "summary": "修改管理员登录密码。需要管理员。",
-        "operationId": "update_admin_password",
+        "operationId": "admin.update_admin_password",
         "requestBody": {
           "content": {
             "application/json": {
@@ -94,7 +94,7 @@
           "admin"
         ],
         "summary": "清空全部业务数据、删除上传的图片并把密码恢复为默认值（危险操作）。需要管理员。",
-        "operationId": "reset_database_handler",
+        "operationId": "admin.reset_database_handler",
         "responses": {
           "200": {
             "description": "数据库已完全重置",
@@ -150,7 +150,7 @@
           "admin"
         ],
         "summary": "修改全局默认摊主密码。需要管理员。",
-        "operationId": "update_vendor_default_password",
+        "operationId": "admin.update_vendor_default_password",
         "requestBody": {
           "content": {
             "application/json": {
@@ -226,7 +226,7 @@
           "auth"
         ],
         "summary": "管理员密码是否仍是出厂默认值 `admin123`（登录页据此提示改密码）。",
-        "operationId": "is_default_admin_password",
+        "operationId": "auth.is_default_admin_password",
         "responses": {
           "200": {
             "description": "未设置密码时也返回 false",
@@ -248,7 +248,7 @@
         ],
         "summary": "登录：管理员校验全局密码，摊主可校验全局密码或展会专属密码。",
         "description": "成功时在 Body 里回 token，同时下发 HttpOnly 的 `access_token_cookie`。\n`eventId` 只在摊主用「展会专属密码」登录成功时回填。",
-        "operationId": "login_handler",
+        "operationId": "auth.login_handler",
         "requestBody": {
           "content": {
             "application/json": {
@@ -309,7 +309,7 @@
           "auth"
         ],
         "summary": "退出登录：清掉 HttpOnly 的 `access_token_cookie`。",
-        "operationId": "logout_handler",
+        "operationId": "auth.logout_handler",
         "responses": {
           "200": {
             "description": "已退出；同时 Set-Cookie 清除 access_token_cookie",
@@ -331,7 +331,7 @@
         ],
         "summary": "已用过的收款渠道，跨展会。",
         "description": "挂在 `/api/channels` 而不是 `/api/events/:id/channels`：它按定义就是跨展会的。\n这是防「微信」和「微信支付」分裂成两个账户的那一条（②-1/②-2 交接段第 3 条）。",
-        "operationId": "list_channels",
+        "operationId": "settlement.list_channels",
         "responses": {
           "200": {
             "description": "预置渠道在前，历史用过的在后，去重",
@@ -380,7 +380,7 @@
           "event"
         ],
         "summary": "展会列表，可选按 `status` 过滤。公开接口。",
-        "operationId": "list_events",
+        "operationId": "event.list_events",
         "parameters": [
           {
             "name": "status",
@@ -415,7 +415,7 @@
           "event"
         ],
         "summary": "创建展会（multipart 表单，可传多张收款码）。需要管理员。",
-        "operationId": "create_event",
+        "operationId": "event.create_event",
         "requestBody": {
           "content": {
             "multipart/form-data": {
@@ -490,7 +490,7 @@
           "settlement"
         ],
         "summary": "这场展会的结算调整列表。金额带符号：负 = 我要多给他们。",
-        "operationId": "list_adjustments",
+        "operationId": "settlement.list_adjustments",
         "parameters": [
           {
             "name": "event_id",
@@ -549,7 +549,7 @@
         ],
         "summary": "登记一笔结算调整。方向由 `direction` 表达，金额恒为正。",
         "description": "展会已结算后仍可调用（冻结例外：垫付、结算调整、收摊清点三类）。",
-        "operationId": "create_adjustment",
+        "operationId": "settlement.create_adjustment",
         "parameters": [
           {
             "name": "event_id",
@@ -637,7 +637,7 @@
         ],
         "summary": "删除一笔结算调整——写一条冲正 journal，原记录保留。",
         "description": "展会已结算后仍可调用（冻结例外：垫付、结算调整、收摊清点三类）。",
-        "operationId": "delete_adjustment",
+        "operationId": "settlement.delete_adjustment",
         "parameters": [
           {
             "name": "event_id",
@@ -718,7 +718,7 @@
           "settlement"
         ],
         "summary": "这场展会的垫付列表。",
-        "operationId": "list_advances",
+        "operationId": "settlement.list_advances",
         "parameters": [
           {
             "name": "event_id",
@@ -777,7 +777,7 @@
         ],
         "summary": "登记一笔垫付（摊主替货主掏的钱）。",
         "description": "展会已结算后仍可调用（冻结例外：垫付、结算调整、收摊清点三类）。",
-        "operationId": "create_advance",
+        "operationId": "settlement.create_advance",
         "parameters": [
           {
             "name": "event_id",
@@ -865,7 +865,7 @@
         ],
         "summary": "删除一笔垫付——写一条冲正 journal，原记录保留。",
         "description": "展会已结算后仍可调用（冻结例外：垫付、结算调整、收摊清点三类）。",
-        "operationId": "delete_advance",
+        "operationId": "settlement.delete_advance",
         "parameters": [
           {
             "name": "event_id",
@@ -947,7 +947,7 @@
         ],
         "summary": "收摊向导的当前状态：待处理订单、现场仓余量、盘点时间与推进阻断项。",
         "description": "**能不能进下一步由后端说了算**——`blockers` 非空就挡住。",
-        "operationId": "get_closing",
+        "operationId": "closing.get_closing",
         "parameters": [
           {
             "name": "event_id",
@@ -1015,7 +1015,7 @@
         ],
         "summary": "结束展会：把状态置为「已结算」，账本从此冻结。",
         "description": "盘点可跳过；结算单靠 `stocktaken_at` 是否为 null 区分「没盘点」。",
-        "operationId": "settle",
+        "operationId": "closing.settle",
         "parameters": [
           {
             "name": "event_id",
@@ -1093,7 +1093,7 @@
         ],
         "summary": "提交盘点实数。**收全量**：现场仓余额非 0 的商品必须全部出现，数过一致的也要报。",
         "description": "盘亏/盘盈写差异腿，只动货不动钱。零差异时不写 journal，但仍落 `stocktaken_at`。",
-        "operationId": "stocktake",
+        "operationId": "closing.stocktake",
         "parameters": [
           {
             "name": "event_id",
@@ -1190,7 +1190,7 @@
           "closing"
         ],
         "summary": "把现场仓余货全部带回（现场仓 → 外部）。全卖光时是空操作，不写 journal。",
-        "operationId": "takeback",
+        "operationId": "closing.takeback",
         "parameters": [
           {
             "name": "event_id",
@@ -1267,7 +1267,7 @@
           "inventory"
         ],
         "summary": "这场展会的赠送列表。已被冲正的原条目和冲正条目都不出现。",
-        "operationId": "list_gifts",
+        "operationId": "inventory.list_gifts",
         "parameters": [
           {
             "name": "event_id",
@@ -1326,7 +1326,7 @@
           "inventory"
         ],
         "summary": "登记一笔赠送。默认由货主自己承担；`vendor_pays = true` 时摊主按原价补给货主。",
-        "operationId": "create_gift",
+        "operationId": "inventory.create_gift",
         "parameters": [
           {
             "name": "event_id",
@@ -1425,7 +1425,7 @@
         ],
         "summary": "撤销一条赠送 / 报废登记。",
         "description": "**只接受这两种 kind。** 销售和收款有自己的冲正通道（取消订单，\n`reverse_order_journals`），进货和盘点没有撤销语义（记错了就再记一条反向的）。\n不设这道闸，这个端点就成了一个能把任何 journal 冲掉的万能口子。",
-        "operationId": "reverse_entry",
+        "operationId": "inventory.reverse_entry",
         "parameters": [
           {
             "name": "event_id",
@@ -1523,7 +1523,7 @@
           "lot"
         ],
         "summary": "列出这场展会的全部套装，含候选已被删空的（它们仍需在管理页可见、可删）。",
-        "operationId": "list_lots",
+        "operationId": "lot.list_lots",
         "parameters": [
           {
             "name": "event_id",
@@ -1582,7 +1582,7 @@
           "lot"
         ],
         "summary": "新建一个套装（Lot）：候选商品集合 + 要选几件 + 总价，候选必须同一货主。",
-        "operationId": "create_lot",
+        "operationId": "lot.create_lot",
         "parameters": [
           {
             "name": "event_id",
@@ -1680,7 +1680,7 @@
         ],
         "summary": "试算一份还没保存的套装配置：它会被顾客怎么用、你最多让多少、哪里可能配错了。",
         "description": "**零写入**，走和 `create_lot` 完全相同的校验（同一个 `validate_numbers` /\n`validate_candidates` / `validate_candidate_count`），所以「跨货主」「候选不属于\n本场展会」「不允许重复但候选数不够」这些错，试算和保存报的是同一个 400——\n不会出现「试算说行、保存说不行」。\n\n这个端点同时服务两个消费方：配置页的实时预览，以及将来接 LLM 辅助配置时\n「提一个方案、立刻看后果」的那一步。**在它之前，配置的后果对人和对机器都是黑箱**——\n摊主只能配完等顾客来薅，这正是 2026-09-24 那个缺陷被发现的方式。",
-        "operationId": "preview_lot",
+        "operationId": "lot.preview_lot",
         "parameters": [
           {
             "name": "event_id",
@@ -1758,7 +1758,7 @@
           "lot"
         ],
         "summary": "整体替换一个套装的配置：候选集整组重写，不是追加。",
-        "operationId": "update_lot",
+        "operationId": "lot.update_lot",
         "parameters": [
           {
             "name": "event_id",
@@ -1864,7 +1864,7 @@
         ],
         "summary": "删除一个套装。",
         "description": "删除永远放行。\n\n`order_lots.lot_id` 是 `ON DELETE SET NULL`，而名字和价格在下单那一刻就\n**快照**进了 `order_lots`——历史订单不受影响。所以这里不需要\n「被引用就不给删」那种守卫（`api/product.rs` 删商品时要，因为那边没有快照）。",
-        "operationId": "delete_lot",
+        "operationId": "lot.delete_lot",
         "parameters": [
           {
             "name": "event_id",
@@ -1945,7 +1945,7 @@
           "order"
         ],
         "summary": "本场展会的订单列表，可按 `status` 过滤。需要管理员或这场展会的摊主。",
-        "operationId": "list_orders",
+        "operationId": "order.list_orders",
         "parameters": [
           {
             "name": "status",
@@ -2014,7 +2014,7 @@
           "order"
         ],
         "summary": "顾客下单（公开接口，不需要 token）。要求展会处于「进行中」。",
-        "operationId": "create_order",
+        "operationId": "order.create_order",
         "parameters": [
           {
             "name": "event_id",
@@ -2087,7 +2087,7 @@
         ],
         "summary": "一张订单的退货历史，以及每一行的可退余量。",
         "description": "按 `order_lines` 逐行返回——同一个商品可能因套装归属拆成多行，前端不要按\n`event_product_id` 去重。订单不属于这场展会时返回 404（而不是空列表）。",
-        "operationId": "list_refunds",
+        "operationId": "refund.list_refunds",
         "parameters": [
           {
             "name": "event_id",
@@ -2164,7 +2164,7 @@
         ],
         "summary": "创建一笔退货：逐行冲销货主应得、手工折让与顾客退款，记一条退货 journal。",
         "description": "只能退**已完成**的订单；待处理/已取消的订单会被拒绝。展会已结算（冻结）后\n`require_event_open` 会挡住退货。",
-        "operationId": "create_refund",
+        "operationId": "refund.create_refund",
         "parameters": [
           {
             "name": "event_id",
@@ -2272,7 +2272,7 @@
           "order"
         ],
         "summary": "完成或取消一张订单。需要管理员或这场展会的摊主。",
-        "operationId": "update_order_status",
+        "operationId": "order.update_order_status",
         "parameters": [
           {
             "name": "event_id",
@@ -2379,7 +2379,7 @@
           "product"
         ],
         "summary": "列出某场展会全部商品，带现场库存与累计进货。公开接口。",
-        "operationId": "list_event_products",
+        "operationId": "product.list_event_products",
         "parameters": [
           {
             "name": "event_id",
@@ -2412,7 +2412,7 @@
           "product"
         ],
         "summary": "把一个全局商品选进某场展会并记首批进货。需要管理员或本场摊主。",
-        "operationId": "add_product_to_event",
+        "operationId": "product.add_product_to_event",
         "parameters": [
           {
             "name": "event_id",
@@ -2509,7 +2509,7 @@
           "product"
         ],
         "summary": "给某场展会里的商品补货（外部 → 现场仓）。需要管理员或本场摊主。",
-        "operationId": "restock_product",
+        "operationId": "product.restock_product",
         "parameters": [
           {
             "name": "event_id",
@@ -2617,7 +2617,7 @@
         ],
         "summary": "给购物车报价。**公开、无鉴权、零写入。**",
         "description": "存在的唯一理由是 D3「顾客端价格必须可解释」：购物车要明写\n「已应用：本子任选3本100 −20.00」，而不是默默给个低价。\n\n**不查库存**——报价是定价预览，库存由下单把关（所以这里也不必开事务）。\n\n**报价永远不被信任**：下单时服务端用同一份 `price_cart` 独立重算，顾客最终付的\n金额取自**下单响应**而不是这里。两次之间摊主完全可能刚改过 Lot 配置。",
-        "operationId": "quote",
+        "operationId": "lot.quote",
         "parameters": [
           {
             "name": "event_id",
@@ -2691,7 +2691,7 @@
         ],
         "summary": "销售趋势图数据：按商品汇总 + 可填充空白时段的时间序列。\n支持按商品编号、开始/结束日期筛选，时间粒度 30 或 60 分钟。",
         "description": "需要管理员，或本场摊主。",
-        "operationId": "get_sales_summary",
+        "operationId": "stats.get_sales_summary",
         "parameters": [
           {
             "name": "event_id",
@@ -2805,7 +2805,7 @@
         ],
         "summary": "导出本场销售记录为 xlsx 文件。展会不存在时不返回 404，文件名回落到\n`Event {id}` 后照常出表（现状如此，见 REPORT 的「形状清理」）。",
         "description": "需要管理员，或本场摊主。",
-        "operationId": "download_sales_summary",
+        "operationId": "stats.download_sales_summary",
         "parameters": [
           {
             "name": "event_id",
@@ -2878,7 +2878,7 @@
           "inventory"
         ],
         "summary": "这场展会的报废列表。已被冲正的原条目和冲正条目都不出现。",
-        "operationId": "list_scraps",
+        "operationId": "inventory.list_scraps",
         "parameters": [
           {
             "name": "event_id",
@@ -2937,7 +2937,7 @@
           "inventory"
         ],
         "summary": "登记一笔报废。报废没有「谁买单」，请求里的 `vendor_pays` 恒被忽略。",
-        "operationId": "create_scrap",
+        "operationId": "inventory.create_scrap",
         "parameters": [
           {
             "name": "event_id",
@@ -3035,7 +3035,7 @@
           "settlement"
         ],
         "summary": "结算单。页面与 xlsx 导出渲染的是同一个 `SettlementReport`。",
-        "operationId": "get_settlement",
+        "operationId": "settlement.get_settlement",
         "parameters": [
           {
             "name": "event_id",
@@ -3102,7 +3102,7 @@
           "settlement"
         ],
         "summary": "结算单导出为四 sheet 的 xlsx。",
-        "operationId": "download_settlement_xlsx",
+        "operationId": "settlement.download_settlement_xlsx",
         "parameters": [
           {
             "name": "event_id",
@@ -3175,7 +3175,7 @@
         ],
         "summary": "收摊清点：按渠道填实际到手，差额记到摊主名下。",
         "description": "展会已结算后仍可调用（冻结例外：垫付、结算调整、收摊清点三类）。必须覆盖这场展会用过的每个渠道，且每个渠道只出现一次。",
-        "operationId": "reconcile",
+        "operationId": "settlement.reconcile",
         "parameters": [
           {
             "name": "event_id",
@@ -3263,7 +3263,7 @@
         ],
         "summary": "展会仪表盘：总额、订单数、售出件数以及按商品汇总。",
         "description": "需要管理员，或本场摊主。",
-        "operationId": "get_event_stats",
+        "operationId": "stats.get_event_stats",
         "parameters": [
           {
             "name": "event_id",
@@ -3331,7 +3331,7 @@
           "event"
         ],
         "summary": "单个展会详情。公开接口。",
-        "operationId": "get_event",
+        "operationId": "event.get_event",
         "parameters": [
           {
             "name": "id",
@@ -3371,7 +3371,7 @@
           "event"
         ],
         "summary": "更新展会（multipart 表单；POST 与 PUT 等价）。需要管理员。",
-        "operationId": "update_event",
+        "operationId": "event.update_event.put",
         "parameters": [
           {
             "name": "id",
@@ -3456,7 +3456,7 @@
           "event"
         ],
         "summary": "更新展会（multipart 表单；POST 与 PUT 等价）。需要管理员。",
-        "operationId": "update_event",
+        "operationId": "event.update_event.post",
         "parameters": [
           {
             "name": "id",
@@ -3541,7 +3541,7 @@
           "event"
         ],
         "summary": "删除展会，连同它的账一起级联删除。需要管理员。",
-        "operationId": "delete_event",
+        "operationId": "event.delete_event",
         "parameters": [
           {
             "name": "id",
@@ -3620,7 +3620,7 @@
         ],
         "summary": "修改展会状态（筹备 / 进行中）。需要管理员。",
         "description": "已结算的展会不能通过这里解冻，也不能直接改成已结算——必须走收摊流程。",
-        "operationId": "update_status",
+        "operationId": "event.update_status",
         "parameters": [
           {
             "name": "id",
@@ -3718,7 +3718,7 @@
         ],
         "summary": "把备份库里的展会 / 订单 / 明细导成三张 sheet 的 xlsx。需要管理员。",
         "description": "金额**按老库的元原样写进单元格**，不换算成分——老库那一侧就是元，\n中间多一次 ×100 / ÷100 只会引入浮点误差。\n\n错误体是原样的 `text/plain`（不是 `{\"error\": ...}`），保持既有形状不变。",
-        "operationId": "export_legacy_xlsx",
+        "operationId": "legacy.export_legacy_xlsx",
         "responses": {
           "200": {
             "description": "三张 sheet 的 xlsx 二进制流",
@@ -3789,7 +3789,7 @@
           "legacy"
         ],
         "summary": "v1 备份的状态与行数。需要管理员。",
-        "operationId": "get_legacy_status",
+        "operationId": "legacy.get_legacy_status",
         "responses": {
           "200": {
             "description": "备份是否存在，以及老库里的展会 / 订单 / 明细行数",
@@ -3835,7 +3835,7 @@
           "master_product"
         ],
         "summary": "全局商品库列表。默认只列上架商品，`?all=true` 连停用的一起返回。",
-        "operationId": "list_products",
+        "operationId": "master_product.list_products",
         "parameters": [
           {
             "name": "all",
@@ -3869,7 +3869,7 @@
           "master_product"
         ],
         "summary": "新建一个全局商品（multipart 表单，`image` 为可选文件字段）。需要管理员。",
-        "operationId": "create_product",
+        "operationId": "master_product.create_product",
         "requestBody": {
           "content": {
             "multipart/form-data": {
@@ -3955,7 +3955,7 @@
           "master_product"
         ],
         "summary": "修改一个全局商品（multipart 表单；为兼容旧前端同时挂 POST 与 PUT）。需要管理员。",
-        "operationId": "update_product",
+        "operationId": "master_product.update_product.put",
         "parameters": [
           {
             "name": "id",
@@ -4051,7 +4051,7 @@
           "master_product"
         ],
         "summary": "修改一个全局商品（multipart 表单；为兼容旧前端同时挂 POST 与 PUT）。需要管理员。",
-        "operationId": "update_product",
+        "operationId": "master_product.update_product.post",
         "parameters": [
           {
             "name": "id",
@@ -4149,7 +4149,7 @@
           "master_product"
         ],
         "summary": "列出某个全局商品的全部识别图。",
-        "operationId": "list_product_images",
+        "operationId": "master_product.list_product_images",
         "parameters": [
           {
             "name": "id",
@@ -4192,7 +4192,7 @@
           "master_product"
         ],
         "summary": "给全局商品加一张识别图（multipart，`image` 为必填文件字段）。需要管理员。",
-        "operationId": "add_product_image",
+        "operationId": "master_product.add_product_image",
         "parameters": [
           {
             "name": "id",
@@ -4280,7 +4280,7 @@
           "master_product"
         ],
         "summary": "修改一张识别图（multipart；为兼容旧前端同时挂 POST 与 PUT）。需要管理员。",
-        "operationId": "update_product_image",
+        "operationId": "master_product.update_product_image.put",
         "parameters": [
           {
             "name": "id",
@@ -4376,7 +4376,7 @@
           "master_product"
         ],
         "summary": "修改一张识别图（multipart；为兼容旧前端同时挂 POST 与 PUT）。需要管理员。",
-        "operationId": "update_product_image",
+        "operationId": "master_product.update_product_image.post",
         "parameters": [
           {
             "name": "id",
@@ -4472,7 +4472,7 @@
           "master_product"
         ],
         "summary": "删除一张识别图。需要管理员。",
-        "operationId": "delete_product_image",
+        "operationId": "master_product.delete_product_image",
         "parameters": [
           {
             "name": "id",
@@ -4560,7 +4560,7 @@
           "master_product"
         ],
         "summary": "上架 / 下架一个全局商品。需要管理员。",
-        "operationId": "update_status",
+        "operationId": "master_product.update_status",
         "parameters": [
           {
             "name": "id",
@@ -4638,7 +4638,7 @@
           "product"
         ],
         "summary": "改某场展会里商品的单价。需要管理员或本场摊主。",
-        "operationId": "update_product",
+        "operationId": "product.update_product",
         "parameters": [
           {
             "name": "id",
@@ -4733,7 +4733,7 @@
           "product"
         ],
         "summary": "从某场展会下架商品。需要管理员或本场摊主。",
-        "operationId": "delete_product",
+        "operationId": "product.delete_product",
         "parameters": [
           {
             "name": "id",
@@ -4810,7 +4810,7 @@
           "info"
         ],
         "summary": "返回本机 LAN 的 IP、端口与各入口 URL，供连接检测与二维码使用。",
-        "operationId": "server_info_handler",
+        "operationId": "info.server_info_handler",
         "responses": {
           "200": {
             "description": "LAN 的 IP、端口与各入口 URL",
@@ -4831,7 +4831,7 @@
           "society"
         ],
         "summary": "社团列表：本社团排第一，其余按名字。选品下拉框里本社团永远在最上面。",
-        "operationId": "list_societies",
+        "operationId": "society.list_societies",
         "responses": {
           "200": {
             "description": "本社团在前，其余按名字",
@@ -4868,7 +4868,7 @@
           "society"
         ],
         "summary": "新建一个社团。需要管理员。",
-        "operationId": "create_society",
+        "operationId": "society.create_society",
         "requestBody": {
           "content": {
             "application/json": {
@@ -4943,7 +4943,7 @@
           "society"
         ],
         "summary": "修改社团名，或把它设为本社团（旧的会自动降级）。需要管理员。",
-        "operationId": "update_society",
+        "operationId": "society.update_society",
         "parameters": [
           {
             "name": "id",
@@ -5038,7 +5038,7 @@
           "society"
         ],
         "summary": "删除一个社团。仍被商品 / 垫付 / 结算调整引用的不能删。需要管理员。",
-        "operationId": "delete_society",
+        "operationId": "society.delete_society",
         "parameters": [
           {
             "name": "id",
@@ -5115,7 +5115,7 @@
           "sync"
         ],
         "summary": "导出商品库与识别图片为 `.boothpack`（zip）压缩包。需要管理员。",
-        "operationId": "export_products",
+        "operationId": "sync.export_products",
         "responses": {
           "200": {
             "content": {
@@ -5175,7 +5175,7 @@
           "sync"
         ],
         "summary": "以 `multipart/form-data` 上传 `.boothpack` 并导入商品库（向后兼容的老路径）。需要管理员。",
-        "operationId": "import_products",
+        "operationId": "sync.import_products",
         "requestBody": {
           "content": {
             "multipart/form-data": {
@@ -5241,7 +5241,7 @@
           "sync"
         ],
         "summary": "以 `application/octet-stream` 原始字节上传 `.boothpack` 并导入（Tauri webview 主用）。需要管理员。",
-        "operationId": "import_products_raw",
+        "operationId": "sync.import_products_raw",
         "requestBody": {
           "content": {
             "application/octet-stream": {
@@ -5322,7 +5322,7 @@
           "vision"
         ],
         "summary": "保存一次以图搜图的用户反馈（正确/纠错），并把图片加入识别索引。",
-        "operationId": "save_feedback",
+        "operationId": "vision.save_feedback",
         "requestBody": {
           "content": {
             "multipart/form-data": {
@@ -5382,7 +5382,7 @@
           "vision"
         ],
         "summary": "列出注册表中的所有 Vision 模型及其安装/激活状态。",
-        "operationId": "list_models",
+        "operationId": "vision.list_models",
         "responses": {
           "200": {
             "content": {
@@ -5402,7 +5402,7 @@
           "vision"
         ],
         "summary": "激活一个已安装的 Vision 模型，并触发索引重建。",
-        "operationId": "activate_model",
+        "operationId": "vision.activate_model",
         "requestBody": {
           "content": {
             "application/json": {
@@ -5442,7 +5442,7 @@
           "vision"
         ],
         "summary": "安装（下载）一个 Vision 模型，返回后台任务 id。",
-        "operationId": "install_model",
+        "operationId": "vision.install_model",
         "requestBody": {
           "content": {
             "application/json": {
@@ -5482,7 +5482,7 @@
           "vision"
         ],
         "summary": "查询模型安装任务的状态。",
-        "operationId": "get_install_task",
+        "operationId": "vision.get_install_task",
         "parameters": [
           {
             "name": "task_id",
@@ -5523,7 +5523,7 @@
           "vision"
         ],
         "summary": "删除一个已安装且非当前激活的 Vision 模型文件。",
-        "operationId": "delete_model",
+        "operationId": "vision.delete_model",
         "parameters": [
           {
             "name": "model_id",
@@ -5564,7 +5564,7 @@
           "vision"
         ],
         "summary": "触发 Vision 索引重建；请求体可选，`force_full` 决定全量还是增量。",
-        "operationId": "rebuild_index",
+        "operationId": "vision.rebuild_index",
         "requestBody": {
           "content": {
             "application/json": {
@@ -5611,7 +5611,7 @@
         ],
         "summary": "以图搜图：multipart 上传查询图片，返回按相似度排序的商品候选。",
         "description": "索引未就绪或正在重建时返回 503；`mode` 为 `order`/`admin_event` 时 `event_id` 必填。",
-        "operationId": "search_by_image",
+        "operationId": "vision.search_by_image",
         "requestBody": {
           "content": {
             "multipart/form-data": {
@@ -5681,7 +5681,7 @@
           "vision"
         ],
         "summary": "读取 Vision 推理设备（execution provider）配置与可用 GPU 列表。",
-        "operationId": "get_ep_setting",
+        "operationId": "vision.get_ep_setting",
         "responses": {
           "200": {
             "content": {
@@ -5699,7 +5699,7 @@
           "vision"
         ],
         "summary": "设置 Vision 推理设备并立即重新加载模型。",
-        "operationId": "set_ep_setting",
+        "operationId": "vision.set_ep_setting",
         "requestBody": {
           "content": {
             "application/json": {
@@ -5749,7 +5749,7 @@
           "vision"
         ],
         "summary": "Vision 运行时状态：模型、索引版本/大小、重建进度与当前推理设备。",
-        "operationId": "get_vision_status",
+        "operationId": "vision.get_vision_status",
         "responses": {
           "200": {
             "content": {

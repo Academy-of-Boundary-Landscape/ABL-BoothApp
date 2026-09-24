@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 API_DIR = Path(__file__).resolve().parent.parent / "src-tauri" / "src" / "api"
-# 契约快照：非 GET 操作的 operationId 就是 handler 名（utoipa 默认），用来交叉校验
+# 契约快照：非 GET 操作的 operationId 里带着 handler 名，用来交叉校验
 # 脚本有没有漏认某种注册写法。openapi.json 本身由 openapi_snapshot 测试保证是最新的。
 OPENAPI = Path(__file__).resolve().parent.parent / "src-tauri" / "openapi.json"
 EXEMPT_RE = re.compile(r"//\s*不需要展会守卫：\s*\S+")
@@ -172,8 +172,11 @@ def main() -> int:
         for p, item in doc.get("paths", {}).items():
             for method, op in item.items():
                 if method in ("post", "put", "patch", "delete") and isinstance(op, dict):
-                    op_id = op.get("operationId")
-                    if op_id and op_id not in found:
+                    # operationId 形如 `<tag>.<handler>[.<method>]`（见 src-tauri/src/api/openapi.rs 的 document()）
+                    op_id = op.get("operationId") or ""
+                    parts = op_id.split(".")
+                    handler = parts[1] if len(parts) >= 2 else op_id
+                    if handler and handler not in found:
                         problems.append(
                             f"openapi.json 里的写操作 {method.upper()} {p}（{op_id}）没被脚本认出来——"
                             f"注册写法变了，脚本需要跟着改"
