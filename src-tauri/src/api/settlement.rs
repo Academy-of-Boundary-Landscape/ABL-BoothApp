@@ -7,10 +7,12 @@
 
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{header, StatusCode},
+    response::{IntoResponse, Response},
     routing::{delete, get, post},
     Json, Router,
 };
+use rust_xlsxwriter::{Color, Format, Workbook};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -50,6 +52,10 @@ pub fn router() -> Router<AppState> {
         )
         .route("/events/:event_id/settlement", get(get_settlement))
         .route("/events/:event_id/settlement/reconcile", post(reconcile))
+        .route(
+            "/events/:event_id/settlement.xlsx",
+            get(download_settlement_xlsx),
+        )
 }
 
 /// 已用过的收款渠道，跨展会。
@@ -859,6 +865,454 @@ async fn reconcile(
 
     tx.commit().await?;
     Ok(Json(ReconcileResponse { journal_id }))
+}
+
+// ==========================================
+// 四 sheet 的 xlsx 导出（Task 9）
+//
+// 四个 sheet 全部从 Task 8 的 `load_input` + `build_report` 出发，**不另写一套算术**。
+// 唯一的例外是「账本流水」「订单明细」两个纯流水 sheet，它们读的是业务表本身。
+// ==========================================
+
+#[derive(sqlx::FromRow)]
+struct JournalRow {
+    id: i64,
+    occurred_at: String,
+    kind: String,
+    order_id: Option<i64>,
+    note: Option<String>,
+}
+
+#[derive(sqlx::FromRow)]
+struct StockLegRow {
+    journal_id: i64,
+    product_code: String,
+    name: String,
+    from_location: String,
+    to_location: String,
+    qty: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct MoneyLegRow {
+    journal_id: i64,
+    from_account: String,
+    to_account: String,
+    amount: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct OrderLineRow {
+    order_id: i64,
+    status: String,
+    channel: Option<String>,
+    line_id: i64,
+    product_code: String,
+    name: String,
+    lot_name: Option<String>,
+    qty: i64,
+    unit_price: i64,
+    allocated_amount: i64,
+    paid_amount: i64,
+    refunded_qty: i64,
+}
+
+async fn download_settlement_xlsx(
+    State(state): State<AppState>,
+    claims: Claims,
+    Path(event_id): Path<i64>,
+) -> ApiResult<Response> {
+    // 不需要展会守卫：只读导出
+    check_read_permission(&claims, event_id)?;
+
+    let input = load_input(&state, event_id).await?;
+    let report = build_report(&input);
+
+    let journals: Vec<JournalRow> = sqlx::query_as(
+        "SELECT id, occurred_at, kind, order_id, note
+         FROM journals WHERE event_id = ? ORDER BY id",
+    )
+    .bind(event_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    let stock_legs: Vec<StockLegRow> = sqlx::query_as(
+        "SELECT sm.journal_id, ep.product_code, ep.name,
+                sm.from_location, sm.to_location, sm.qty
+         FROM stock_movements sm
+         JOIN journals j ON j.id = sm.journal_id
+         JOIN event_products ep ON ep.id = sm.event_product_id
+         WHERE j.event_id = ?
+         ORDER BY sm.journal_id, sm.id",
+    )
+    .bind(event_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    let money_legs: Vec<MoneyLegRow> = sqlx::query_as(
+        "SELECT mm.journal_id, mm.from_account, mm.to_account, mm.amount
+         FROM money_movements mm
+         JOIN journals j ON j.id = mm.journal_id
+         WHERE j.event_id = ?
+         ORDER BY mm.journal_id, mm.id",
+    )
+    .bind(event_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    let order_lines: Vec<OrderLineRow> = sqlx::query_as(
+        "SELECT o.id AS order_id, o.status, o.channel,
+                ol.id AS line_id, ep.product_code, ep.name,
+                olot.name AS lot_name, ol.qty, ol.unit_price,
+                ol.allocated_amount, ol.paid_amount,
+                COALESCE(r.done_qty, 0) AS refunded_qty
+         FROM order_lines ol
+         JOIN orders o ON o.id = ol.order_id
+         JOIN event_products ep ON ep.id = ol.event_product_id
+         LEFT JOIN order_lots olot ON olot.id = ol.order_lot_id
+         LEFT JOIN (
+             SELECT order_line_id, SUM(qty) AS done_qty
+             FROM refunds GROUP BY order_line_id
+         ) r ON r.order_line_id = ol.id
+         WHERE o.event_id = ?
+         ORDER BY o.id, ol.id",
+    )
+    .bind(event_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    // rust_xlsxwriter 的错误不是 sqlx::Error，给 ApiError 加变体不在本轮范围。
+    // 用 Conflict 语义不完美，但诚实：文案能到用户眼里，而不是被伪装成数据库错误。
+    let buf = build_workbook(&report, &journals, &stock_legs, &money_legs, &order_lines)
+        .map_err(|e| ApiError::Conflict(format!("生成表格失败：{e}")))?;
+
+    // 文件名纯 ASCII。展会名可能是中文，不要放进 filename。
+    Ok((
+        StatusCode::OK,
+        [
+            (
+                header::CONTENT_TYPE,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".to_string(),
+            ),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"settlement-event-{event_id}.xlsx\""),
+            ),
+        ],
+        buf,
+    )
+        .into_response())
+}
+
+fn build_workbook(
+    report: &SettlementReport,
+    journals: &[JournalRow],
+    stock_legs: &[StockLegRow],
+    money_legs: &[MoneyLegRow],
+    order_lines: &[OrderLineRow],
+) -> Result<Vec<u8>, rust_xlsxwriter::XlsxError> {
+    let mut workbook = Workbook::new();
+    write_summary_sheet(&mut workbook, report)?;
+    write_goods_sheet(&mut workbook, report)?;
+    write_journal_sheet(&mut workbook, journals, stock_legs, money_legs)?;
+    write_order_sheet(&mut workbook, order_lines)?;
+    workbook.save_to_buffer()
+}
+
+/// 金额一律写成**元的浮点**并套两位小数的 number format——xlsx 是给人看和给
+/// 社团财务再加工的，写分会让每个数都要除 100。这是唯一允许把 Money 变成浮点的
+/// 地方，因为它离开系统了。
+fn money_format() -> Format {
+    Format::new().set_num_format("0.00")
+}
+
+/// 写一个「分」金额到单元格（元、两位小数）。**只有这里允许 `as f64 / 100.0`。**
+fn write_money(
+    worksheet: &mut rust_xlsxwriter::Worksheet,
+    row: u32,
+    col: u16,
+    money: Money,
+    format: &Format,
+) -> Result<(), rust_xlsxwriter::XlsxError> {
+    worksheet.write_number_with_format(row, col, money.cents() as f64 / 100.0, format)?;
+    Ok(())
+}
+
+fn write_summary_sheet(
+    workbook: &mut Workbook,
+    report: &SettlementReport,
+) -> Result<(), rust_xlsxwriter::XlsxError> {
+    let worksheet = workbook.add_worksheet();
+    worksheet.set_name("结算汇总")?;
+
+    let header = Format::new().set_bold();
+    let money_fmt = money_format();
+    let mut row: u32 = 0;
+
+    // warnings 非空时，在第一行写一条醒目的红色提示。结算单自相矛盾却安安静静地
+    // 导出去，比不导出更坏。
+    if !report.warnings.is_empty() {
+        let warn = Format::new().set_bold().set_font_color(Color::Red);
+        worksheet.write_string_with_format(row, 0, "⚠ 这张表和账本对不上，见下方说明", &warn)?;
+        row += 1;
+        for w in &report.warnings {
+            worksheet.write_string_with_format(row, 0, w, &warn)?;
+            row += 1;
+        }
+        row += 1;
+    }
+
+    let headers = [
+        "货主",
+        "商品原价",
+        "Lot折让",
+        "手工折让",
+        "净额",
+        "退货保留",
+        "自掏赠品",
+        "垫付",
+        "调整",
+        "我应转给",
+    ];
+    for (c, h) in headers.iter().enumerate() {
+        worksheet.write_string_with_format(row, c as u16, *h, &header)?;
+    }
+    row += 1;
+    for s in &report.societies {
+        worksheet.write_string(row, 0, s.name.as_str())?;
+        let values = [
+            s.gross,
+            s.lot_discount,
+            s.manual_discount,
+            s.net,
+            s.refund_kept,
+            s.gift_self_paid,
+            s.advances_total,
+            s.adjustments_total,
+            s.transfer,
+        ];
+        for (i, m) in values.iter().enumerate() {
+            write_money(worksheet, row, 1 + i as u16, *m, &money_fmt)?;
+        }
+        row += 1;
+    }
+
+    row += 1; // 空一行，下面是收摊清点栏
+
+    let channel_headers = ["渠道", "账面应有", "实际到手", "差额", "是否清点"];
+    for (c, h) in channel_headers.iter().enumerate() {
+        worksheet.write_string_with_format(row, c as u16, *h, &header)?;
+    }
+    row += 1;
+    for c in &report.channels {
+        worksheet.write_string(row, 0, c.channel.as_str())?;
+        write_money(worksheet, row, 1, c.book, &money_fmt)?;
+        write_money(worksheet, row, 2, c.actual, &money_fmt)?;
+        write_money(worksheet, row, 3, c.diff, &money_fmt)?;
+        worksheet.write_string(row, 4, if c.counted { "是" } else { "否" })?;
+        row += 1;
+    }
+
+    row += 1;
+    for (label, value) in [
+        ("实际到手合计", report.actual_total),
+        ("Σ我应转给", report.transfer_total),
+        ("摊主留存", report.vendor_retained),
+    ] {
+        worksheet.write_string(row, 0, label)?;
+        write_money(worksheet, row, 1, value, &money_fmt)?;
+        row += 1;
+    }
+
+    Ok(())
+}
+
+fn write_goods_sheet(
+    workbook: &mut Workbook,
+    report: &SettlementReport,
+) -> Result<(), rust_xlsxwriter::XlsxError> {
+    let worksheet = workbook.add_worksheet();
+    worksheet.set_name("货主明细")?;
+
+    let header = Format::new().set_bold();
+    let headers = [
+        "货主",
+        "商品编号",
+        "名称",
+        "带去",
+        "卖出",
+        "赠送",
+        "报废",
+        "差异",
+        "带回",
+        "现场仓",
+    ];
+    for (c, h) in headers.iter().enumerate() {
+        worksheet.write_string_with_format(0, c as u16, *h, &header)?;
+    }
+
+    let mut row: u32 = 1;
+    for s in &report.societies {
+        for g in &s.goods {
+            worksheet.write_string(row, 0, s.name.as_str())?;
+            worksheet.write_string(row, 1, g.product_code.as_str())?;
+            worksheet.write_string(row, 2, g.name.as_str())?;
+            let quantities = [
+                g.brought_in,
+                g.sold,
+                g.gifted,
+                g.scrapped,
+                g.variance,
+                g.taken_back,
+                g.on_site,
+            ];
+            for (i, q) in quantities.iter().enumerate() {
+                worksheet.write_number(row, 3 + i as u16, *q as f64)?;
+            }
+            row += 1;
+        }
+    }
+
+    Ok(())
+}
+
+fn write_journal_sheet(
+    workbook: &mut Workbook,
+    journals: &[JournalRow],
+    stock_legs: &[StockLegRow],
+    money_legs: &[MoneyLegRow],
+) -> Result<(), rust_xlsxwriter::XlsxError> {
+    let worksheet = workbook.add_worksheet();
+    worksheet.set_name("账本流水")?;
+
+    let header = Format::new().set_bold();
+    let headers = [
+        "journal id",
+        "时间",
+        "种类",
+        "订单号",
+        "摘要",
+        "货腿（商品·从→到·数量）",
+        "钱腿（从→到·金额）",
+    ];
+    for (c, h) in headers.iter().enumerate() {
+        worksheet.write_string_with_format(0, c as u16, *h, &header)?;
+    }
+
+    // 腿按 journal 归组：一个 journal 的货腿/钱腿各拼成一个单元格。
+    let mut stock_by_journal: std::collections::HashMap<i64, Vec<String>> =
+        std::collections::HashMap::new();
+    for leg in stock_legs {
+        stock_by_journal
+            .entry(leg.journal_id)
+            .or_default()
+            .push(format!(
+                "{} {}·{}→{}·{}",
+                leg.product_code, leg.name, leg.from_location, leg.to_location, leg.qty
+            ));
+    }
+    let mut money_by_journal: std::collections::HashMap<i64, Vec<String>> =
+        std::collections::HashMap::new();
+    for leg in money_legs {
+        money_by_journal
+            .entry(leg.journal_id)
+            .or_default()
+            .push(format!(
+                "{}→{}·{}",
+                leg.from_account,
+                leg.to_account,
+                Money::from_cents(leg.amount)
+            ));
+    }
+
+    for (row, j) in (1u32..).zip(journals) {
+        worksheet.write_number(row, 0, j.id as f64)?;
+        worksheet.write_string(row, 1, j.occurred_at.as_str())?;
+        worksheet.write_string(row, 2, j.kind.as_str())?;
+        if let Some(order_id) = j.order_id {
+            worksheet.write_number(row, 3, order_id as f64)?;
+        }
+        worksheet.write_string(row, 4, j.note.as_deref().unwrap_or(""))?;
+        worksheet.write_string(
+            row,
+            5,
+            stock_by_journal
+                .get(&j.id)
+                .map(|legs| legs.join("；"))
+                .unwrap_or_default(),
+        )?;
+        worksheet.write_string(
+            row,
+            6,
+            money_by_journal
+                .get(&j.id)
+                .map(|legs| legs.join("；"))
+                .unwrap_or_default(),
+        )?;
+    }
+
+    Ok(())
+}
+
+fn write_order_sheet(
+    workbook: &mut Workbook,
+    order_lines: &[OrderLineRow],
+) -> Result<(), rust_xlsxwriter::XlsxError> {
+    let worksheet = workbook.add_worksheet();
+    worksheet.set_name("订单明细")?;
+
+    let header = Format::new().set_bold();
+    let money_fmt = money_format();
+    let headers = [
+        "订单号",
+        "状态",
+        "渠道",
+        "行号",
+        "商品",
+        "套装",
+        "件数",
+        "单价",
+        "货主应得",
+        "顾客实付",
+        "已退件数",
+    ];
+    for (c, h) in headers.iter().enumerate() {
+        worksheet.write_string_with_format(0, c as u16, *h, &header)?;
+    }
+
+    for (row, l) in (1u32..).zip(order_lines) {
+        worksheet.write_number(row, 0, l.order_id as f64)?;
+        worksheet.write_string(row, 1, l.status.as_str())?;
+        worksheet.write_string(row, 2, l.channel.as_deref().unwrap_or(""))?;
+        worksheet.write_number(row, 3, l.line_id as f64)?;
+        worksheet.write_string(row, 4, format!("{} {}", l.product_code, l.name))?;
+        worksheet.write_string(row, 5, l.lot_name.as_deref().unwrap_or(""))?;
+        worksheet.write_number(row, 6, l.qty as f64)?;
+        write_money(
+            worksheet,
+            row,
+            7,
+            Money::from_cents(l.unit_price),
+            &money_fmt,
+        )?;
+        write_money(
+            worksheet,
+            row,
+            8,
+            Money::from_cents(l.allocated_amount),
+            &money_fmt,
+        )?;
+        write_money(
+            worksheet,
+            row,
+            9,
+            Money::from_cents(l.paid_amount),
+            &money_fmt,
+        )?;
+        worksheet.write_number(row, 10, l.refunded_qty as f64)?;
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1921,5 +2375,68 @@ mod tests {
         assert_eq!(other["net"], 0, "净额必须回到 0");
         assert_eq!(other["refund_kept"], 0);
         assert_eq!(other["transfer"], 0, "账本也已冲平");
+    }
+
+    #[tokio::test]
+    async fn the_xlsx_is_a_real_workbook_with_four_sheets() {
+        // 不解析 xlsx 内容（要引一个读库，不值）。断言三件事：
+        // 状态码、Content-Type、以及 body 是个 zip（xlsx 就是 zip，魔数 PK\x03\x04）。
+        // 数字对不对由 Task 7 的纯函数测试和 Task 8 的端到端测试保证——
+        // 导出和页面渲染的是同一个 SettlementReport，这正是那样设计的理由。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _, _) = seed_event_and_product(&pool).await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "GET",
+                &format!("/api/events/{event_id}/settlement.xlsx"),
+                Some(&admin_token()),
+                json!(null),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let ct = res
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert!(ct.contains("spreadsheetml"), "content-type 是 {ct}");
+
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert!(bytes.len() > 1000, "空文件");
+        assert_eq!(&bytes[..4], b"PK\x03\x04", "xlsx 应当是个 zip");
+    }
+
+    #[tokio::test]
+    async fn the_xlsx_filename_is_ascii_safe() {
+        // 中文文件名在部分浏览器/CDN 上会变成 ???，下载直接坏掉——
+        // 安装包那边已经踩过一次（见项目 CLAUDE.md 的发版流程）。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _, _) = seed_event_and_product(&pool).await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "GET",
+                &format!("/api/events/{event_id}/settlement.xlsx"),
+                Some(&admin_token()),
+                json!(null),
+            ))
+            .await
+            .unwrap();
+        let cd = res
+            .headers()
+            .get("content-disposition")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(cd.is_ascii(), "Content-Disposition 必须是纯 ASCII：{cd}");
+        assert!(cd.contains("settlement"));
     }
 }
