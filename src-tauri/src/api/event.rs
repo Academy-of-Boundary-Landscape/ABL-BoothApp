@@ -9,7 +9,7 @@ use axum::{
 const EVENT_UPLOAD_LIMIT_BYTES: usize = 10 * 1024 * 1024;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::{query, query_as};
+use sqlx::{query, query_as, query_scalar};
 
 use crate::{
     api::guard::AdminOnly,
@@ -384,40 +384,65 @@ async fn update_status(
     Path(id): Path<i64>,
     Json(payload): Json<UpdateStatusRequest>,
 ) -> impl IntoResponse {
-    // 不需要展会守卫：本 handler 自己管展会状态迁移，迁移守卫在后续 task 补
+    // 不需要展会守卫：本 handler 自己管状态迁移，两道检查见下方
     // [修复] 验证状态值只能是允许的值 ✓
-    match payload.status.as_str() {
-        "筹备" | "进行中" | "已结算" => {
-            // 使用 RETURNING 子句原子地更新并获取完整数据
-            let result = query_as::<_, Event>(
-                r#"
-                UPDATE events 
-                SET status = ? 
-                WHERE id = ?
-                RETURNING *
-                "#,
-            )
-            .bind(&payload.status)
-            .bind(id)
-            .fetch_one(&state.db)
-            .await;
+    let target = payload.status.as_str();
+    if !matches!(target, "筹备" | "进行中" | "已结算") {
+        // 无效的状态值
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Invalid status. Must be one of: 筹备, 进行中, 已结算"})),
+        )
+            .into_response();
+    }
 
-            match result {
-                Ok(event) => {
-                    let response = EventResponse::from_model(event);
-                    (StatusCode::OK, Json(response)).into_response()
-                }
-                Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Database Error").into_response(),
-            }
+    // 冻结语义的第一道：只有 POST /closing/settle 能进已结算。
+    // 这个口子开着的话，清 pending 和现场仓归零两道检查都能绕过去。
+    if target == "已结算" {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "请走收摊流程结算（清 pending → 盘点 → 带回）"})),
+        )
+            .into_response();
+    }
+
+    // 冻结语义的第二道：已结算的展会不能静默解冻。
+    let current: Option<String> = match query_scalar("SELECT status FROM events WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await
+    {
+        Ok(row) => row,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Database Error").into_response(),
+    };
+    if current.as_deref() == Some("已结算") {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"error": "已结算的展会不能解冻"})),
+        )
+            .into_response();
+    }
+
+    // 使用 RETURNING 子句原子地更新并获取完整数据
+    let result = query_as::<_, Event>(
+        r#"
+        UPDATE events 
+        SET status = ? 
+        WHERE id = ?
+        RETURNING *
+        "#,
+    )
+    .bind(&payload.status)
+    .bind(id)
+    .fetch_one(&state.db)
+    .await;
+
+    match result {
+        Ok(event) => {
+            let response = EventResponse::from_model(event);
+            (StatusCode::OK, Json(response)).into_response()
         }
-        _ => {
-            // 无效的状态值
-            (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"error": "Invalid status. Must be one of: 筹备, 进行中, 已结算"})),
-            )
-                .into_response()
-        }
+        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Database Error").into_response(),
     }
 }
 
@@ -497,9 +522,12 @@ async fn delete_event(
 
 #[cfg(test)]
 mod tests {
-    use crate::test_support::test_router;
+    use crate::test_support::{
+        admin_token, json_request, seed_event_and_product, test_router, test_router_with,
+    };
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
+    use serde_json::json;
     use tower::ServiceExt; // for oneshot
 
     #[tokio::test]
@@ -543,5 +571,52 @@ mod tests {
             .unwrap();
 
         assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn cannot_settle_an_event_by_setting_its_status_directly() {
+        // 整个 ②-3 的冻结语义建立在「只有 POST /closing/settle 能进已结算」之上。
+        // 这个口子开着的话，清 pending 和现场仓归零两道检查都能绕过去。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _, _) = seed_event_and_product(&pool).await;
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/status"),
+                Some(&admin_token()),
+                json!({"status": "已结算"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        let status: String = sqlx::query_scalar("SELECT status FROM events WHERE id = ?")
+            .bind(event_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(status, "进行中");
+    }
+
+    #[tokio::test]
+    async fn a_settled_event_cannot_be_thawed() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _, _) = seed_event_and_product(&pool).await;
+        sqlx::query("UPDATE events SET status = '已结算' WHERE id = ?")
+            .bind(event_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/status"),
+                Some(&admin_token()),
+                json!({"status": "进行中"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT);
     }
 }
