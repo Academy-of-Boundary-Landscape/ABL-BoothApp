@@ -13,6 +13,9 @@
       </div>
       <div class="header-actions">
         <n-button @click="showInventoryModal = true">登记赠送/报废</n-button>
+        <n-button @click="openClosing">
+          {{ isEventSettled ? '查看结算' : '收摊' }}
+        </n-button>
         <n-button type="primary" :loading="isRefreshing" @click="manualRefresh">
           {{ isRefreshing ? '刷新中' : '手动刷新' }}
         </n-button>
@@ -116,12 +119,21 @@
       @loaded="onRefundFlag"
       @refunded="onRefundFlag"
     />
+
+    <!-- 收摊向导：第几步由后端状态推出来，详见组件注释 -->
+    <ClosingWizard
+      :show="showClosingWizard"
+      :event-id="props.id"
+      @close="showClosingWizard = false"
+      @settled="onClosingSettled"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { NButton, NTabs, NTabPane, NAlert, useDialog, useMessage } from 'naive-ui'
+import { useRouter } from 'vue-router'
 import { useOrderStore } from '@/stores/orderStore'
 import { useEventStore } from '@/stores/eventStore'
 import { useEventDetailStore } from '@/stores/eventDetailStore'
@@ -130,6 +142,7 @@ import OrderCard from '@/components/order/OrderCard.vue'
 import ReceiptModal from '@/components/vendor/ReceiptModal.vue'
 import InventoryLogModal from '@/components/vendor/InventoryLogModal.vue'
 import RefundModal from '@/components/vendor/RefundModal.vue'
+import ClosingWizard from '@/components/vendor/ClosingWizard.vue'
 import { formatYuan } from '@/utils/money'
 import api from '@/services/api'
 
@@ -141,6 +154,7 @@ const audioRef = ref(null)
 const store = useOrderStore()
 const eventStore = useEventStore()
 const eventDetailStore = useEventDetailStore()
+const router = useRouter()
 const message = useMessage()
 const dialog = useDialog()
 
@@ -151,6 +165,11 @@ const isInitialized = ref(false) // 用于标记第一次加载，避免页面�
 const eventName = computed(() => {
   const event = eventStore.events.find((e) => e.id === parseInt(props.id, 10))
   return event ? event.name : `展会 #${props.id}`
+})
+
+const isEventSettled = computed(() => {
+  const event = eventStore.events.find((e) => e.id === parseInt(props.id, 10))
+  return event?.status === '已结算'
 })
 
 // 播放声音的函数
@@ -266,6 +285,25 @@ function onRefundFlag({ orderId, fullyRefunded }) {
 watch(currentTab, (tab) => {
   if (tab === 'completed') refreshRefundFlags()
 })
+
+// ===== 收摊向导 =====
+const showClosingWizard = ref(false)
+
+function openClosing() {
+  if (isEventSettled.value) {
+    // 管理端结算页由后续批次建在同一路由（plan 钉死的 admin-event-settlement）。
+    router.push(`/admin/events/${props.id}/settlement`)
+    return
+  }
+  showClosingWizard.value = true
+}
+
+/** 向导里结算成功后，头部按钮当场变成「查看结算」，不用等重新拉展会列表。 */
+function onClosingSettled() {
+  const event = eventStore.events.find((e) => e.id === parseInt(props.id, 10))
+  if (event) event.status = '已结算'
+  store.fetchCompletedOrders()
+}
 
 function completeOrder(orderId) {
   pendingOrder.value = store.pendingOrders.find((o) => o.id === orderId) || null
