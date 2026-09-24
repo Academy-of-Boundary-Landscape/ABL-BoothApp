@@ -93,8 +93,8 @@
 </template>
 
 <script setup lang="ts">
-// ui-boundary-ignore: 全屏裁剪交互保留裸 n-modal，理由见模板注释
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+// ui-boundary-ignore: 全屏裁剪交互保留裸 n-modal，理由见模板注释
 import { NButton, NModal, NSpin } from 'naive-ui'
 
 interface Props {

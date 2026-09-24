@@ -7,6 +7,7 @@ body {
 }
 
 #app {
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- 应用外框上限（大于最宽页宽档），不是页面内容宽度 */
   max-width: min(1600px, 100%);
   margin: 0 auto;
   height: 100vh;

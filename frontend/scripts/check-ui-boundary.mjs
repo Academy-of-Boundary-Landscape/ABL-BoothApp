@@ -3,6 +3,9 @@
 //
 // 扫描 src/**/*.{vue,ts}（排除 components/ui/**、composables/useFeedback.ts、*.spec.ts），
 // 命中行上一行写成 `// ui-boundary-ignore: 理由` 或 `<!-- ui-boundary-ignore: 理由 -->` 可豁免（理由必填）。
+// 另有一条全仓规则（含 ui/ 与 src/**/*.css）：stylelint 豁免只允许
+// `stylelint-disable-next-line <规则> -- 理由`，块级 / 文件级 / 行尾 disable 一律报错（spec §6.1）。
+// fixture 里行尾写 `expect-hit` 的行必须被报出（--self-test 校验，防止规则写窄了静默放过）。
 //
 // 用法：
 //   node scripts/check-ui-boundary.mjs               默认：有命中 exit 1，逐条打印 `file:line rule`
@@ -37,11 +40,14 @@ const RULES = [
     id: 'native-dialog',
     find(text) {
       const hits = []
-      const re = /\b(?:window\.)?(?:alert|confirm)\(/g
+      // `alert (x)`、`globalThis.alert(x)`、`self.confirm(x)` 也算；原生 prompt 同理。
+      const re = /(\b(?:window|globalThis|self)\s*\.\s*)?\b(?:alert|confirm|prompt)\s*\(/g
       let m
       while ((m = re.exec(text))) {
-        // 排除 `fb.confirm(` / `.alert(` 这类成员调用
-        if (text[m.index - 1] === '.') continue
+        // 排除 `fb.confirm(` / `foo.alert(` 这类普通成员调用（全局对象上的除外）
+        if (!m[1] && /\.\s*$/.test(text.slice(Math.max(0, m.index - 8), m.index))) continue
+        // 排除方法 / 函数定义：`function confirm(`、`confirm(opts) {`
+        if (!m[1] && /\bfunction\s+$/.test(text.slice(Math.max(0, m.index - 12), m.index))) continue
         hits.push({ index: m.index, match: m[0] })
       }
       return hits
@@ -51,14 +57,21 @@ const RULES = [
     id: 'naive-feedback',
     find(text) {
       const hits = []
-      const importRe = /import\s+([\s\S]*?)\s+from\s+['"]naive-ui['"]/g
+      // 单条 import 语句（不跨到下一条 import），源可以是 naive-ui 或其子路径
+      const importRe =
+        /\bimport\s+((?:(?!\bimport\b)[^;])*?)\s+from\s+['"]naive-ui(?:\/[^'"]*)?['"]/g
       let m
       while ((m = importRe.exec(text))) {
-        if (/\b(?:useMessage|useDialog|NModal)\b/.test(m[1])) {
+        if (
+          /\b(?:useMessage|useDialog|useModal|useNotification|createDiscreteApi|NModal)\b/.test(
+            m[1]
+          ) ||
+          /^\*\s*as\s/.test(m[1].trim())
+        ) {
           hits.push({ index: m.index, match: 'naive-ui feedback import' })
         }
       }
-      const tagRe = /<n-modal[\s>]/g
+      const tagRe = /<(?:n-modal|NModal)[\s/>]/g
       while ((m = tagRe.exec(text))) {
         hits.push({ index: m.index, match: '<n-modal' })
       }
@@ -104,7 +117,22 @@ const RULES = [
     id: 'inner-width',
     find(text) {
       const hits = []
-      const re = /window\.innerWidth/g
+      // JS 断点只走 useViewport：innerWidth（含解构、globalThis.）与按宽高查询的 matchMedia 都算
+      const re = /\binnerWidth\b|\bmatchMedia\s*\([^)]*\b(?:width|height)\b/g
+      let m
+      while ((m = re.exec(text))) {
+        hits.push({ index: m.index, match: m[0] })
+      }
+      return hits
+    },
+  },
+  {
+    id: 'stylelint-disable-scope',
+    global: true,
+    find(text) {
+      const hits = []
+      // 只放行 `stylelint-disable-next-line <规则>`；块级 disable / enable、disable-line、不写规则名的都报
+      const re = /stylelint-(?:disable(?!-next-line\s+(?!--)[\w@/-])|enable)[\w-]*/g
       let m
       while ((m = re.exec(text))) {
         hits.push({ index: m.index, match: m[0] })
@@ -130,11 +158,12 @@ function hasIgnoreReason(prevLine) {
   return m[1].replace(/-->\s*$/, '').trim().length > 0
 }
 
-function scanText(text) {
+function scanText(text, { appRules = true } = {}) {
   const lines = text.split('\n')
   const hits = []
   let suppressed = 0
   for (const rule of RULES) {
+    if (!rule.global && !appRules) continue
     for (const raw of rule.find(text)) {
       const line = lineAt(text, raw.index)
       const prev = lines[line - 2] ?? ''
@@ -149,19 +178,29 @@ function scanText(text) {
   return { hits, suppressed }
 }
 
+/** 完全不扫的文件（测试里会出现规则关键字的字面量）。 */
 function isExcluded(absPath) {
+  return basename(absPath).endsWith('.spec.ts')
+}
+
+/** 原语层自身与 useFeedback 可以直接用 Naive 反馈 API；.css 只查全仓规则。 */
+function appRulesApply(absPath) {
   const rel = relative(ROOT, absPath).split('\\').join('/')
-  if (rel.startsWith('src/components/ui/')) return true
-  if (rel === 'src/composables/useFeedback.ts') return true
-  if (basename(rel).endsWith('.spec.ts')) return true
-  return false
+  if (extname(rel) === '.css') return false
+  if (rel.startsWith('src/components/ui/')) return false
+  if (rel === 'src/composables/useFeedback.ts') return false
+  return true
 }
 
 function walk(dir, out) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const p = join(dir, entry.name)
     if (entry.isDirectory()) walk(p, out)
-    else if (entry.isFile() && ['.vue', '.ts'].includes(extname(entry.name)) && !isExcluded(p)) {
+    else if (
+      entry.isFile() &&
+      ['.vue', '.ts', '.css'].includes(extname(entry.name)) &&
+      !isExcluded(p)
+    ) {
       out.push(p)
     }
   }
@@ -172,7 +211,7 @@ function scanFiles(files) {
   const results = []
   for (const file of files) {
     const text = readFileSync(file, 'utf8')
-    const { hits, suppressed } = scanText(text)
+    const { hits, suppressed } = scanText(text, { appRules: appRulesApply(file) })
     if (hits.length || suppressed) {
       results.push({ file, rel: relative(ROOT, file).split('\\').join('/'), hits, suppressed })
     }
@@ -212,12 +251,18 @@ function selfTest() {
     console.error('[self-test] fixture 里带理由的 ui-boundary-ignore 没有生效')
     process.exit(1)
   }
-  // 负例：成员调用不得被 native-dialog 误伤
+  // 负例：成员调用不得被 native-dialog 误伤；正例：行尾标了 expect-hit 的每一行都必须被报出
   for (const file of files) {
+    const fileHits = results.find((r) => r.file === file)?.hits ?? []
     const lines = readFileSync(file, 'utf8').split('\n')
     for (let i = 0; i < lines.length; i++) {
-      if (/fb\.confirm|foo\.alert/.test(lines[i]) && hits.some((h) => h.line === i + 1)) {
-        console.error(`[self-test] 成员调用被误伤: ${relative(ROOT, file)}:${i + 1}`)
+      const hit = fileHits.some((h) => h.line === i + 1)
+      if (/fb\.confirm|foo\.alert|不应命中/.test(lines[i]) && hit) {
+        console.error(`[self-test] 不该命中的行被报出: ${relative(ROOT, file)}:${i + 1}`)
+        process.exit(1)
+      }
+      if (/expect-hit/.test(lines[i]) && !hit) {
+        console.error(`[self-test] 标了 expect-hit 的行没被报出: ${relative(ROOT, file)}:${i + 1}`)
         process.exit(1)
       }
     }
