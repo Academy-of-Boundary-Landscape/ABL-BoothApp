@@ -334,3 +334,22 @@ Windows 上手工做的话，这个 PowerShell one-liner 可以生成 `signature
 - **"invalid signature" 错误**：`.sig` 和 `.exe` 不匹配。多半是重新构建了 `.exe` 但忘了重新生成 `.sig`，或上传顺序弄错。把三个文件重新做一遍。
 - **"No version available"**：`latest.json` 没上传，或文件名不对。客户端 endpoint 写的是 `/releases/latest/download/latest.json`，GitHub 要求 asset 名字**精确**是 `latest.json`。
 - **中文文件名下载后变 `???`**：部分浏览器 / CDN 对中文 URL 处理有坑。考虑把 `productName` 改成 ASCII-only 名称重新构建，或在上传到 release 时重命名 `.exe` 为英文再更新 `latest.json` 里的 `url`。
+
+## 改了后端接口之后
+
+后端的请求/响应类型是前后端之间的契约，三处生成物都入库，CI 逐一核对：
+
+```bash
+cd src-tauri
+UPDATE_OPENAPI=1 tauri-env linux cargo test --all-features openapi_snapshot   # 1. 更新 src-tauri/openapi.json
+cd ..
+npm --prefix frontend run gen:api                                            # 2. 更新 frontend/src/api/schema.d.ts
+npm --prefix frontend run typecheck                                          # 3. 前端哪里受影响，vue-tsc 会逐个指出
+```
+
+- `openapi.json` 的 diff 就是这次契约变更的全部内容，review 时看它。
+- 新 handler 要标 `#[utoipa::path(...)]` 并用 `routes!(...)` 注册（照 `src-tauri/src/api/settlement.rs`），
+  否则它不会出现在文档里，前端也调不到带类型的路径。
+- 写 handler（POST/PUT/PATCH/DELETE）还要过展会守卫门禁：`python3 scripts/check-event-guards.py`。
+- 金额字段用 `Money`（或 `i64` 分 + `#[schema(value_type = Money)]`），前端会得到 branded `Cents`。
+

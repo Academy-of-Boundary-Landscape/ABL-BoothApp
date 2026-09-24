@@ -1517,3 +1517,65 @@ OpenAPI 文档，前端再从文档生成 TS 类型。`src-tauri/src/api/settlem
 
 提交：`🏷️ types: {{SCOPE}} 的 .vue 迁移到 TS`，末尾带 Co-Authored-By 行。报告写 `.3b/REPORT.md`（每个文件的 props/emits 类型、不确定的地方、`@ts-expect-error` 清单）。
 ```
+
+---
+
+## 执行后记（2026-09-25 完成）
+
+82 个提交（54 个非合并）。串行 task 由 Claude 在会话内实现；并行批次由 dsh-flash（默认 deepseek-flash）实现、
+Claude 审查。台账在 `.superpowers/sdd/2026-09-24-api-contract-and-ts/progress.md`（不入库）。
+
+### 批次
+
+| 批次 | worker | 修复轮 | 审查者直接改的 |
+|---|---|---|---|
+| B1 后端 closing/inventory/lot/order/refund | 5 | 0 | — |
+| B2 后端 society/product/info/auth/stats + 前端 utils、config/composables | 7 | 0 | `money.ts` 加 `cents()`；`quote.ts` 改用契约类型 |
+| B3 后端 master_product/event/admin/sync/legacy/vision | 6 | 0 | 守卫门禁认 `method(post, put)`；operationId 全局唯一 |
+| F1 services + 14 个 store | 4 | 0 | client 层两处类型缺陷，删掉 22 处绕过与 51 处显式泛型 |
+| F2 52 个 `.vue`（6 组） | 6 | 0 | 跨组组件边界的 4 个类型错误 |
+
+**28 个 worker，没有一个需要发回修复。** brief 写得足够具体（样板模块 + 硬约束 + 验证命令 + 报告格式）
+之后，flash 模型的产出质量足够直接合并；审查的时间主要花在跨 worker 的汇合点上。
+
+### 计划错了的地方（而不是代码错了）
+
+1. **worker 提交不了。** dsh 沙箱只能写 `--cwd`，而 worktree 的 git 元数据在主仓库的 `.git/worktrees/` 下。
+   B1 起改为「worker 不提交，审查者代为提交」。
+2. **共享的 `shape-cleanups.md` 每次合并都冲突。** 改为 worker 写进自己的 REPORT，审查者汇总。
+3. **同时启动 5 个 dsh-flash 会撞配置文件**（`~/.dsh/profiles/headless/cordis.yml` 每次启动都重写），
+   一个 worker 启动即失败。改为间隔 5 秒启动。
+4. **守卫门禁会随注册写法静默失效。** `routes!` 之后找不到写 handler（Task 3 发现），`method(post, put)`
+   之后漏掉 3 个（B3 发现）。最终加了对 `openapi.json` 的交叉校验。
+5. **openapi-typescript 要求 operationId 全局唯一**，而 utoipa 默认用 handler 名。
+6. **openapi-fetch 的 `Readable<T>` 与 branded 类型不兼容**，`unwrap` 的推断也有缺陷——
+   F1 的 3 个 worker 各自独立报告。修在 `types/openapi-typescript-helpers.d.ts`（tsconfig paths）与 `core.ts`。
+7. **Node 里 `AbortSignal.any` 派生的信号、以及 Request 跟随的信号都不派发 abort 事件**（Task 4 测试发现）。
+   超时与调用方 signal 手工合并，并显式传给底层 fetch。
+8. **「形状清理」几乎都不是形状问题**，Task 10 缩成「值域固定的字符串声明为枚举」一类，并提前到 Task 9 之前。
+9. **`--no-default-features` 在 ③b 之前就编不过**，修了并进 CI。
+10. **prettier 没有接管 `docs/`**：markdown 表格会按列宽补齐，中文文档大面积变难读（偏离 spec §3）。
+
+### 真 bug
+
+- 销售汇总导出并发 500（固定临时文件名），改为内存生成。
+- `normalizeUploadError` 如果不认识 `ApiRequestError`，删掉兼容 getter 后上传超限的提示会悄悄退化（测试先证实，再修）。
+
+### 过程上的失误
+
+- 两次提交时门禁的某一步失败了却没注意到（一次是 `gen:api` 失败导致提交了旧的 `schema.d.ts`，一次是
+  本地门禁脚本自己的 `&&` 漏洞放过了 clippy）。都在下一个提交里修了。之后所有提交都经过逐步检查
+  退出码的门禁脚本。
+
+### 逃生口清单（收口时）
+
+- `any`：0
+- `@ts-expect-error`：2，都在 `frontend/src/utils/money.spec.ts`，是故意的类型断言（裸 number 不能当 `Cents`）
+- `as never`：7，全部是 multipart / 原始字节请求体（契约里是字段结构体，`FormData` 赋不上去）
+- `as Cents`：2，`money.ts` 的 `toCents()` 与 `cents()`
+
+### 并行基建的实测
+
+`scripts/worktree-new.sh` 约 65 秒（主要是复制 8G 的 `target/debug`）；worktree 里第一次 `cargo test`
+墙钟约 1 分 50 秒、CPU 约 30 分钟——复制的 target 大半没被复用（路径变了）。112 核上可以接受；
+纯前端的 worker 其实不需要 target，下次可以加个开关跳过。
