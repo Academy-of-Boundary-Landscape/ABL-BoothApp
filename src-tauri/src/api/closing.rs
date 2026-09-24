@@ -24,10 +24,10 @@ use crate::{
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/events/:event_id/closing", get(get_closing))
-        .route("/events/:event_id/closing/stocktake", post(stocktake))
-        .route("/events/:event_id/closing/takeback", post(takeback))
-        .route("/events/:event_id/closing/settle", post(settle))
+        .route("/events/{event_id}/closing", get(get_closing))
+        .route("/events/{event_id}/closing/stocktake", post(stocktake))
+        .route("/events/{event_id}/closing/takeback", post(takeback))
+        .route("/events/{event_id}/closing/settle", post(settle))
 }
 
 #[derive(Serialize, sqlx::FromRow)]

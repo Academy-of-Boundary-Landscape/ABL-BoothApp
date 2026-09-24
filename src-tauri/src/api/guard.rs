@@ -6,7 +6,6 @@ use crate::{
     utils::security::{AuthError, Claims},
 };
 use axum::{
-    async_trait,
     extract::FromRequestParts,
     http::{header, request::Parts},
 };
@@ -18,7 +17,6 @@ pub struct AdminOnly(pub Claims);
 
 // 1. 实现 Axum 的 FromRequestParts trait
 // 这让我们可以直接在 Handler 签名里写: async fn handler(claims: Claims)
-#[async_trait]
 impl FromRequestParts<AppState> for Claims {
     type Rejection = AuthError;
 
@@ -76,7 +74,6 @@ impl FromRequestParts<AppState> for Claims {
 
 // 2. 实现 AdminOnly 的提取逻辑
 // 只有当 Token 有效 且 role == "admin" 时通过
-#[async_trait]
 impl FromRequestParts<AppState> for AdminOnly {
     type Rejection = AuthError;
 

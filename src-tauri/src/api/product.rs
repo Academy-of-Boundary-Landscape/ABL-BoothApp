@@ -30,14 +30,14 @@ use crate::{
 pub fn router() -> Router<AppState> {
     Router::new()
         .route(
-            "/events/:event_id/products",
+            "/events/{event_id}/products",
             get(list_event_products).post(add_product_to_event),
         )
         .route(
-            "/events/:event_id/products/:id/restock",
+            "/events/{event_id}/products/{id}/restock",
             post(restock_product),
         )
-        .route("/products/:id", put(update_product).delete(delete_product))
+        .route("/products/{id}", put(update_product).delete(delete_product))
 }
 
 // ==========================================

@@ -19,10 +19,10 @@ use sqlx::AssertSqlSafe;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/:event_id/stats", get(get_event_stats))
-        .route("/:event_id/sales_summary", get(get_sales_summary))
+        .route("/{event_id}/stats", get(get_event_stats))
+        .route("/{event_id}/sales_summary", get(get_sales_summary))
         .route(
-            "/:event_id/sales_summary/download",
+            "/{event_id}/sales_summary/download",
             get(download_sales_summary),
         )
 }

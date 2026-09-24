@@ -40,12 +40,12 @@ use crate::{
 pub fn router() -> Router<AppState> {
     Router::new()
         // 公开：顾客下单，无需 token
-        .route("/events/:event_id/orders", post(create_order))
+        .route("/events/{event_id}/orders", post(create_order))
         // 管理员/摊主：查看订单列表
-        .route("/events/:event_id/orders", get(list_orders))
+        .route("/events/{event_id}/orders", get(list_orders))
         // 管理员/摊主：更新订单状态（完成 / 取消）
         .route(
-            "/events/:event_id/orders/:order_id/status",
+            "/events/{event_id}/orders/{order_id}/status",
             put(update_order_status),
         )
 }

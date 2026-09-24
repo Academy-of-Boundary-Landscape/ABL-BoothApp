@@ -25,12 +25,12 @@ pub fn router() -> Router<AppState> {
     Router::new()
         // 公开接口
         .route("/", get(list_events))
-        .route("/:id", get(get_event))
+        .route("/{id}", get(get_event))
         // 管理员接口
         .route("/", post(create_event))
-        .route("/:id", post(update_event).put(update_event))
-        .route("/:id/status", put(update_status))
-        .route("/:id", delete(delete_event))
+        .route("/{id}", post(update_event).put(update_event))
+        .route("/{id}/status", put(update_status))
+        .route("/{id}", delete(delete_event))
         .layer(DefaultBodyLimit::max(EVENT_UPLOAD_LIMIT_BYTES))
 }
 

@@ -35,7 +35,7 @@ use crate::{
 
 pub fn router() -> Router<AppState> {
     Router::new().route(
-        "/events/:event_id/orders/:order_id/refunds",
+        "/events/{event_id}/orders/{order_id}/refunds",
         post(create_refund).get(list_refunds),
     )
 }

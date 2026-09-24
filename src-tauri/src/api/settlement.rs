@@ -35,22 +35,22 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/channels", get(list_channels))
         .route(
-            "/events/:event_id/advances",
+            "/events/{event_id}/advances",
             get(list_advances).post(create_advance),
         )
-        .route("/events/:event_id/advances/:id", delete(delete_advance))
+        .route("/events/{event_id}/advances/{id}", delete(delete_advance))
         .route(
-            "/events/:event_id/adjustments",
+            "/events/{event_id}/adjustments",
             get(list_adjustments).post(create_adjustment),
         )
         .route(
-            "/events/:event_id/adjustments/:id",
+            "/events/{event_id}/adjustments/{id}",
             delete(delete_adjustment),
         )
-        .route("/events/:event_id/settlement", get(get_settlement))
-        .route("/events/:event_id/settlement/reconcile", post(reconcile))
+        .route("/events/{event_id}/settlement", get(get_settlement))
+        .route("/events/{event_id}/settlement/reconcile", post(reconcile))
         .route(
-            "/events/:event_id/settlement.xlsx",
+            "/events/{event_id}/settlement.xlsx",
             get(download_settlement_xlsx),
         )
 }

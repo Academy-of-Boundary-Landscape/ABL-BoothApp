@@ -24,7 +24,7 @@ use crate::{
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_societies).post(create_society))
-        .route("/:id", put(update_society).delete(delete_society))
+        .route("/{id}", put(update_society).delete(delete_society))
 }
 
 #[derive(Deserialize)]

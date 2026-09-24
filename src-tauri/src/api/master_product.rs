@@ -26,19 +26,19 @@ pub fn router() -> Router<AppState> {
     let router = Router::new()
         .route("/", get(list_products))
         .route("/", post(create_product))
-        .route("/:id", post(update_product).put(update_product))
-        .route("/:id/status", put(update_status));
+        .route("/{id}", post(update_product).put(update_product))
+        .route("/{id}/status", put(update_status));
 
     #[cfg(feature = "vision")]
     let router = router
-        .route("/:id/images", get(list_product_images))
-        .route("/:id/images", post(add_product_image))
+        .route("/{id}/images", get(list_product_images))
+        .route("/{id}/images", post(add_product_image))
         .route(
-            "/:id/images/:image_id",
+            "/{id}/images/{image_id}",
             post(update_product_image).put(update_product_image),
         )
         .route(
-            "/:id/images/:image_id",
+            "/{id}/images/{image_id}",
             axum::routing::delete(delete_product_image),
         );
 

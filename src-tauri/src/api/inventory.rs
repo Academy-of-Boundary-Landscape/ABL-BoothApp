@@ -32,13 +32,16 @@ use crate::{
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/events/:event_id/gifts", get(list_gifts).post(create_gift))
         .route(
-            "/events/:event_id/scraps",
+            "/events/{event_id}/gifts",
+            get(list_gifts).post(create_gift),
+        )
+        .route(
+            "/events/{event_id}/scraps",
             get(list_scraps).post(create_scrap),
         )
         .route(
-            "/events/:event_id/journals/:journal_id/reverse",
+            "/events/{event_id}/journals/{journal_id}/reverse",
             post(reverse_entry),
         )
 }

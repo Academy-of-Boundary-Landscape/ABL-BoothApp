@@ -1,6 +1,5 @@
 use axum::body::Bytes;
 use axum::{
-    async_trait,
     extract::State,
     http::{header, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
@@ -46,7 +45,6 @@ where
 
 // 自定义JSON提取器：委托给内置 Json 提取器，避免重复读取 Body 导致空内容
 pub struct DebugJson<T>(pub T);
-#[async_trait]
 impl<T, S> axum::extract::FromRequest<S> for DebugJson<T>
 where
     T: serde::de::DeserializeOwned,

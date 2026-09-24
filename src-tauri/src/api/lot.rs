@@ -36,16 +36,16 @@ const MAX_CANDIDATES: usize = 200;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/events/:event_id/lots", get(list_lots).post(create_lot))
+        .route("/events/{event_id}/lots", get(list_lots).post(create_lot))
         // `/lots/preview` 和 `/lots/:lot_id` 字面上重叠，但 matchit 给**静态段**更高
         // 优先级，且与注册顺序无关（见 matchit README 的 Routing Priority 一节），
         // 所以 preview 一定能被命中。写在前面只是让人读的时候先看到它。
-        .route("/events/:event_id/lots/preview", post(preview_lot))
+        .route("/events/{event_id}/lots/preview", post(preview_lot))
         .route(
-            "/events/:event_id/lots/:lot_id",
+            "/events/{event_id}/lots/{lot_id}",
             put(update_lot).delete(delete_lot),
         )
-        .route("/events/:event_id/quote", post(quote))
+        .route("/events/{event_id}/quote", post(quote))
 }
 
 #[derive(Serialize)]

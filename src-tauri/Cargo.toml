@@ -30,11 +30,11 @@ serde_json = "1"
 
 # Web 服务器 & 异步运行时
 tokio = { version = "1", features = ["full"] }
-axum = { version = "0.7", features = ["multipart"] } # 0.7 是目前主流版本
+axum = { version = "0.8", features = ["multipart"] }
 axum-server = { version = "0.7", features = ["tls-rustls"] } # LAN HTTPS 监听
 rustls = { version = "0.23", default-features = false, features = ["ring"] } # rustls 0.23 要求显式选 crypto provider
-tower = { version = "0.4", features = ["full"] } # Middleware support
-tower-http = { version = "0.5", features = ["cors", "fs", "trace"] }
+tower = { version = "0.5", features = ["full"] } # Middleware support
+tower-http = { version = "0.6", features = ["cors", "fs", "trace"] }
 rcgen = "0.13" # 自签 TLS 证书生成
 thiserror = "1.0" # 派生 Error trait
 time = "0.3" # rcgen 0.13 用 time::OffsetDateTime 表示证书有效期
