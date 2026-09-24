@@ -3132,3 +3132,271 @@ mod tests {
         assert!(cd.contains("settlement"));
     }
 }
+
+/// ③b 形状快照：钉住每个路由的 JSON 形状（键 + 类型），类型化前后必须一行不改照样绿。
+#[cfg(test)]
+mod shape_tests {
+    use crate::test_support::{
+        admin_token, json_request, read_json, seed_event_and_product, shape_of, test_router_with,
+    };
+    use axum::http::StatusCode;
+    use axum::Router;
+    use serde_json::{json, Value};
+    use tower::ServiceExt;
+
+    /// 一场有成交、有垫付、有调整的展会，让每个可选字段和数组都至少出现一次非空。
+    async fn seeded() -> (Router, tempfile::TempDir, i64, i64, i64) {
+        let (router, dir, pool) = test_router_with().await;
+        let (event_id, ep_a, ep_b) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+        let (_, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/orders"),
+            None,
+            json!({"items": [{"product_id": ep_a, "quantity": 1}, {"product_id": ep_b, "quantity": 2}]}),
+        )
+        .await;
+        let order_id = body["id"].as_i64().unwrap();
+        let (s, _) = call(
+            &router,
+            "PUT",
+            &format!("/api/events/{event_id}/orders/{order_id}/status"),
+            Some(&token),
+            json!({"status": "completed", "channel": "微信", "final_amount": 6500}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        let (_, adv) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/advances"),
+            Some(&token),
+            json!({"society_id": 2, "label": "打印费", "amount": 1200}),
+        )
+        .await;
+        let (_, adj) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/adjustments"),
+            Some(&token),
+            json!({"society_id": 2, "label": "赔付", "direction": "to_them", "amount": 300}),
+        )
+        .await;
+        (
+            router,
+            dir,
+            event_id,
+            adv["id"].as_i64().unwrap(),
+            adj["id"].as_i64().unwrap(),
+        )
+    }
+
+    async fn call(
+        router: &Router,
+        method: &str,
+        uri: &str,
+        token: Option<&str>,
+        body: Value,
+    ) -> (StatusCode, Value) {
+        let res = router
+            .clone()
+            .oneshot(json_request(method, uri, token, body))
+            .await
+            .unwrap();
+        let status = res.status();
+        (status, read_json(res).await)
+    }
+
+    fn entry_row() -> Value {
+        json!([{"amount": "int", "id": "int", "label": "string", "owner_society_id": "int", "society_name": "string"}])
+    }
+
+    #[tokio::test]
+    async fn shape_list_channels() {
+        let (router, _dir, _, _, _) = seeded().await;
+        let (s, body) = call(
+            &router,
+            "GET",
+            "/api/channels",
+            Some(&admin_token()),
+            json!(null),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(shape_of(&body), json!(["string"]));
+    }
+
+    #[tokio::test]
+    async fn shape_list_advances_and_adjustments() {
+        let (router, _dir, event_id, _, _) = seeded().await;
+        for kind in ["advances", "adjustments"] {
+            let (s, body) = call(
+                &router,
+                "GET",
+                &format!("/api/events/{event_id}/{kind}"),
+                Some(&admin_token()),
+                json!(null),
+            )
+            .await;
+            assert_eq!(s, StatusCode::OK, "{kind}");
+            assert_eq!(shape_of(&body), entry_row(), "{kind}");
+        }
+    }
+
+    #[tokio::test]
+    async fn shape_create_advance_and_adjustment() {
+        let (router, _dir, event_id, _, _) = seeded().await;
+        let t = admin_token();
+        let created = json!({"id": "int", "journal_id": "int"});
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/advances"),
+            Some(&t),
+            json!({"society_id": 1, "label": "场地费", "amount": 500}),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::CREATED, created.clone()));
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/adjustments"),
+            Some(&t),
+            json!({"society_id": 1, "label": "x", "direction": "to_me", "amount": 100}),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::CREATED, created));
+        let (s, body) = call(
+            &router,
+            "POST",
+            "/api/events/999/advances",
+            Some(&t),
+            json!({"society_id": 1, "label": "x", "amount": 1}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::NOT_FOUND, json!({"error": "string"}))
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_delete_advance_and_adjustment() {
+        let (router, _dir, event_id, adv_id, adj_id) = seeded().await;
+        let t = admin_token();
+        let (s, body) = call(
+            &router,
+            "DELETE",
+            &format!("/api/events/{event_id}/advances/{adv_id}"),
+            Some(&t),
+            json!(null),
+        )
+        .await;
+        assert_eq!((s, body), (StatusCode::NO_CONTENT, Value::Null));
+        let (s, body) = call(
+            &router,
+            "DELETE",
+            &format!("/api/events/{event_id}/adjustments/{adj_id}"),
+            Some(&t),
+            json!(null),
+        )
+        .await;
+        assert_eq!((s, body), (StatusCode::NO_CONTENT, Value::Null));
+    }
+
+    #[tokio::test]
+    async fn shape_get_settlement() {
+        let (router, _dir, event_id, _, _) = seeded().await;
+        let t = admin_token();
+        let (s, body) = call(
+            &router,
+            "GET",
+            &format!("/api/events/{event_id}/settlement"),
+            Some(&t),
+            json!(null),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        let counts = json!({"brought_in": "int", "gifted": "int", "on_site": "int", "scrapped": "int",
+                            "sold": "int", "taken_back": "int", "variance": "int"});
+        let mut goods = counts.clone();
+        for (k, v) in [
+            ("allocated", "int"),
+            ("event_product_id", "int"),
+            ("gross", "int"),
+            ("lot_discount", "int"),
+            ("name", "string"),
+            ("product_code", "string"),
+        ] {
+            goods[k] = json!(v);
+        }
+        assert_eq!(
+            shape_of(&body),
+            json!({
+                "event_name": "string", "event_date": "string", "generated_at": "string",
+                "last_changed_at": "string", "stocktaken": "bool", "stocktaken_at": "null",
+                "actual_total": "int", "transfer_total": "int", "vendor_retained": "int",
+                "warnings": ["empty"],
+                "channels": [{"actual": "int", "book": "int", "channel": "string", "counted": "bool", "diff": "int"}],
+                "societies": [{
+                    "society_id": "int", "name": "string", "is_home": "bool",
+                    "goods": [goods], "totals": counts,
+                    "gross": "int", "lot_discount": "int", "manual_discount": "int", "refund_kept": "int",
+                    "gift_self_paid": "int", "net": "int", "transfer": "int",
+                    "advances": [{"amount": "int", "at": "null", "label": "string"}], "advances_total": "int",
+                    "adjustments": [{"amount": "int", "at": "string", "label": "string"}], "adjustments_total": "int",
+                }],
+            })
+        );
+        let (s, body) = call(
+            &router,
+            "GET",
+            "/api/events/999/settlement",
+            Some(&t),
+            json!(null),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::NOT_FOUND, json!({"error": "string"}))
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_reconcile() {
+        let (router, _dir, event_id, _, _) = seeded().await;
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/settlement/reconcile"),
+            Some(&admin_token()),
+            json!({"counts": [{"channel": "微信", "actual": 6000}]}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::OK, json!({"journal_id": "int"}))
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_download_settlement_xlsx() {
+        let (router, _dir, event_id, _, _) = seeded().await;
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "GET",
+                &format!("/api/events/{event_id}/settlement.xlsx"),
+                Some(&admin_token()),
+                json!(null),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(
+            res.headers().get("content-type").unwrap(),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        );
+    }
+}

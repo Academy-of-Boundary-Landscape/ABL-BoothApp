@@ -309,3 +309,102 @@ async fn seed_lot_with_repeat(
     }
     lot_id
 }
+
+/// 把 JSON 值映射成它的「形状」：对象保留键、值换成类型名；数组把**所有**元素的形状
+/// 合并成一个（对象键取并集，同一位置类型不一致记作 `"null|string"` 这样的并集；
+/// 空数组记为 `["empty"]`）。
+///
+/// ③b 的形状快照测试用它断言「字段和类型没变」而不关心具体数值：
+/// 模块迁移到具名类型前后，同一条测试必须一行不改照样绿。
+pub fn shape_of(v: &serde_json::Value) -> serde_json::Value {
+    use serde_json::{json, Value};
+    match v {
+        Value::Null => json!("null"),
+        Value::Bool(_) => json!("bool"),
+        Value::Number(n) if n.is_i64() || n.is_u64() => json!("int"),
+        Value::Number(_) => json!("float"),
+        Value::String(_) => json!("string"),
+        Value::Array(a) => match a.iter().map(shape_of).reduce(merge_shapes) {
+            Some(x) => json!([x]),
+            None => json!(["empty"]),
+        },
+        Value::Object(m) => {
+            Value::Object(m.iter().map(|(k, x)| (k.clone(), shape_of(x))).collect())
+        }
+    }
+}
+
+/// 两个形状合成一个。`shape_of` 处理数组时用。
+fn merge_shapes(a: serde_json::Value, b: serde_json::Value) -> serde_json::Value {
+    use serde_json::Value;
+    match (a, b) {
+        (a, b) if a == b => a,
+        (Value::Object(mut x), Value::Object(y)) => {
+            for (k, v) in y {
+                let merged = match x.remove(&k) {
+                    Some(old) => merge_shapes(old, v),
+                    None => v,
+                };
+                x.insert(k, merged);
+            }
+            Value::Object(x)
+        }
+        // 一边是空数组：以非空那边为准
+        (Value::Array(x), Value::Array(y)) => {
+            let empty = serde_json::json!("empty");
+            match (x.first(), y.first()) {
+                (Some(p), _) if *p == empty => Value::Array(y),
+                (_, Some(q)) if *q == empty => Value::Array(x),
+                (Some(p), Some(q)) => serde_json::json!([merge_shapes(p.clone(), q.clone())]),
+                _ => Value::Array(x),
+            }
+        }
+        (Value::String(x), Value::String(y)) => {
+            let mut parts: Vec<&str> = x.split('|').chain(y.split('|')).collect();
+            parts.sort_unstable();
+            parts.dedup();
+            Value::String(parts.join("|"))
+        }
+        (a, b) => serde_json::json!(format!("{a}|{b}")),
+    }
+}
+
+#[cfg(test)]
+mod shape_of_tests {
+    use super::shape_of;
+    use serde_json::json;
+
+    #[test]
+    fn maps_scalars_to_type_names() {
+        assert_eq!(
+            shape_of(&json!({"a": 1, "b": 1.5, "c": "x", "d": true, "e": null})),
+            json!({"a": "int", "b": "float", "c": "string", "d": "bool", "e": "null"})
+        );
+    }
+
+    #[test]
+    fn arrays_merge_every_element_and_empty_is_marked() {
+        // 只看第一个元素钉不住东西：结算单的 societies[0] 是本社团，垫付列表恰好为空。
+        assert_eq!(
+            shape_of(&json!([{"id": 1, "xs": []}, {"id": 2, "x": 1, "xs": [{"a": 1}]}])),
+            json!([{"id": "int", "x": "int", "xs": [{"a": "int"}]}])
+        );
+        assert_eq!(shape_of(&json!({"xs": []})), json!({"xs": ["empty"]}));
+    }
+
+    #[test]
+    fn conflicting_types_in_an_array_are_joined() {
+        assert_eq!(
+            shape_of(&json!([{"t": null}, {"t": "2026-09-24"}, {"t": null}])),
+            json!([{"t": "null|string"}])
+        );
+    }
+
+    #[test]
+    fn nests() {
+        assert_eq!(
+            shape_of(&json!({"s": [{"goods": {"qty": 3}}]})),
+            json!({"s": [{"goods": {"qty": "int"}}]})
+        );
+    }
+}
