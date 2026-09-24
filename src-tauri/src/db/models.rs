@@ -12,7 +12,7 @@ fn default_home_society() -> i64 {
     1
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct MasterProduct {
     pub id: i64, // SQLite 的 INTEGER 对应 Rust 的 i64
     pub product_code: String,
