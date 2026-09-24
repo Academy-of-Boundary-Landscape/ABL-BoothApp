@@ -41,11 +41,12 @@
               </div>
               <div class="line-controls">
                 <n-input-number
-                  v-model:value="qtyByLine[line.order_line_id]"
+                  :value="qtyByLine[line.order_line_id]"
                   :min="0"
                   :max="line.remaining_qty"
                   :precision="0"
                   :disabled="line.remaining_qty === 0"
+                  @update:value="(v) => (qtyByLine[line.order_line_id] = v ?? 0)"
                 />
                 <span class="line-refund"> 本次退 {{ formatYuan(perLineRefund[idx]) }} </span>
               </div>
@@ -112,7 +113,7 @@
   </n-modal>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import {
   NModal,
@@ -130,34 +131,37 @@ import ChannelSelect from '@/components/shared/ChannelSelect.vue'
 import { formatYuan, fromCents, toCents } from '@/utils/money'
 import { formatTimestamp } from '@/utils/dateFormatter'
 import { splitRefund, defaultRefundTotal } from '@/utils/refund'
-import api from '@/services/api'
+import { api, unwrap, errorMessage, type Schemas } from '@/api/client'
 
-const props = defineProps({
-  show: { type: Boolean, default: false },
-  eventId: { type: [String, Number], required: true },
-  order: { type: Object, default: null },
-})
-const emit = defineEmits(['close'])
+const props = withDefaults(
+  defineProps<{
+    show?: boolean
+    eventId: string | number
+    order?: Schemas['OrderResponse'] | null
+  }>(),
+  { show: false, order: null }
+)
+const emit = defineEmits<{ (e: 'close'): void }>()
 
 const message = useMessage()
 
-const history = ref([])
-const lines = ref([])
-const qtyByLine = ref({})
-const destinationByLine = ref({})
+const history = ref<Schemas['RefundHistoryRow'][]>([])
+const lines = ref<Schemas['RefundableLine'][]>([])
+const qtyByLine = ref<Record<number, number>>({})
+const destinationByLine = ref<Record<number, Schemas['RefundDestination']>>({})
 const channel = ref('')
-const amountYuan = ref(0)
+const amountYuan = ref<number | null>(0)
 const amountTouched = ref(false)
 const isLoading = ref(false)
 const isBusy = ref(false)
 
 /** 同商品拆行时带上套装名；`lot_name` 为 null 就只显示商品名。 */
-function lineTitle(line) {
+function lineTitle(line: Schemas['RefundableLine']) {
   return line.lot_name ? `${line.name}（${line.lot_name}）` : line.name
 }
 
 const defaultTotal = computed(() => defaultRefundTotal(lines.value, qtyByLine.value))
-const refundCents = computed(() => toCents(amountYuan.value))
+const refundCents = computed(() => toCents(amountYuan.value ?? 0))
 const overLimit = computed(() => refundCents.value > defaultTotal.value)
 
 /** 和 `lines` 一一对应；只用于显示，权威值在后端。
@@ -176,12 +180,16 @@ async function load() {
   if (!props.order) return
   isLoading.value = true
   try {
-    const { data } = await api.get(`/events/${props.eventId}/orders/${props.order.id}/refunds`)
+    const data = await unwrap(
+      api.GET('/events/{event_id}/orders/{order_id}/refunds', {
+        params: { path: { event_id: Number(props.eventId), order_id: props.order.id } },
+      })
+    )
     history.value = data?.history || []
     lines.value = data?.lines || []
 
-    const qty = {}
-    const dest = {}
+    const qty: Record<number, number> = {}
+    const dest: Record<number, Schemas['RefundDestination']> = {}
     for (const line of lines.value) {
       qty[line.order_line_id] = 0
       dest[line.order_line_id] = '现场仓'
@@ -192,7 +200,7 @@ async function load() {
     amountTouched.value = false
     amountYuan.value = fromCents(defaultRefundTotal(lines.value, qty))
   } catch (err) {
-    message.error(err.response?.data?.error || '无法加载退货信息。')
+    message.error(errorMessage(err, '无法加载退货信息。'))
   } finally {
     isLoading.value = false
   }
@@ -213,10 +221,12 @@ watch(defaultTotal, (val) => {
 async function submit() {
   const chosen = lines.value.filter((l) => Number(qtyByLine.value[l.order_line_id] || 0) > 0)
   if (!chosen.length) return message.warning('请至少选择一行退货数量')
+  const order = props.order
+  if (!order) return
   if (!channel.value) return message.warning('请选择退款渠道')
   if (overLimit.value) return message.warning('不能多于顾客实付，白送钱请走结算调整')
 
-  const payload = {
+  const payload: Schemas['RefundRequest'] = {
     channel: channel.value,
     lines: chosen.map((l) => ({
       order_line_id: l.order_line_id,
@@ -229,14 +239,16 @@ async function submit() {
 
   isBusy.value = true
   try {
-    const { data } = await api.post(
-      `/events/${props.eventId}/orders/${props.order.id}/refunds`,
-      payload
+    const data = await unwrap(
+      api.POST('/events/{event_id}/orders/{order_id}/refunds', {
+        params: { path: { event_id: Number(props.eventId), order_id: order.id } },
+        body: payload,
+      })
     )
     message.success(`已退货，退款 ${formatYuan(data.refund_amount)}`)
     await load()
   } catch (err) {
-    message.error(err.response?.data?.error || '退货失败。')
+    message.error(errorMessage(err, '退货失败。'))
   } finally {
     isBusy.value = false
   }

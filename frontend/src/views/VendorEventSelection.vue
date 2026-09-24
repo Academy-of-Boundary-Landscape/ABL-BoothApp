@@ -42,11 +42,12 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import { useEventStore } from '@/stores/eventStore'
 import { NCard, NSpin, NAlert, NSpace, NButton } from 'naive-ui'
+import type { Schemas } from '@/api/client'
 
 const eventStore = useEventStore()
 const router = useRouter()
@@ -61,7 +62,7 @@ const ongoingEvents = computed(() => {
   return events.filter((event) => event.status === '进行中')
 })
 
-function selectEvent(event) {
+function selectEvent(event: Schemas['EventResponse']) {
   // 当用户选择一个展会时，跳转到该展会的摊主登录页面
   router.push({
     name: 'login',

@@ -146,15 +146,15 @@
        避免两个 n-modal 相互盖住/抢点击。 -->
   <ReceiptModal
     :show="showReceipt"
-    :gross-amount="receiptOrder?.gross_amount ?? 0"
-    :solved-amount="receiptOrder?.solved_amount ?? 0"
+    :gross-amount="receiptOrder?.gross_amount"
+    :solved-amount="receiptOrder?.solved_amount"
     :lots="receiptOrder?.lots ?? []"
     @confirm="onReceiptConfirm"
     @cancel="closeReceipt"
   />
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import {
   NModal,
@@ -171,15 +171,14 @@ import {
 import ReceiptModal from '@/components/vendor/ReceiptModal.vue'
 import { useClosingStore } from '@/stores/closingStore'
 import { useOrderStore } from '@/stores/orderStore'
-import { formatYuan } from '@/utils/money'
+import { formatYuan, type Cents } from '@/utils/money'
 import { formatTimestamp } from '@/utils/dateFormatter'
-import api from '@/services/api'
+import { api, unwrap, errorMessage, type Schemas } from '@/api/client'
 
-const props = defineProps({
-  show: { type: Boolean, default: false },
-  eventId: { type: [String, Number], required: true },
+const props = withDefaults(defineProps<{ show?: boolean; eventId: string | number }>(), {
+  show: false,
 })
-const emit = defineEmits(['close', 'settled'])
+const emit = defineEmits<{ (e: 'close'): void; (e: 'settled'): void }>()
 
 const store = useClosingStore()
 const orderStore = useOrderStore()
@@ -187,7 +186,7 @@ const message = useMessage()
 const dialog = useDialog()
 
 const isBusy = ref(false)
-const counts = ref({})
+const counts = ref<Record<number, number | null>>({})
 // 「跳过盘点」是唯一一处必要的本地状态：后端没有「跳过」这个事实，
 // 而这一步不落库。它只在「还有货、但摊主决定不盘点」时把界面推到带回屏；
 // 货一旦带回（onsite_remaining 为空），步骤就纯由后端状态决定，重进不会错位。
@@ -196,7 +195,7 @@ const counts = ref({})
 const skippedStocktake = ref(false)
 
 const showReceipt = ref(false)
-const receiptOrder = ref(null)
+const receiptOrder = ref<Schemas['OrderResponse'] | null>(null)
 
 const step = computed(() => {
   const s = store.state
@@ -224,7 +223,7 @@ watch(
   () => store.state?.onsite_remaining,
   (rows) => {
     if (!rows) return
-    const next = {}
+    const next: Record<number, number | null> = {}
     for (const p of rows) {
       const existing = counts.value[p.event_product_id]
       next[p.event_product_id] = Number.isFinite(existing) ? existing : null
@@ -245,9 +244,9 @@ watch(
     try {
       // 收摊接口只给待处理单的金额摘要；ReceiptModal 要原价/套装，先把订单全量拉回来。
       await orderStore.pollPendingOrders()
-      await store.fetchState(props.eventId)
+      await store.fetchState(Number(props.eventId))
     } catch (err) {
-      message.error(err.message || '无法加载收摊状态')
+      message.error((err instanceof Error && err.message) || '无法加载收摊状态')
     }
   }
 )
@@ -256,20 +255,21 @@ function skipStocktake() {
   skippedStocktake.value = true
 }
 
-async function doSubmitStocktake(payload) {
+async function doSubmitStocktake(payload: Schemas['StocktakeRequest']['counts']) {
   isBusy.value = true
   try {
-    await store.stocktake(props.eventId, payload)
+    await store.stocktake(Number(props.eventId), payload)
     message.success('盘点已提交')
   } catch (err) {
-    message.error(err.message || '提交盘点失败')
+    message.error((err instanceof Error && err.message) || '提交盘点失败')
   } finally {
     isBusy.value = false
   }
 }
 
 async function submitStocktake() {
-  const rows = store.state.onsite_remaining
+  const rows = store.state?.onsite_remaining
+  if (!rows) return
   // n-input-number 被清空时 model 是 null，`?? 0` 会把它当成「数出来 0 件」，
   // 后端照写一条全量盘亏腿——该商品随即从 onsite_remaining 消失，界面再也纠正不了。
   // 收全量：每个商品都要报数，数过一致的也要报（后端漏一个就 400）。
@@ -278,9 +278,9 @@ async function submitStocktake() {
     message.warning(`这些商品还没填实数：${blank.map((p) => p.name).join('、')}`)
     return
   }
-  const payload = rows.map((p) => ({
+  const payload: Schemas['StocktakeRequest']['counts'] = rows.map((p) => ({
     event_product_id: p.event_product_id,
-    counted_qty: counts.value[p.event_product_id],
+    counted_qty: counts.value[p.event_product_id] ?? 0,
   }))
 
   // 盘亏是不可逆的账（只能靠结算调整补救），差异提交前让摊主核对一遍。
@@ -304,10 +304,10 @@ async function submitStocktake() {
 async function doTakeback() {
   isBusy.value = true
   try {
-    await store.takeback(props.eventId)
+    await store.takeback(Number(props.eventId))
     message.success('已确认带回')
   } catch (err) {
-    message.error(err.message || '确认带回失败')
+    message.error((err instanceof Error && err.message) || '确认带回失败')
   } finally {
     isBusy.value = false
   }
@@ -316,26 +316,29 @@ async function doTakeback() {
 async function doSettle() {
   isBusy.value = true
   try {
-    await store.settle(props.eventId)
+    await store.settle(Number(props.eventId))
     message.success('展会已结束，账本已冻结')
     emit('settled')
   } catch (err) {
-    message.error(err.message || '结束展会失败')
+    message.error((err instanceof Error && err.message) || '结束展会失败')
   } finally {
     isBusy.value = false
   }
 }
 
-async function cancelOne(order) {
+async function cancelOne(order: Schemas['ClosingPendingOrderRow']) {
   isBusy.value = true
   try {
-    await api.put(`/events/${props.eventId}/orders/${order.id}/status`, {
-      status: 'cancelled',
-    })
-    await store.fetchState(props.eventId)
+    await unwrap(
+      api.PUT('/events/{event_id}/orders/{order_id}/status', {
+        params: { path: { event_id: Number(props.eventId), order_id: order.id } },
+        body: { status: 'cancelled' },
+      })
+    )
+    await store.fetchState(Number(props.eventId))
     await orderStore.pollPendingOrders()
   } catch (err) {
-    message.error(err.response?.data?.error || `取消 #${order.id} 失败`)
+    message.error(errorMessage(err, `取消 #${order.id} 失败`))
   } finally {
     isBusy.value = false
   }
@@ -343,23 +346,26 @@ async function cancelOne(order) {
 
 /** 「全部取消」循环调现有端点：每单独立事务，失败的不回滚已成功的。 */
 async function cancelAll() {
-  const failed = []
+  const failed: { id: number; msg: string }[] = []
   isBusy.value = true
   try {
-    for (const o of [...store.state.pending_orders]) {
+    for (const o of [...(store.state?.pending_orders ?? [])]) {
       try {
-        await api.put(`/events/${props.eventId}/orders/${o.id}/status`, {
-          status: 'cancelled',
-        })
+        await unwrap(
+          api.PUT('/events/{event_id}/orders/{order_id}/status', {
+            params: { path: { event_id: Number(props.eventId), order_id: o.id } },
+            body: { status: 'cancelled' },
+          })
+        )
       } catch (err) {
-        failed.push({ id: o.id, msg: err.response?.data?.error || '取消失败' })
+        failed.push({ id: o.id, msg: errorMessage(err, '取消失败') })
       }
     }
-    await store.fetchState(props.eventId)
+    await store.fetchState(Number(props.eventId))
     await orderStore.pollPendingOrders()
   } catch (err) {
     // 刷新失败不能把 isBusy 卡在 true，否则整个向导的按钮永久禁用。
-    message.error(err.message || '刷新收摊状态失败')
+    message.error((err instanceof Error && err.message) || '刷新收摊状态失败')
   } finally {
     isBusy.value = false
     // 失败的会留在重新拉回来的列表里，逐条把后端那句话显示出来。
@@ -370,7 +376,7 @@ async function cancelAll() {
   }
 }
 
-async function completeOne(order) {
+async function completeOne(order: Schemas['ClosingPendingOrderRow']) {
   let full = orderStore.pendingOrders.find((o) => o.id === order.id)
   if (!full) {
     await orderStore.pollPendingOrders()
@@ -389,16 +395,25 @@ function closeReceipt() {
   receiptOrder.value = null
 }
 
-async function onReceiptConfirm({ channel, finalAmount, unapplyLotIds }) {
+async function onReceiptConfirm(payload: {
+  channel: string
+  finalAmount: Cents
+  unapplyLotIds: number[]
+}) {
   const order = receiptOrder.value
   showReceipt.value = false
   if (!order) return
   try {
-    await orderStore.markOrderAsCompleted(order.id, channel, finalAmount, unapplyLotIds)
-    await store.fetchState(props.eventId)
+    await orderStore.markOrderAsCompleted(
+      order.id,
+      payload.channel,
+      payload.finalAmount,
+      payload.unapplyLotIds
+    )
+    await store.fetchState(Number(props.eventId))
     message.success('已记录收款')
   } catch (err) {
-    message.error(err.message || '操作失败')
+    message.error((err instanceof Error && err.message) || '操作失败')
   } finally {
     receiptOrder.value = null
   }

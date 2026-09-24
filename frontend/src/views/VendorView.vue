@@ -90,8 +90,8 @@
     <!-- 完成配货前先确认收款：显示原价/应收/已套用的套装（可逐个拆），实收可改（spec 4.3） -->
     <ReceiptModal
       :show="showReceiptModal"
-      :gross-amount="pendingOrder?.gross_amount ?? 0"
-      :solved-amount="pendingOrder?.solved_amount ?? 0"
+      :gross-amount="pendingOrder?.gross_amount"
+      :solved-amount="pendingOrder?.solved_amount"
       :lots="pendingOrder?.lots ?? []"
       @confirm="onReceiptConfirm"
       @cancel="closeReceipt"
@@ -123,7 +123,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { NButton, NTabs, NTabPane, NAlert, useDialog, useMessage } from 'naive-ui'
 import { useOrderStore } from '@/stores/orderStore'
@@ -135,13 +135,12 @@ import ReceiptModal from '@/components/vendor/ReceiptModal.vue'
 import InventoryLogModal from '@/components/vendor/InventoryLogModal.vue'
 import RefundModal from '@/components/vendor/RefundModal.vue'
 import ClosingWizard from '@/components/vendor/ClosingWizard.vue'
-import { formatYuan } from '@/utils/money'
+import { formatYuan, type Cents } from '@/utils/money'
+import type { Schemas } from '@/api/client'
 
-const props = defineProps({
-  id: { type: String, required: true },
-})
+const props = defineProps<{ id: string | number }>()
 
-const audioRef = ref(null)
+const audioRef = ref<HTMLAudioElement | null>(null)
 const store = useOrderStore()
 const eventStore = useEventStore()
 const eventDetailStore = useEventDetailStore()
@@ -153,12 +152,12 @@ const currentTab = ref('pending')
 const isInitialized = ref(false) // 用于标记第一次加载，避免页面一打开就响
 
 const eventName = computed(() => {
-  const event = eventStore.events.find((e) => e.id === parseInt(props.id, 10))
+  const event = eventStore.events.find((e) => e.id === parseInt(String(props.id), 10))
   return event ? event.name : `展会 #${props.id}`
 })
 
 const isEventSettled = computed(() => {
-  const event = eventStore.events.find((e) => e.id === parseInt(props.id, 10))
+  const event = eventStore.events.find((e) => e.id === parseInt(String(props.id), 10))
   return event?.status === '已结算'
 })
 
@@ -181,7 +180,7 @@ async function manualRefresh() {
   try {
     await Promise.all([
       store.pollPendingOrders(),
-      eventDetailStore.fetchProductsForEvent(props.id),
+      eventDetailStore.fetchProductsForEvent(Number(props.id)),
       store.fetchCompletedOrders(),
     ])
   } catch (err) {
@@ -210,20 +209,20 @@ watch(
 
 // 点「完成配货」先确认收款，确认了才真正调接口。
 const showReceiptModal = ref(false)
-const pendingOrder = ref(null)
+const pendingOrder = ref<Schemas['OrderResponse'] | null>(null)
 
 // 赠送/报废登记弹窗。登记会动现场仓余额，成功后刷一次库存统计。
 const showInventoryModal = ref(false)
 
 async function onInventoryLogged() {
-  await eventDetailStore.fetchProductsForEvent(props.id)
+  await eventDetailStore.fetchProductsForEvent(Number(props.id))
 }
 
 // ===== 退货 =====
 const showRefundModal = ref(false)
-const refundOrder = ref(null)
+const refundOrder = ref<Schemas['OrderResponse'] | null>(null)
 
-function openRefund(order) {
+function openRefund(order: Schemas['OrderResponse']) {
   refundOrder.value = order
   showRefundModal.value = true
 }
@@ -246,12 +245,12 @@ function openClosing() {
 
 /** 向导里结算成功后，头部按钮当场变成「查看收摊状态」，不用等重新拉展会列表。 */
 function onClosingSettled() {
-  const event = eventStore.events.find((e) => e.id === parseInt(props.id, 10))
+  const event = eventStore.events.find((e) => e.id === parseInt(String(props.id), 10))
   if (event) event.status = '已结算'
   store.fetchCompletedOrders()
 }
 
-function completeOrder(orderId) {
+function completeOrder(orderId: number) {
   pendingOrder.value = store.pendingOrders.find((o) => o.id === orderId) || null
   showReceiptModal.value = true
 }
@@ -261,23 +260,32 @@ function closeReceipt() {
   pendingOrder.value = null
 }
 
-async function onReceiptConfirm({ channel, finalAmount, unapplyLotIds }) {
+async function onReceiptConfirm(payload: {
+  channel: string
+  finalAmount: Cents
+  unapplyLotIds: number[]
+}) {
   const order = pendingOrder.value
   showReceiptModal.value = false
   if (!order) return
   try {
-    await store.markOrderAsCompleted(order.id, channel, finalAmount, unapplyLotIds)
-    await eventDetailStore.fetchProductsForEvent(props.id)
+    await store.markOrderAsCompleted(
+      order.id,
+      payload.channel,
+      payload.finalAmount,
+      payload.unapplyLotIds
+    )
+    await eventDetailStore.fetchProductsForEvent(Number(props.id))
     await store.fetchCompletedOrders()
     message.success('已记录收款')
   } catch (error) {
-    message.error(error?.message || '操作失败')
+    message.error((error instanceof Error && error.message) || '操作失败')
   } finally {
     pendingOrder.value = null
   }
 }
 
-async function cancelOrder(orderId) {
+async function cancelOrder(orderId: number) {
   dialog.warning({
     title: '确认取消',
     content: '确定要取消这个订单吗？此操作无法撤销。',
@@ -288,7 +296,7 @@ async function cancelOrder(orderId) {
         await store.cancelOrder(orderId)
         message.success('订单已取消')
       } catch (error) {
-        message.error(error?.message || '取消失败')
+        message.error((error instanceof Error && error.message) || '取消失败')
       }
     },
   })
@@ -299,7 +307,7 @@ onMounted(() => {
     eventStore.fetchEvents()
   }
   store.setActiveEvent(props.id)
-  eventDetailStore.fetchProductsForEvent(props.id)
+  eventDetailStore.fetchProductsForEvent(Number(props.id))
 })
 
 onUnmounted(() => {

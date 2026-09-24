@@ -387,7 +387,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import {
   NAlert,
@@ -404,7 +404,7 @@ import {
 } from 'naive-ui'
 import { useSettlementStore } from '@/stores/settlementStore'
 import { useSocietyStore } from '@/stores/societyStore'
-import { formatYuan, toCents, fromCents } from '@/utils/money'
+import { formatYuan, cents, toCents, fromCents, type Cents } from '@/utils/money'
 import {
   describeEntryAdjustment,
   describeReportAdjustment,
@@ -414,8 +414,9 @@ import { toAbsoluteApiUrl } from '@/services/url'
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeFile } from '@tauri-apps/plugin-fs'
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
+import type { Schemas } from '@/api/client'
 
-const props = defineProps({ id: { type: [String, Number], required: true } })
+const props = defineProps<{ id: string | number }>()
 
 const store = useSettlementStore()
 const societyStore = useSocietyStore()
@@ -424,13 +425,22 @@ const message = useMessage()
 
 const isBusy = ref(false)
 
-const defaultAdvanceForm = () => ({ societyId: null, label: '', amountYuan: null })
-const defaultAdjustmentForm = () => ({
+const defaultAdvanceForm = (): {
+  societyId: number | null
+  label: string
+  amountYuan: number | null
+} => ({ societyId: null, label: '', amountYuan: null })
+const defaultAdjustmentForm = (): {
+  societyId: number | null
+  label: string
+  amountYuan: number | null
+  // 不给默认值：方向是「我要多给他们」还是「他们要多给我」必须由人明确选一次，
+  // 默认 to_them 会让累了一天的摊主根本没看控件就提交，然后钱付反。
+  direction: Schemas['AdjustmentDirection'] | null
+} => ({
   societyId: null,
   label: '',
   amountYuan: null,
-  // 不给默认值：方向是「我要多给他们」还是「他们要多给我」必须由人明确选一次，
-  // 默认 to_them 会让累了一天的摊主根本没看控件就提交，然后钱付反。
   direction: null,
 })
 
@@ -446,7 +456,7 @@ const societyOptions = computed(() =>
 
 // --- 收摊清点 ---
 // 输入框收「元」，提交时才换算成「分」。
-const counts = ref({})
+const counts = ref<Record<string, number | null>>({})
 
 // 只有**已经清点过**的渠道才预填已知的实际到手（重新清点时要保留已知值有意义）。
 // 从未清点过的行必须留空：build_report 对它们回落 actual = book，预填账面值会让
@@ -456,10 +466,10 @@ watch(
   () => store.report?.channels,
   (rows) => {
     if (!rows) return
-    const next = {}
+    const next: Record<string, number | null> = {}
     for (const c of rows) {
       const existing = counts.value[c.channel]
-      if (Number.isFinite(existing)) next[c.channel] = existing
+      if (Number.isFinite(existing)) next[c.channel] = existing ?? null
       else next[c.channel] = c.counted ? fromCents(c.actual) : null
     }
     counts.value = next
@@ -467,10 +477,10 @@ watch(
   { immediate: true }
 )
 
-function rowDiff(c) {
+function rowDiff(c: Schemas['ChannelLine']): Cents | null {
   const v = counts.value[c.channel]
   if (!Number.isFinite(v)) return null
-  return toCents(v) - c.book
+  return cents(toCents(v ?? 0) - c.book)
 }
 
 const hasDiff = computed(() =>
@@ -480,7 +490,7 @@ const hasDiff = computed(() =>
   })
 )
 
-function diffClass(c) {
+function diffClass(c: Schemas['ChannelLine']) {
   const d = rowDiff(c)
   if (d === null || d === 0) return ''
   return d < 0 ? 'diff-short' : 'diff-over'
@@ -488,9 +498,9 @@ function diffClass(c) {
 
 // --- 结算单主体 ---
 // 【货】默认收起，展开状态只是界面状态，不落库。
-const expanded = ref({})
+const expanded = ref<Record<number, boolean>>({})
 
-function toggleGoods(societyId) {
+function toggleGoods(societyId: number) {
   expanded.value = { ...expanded.value, [societyId]: !expanded.value[societyId] }
 }
 
@@ -499,18 +509,18 @@ function toggleGoods(societyId) {
  * 直接 `formatYuan(cents)` 对负数会打印成 `¥-60.00`（符号在货币号之后），
  * 加价那一行必须在标签下面读得出是个加项，不能靠摊主自己看负号。
  */
-function formatSigned(cents) {
-  if (cents > 0) return `−${formatYuan(cents)}`
-  if (cents < 0) return `+${formatYuan(-cents)}`
-  return formatYuan(0)
+function formatSigned(amount: Cents) {
+  if (amount > 0) return `−${formatYuan(amount)}`
+  if (amount < 0) return `+${formatYuan(cents(-amount))}`
+  return formatYuan(cents(0))
 }
 
-function advanceSummary(entries) {
+function advanceSummary(entries: Schemas['SettlementEntry'][]) {
   // 垫付是「我应转给」的减项，逐条也带上符号，和右边那个 = 合计对得上。
   return entries.map((a) => `${a.label} ${formatSigned(a.amount)}`).join(' + ')
 }
 
-function adjustmentSummary(entries) {
+function adjustmentSummary(entries: Schemas['SettlementEntry'][]) {
   return entries
     .map((a) => {
       const at = a.at ? `（${a.at}）` : ''
@@ -520,7 +530,7 @@ function adjustmentSummary(entries) {
 }
 
 async function reloadReport() {
-  await store.refresh(props.id)
+  await store.refresh(Number(props.id))
 }
 
 /**
@@ -528,17 +538,18 @@ async function reloadReport() {
  * 不一定触发下载，得走 plugin-http 取字节 + 保存对话框 + 写文件。
  */
 async function exportXlsx() {
-  if (!store.report) return
+  const report = store.report
+  if (!report) return
 
   const isTauri = window.__TAURI_INTERNALS__ !== undefined
   const token = sessionStorage.getItem('access_token')
-  const safeName = (store.report.event_name || 'settlement').replace(/[\\/:*?"<>|]/g, '_')
+  const safeName = (report.event_name || 'settlement').replace(/[\\/:*?"<>|]/g, '_')
   const fileName = `settlement_${safeName}.xlsx`
   const url = toAbsoluteApiUrl(`/api/events/${props.id}/settlement.xlsx`)
 
   try {
     if (isTauri) {
-      const headers = {
+      const headers: Record<string, string> = {
         Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       }
       if (token) headers['Authorization'] = `Bearer ${token}`
@@ -562,7 +573,7 @@ async function exportXlsx() {
       return
     }
 
-    const headers = {}
+    const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
     const response = await fetch(url, { method: 'GET', credentials: 'include', headers })
     if (!response.ok) {
@@ -584,35 +595,36 @@ async function exportXlsx() {
     }, 100)
   } catch (error) {
     console.error('下载结算单失败:', error)
-    alert(error?.message || '下载失败')
+    alert((error instanceof Error && error.message) || '下载失败')
   }
 }
 
 async function submitAdvance() {
-  if (!advanceForm.value.societyId) return message.warning('请选择社团')
-  const label = advanceForm.value.label.trim()
+  const { societyId, label: rawLabel, amountYuan } = advanceForm.value
+  if (!societyId) return message.warning('请选择社团')
+  const label = rawLabel.trim()
   if (!label) return message.warning('请填写名目')
-  if (!Number.isFinite(advanceForm.value.amountYuan) || advanceForm.value.amountYuan <= 0) {
+  if (amountYuan === null || !Number.isFinite(amountYuan) || amountYuan <= 0) {
     return message.warning('垫付金额必须大于 0')
   }
 
   isBusy.value = true
   try {
-    await store.createAdvance(props.id, {
-      society_id: advanceForm.value.societyId,
+    await store.createAdvance(Number(props.id), {
+      society_id: societyId,
       label,
-      amount: toCents(advanceForm.value.amountYuan),
+      amount: toCents(amountYuan),
     })
     message.success('垫付已记录')
     advanceForm.value = defaultAdvanceForm()
   } catch (error) {
-    message.error(error.message || '新增垫付失败')
+    message.error((error instanceof Error && error.message) || '新增垫付失败')
   } finally {
     isBusy.value = false
   }
 }
 
-function removeAdvance(entry) {
+function removeAdvance(entry: Schemas['LedgerEntryRow']) {
   dialog.warning({
     title: '确认删除',
     content: `删除垫付「${entry.label}」（${formatYuan(entry.amount)}）？`,
@@ -621,10 +633,10 @@ function removeAdvance(entry) {
     async onPositiveClick() {
       isBusy.value = true
       try {
-        await store.deleteAdvance(props.id, entry.id)
+        await store.deleteAdvance(Number(props.id), entry.id)
         message.success('垫付已删除')
       } catch (error) {
-        message.error(error.message || '删除垫付失败')
+        message.error((error instanceof Error && error.message) || '删除垫付失败')
       } finally {
         isBusy.value = false
       }
@@ -633,32 +645,33 @@ function removeAdvance(entry) {
 }
 
 async function submitAdjustment() {
-  if (!adjustmentForm.value.societyId) return message.warning('请选择社团')
-  if (!adjustmentForm.value.direction) return message.warning('请选择方向')
-  const label = adjustmentForm.value.label.trim()
+  const { societyId, direction, label: rawLabel, amountYuan } = adjustmentForm.value
+  if (!societyId) return message.warning('请选择社团')
+  if (!direction) return message.warning('请选择方向')
+  const label = rawLabel.trim()
   if (!label) return message.warning('请填写名目')
-  if (!Number.isFinite(adjustmentForm.value.amountYuan) || adjustmentForm.value.amountYuan <= 0) {
+  if (amountYuan === null || !Number.isFinite(amountYuan) || amountYuan <= 0) {
     return message.warning('调整金额必须大于 0')
   }
 
   isBusy.value = true
   try {
-    await store.createAdjustment(props.id, {
-      society_id: adjustmentForm.value.societyId,
+    await store.createAdjustment(Number(props.id), {
+      society_id: societyId,
       label,
-      direction: adjustmentForm.value.direction,
-      amount: toCents(adjustmentForm.value.amountYuan),
+      direction,
+      amount: toCents(amountYuan),
     })
     message.success('结算调整已记录')
     adjustmentForm.value = defaultAdjustmentForm()
   } catch (error) {
-    message.error(error.message || '新增结算调整失败')
+    message.error((error instanceof Error && error.message) || '新增结算调整失败')
   } finally {
     isBusy.value = false
   }
 }
 
-function removeAdjustment(entry) {
+function removeAdjustment(entry: Schemas['LedgerEntryRow']) {
   dialog.warning({
     title: '确认删除',
     content: `删除结算调整「${entry.label}」（${describeEntryAdjustment(entry.amount)}）？`,
@@ -667,10 +680,10 @@ function removeAdjustment(entry) {
     async onPositiveClick() {
       isBusy.value = true
       try {
-        await store.deleteAdjustment(props.id, entry.id)
+        await store.deleteAdjustment(Number(props.id), entry.id)
         message.success('结算调整已删除')
       } catch (error) {
-        message.error(error.message || '删除结算调整失败')
+        message.error((error instanceof Error && error.message) || '删除结算调整失败')
       } finally {
         isBusy.value = false
       }
@@ -685,18 +698,18 @@ async function submitReconcile() {
     message.warning(`这些渠道还没填实际到手：${blank.map((c) => c.channel).join('、')}`)
     return
   }
-  const payload = rows.map((c) => ({
+  const payload: Schemas['ReconcileRequest']['counts'] = rows.map((c) => ({
     channel: c.channel,
-    actual: toCents(counts.value[c.channel]),
+    actual: toCents(counts.value[c.channel] ?? 0),
   }))
 
   isBusy.value = true
   try {
-    await store.reconcile(props.id, payload)
+    await store.reconcile(Number(props.id), payload)
     message.success('清点已提交')
   } catch (error) {
     // 漏渠道、重复渠道、本场没用过的渠道，后端 400 的原文原样显示。
-    message.error(error.message || '提交清点失败')
+    message.error((error instanceof Error && error.message) || '提交清点失败')
   } finally {
     isBusy.value = false
   }
@@ -704,7 +717,7 @@ async function submitReconcile() {
 
 onMounted(async () => {
   if (!societyStore.societies.length) await societyStore.fetchSocieties()
-  await store.refresh(props.id)
+  await store.refresh(Number(props.id))
 })
 
 onUnmounted(() => {
