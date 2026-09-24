@@ -6,45 +6,54 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::{IntoResponse, Json},
-    routing::{get, put},
-    Router,
+    response::Json,
 };
-use serde::Deserialize;
-use serde_json::json;
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::{
-    api::guard::AdminOnly,
+    api::{guard::AdminOnly, openapi::ApiErrorBody},
     db::models::Society,
     error::{ApiError, ApiResult},
     state::AppState,
     utils::security::Claims,
 };
 
-/// ③b 过渡：本模块的路由还没标 utoipa 注解，整体包进 OpenApiRouter——路由照常工作，
-/// 只是文档里没有它的路径。阶段 2 迁移本模块时改为 `routes!(...)` 并删掉 `legacy_router`。
-pub fn router() -> utoipa_axum::router::OpenApiRouter<AppState> {
-    utoipa_axum::router::OpenApiRouter::from(legacy_router())
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(list_societies, create_society))
+        .routes(routes!(update_society, delete_society))
 }
 
-fn legacy_router() -> Router<AppState> {
-    Router::new()
-        .route("/", get(list_societies).post(create_society))
-        .route("/{id}", put(update_society).delete(delete_society))
-}
-
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct CreateSocietyRequest {
     name: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct UpdateSocietyRequest {
     name: Option<String>,
     is_home: Option<bool>,
 }
 
-/// 本社团排第一，其余按名字。选品下拉框里本社团永远在最上面。
+/// 删除社团的响应体。
+#[derive(Serialize, ToSchema)]
+struct DeleteSocietyResponse {
+    message: String,
+}
+
+/// 社团列表：本社团排第一，其余按名字。选品下拉框里本社团永远在最上面。
+#[utoipa::path(
+    get,
+    path = "/",
+    tag = "society",
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = Vec<Society>, description = "本社团在前，其余按名字"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+    ),
+)]
 async fn list_societies(State(state): State<AppState>, _: Claims) -> ApiResult<Json<Vec<Society>>> {
     let rows: Vec<Society> =
         sqlx::query_as("SELECT id, name, is_home FROM societies ORDER BY is_home DESC, name")
@@ -53,11 +62,26 @@ async fn list_societies(State(state): State<AppState>, _: Claims) -> ApiResult<J
     Ok(Json(rows))
 }
 
+/// 新建一个社团。需要管理员。
+#[utoipa::path(
+    post,
+    path = "/",
+    tag = "society",
+    request_body = CreateSocietyRequest,
+    security(("bearer" = [])),
+    responses(
+        (status = 201, body = Society),
+        (status = 400, body = ApiErrorBody, description = "社团名不能为空"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "需要管理员"),
+        (status = 409, body = ApiErrorBody, description = "社团已存在"),
+    ),
+)]
 async fn create_society(
     State(state): State<AppState>,
     _: AdminOnly,
     Json(payload): Json<CreateSocietyRequest>,
-) -> ApiResult<impl IntoResponse> {
+) -> ApiResult<(StatusCode, Json<Society>)> {
     // 不需要展会守卫：社团是全局实体，尚未挂任何展会的账
     let name = payload.name.trim();
     if name.is_empty() {
@@ -82,6 +106,23 @@ async fn create_society(
     Ok((StatusCode::CREATED, Json(row)))
 }
 
+/// 修改社团名，或把它设为本社团（旧的会自动降级）。需要管理员。
+#[utoipa::path(
+    put,
+    path = "/{id}",
+    tag = "society",
+    params(("id" = i64, Path, description = "社团 id")),
+    request_body = UpdateSocietyRequest,
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = Society),
+        (status = 400, body = ApiErrorBody, description = "社团名为空，或试图取消本社团标记"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "需要管理员"),
+        (status = 404, body = ApiErrorBody, description = "社团不存在"),
+        (status = 409, body = ApiErrorBody, description = "社团名已存在"),
+    ),
+)]
 async fn update_society(
     State(state): State<AppState>,
     _: AdminOnly,
@@ -147,11 +188,26 @@ async fn update_society(
     Ok(Json(row))
 }
 
+/// 删除一个社团。仍被商品 / 垫付 / 结算调整引用的不能删。需要管理员。
+#[utoipa::path(
+    delete,
+    path = "/{id}",
+    tag = "society",
+    params(("id" = i64, Path, description = "社团 id")),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = DeleteSocietyResponse),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "需要管理员"),
+        (status = 404, body = ApiErrorBody, description = "社团不存在"),
+        (status = 409, body = ApiErrorBody, description = "本社团，或仍被商品 / 垫付 / 结算调整引用"),
+    ),
+)]
 async fn delete_society(
     State(state): State<AppState>,
     _: AdminOnly,
     Path(id): Path<i64>,
-) -> ApiResult<impl IntoResponse> {
+) -> ApiResult<(StatusCode, Json<DeleteSocietyResponse>)> {
     // 不需要展会守卫：社团是全局实体，且被任何展会的货引用时本 handler 自己会拒绝
     let is_home: Option<bool> = sqlx::query_scalar("SELECT is_home FROM societies WHERE id = ?")
         .bind(id)
@@ -189,7 +245,12 @@ async fn delete_society(
         .execute(&state.db)
         .await?;
 
-    Ok((StatusCode::OK, Json(json!({"message": "社团已删除"}))))
+    Ok((
+        StatusCode::OK,
+        Json(DeleteSocietyResponse {
+            message: "社团已删除".into(),
+        }),
+    ))
 }
 
 #[cfg(test)]
@@ -353,5 +414,205 @@ mod tests {
             StatusCode::CONFLICT,
             "有垫付记录挂着时必须是 409，不能是 500"
         );
+    }
+}
+
+/// ③b 形状快照：钉住每个路由的 JSON 形状（键 + 类型），类型化前后必须一行不改照样绿。
+#[cfg(test)]
+mod shape_tests {
+    use crate::test_support::{
+        admin_token, json_request, read_json, seed_event_and_product, shape_of, test_router_with,
+        vendor_token,
+    };
+    use axum::http::StatusCode;
+    use axum::Router;
+    use serde_json::{json, Value};
+    use tower::ServiceExt;
+
+    /// 迁移种下本社团（id=1, is_home=true）；夹具再插一个代卖社团「黄昏堂」（id=2,
+    /// is_home=false）并让它的商品挂上去，好让 `is_home` 两种取值、以及「被引用不能删」
+    /// 这条分支都有真实数据可打。
+    async fn seeded() -> (Router, tempfile::TempDir, i64) {
+        let (router, dir, pool) = test_router_with().await;
+        let _ = seed_event_and_product(&pool).await;
+        (router, dir, 2)
+    }
+
+    async fn call(
+        router: &Router,
+        method: &str,
+        uri: &str,
+        token: Option<&str>,
+        body: Value,
+    ) -> (StatusCode, Value) {
+        let res = router
+            .clone()
+            .oneshot(json_request(method, uri, token, body))
+            .await
+            .unwrap();
+        let status = res.status();
+        (status, read_json(res).await)
+    }
+
+    fn society() -> Value {
+        json!({"id": "int", "name": "string", "is_home": "bool"})
+    }
+
+    fn err() -> Value {
+        json!({"error": "string"})
+    }
+
+    #[tokio::test]
+    async fn shape_list_societies() {
+        let (router, _dir, _) = seeded().await;
+        let (s, body) = call(
+            &router,
+            "GET",
+            "/api/societies",
+            Some(&admin_token()),
+            json!(null),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        // 本社团（is_home=true）与代卖社团（is_home=false）都在，数组形状合并。
+        assert_eq!(shape_of(&body), json!([society()]));
+
+        let (s, body) = call(&router, "GET", "/api/societies", None, json!(null)).await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::UNAUTHORIZED, err()));
+    }
+
+    #[tokio::test]
+    async fn shape_create_society() {
+        let (router, _dir, _) = seeded().await;
+        let t = admin_token();
+
+        let (s, body) = call(
+            &router,
+            "POST",
+            "/api/societies",
+            Some(&t),
+            json!({"name": "红魔馆"}),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::CREATED, society()));
+
+        // 空名 → 400
+        let (s, body) = call(
+            &router,
+            "POST",
+            "/api/societies",
+            Some(&t),
+            json!({"name": "   "}),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::BAD_REQUEST, err()));
+
+        // 重名 → 409
+        let (s, body) = call(
+            &router,
+            "POST",
+            "/api/societies",
+            Some(&t),
+            json!({"name": "红魔馆"}),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::CONFLICT, err()));
+
+        // 非管理员 → 403
+        let (s, body) = call(
+            &router,
+            "POST",
+            "/api/societies",
+            Some(&vendor_token(1)),
+            json!({"name": "x"}),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::FORBIDDEN, err()));
+    }
+
+    #[tokio::test]
+    async fn shape_update_society() {
+        let (router, _dir, sid) = seeded().await;
+        let t = admin_token();
+
+        let (s, body) = call(
+            &router,
+            "PUT",
+            &format!("/api/societies/{sid}"),
+            Some(&t),
+            json!({"name": "黄昏堂改", "is_home": true}),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::OK, society()));
+
+        // 不存在 → 404
+        let (s, body) = call(
+            &router,
+            "PUT",
+            "/api/societies/9999",
+            Some(&t),
+            json!({"name": "x"}),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::NOT_FOUND, err()));
+
+        // 试图取消本社团标记 → 400
+        let (s, body) = call(
+            &router,
+            "PUT",
+            &format!("/api/societies/{sid}"),
+            Some(&t),
+            json!({"is_home": false}),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::BAD_REQUEST, err()));
+    }
+
+    #[tokio::test]
+    async fn shape_delete_society() {
+        let (router, _dir, _) = seeded().await;
+        let t = admin_token();
+
+        // 新建一个没人引用的社团，删掉 → 200 {"message": ...}
+        let (_, body) = call(
+            &router,
+            "POST",
+            "/api/societies",
+            Some(&t),
+            json!({"name": "红魔馆"}),
+        )
+        .await;
+        let id = body["id"].as_i64().unwrap();
+        let (s, body) = call(
+            &router,
+            "DELETE",
+            &format!("/api/societies/{id}"),
+            Some(&t),
+            json!(null),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::OK, json!({"message": "string"}))
+        );
+
+        // 本社团不能删 → 409
+        let (s, body) = call(&router, "DELETE", "/api/societies/1", Some(&t), json!(null)).await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::CONFLICT, err()));
+
+        // 不存在 → 404
+        let (s, body) = call(
+            &router,
+            "DELETE",
+            "/api/societies/9999",
+            Some(&t),
+            json!(null),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::NOT_FOUND, err()));
+
+        // 被商品引用 → 409
+        let (s, body) = call(&router, "DELETE", "/api/societies/2", Some(&t), json!(null)).await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::CONFLICT, err()));
     }
 }
