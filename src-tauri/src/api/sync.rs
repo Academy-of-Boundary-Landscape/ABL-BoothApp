@@ -26,7 +26,7 @@ const TAG: &str = "[sync]";
 
 macro_rules! dev_log {
     ($($arg:tt)*) => {
-        eprintln!("{} {}", TAG, format_args!($($arg)*));
+        log::warn!("{} {}", TAG, format_args!($($arg)*));
     };
 }
 
@@ -92,7 +92,7 @@ struct CatalogExport {
 )]
 async fn export_products(State(state): State<AppState>, _: AdminOnly) -> Response {
     let t0 = Instant::now();
-    eprintln!("{} export: start", TAG);
+    log::warn!("{} export: start", TAG);
 
     // 1. 获取所有商品
     let products = match query_as::<_, MasterProduct>("SELECT * FROM master_products")
@@ -101,7 +101,7 @@ async fn export_products(State(state): State<AppState>, _: AdminOnly) -> Respons
     {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("{} export: fetch master_products failed: {}", TAG, e);
+            log::warn!("{} export: fetch master_products failed: {}", TAG, e);
             return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load products").into_response();
         }
     };
@@ -126,7 +126,7 @@ async fn export_products(State(state): State<AppState>, _: AdminOnly) -> Respons
     {
         Ok(rows) => rows,
         Err(e) => {
-            eprintln!("{} export: fetch product_images failed: {}", TAG, e);
+            log::warn!("{} export: fetch product_images failed: {}", TAG, e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to load product images",
@@ -144,7 +144,7 @@ async fn export_products(State(state): State<AppState>, _: AdminOnly) -> Respons
     {
         Ok(rows) => rows,
         Err(e) => {
-            eprintln!("{} export: fetch societies failed: {}", TAG, e);
+            log::warn!("{} export: fetch societies failed: {}", TAG, e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to load societies",
@@ -165,7 +165,7 @@ async fn export_products(State(state): State<AppState>, _: AdminOnly) -> Respons
     {
         Ok(rows) => rows,
         Err(e) => {
-            eprintln!("{} export: fetch product owners failed: {}", TAG, e);
+            log::warn!("{} export: fetch product owners failed: {}", TAG, e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to load product owners",
@@ -198,7 +198,7 @@ async fn export_products(State(state): State<AppState>, _: AdminOnly) -> Respons
     match serde_json::to_string_pretty(&catalog) {
         Ok(json_str) => {
             if let Err(e) = zip.start_file("catalog.json", options) {
-                eprintln!("ZIP start file error: {}", e);
+                log::warn!("ZIP start file error: {}", e);
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Failed to create zip entry",
@@ -206,7 +206,7 @@ async fn export_products(State(state): State<AppState>, _: AdminOnly) -> Respons
                     .into_response();
             }
             if let Err(e) = zip.write_all(json_str.as_bytes()) {
-                eprintln!("ZIP write json error: {}", e);
+                log::warn!("ZIP write json error: {}", e);
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Failed to write json to zip",
@@ -215,7 +215,7 @@ async fn export_products(State(state): State<AppState>, _: AdminOnly) -> Respons
             }
         }
         Err(e) => {
-            eprintln!("JSON serialization error: {}", e);
+            log::warn!("JSON serialization error: {}", e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to serialize data",
@@ -252,18 +252,18 @@ async fn export_products(State(state): State<AppState>, _: AdminOnly) -> Respons
                 Ok(file_bytes) => {
                     let zip_path = relative_path.replace('\\', "/");
                     if let Err(e) = zip.start_file(&zip_path, options) {
-                        eprintln!("{} export: add {} to zip failed: {}", TAG, zip_path, e);
+                        log::warn!("{} export: add {} to zip failed: {}", TAG, zip_path, e);
                         continue;
                     }
                     if let Err(e) = zip.write_all(&file_bytes) {
-                        eprintln!("{} export: write {} to zip failed: {}", TAG, zip_path, e);
+                        log::warn!("{} export: write {} to zip failed: {}", TAG, zip_path, e);
                     } else {
                         total_image_bytes += file_bytes.len() as u64;
                         images_written += 1;
                     }
                 }
                 Err(e) => {
-                    eprintln!("{} export: read {:?} failed: {}", TAG, physical_path, e);
+                    log::warn!("{} export: read {:?} failed: {}", TAG, physical_path, e);
                     images_missing += 1;
                 }
             }
@@ -284,13 +284,13 @@ async fn export_products(State(state): State<AppState>, _: AdminOnly) -> Respons
     let cursor = match zip.finish() {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("ZIP finish error: {}", e);
+            log::warn!("ZIP finish error: {}", e);
             return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to finalize zip").into_response();
         }
     };
 
     let buf = cursor.into_inner();
-    eprintln!(
+    log::warn!(
         "{} export: done — zip {} bytes, total elapsed {:?}",
         TAG,
         buf.len(),
@@ -351,7 +351,7 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
         let mut archive = match ZipArchive::new(reader) {
             Ok(a) => a,
             Err(e) => {
-                eprintln!("{} import.blk: ZipArchive::new failed: {}", TAG, e);
+                log::warn!("{} import.blk: ZipArchive::new failed: {}", TAG, e);
                 return Err((
                     StatusCode::BAD_REQUEST,
                     "Invalid ZIP/Boothpack file".to_string(),
@@ -370,7 +370,7 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
         match archive.by_name("catalog.json") {
             Ok(mut file) => {
                 if let Err(e) = file.read_to_string(&mut json_content) {
-                    eprintln!("{} import.blk: read catalog.json failed: {}", TAG, e);
+                    log::warn!("{} import.blk: read catalog.json failed: {}", TAG, e);
                     return Err((
                         StatusCode::BAD_REQUEST,
                         "Failed to read catalog.json".to_string(),
@@ -378,7 +378,7 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
                 }
             }
             Err(e) => {
-                eprintln!("{} import.blk: catalog.json missing: {}", TAG, e);
+                log::warn!("{} import.blk: catalog.json missing: {}", TAG, e);
                 return Err((
                     StatusCode::BAD_REQUEST,
                     "Missing catalog.json in package".to_string(),
@@ -413,9 +413,10 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
             } else {
                 // 解析失败时打印 JSON 头一段帮助定位（截断到 200 字节避免刷屏）
                 let preview: String = json_content.chars().take(200).collect();
-                eprintln!(
+                log::warn!(
                     "{} import.blk: JSON parse failed; preview: {:?}",
-                    TAG, preview
+                    TAG,
+                    preview
                 );
                 return Err((
                     StatusCode::BAD_REQUEST,
@@ -432,7 +433,7 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
             let mut file = match archive.by_index(i) {
                 Ok(f) => f,
                 Err(e) => {
-                    eprintln!("{} import.blk: read zip entry {} failed: {}", TAG, i, e);
+                    log::warn!("{} import.blk: read zip entry {} failed: {}", TAG, i, e);
                     errored += 1;
                     continue;
                 }
@@ -444,9 +445,10 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
                 continue;
             }
             if file_path_str.contains("..") {
-                eprintln!(
+                log::warn!(
                     "{} import.blk: rejected path-traversal entry: {}",
-                    TAG, file_path_str
+                    TAG,
+                    file_path_str
                 );
                 errored += 1;
                 continue;
@@ -455,9 +457,11 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
             let target_path = upload_dir.join(&file_path_str);
             if let Some(parent) = target_path.parent() {
                 if let Err(e) = std::fs::create_dir_all(parent) {
-                    eprintln!(
+                    log::warn!(
                         "{} import.blk: create_dir_all {:?} failed: {}",
-                        TAG, parent, e
+                        TAG,
+                        parent,
+                        e
                     );
                     errored += 1;
                     continue;
@@ -478,23 +482,28 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
                         }
                     }
                     Err(e) => {
-                        eprintln!(
+                        log::warn!(
                             "{} import.blk: extract {} -> {:?} failed: {}",
-                            TAG, file_path_str, target_path, e
+                            TAG,
+                            file_path_str,
+                            target_path,
+                            e
                         );
                         errored += 1;
                     }
                 },
                 Err(e) => {
-                    eprintln!(
+                    log::warn!(
                         "{} import.blk: create file {:?} failed: {}",
-                        TAG, target_path, e
+                        TAG,
+                        target_path,
+                        e
                     );
                     errored += 1;
                 }
             }
         }
-        eprintln!(
+        log::warn!(
             "{} import.blk: extraction done — extracted={} skipped={} errored={} elapsed={:?}",
             TAG,
             extracted,
@@ -510,7 +519,7 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
     // 处理 spawn_blocking 的结果
     let catalog = match parsed {
         Ok(Ok(c)) => {
-            eprintln!(
+            log::warn!(
                 "{} import: spawn_blocking returned OK, products={} images={}",
                 TAG,
                 c.products.len(),
@@ -519,14 +528,16 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
             c
         }
         Ok(Err((status, msg))) => {
-            eprintln!(
+            log::warn!(
                 "{} import: spawn_blocking returned error: {} ({})",
-                TAG, msg, status
+                TAG,
+                msg,
+                status
             );
             return (status, msg).into_response();
         }
         Err(e) => {
-            eprintln!("{} import: spawn_blocking PANICKED: {}", TAG, e);
+            log::warn!("{} import: spawn_blocking PANICKED: {}", TAG, e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal error during import".to_string(),
@@ -540,7 +551,7 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
     let mut tx = match state.db.begin().await {
         Ok(tx) => tx,
         Err(e) => {
-            eprintln!("{} import.db: tx begin failed: {}", TAG, e);
+            log::warn!("{} import.db: tx begin failed: {}", TAG, e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("DB Error: {}", e),
@@ -561,7 +572,7 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
         {
             Ok(id) => id,
             Err(e) => {
-                eprintln!("{} import.db: resolve home society failed: {}", TAG, e);
+                log::warn!("{} import.db: resolve home society failed: {}", TAG, e);
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     format!("DB Write Failed (society): {}", e),
@@ -584,7 +595,7 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
         .execute(&mut *tx)
         .await
         {
-            eprintln!("{} import.db: create society {:?} failed: {}", TAG, name, e);
+            log::warn!("{} import.db: create society {:?} failed: {}", TAG, name, e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("DB Write Failed (society): {}", e),
@@ -605,7 +616,7 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
             }
         }
         Err(e) => {
-            eprintln!("{} import.db: load societies failed: {}", TAG, e);
+            log::warn!("{} import.db: load societies failed: {}", TAG, e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("DB Write Failed (society): {}", e),
@@ -656,9 +667,11 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
                 .await;
 
         if let Err(e) = res {
-            eprintln!(
+            log::warn!(
                 "{} import.db: upsert product {} failed: {}",
-                TAG, prod.product_code, e
+                TAG,
+                prod.product_code,
+                e
             );
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -716,9 +729,11 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
         .execute(&mut *tx)
         .await
         {
-            eprintln!(
+            log::warn!(
                 "{} import.db: upsert image {} failed: {}",
-                TAG, img.image_url, e
+                TAG,
+                img.image_url,
+                e
             );
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -745,14 +760,14 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
     // 提交事务
     let t_commit = Instant::now();
     if let Err(e) = tx.commit().await {
-        eprintln!("{} import.db: commit failed: {}", TAG, e);
+        log::warn!("{} import.db: commit failed: {}", TAG, e);
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Commit Failed: {}", e),
         )
             .into_response();
     }
-    eprintln!(
+    log::warn!(
         "{} import: done — products={} images={} (commit took {:?}, total {:?})",
         TAG,
         products_count,
@@ -804,7 +819,7 @@ async fn import_products(
 ) -> Response {
     // 不需要展会守卫：只同步全局商品库和社团名单，不写任何展会的账
     let t0 = Instant::now();
-    eprintln!("{} import (multipart): start", TAG);
+    log::warn!("{} import (multipart): start", TAG);
 
     while let Some(field) = multipart.next_field().await.unwrap_or(None) {
         if field.name() == Some("file") {
@@ -812,12 +827,12 @@ async fn import_products(
             let data = match field.bytes().await {
                 Ok(d) => d,
                 Err(e) => {
-                    eprintln!("{} import (multipart): receive bytes failed: {}", TAG, e);
+                    log::warn!("{} import (multipart): receive bytes failed: {}", TAG, e);
                     return (StatusCode::BAD_REQUEST, format!("Upload error: {}", e))
                         .into_response();
                 }
             };
-            eprintln!(
+            log::warn!(
                 "{} import (multipart): received {} bytes in {:?}",
                 TAG,
                 data.len(),
@@ -827,7 +842,7 @@ async fn import_products(
         }
     }
 
-    eprintln!(
+    log::warn!(
         "{} import (multipart): no 'file' field found (t={:?})",
         TAG,
         t0.elapsed()
@@ -856,7 +871,7 @@ async fn import_products(
 async fn import_products_raw(State(state): State<AppState>, _: AdminOnly, body: Bytes) -> Response {
     // 不需要展会守卫：只同步全局商品库和社团名单，不写任何展会的账
     let t0 = Instant::now();
-    eprintln!("{} import (raw): received {} bytes", TAG, body.len());
+    log::warn!("{} import (raw): received {} bytes", TAG, body.len());
     process_import_bytes(state, body, t0).await
 }
 

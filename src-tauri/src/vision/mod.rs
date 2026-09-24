@@ -123,8 +123,8 @@ impl VisionRuntime {
                     )
                     .await
                 {
-                    Ok(_) => println!("[Vision] Model pre-loaded: {}", manifest.model_id),
-                    Err(e) => eprintln!("[Vision] Model pre-load failed: {}", e),
+                    Ok(_) => log::info!("[Vision] Model pre-loaded: {}", manifest.model_id),
+                    Err(e) => log::warn!("[Vision] Model pre-load failed: {}", e),
                 }
             }
         }
@@ -249,7 +249,7 @@ impl VisionRuntime {
                 Some(m) => m,
                 None => {
                     state.set_rebuilding(false).await;
-                    eprintln!("Rebuild failed: active model not found");
+                    log::warn!("Rebuild failed: active model not found");
                     return;
                 }
             };
@@ -257,7 +257,7 @@ impl VisionRuntime {
             let model_path = download::model_abs_path(model_manager.app_data_dir(), &manifest);
             if !model_path.exists() {
                 state.set_rebuilding(false).await;
-                eprintln!(
+                log::warn!(
                     "Rebuild failed: model file not found: {}",
                     model_path.display()
                 );
@@ -282,7 +282,7 @@ impl VisionRuntime {
                 Ok(s) => s,
                 Err(e) => {
                     state.set_rebuilding(false).await;
-                    eprintln!("Rebuild failed: {}", e);
+                    log::warn!("Rebuild failed: {}", e);
                     return;
                 }
             };
@@ -314,7 +314,7 @@ impl VisionRuntime {
                 }
                 Err(e) => {
                     state.set_rebuilding(false).await;
-                    eprintln!("Rebuild failed: {}", e);
+                    log::warn!("Rebuild failed: {}", e);
                 }
             }
         });

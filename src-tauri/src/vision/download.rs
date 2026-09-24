@@ -135,9 +135,10 @@ pub async fn install_builtin_models(
             fs::copy(&source, &target)
                 .await
                 .map_err(|e| format!("copy builtin model {}: {}", model.model_id, e))?;
-            println!(
+            log::info!(
                 "[Vision] Installed builtin model: {} -> {:?}",
-                model.model_id, target
+                model.model_id,
+                target
             );
         }
     }

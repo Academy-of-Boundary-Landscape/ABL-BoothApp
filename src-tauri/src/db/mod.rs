@@ -69,12 +69,12 @@ async fn migrate_with_snapshot(
     let snap = if db_existed && should_snapshot_before_migrate(pool, migrator).await {
         match snapshot::take(pool, db_path, "premigrate").await {
             Ok(p) => {
-                println!("[Booth Tool] pre-migration snapshot: {}", p.display());
+                log::info!("[Booth Tool] pre-migration snapshot: {}", p.display());
                 Some(p)
             }
             Err(e) => {
                 // 快照失败不阻断启动，但要吼出来
-                eprintln!("[Booth Tool] WARNING: pre-migration snapshot failed: {e}");
+                log::warn!("[Booth Tool] WARNING: pre-migration snapshot failed: {e}");
                 None
             }
         }
@@ -87,22 +87,22 @@ async fn migrate_with_snapshot(
     let fixed = match reconcile_line_ending_checksums(pool, migrator).await {
         Ok(n) => n,
         Err(e) => {
-            eprintln!("[Booth Tool] WARNING: checking migration checksums failed: {e}");
+            log::warn!("[Booth Tool] WARNING: checking migration checksums failed: {e}");
             0
         }
     };
     if fixed > 0 {
-        println!("[Booth Tool] normalized line-ending checksums of {fixed} applied migration(s)");
+        log::info!("[Booth Tool] normalized line-ending checksums of {fixed} applied migration(s)");
     }
 
     // 运行迁移 (使用运行时方式避免编译时需要 DATABASE_URL)
     let run = migrator.run(pool).await;
     if let Err(e) = run {
         if let Some(snap) = snap {
-            eprintln!("[Booth Tool] migration failed ({e}); restoring snapshot");
+            log::warn!("[Booth Tool] migration failed ({e}); restoring snapshot");
             pool.close().await;
             if let Err(re) = snapshot::restore(db_path, &snap) {
-                eprintln!("[Booth Tool] FATAL: restore also failed: {re}");
+                log::error!("[Booth Tool] FATAL: restore also failed: {re}");
             }
         }
         return Err(e.into());
@@ -259,7 +259,7 @@ pub async fn seed_defaults(pool: &SqlitePool) -> Result<(), sqlx::Error> {
 pub async fn reset_database(app_data_dir: &PathBuf) -> Result<SqlitePool, sqlx::Error> {
     use sqlx::migrate::MigrateDatabase;
 
-    println!("[WARNING] Resetting database - all data will be lost!");
+    log::info!("[WARNING] Resetting database - all data will be lost!");
 
     // 1. 拼接数据库文件路径
     let db_path = app_data_dir.join("sale_system.db");
@@ -270,19 +270,21 @@ pub async fn reset_database(app_data_dir: &PathBuf) -> Result<SqlitePool, sqlx::
         match SqlitePool::connect(&db_url).await {
             Ok(p) => {
                 match snapshot::take(&p, &db_path, "prereset").await {
-                    Ok(s) => println!("[Booth Tool] pre-reset snapshot: {}", s.display()),
-                    Err(e) => eprintln!("[Booth Tool] WARNING: pre-reset snapshot failed: {e}"),
+                    Ok(s) => log::info!("[Booth Tool] pre-reset snapshot: {}", s.display()),
+                    Err(e) => log::warn!("[Booth Tool] WARNING: pre-reset snapshot failed: {e}"),
                 }
                 p.close().await;
             }
-            Err(e) => eprintln!("[Booth Tool] WARNING: cannot open db for pre-reset snapshot: {e}"),
+            Err(e) => {
+                log::warn!("[Booth Tool] WARNING: cannot open db for pre-reset snapshot: {e}")
+            }
         }
     }
 
     // 2. 删除现有数据库文件
     if Sqlite::database_exists(&db_url).await.unwrap_or(false) {
         Sqlite::drop_database(&db_url).await?;
-        println!("[INFO] Existing database dropped.");
+        log::info!("[INFO] Existing database dropped.");
     }
 
     // 3. 删除物理文件（以防万一）
@@ -291,7 +293,7 @@ pub async fn reset_database(app_data_dir: &PathBuf) -> Result<SqlitePool, sqlx::
     }
 
     // 4. 重新初始化数据库
-    println!("[INFO] Reinitializing database...");
+    log::info!("[INFO] Reinitializing database...");
     init_db(app_data_dir).await
 }
 
@@ -308,7 +310,7 @@ async fn backup_v1_once(pool: &SqlitePool, db_path: &Path) {
         if v1_backup_is_readable(&dest).await {
             return;
         }
-        eprintln!(
+        log::warn!(
             "[Booth Tool] WARNING: existing v1 backup at {} is unreadable; taking a fresh one",
             dest.display()
         );
@@ -326,7 +328,9 @@ async fn backup_v1_once(pool: &SqlitePool, db_path: &Path) {
         Err(e) => {
             // 连 sqlite_master 都读不出来，说明库可能已损坏——而这正是最需要备份的情况。
             // 但既然读不出来，VACUUM INTO 多半也会失败，所以只吼一声，不阻断启动。
-            eprintln!("[Booth Tool] WARNING: cannot determine v1 schema ({e}); skipping v1 backup");
+            log::warn!(
+                "[Booth Tool] WARNING: cannot determine v1 schema ({e}); skipping v1 backup"
+            );
             return;
         }
     }
@@ -346,14 +350,14 @@ async fn backup_v1_once(pool: &SqlitePool, db_path: &Path) {
         .await
     {
         Ok(_) => match std::fs::rename(&tmp, &dest) {
-            Ok(()) => println!("[Booth Tool] v1 database preserved at {}", dest.display()),
+            Ok(()) => log::info!("[Booth Tool] v1 database preserved at {}", dest.display()),
             Err(e) => {
-                eprintln!("[Booth Tool] WARNING: v1 backup rename failed: {e}");
+                log::warn!("[Booth Tool] WARNING: v1 backup rename failed: {e}");
                 let _ = std::fs::remove_file(&tmp);
             }
         },
         Err(e) => {
-            eprintln!("[Booth Tool] WARNING: v1 backup failed: {e}");
+            log::warn!("[Booth Tool] WARNING: v1 backup failed: {e}");
             let _ = std::fs::remove_file(&tmp);
         }
     }

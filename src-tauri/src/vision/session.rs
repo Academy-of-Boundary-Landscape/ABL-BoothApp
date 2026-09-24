@@ -79,10 +79,10 @@ pub fn probe_gpu_devices() -> Vec<GpuDevice> {
                 }
 
                 if devices.is_empty() {
-                    println!("[Vision] No DXGI adapters found");
+                    log::info!("[Vision] No DXGI adapters found");
                 } else {
                     for d in &devices {
-                        println!("[Vision] DXGI adapter {}: {}", d.device_id, d.name);
+                        log::info!("[Vision] DXGI adapter {}: {}", d.device_id, d.name);
                     }
                 }
             }
@@ -126,21 +126,22 @@ impl OnnxSession {
             pref if pref.starts_with("gpu:") => {
                 let device_id: i32 = pref.trim_start_matches("gpu:").parse().unwrap_or(0);
                 Self::try_load_gpu_device(model_path, device_id).or_else(|e| {
-                    println!(
+                    log::info!(
                         "[Vision] GPU device {} failed, falling back to CPU: {}",
-                        device_id, e
+                        device_id,
+                        e
                     );
                     Self::load_cpu_only(model_path).map(|s| (s, "CPU (fallback)".to_string()))
                 })?
             }
             "nnapi" => Self::try_load_nnapi(model_path).or_else(|e| {
-                println!("[Vision] NNAPI failed, falling back to CPU: {}", e);
+                log::info!("[Vision] NNAPI failed, falling back to CPU: {}", e);
                 Self::load_cpu_only(model_path).map(|s| (s, "CPU (fallback)".to_string()))
             })?,
             _ => {
                 // "auto": 平台自适应加速 → CPU fallback
                 Self::try_load_accelerated(model_path).or_else(|e| {
-                    println!(
+                    log::info!(
                         "[Vision] Accelerated load failed, falling back to CPU: {}",
                         e
                     );
@@ -151,7 +152,7 @@ impl OnnxSession {
 
         let load_ms = t0.elapsed().as_millis();
         set_active_ep_name(&ep_name);
-        println!(
+        log::info!(
             "[Vision] Model loaded: {} ({}) in {}ms [EP: {}]",
             manifest.model_id,
             model_path.display(),
@@ -204,7 +205,7 @@ impl OnnxSession {
                 .map(|d| d.name.clone())
                 .unwrap_or_else(|| format!("device {}", device_id));
             let ep_name = format!("DirectML ({})", dev_name);
-            println!("[Vision] {} — loaded successfully", ep_name);
+            log::info!("[Vision] {} — loaded successfully", ep_name);
             return Ok((session, ep_name));
         }
 
@@ -238,18 +239,21 @@ impl OnnxSession {
                     || lower.contains("remote")
                     || lower.contains("microsoft")
                 {
-                    println!(
+                    log::info!(
                         "[Vision] Skipping virtual adapter {}: {}",
-                        dev.device_id, dev.name
+                        dev.device_id,
+                        dev.name
                     );
                     continue;
                 }
                 match Self::try_load_gpu_device(model_path, dev.device_id) {
                     Ok(result) => return Ok(result),
                     Err(e) => {
-                        println!(
+                        log::info!(
                             "[Vision] DirectML device {} ({}) failed: {}",
-                            dev.device_id, dev.name, e
+                            dev.device_id,
+                            dev.name,
+                            e
                         );
                     }
                 }
@@ -286,7 +290,7 @@ impl OnnxSession {
 
             match ort::execution_providers::NNAPIExecutionProvider::default().register(&mut builder)
             {
-                Ok(_) => println!("[Vision] NNAPI EP registered"),
+                Ok(_) => log::info!("[Vision] NNAPI EP registered"),
                 Err(e) => return Err(format!("NNAPI registration failed: {}", e)),
             }
 
@@ -294,7 +298,7 @@ impl OnnxSession {
                 .commit_from_file(model_path)
                 .map_err(|e| e.to_string())?;
             let ep_name = "NNAPI (NPU/GPU)".to_string();
-            println!("[Vision] {} — loaded successfully", ep_name);
+            log::info!("[Vision] {} — loaded successfully", ep_name);
             return Ok((session, ep_name));
         }
 
@@ -304,7 +308,7 @@ impl OnnxSession {
 
     /// 纯 CPU 加载
     fn load_cpu_only(model_path: &Path) -> Result<Session, String> {
-        println!("[Vision] Loading model with CPU only...");
+        log::info!("[Vision] Loading model with CPU only...");
         Session::builder()
             .map_err(|e| e.to_string())?
             .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3)
@@ -381,7 +385,7 @@ impl OnnxSession {
             + total_us;
         let avg_ms = (cumulative as f64 / count as f64) / 1000.0;
 
-        println!(
+        log::info!(
             "[Vision] Embed #{}: preprocess={}us, inference={}us, total={}ms (avg={:.1}ms)",
             count,
             preprocess_us,

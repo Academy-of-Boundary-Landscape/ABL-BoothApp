@@ -713,7 +713,7 @@ async fn download_sales_summary(
             (headers, buf).into_response()
         }
         Err(e) => {
-            eprintln!("Excel generation error: {}", e);
+            log::warn!("Excel generation error: {}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to generate excel",
@@ -726,14 +726,14 @@ async fn download_sales_summary(
 fn check_read_permission(claims: &Claims, event_id: i64) -> Result<(), (StatusCode, &'static str)> {
     // 管理员拥有所有权限
     if claims.role == "admin" {
-        println!("Admin access granted");
+        log::info!("Admin access granted");
         return Ok(());
     }
 
     // 摊主需要检查 access 权限
     if claims.role == "vendor" {
         if claims.access == "all" || claims.event_id == Some(event_id) {
-            println!("Vendor access granted");
+            log::info!("Vendor access granted");
             return Ok(());
         }
         // 摊主权限不足

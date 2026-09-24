@@ -409,7 +409,7 @@ async fn export_legacy_xlsx(State(state): State<AppState>, _: AdminOnly) -> Resp
             Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Failed to read excel").into_response(),
         },
         Err(e) => {
-            eprintln!("Legacy excel generation error: {}", e);
+            log::warn!("Legacy excel generation error: {}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to generate excel",

@@ -42,9 +42,10 @@ pub fn bind_first_available(
             Ok(l) => {
                 l.set_nonblocking(true)?;
                 if port != candidates[0] {
-                    println!(
+                    log::info!(
                         "[Booth Tool] port {} is in use; using {} instead",
-                        candidates[0], port
+                        candidates[0],
+                        port
                     );
                 }
                 return Ok((l, port));
@@ -74,7 +75,7 @@ pub async fn start_server(
     let upload_dir = state.upload_dir.clone();
 
     // 打印一下当前的上传根目录，确保它符合预期
-    //println!("[Server Debug] Upload Root Path: {:?}", upload_dir);
+    //log::info!("[Server Debug] Upload Root Path: {:?}", upload_dir);
 
     let app = Router::new()
         .nest("/api", api::router().split_for_parts().0) // API 路由
@@ -138,13 +139,13 @@ pub async fn start_server(
                                     .into_response();
                             }
                             Err(e) => {
-                                println!("[Static Error] Read failed: {}", e);
+                                log::info!("[Static Error] Read failed: {}", e);
                                 return (StatusCode::INTERNAL_SERVER_ERROR, "File Read Error")
                                     .into_response();
                             }
                         }
                     } else {
-                        println!("[Static Error] File not found: {:?}", file_path);
+                        log::info!("[Static Error] File not found: {:?}", file_path);
                         return (StatusCode::NOT_FOUND, "Image Not Found").into_response();
                     }
                 }
@@ -191,35 +192,35 @@ pub async fn start_server(
         match crate::utils::cert::load_or_generate_cert(&app_data_dir, &lan_ips).await {
             Ok(pair) => pair,
             Err(e) => {
-                eprintln!("[Booth Tool] FATAL: cert load/generate failed: {}", e);
+                log::error!("[Booth Tool] FATAL: cert load/generate failed: {}", e);
                 return;
             }
         };
     let tls_cfg = match axum_server::tls_rustls::RustlsConfig::from_pem(cert_pem, key_pem).await {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("[Booth Tool] FATAL: RustlsConfig::from_pem failed: {}", e);
+            log::error!("[Booth Tool] FATAL: RustlsConfig::from_pem failed: {}", e);
             return;
         }
     };
 
     // HTTP listener: 仅绑回环，给 Tauri webview 用，避免 LAN 接触 HTTP
     let http_addr = http_listener.local_addr().ok();
-    println!("[Booth Tool] HTTP server (loopback only)  http://{http_addr:?}");
+    log::info!("[Booth Tool] HTTP server (loopback only)  http://{http_addr:?}");
     // HTTPS listener: 绑 0.0.0.0，所有 LAN 设备走这里
     let https_addr = https_listener.local_addr().ok();
-    println!("[Booth Tool] HTTPS server (LAN)           https://{https_addr:?}");
+    log::info!("[Booth Tool] HTTPS server (LAN)           https://{https_addr:?}");
 
     let app_for_http = app.clone();
     // 让闭包返回 io::Result：bind/serve 任一失败必须冒泡到 try_join 才能让用户看到，
     // 不能让 HTTPS 端默默死掉而 HTTP 还在跑（那样 QR 码全部指向死端口，摊主完全察觉不到）。
     let http_task: tokio::task::JoinHandle<std::io::Result<()>> = tokio::spawn(async move {
         let listener = tokio::net::TcpListener::from_std(http_listener).map_err(|e| {
-            eprintln!("[Booth Tool] FATAL: HTTP listener unusable: {e}");
+            log::error!("[Booth Tool] FATAL: HTTP listener unusable: {e}");
             e
         })?;
         axum::serve(listener, app_for_http).await.map_err(|e| {
-            eprintln!("[Booth Tool] HTTP server crashed: {}", e);
+            log::warn!("[Booth Tool] HTTP server crashed: {}", e);
             e
         })?;
         Ok(())
@@ -230,7 +231,7 @@ pub async fn start_server(
             .serve(app.into_make_service())
             .await
             .map_err(|e| {
-                eprintln!("[Booth Tool] HTTPS server crashed: {}", e);
+                log::warn!("[Booth Tool] HTTPS server crashed: {}", e);
                 e
             })?;
         Ok(())
@@ -240,14 +241,14 @@ pub async fn start_server(
     match tokio::try_join!(http_task, https_task) {
         Ok((http_res, https_res)) => {
             if let Err(e) = http_res {
-                eprintln!("[Booth Tool] HTTP listener exited with error: {}", e);
+                log::warn!("[Booth Tool] HTTP listener exited with error: {}", e);
             }
             if let Err(e) = https_res {
-                eprintln!("[Booth Tool] HTTPS listener exited with error: {}", e);
+                log::warn!("[Booth Tool] HTTPS listener exited with error: {}", e);
             }
         }
         Err(join_err) => {
-            eprintln!("[Booth Tool] server task panicked: {}", join_err);
+            log::warn!("[Booth Tool] server task panicked: {}", join_err);
         }
     }
 }

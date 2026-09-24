@@ -58,20 +58,20 @@ pub async fn load_or_generate_cert(
                 if cert_meta_still_valid(&meta, lan_ips) {
                     let cert_pem = fs::read(&cert_path).await?;
                     let key_pem = fs::read(&key_path).await?;
-                    eprintln!(
+                    log::warn!(
                         "[cert] reusing cached cert (valid until {})",
                         meta.valid_until
                     );
                     return Ok((cert_pem, key_pem));
                 } else {
-                    eprintln!(
+                    log::warn!(
                         "[cert] cached cert no longer covers current LAN IPs or expired — regenerating"
                     );
                 }
             }
         }
     } else {
-        eprintln!("[cert] no cached cert — generating fresh");
+        log::warn!("[cert] no cached cert — generating fresh");
     }
 
     let (cert_pem, key_pem, meta) = generate_self_signed(lan_ips)?;
@@ -79,9 +79,10 @@ pub async fn load_or_generate_cert(
     fs::write(&cert_path, &cert_pem).await?;
     fs::write(&key_path, &key_pem).await?;
     fs::write(&meta_path, serde_json::to_vec_pretty(&meta)?).await?;
-    eprintln!(
+    log::warn!(
         "[cert] generated new cert, valid until {}, SANs: {:?}",
-        meta.valid_until, meta.sans
+        meta.valid_until,
+        meta.sans
     );
     Ok((cert_pem, key_pem))
 }

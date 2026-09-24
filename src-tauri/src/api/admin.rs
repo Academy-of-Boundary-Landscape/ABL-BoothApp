@@ -91,7 +91,7 @@ async fn update_admin_password(
 
     // 2. 验证旧密码
     if !verify_password(&payload.old_password, &stored_hash) {
-        // eprintln!(
+        // log::warn!(
         //     "[DEBUG] Admin password verification failed. Stored hash: {}",
         //     stored_hash
         // );
@@ -104,7 +104,7 @@ async fn update_admin_password(
 
     // 3. 更新新密码
     let new_hash = hash_password(&payload.new_password);
-    //eprintln!("[DEBUG] Updating admin password. New hash: {}", new_hash);
+    //log::warn!("[DEBUG] Updating admin password. New hash: {}", new_hash);
     let result = sqlx::query("UPDATE settings SET value = ? WHERE key = 'admin_password'")
         .bind(new_hash)
         .execute(&state.db)
@@ -112,7 +112,7 @@ async fn update_admin_password(
 
     match result {
         Ok(_) => {
-            //eprintln!("[DEBUG] Admin password updated successfully");
+            //log::warn!("[DEBUG] Admin password updated successfully");
             (
                 StatusCode::OK,
                 Json(MessageResponse {
@@ -122,7 +122,7 @@ async fn update_admin_password(
                 .into_response()
         }
         Err(_e) => {
-            //eprintln!("[DEBUG] Failed to update admin password: {:?}", e);
+            //log::warn!("[DEBUG] Failed to update admin password: {:?}", e);
             (StatusCode::INTERNAL_SERVER_ERROR, "Database Error").into_response()
         }
     }
@@ -163,7 +163,7 @@ async fn update_vendor_default_password(
     }
 
     let new_hash = hash_password(&payload.new_password);
-    // eprintln!(
+    // log::warn!(
     //     "[DEBUG] Updating global vendor password. New hash: {}",
     //     new_hash
     // );
@@ -177,7 +177,7 @@ async fn update_vendor_default_password(
 
     match result {
         Ok(_) => {
-            //eprintln!("[DEBUG] Global vendor password updated successfully");
+            //log::warn!("[DEBUG] Global vendor password updated successfully");
             (
                 StatusCode::OK,
                 Json(MessageResponse {
@@ -187,7 +187,7 @@ async fn update_vendor_default_password(
                 .into_response()
         }
         Err(_e) => {
-            //eprintln!("[DEBUG] Failed to update vendor password: {:?}", e);
+            //log::warn!("[DEBUG] Failed to update vendor password: {:?}", e);
             (StatusCode::INTERNAL_SERVER_ERROR, "Database Error").into_response()
         }
     }
@@ -220,20 +220,20 @@ struct ResetDatabaseResponse {
 )]
 async fn reset_database_handler(State(state): State<AppState>, _: AdminOnly) -> Response {
     // 不需要展会守卫：管理员全局重置，不属于任何展会，且本来就要清空全部展会
-    //eprintln!("[WARNING] Database reset requested by admin");
+    //log::warn!("[WARNING] Database reset requested by admin");
 
     // --------------------------------------------------------
     // 第一步：删除物理文件（图片资源）
     // --------------------------------------------------------
     let uploads_dir = &state.upload_dir;
     if uploads_dir.exists() {
-        //eprintln!("[INFO] Cleaning uploads directory: {:?}", uploads_dir);
+        //log::warn!("[INFO] Cleaning uploads directory: {:?}", uploads_dir);
         // 尝试删除目录
         match fs::remove_dir_all(uploads_dir).await {
             Ok(_) => {
                 // 重新创建空目录
                 if let Err(_e) = fs::create_dir_all(uploads_dir).await {
-                    //eprintln!("[ERROR] Failed to recreate uploads directory: {:?}", e);
+                    //log::warn!("[ERROR] Failed to recreate uploads directory: {:?}", e);
                     return (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(json!({"error": "无法重创建上传目录"})),
@@ -242,7 +242,7 @@ async fn reset_database_handler(State(state): State<AppState>, _: AdminOnly) -> 
                 }
             }
             Err(_e) => {
-                //eprintln!("[ERROR] Failed to delete uploads directory: {:?}", e);
+                //log::warn!("[ERROR] Failed to delete uploads directory: {:?}", e);
                 // 这里可以选择报错返回，或者仅仅打印日志继续清除数据库
             }
         }
@@ -256,7 +256,7 @@ async fn reset_database_handler(State(state): State<AppState>, _: AdminOnly) -> 
     let mut tx = match state.db.begin().await {
         Ok(tx) => tx,
         Err(_e) => {
-            //eprintln!("[ERROR] Failed to start transaction: {:?}", e);
+            //log::warn!("[ERROR] Failed to start transaction: {:?}", e);
             return (StatusCode::INTERNAL_SERVER_ERROR, "Database Error").into_response();
         }
     };
@@ -292,11 +292,11 @@ async fn reset_database_handler(State(state): State<AppState>, _: AdminOnly) -> 
         // 已审计：table 只可能取自上面写死的 tables_to_clear 字面量，不含任何用户输入。
         // 表名无法用 bind 参数化，只能拼接。
         if let Err(_e) = sqlx::query(AssertSqlSafe(query)).execute(&mut *tx).await {
-            //eprintln!("[ERROR] Failed to clear table {}: {:?}", table, e);
+            //log::warn!("[ERROR] Failed to clear table {}: {:?}", table, e);
             let _ = tx.rollback().await;
             return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to clear data").into_response();
         }
-        //eprintln!("[INFO] Cleared table: {}", table);
+        //log::warn!("[INFO] Cleared table: {}", table);
     }
 
     // 重置自增ID（可选，让下次插入数据从1开始）
@@ -304,14 +304,14 @@ async fn reset_database_handler(State(state): State<AppState>, _: AdminOnly) -> 
         .execute(&mut *tx)
         .await
     {
-        //eprintln!("[WARNING] Failed to reset auto-increment IDs: {:?}", e);
+        //log::warn!("[WARNING] Failed to reset auto-increment IDs: {:?}", e);
         // 这不是致命错误，继续执行
     }
 
     // 特殊处理 settings 表：重置为默认密码
     // 删除所有设置，然后重新插入默认密码
     if let Err(_e) = sqlx::query("DELETE FROM settings").execute(&mut *tx).await {
-        //eprintln!("[ERROR] Failed to clear settings: {:?}", e);
+        //log::warn!("[ERROR] Failed to clear settings: {:?}", e);
         let _ = tx.rollback().await;
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -334,7 +334,7 @@ async fn reset_database_handler(State(state): State<AppState>, _: AdminOnly) -> 
     .execute(&mut *tx)
     .await
     {
-        //eprintln!("[ERROR] Failed to reset passwords: {:?}", e);
+        //log::warn!("[ERROR] Failed to reset passwords: {:?}", e);
         let _ = tx.rollback().await;
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -343,12 +343,12 @@ async fn reset_database_handler(State(state): State<AppState>, _: AdminOnly) -> 
             .into_response();
     }
 
-    //eprintln!("[INFO] Reset passwords to default (admin123 / vendor123)");
+    //log::warn!("[INFO] Reset passwords to default (admin123 / vendor123)");
 
     // 提交事务
     match tx.commit().await {
         Ok(_) => {
-            //eprintln!("[INFO] Database reset successful (Data cleared)");
+            //log::warn!("[INFO] Database reset successful (Data cleared)");
 
             // 可选：执行 VACUUM 释放磁盘空间（不能在事务中执行）
             // sqlx::query("VACUUM").execute(&state.db).await.ok();
@@ -364,7 +364,7 @@ async fn reset_database_handler(State(state): State<AppState>, _: AdminOnly) -> 
                 .into_response()
         }
         Err(_e) => {
-            //eprintln!("[ERROR] Failed to commit transaction: {:?}", e);
+            //log::warn!("[ERROR] Failed to commit transaction: {:?}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({"error": "数据库重置事务提交失败"})),

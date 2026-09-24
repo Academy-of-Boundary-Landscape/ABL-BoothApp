@@ -52,7 +52,7 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         // 数据库错误在这里落日志——handler 里不需要再各自 eprintln! 一遍。
         if let ApiError::Db(ref e) = self {
-            eprintln!("[api] database error: {e}");
+            log::warn!("[api] database error: {e}");
         }
         (self.status(), Json(json!({ "error": self.to_string() }))).into_response()
     }

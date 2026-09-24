@@ -59,23 +59,23 @@ where
     async fn from_request(req: axum::extract::Request, state: &S) -> Result<Self, Self::Rejection> {
         // 1. 提取原始字节
         let bytes = Bytes::from_request(req, state).await.map_err(|e| {
-            eprintln!("[DEBUG] Failed to read body bytes: {}", e);
+            log::warn!("[DEBUG] Failed to read body bytes: {}", e);
             e.into_response()
         })?;
 
         // 2. 调试打印 (仅在调试模式或出错时打印，避免刷屏)
-        // println!("[DEBUG] Body received (len={}): {:?}", bytes.len(), bytes);
+        // log::info!("[DEBUG] Body received (len={}): {:?}", bytes.len(), bytes);
 
         // 3. 尝试反序列化
         match serde_json::from_slice::<T>(&bytes) {
             Ok(value) => Ok(DebugJson(value)),
             Err(e) => {
                 // 4. 解析失败时只记录长度和错误，不打印明文 Body —— 这里包含登录密码
-                eprintln!("========================================");
-                eprintln!("[DEBUG] JSON Parsing FAILED!");
-                eprintln!("[DEBUG] Error: {}", e);
-                eprintln!("[DEBUG] Body length: {} bytes", bytes.len());
-                eprintln!("========================================");
+                log::warn!("========================================");
+                log::warn!("[DEBUG] JSON Parsing FAILED!");
+                log::warn!("[DEBUG] Error: {}", e);
+                log::warn!("[DEBUG] Body length: {} bytes", bytes.len());
+                log::warn!("========================================");
 
                 // 返回 400 Bad Request 给前端，而不是 422
                 Err((StatusCode::BAD_REQUEST, format!("JSON Parse Error: {}", e)).into_response())
@@ -150,8 +150,8 @@ async fn login_handler(
 ) -> Result<Response, AuthError> {
     // 不需要展会守卫：登录不属于任何展会
     // [调试] 确认成功解析 payload
-    // println!("[DEBUG] Login handler called successfully");
-    // println!(
+    // log::info!("[DEBUG] Login handler called successfully");
+    // log::info!(
     //     "[DEBUG] Parsed payload - role: {}, password length: {}, event_id: {:?}",
     //     payload.role,
     //     payload.password.len(),
@@ -176,12 +176,12 @@ async fn login_handler(
             // [调试] 打印密码验证信息
             // let input_password_hash = security::hash_password(&payload.password);
             // let admin123_hash = security::hash_password("admin123");
-            // println!("[DEBUG] Admin Login Attempt:");
-            // println!("  Input Password: {}", &payload.password);
-            // println!("  Input Password Hash: {}", input_password_hash);
-            // println!("  admin123 Hash: {}", admin123_hash);
-            // println!("  Stored Hash: {}", stored_hash);
-            // println!(
+            // log::info!("[DEBUG] Admin Login Attempt:");
+            // log::info!("  Input Password: {}", &payload.password);
+            // log::info!("  Input Password Hash: {}", input_password_hash);
+            // log::info!("  admin123 Hash: {}", admin123_hash);
+            // log::info!("  Stored Hash: {}", stored_hash);
+            // log::info!(
             //     "  Verify Result: {}",
             //     security::verify_password(&payload.password, &stored_hash)
             // );
@@ -197,10 +197,10 @@ async fn login_handler(
             // [调试] 打印密码验证信息
             // let input_password_hash = security::hash_password(&payload.password);
             // let admin123_hash = security::hash_password("admin123");
-            // println!("[DEBUG] Vendor Login Attempt:");
-            // println!("  Input Password: {}", &payload.password);
-            // println!("  Input Password Hash: {}", input_password_hash);
-            // println!("  admin123 Hash: {}", admin123_hash);
+            // log::info!("[DEBUG] Vendor Login Attempt:");
+            // log::info!("  Input Password: {}", &payload.password);
+            // log::info!("  Input Password Hash: {}", input_password_hash);
+            // log::info!("  admin123 Hash: {}", admin123_hash);
 
             // A. 先尝试全局 Admin 密码 (允许摊主用管理员密码登录)
             let admin_row: Option<(String,)> =
@@ -210,8 +210,8 @@ async fn login_handler(
                     .unwrap_or(None);
 
             if let Some((hash,)) = admin_row {
-                // println!("  Admin Password Hash: {}", &hash);
-                // println!(
+                // log::info!("  Admin Password Hash: {}", &hash);
+                // log::info!(
                 //     "  Verify Against Admin Hash: {}",
                 //     security::verify_password(&payload.password, &hash)
                 // );
@@ -229,8 +229,8 @@ async fn login_handler(
                     .unwrap_or(None);
 
             if let Some((hash,)) = vendor_row {
-                // println!("  Vendor Password Hash: {}", &hash);
-                // println!(
+                // log::info!("  Vendor Password Hash: {}", &hash);
+                // log::info!(
                 //     "  Verify Against Vendor Hash: {}",
                 //     security::verify_password(&payload.password, &hash)
                 // );

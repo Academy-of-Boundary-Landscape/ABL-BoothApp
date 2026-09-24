@@ -50,9 +50,55 @@ fn resolve_app_data_dir(default_app_data_dir: PathBuf) -> PathBuf {
     }
 }
 
+// Tauri 命令：日志文件所在目录（「关于」页面显示，出问题时让用户把日志发过来）
+#[tauri::command]
+fn get_log_dir(app: tauri::AppHandle) -> Result<String, String> {
+    app.path()
+        .app_log_dir()
+        .map(|p| p.display().to_string())
+        .map_err(|e| e.to_string())
+}
+
+/// 日志落盘。release 构建没有控制台（Windows 的 windows_subsystem、Android 同理），
+/// 以前的 println!/eprintln! 在用户机器上全部丢失——2026-09-25 真机闪退时，是靠用户从
+/// cmd 重定向才拿到 panic 信息的。现在同时写 stdout（dev 照常看）和系统日志目录，
+/// 单个文件 5MB 轮转、保留 5 份。
+fn log_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
+    tauri_plugin_log::Builder::new()
+        .targets([
+            Target::new(TargetKind::Stdout),
+            Target::new(TargetKind::LogDir {
+                file_name: Some("booth".into()),
+            }),
+        ])
+        .level(log::LevelFilter::Info)
+        // 窗口/网页引擎的 info 日志很吵，只留警告以上
+        .level_for("tao", log::LevelFilter::Warn)
+        .level_for("wry", log::LevelFilter::Warn)
+        .max_file_size(5 * 1024 * 1024)
+        .rotation_strategy(RotationStrategy::KeepSome(5))
+        .build()
+}
+
+/// panic 也进日志文件：默认的 panic 输出只去 stderr，release 里谁都看不到。
+fn install_panic_logger() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        log::error!(
+            "PANIC: {info}\n{}",
+            std::backtrace::Backtrace::force_capture()
+        );
+        default_hook(info);
+    }));
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    install_panic_logger();
     let builder = tauri::Builder::default()
+        // 放在第一个：之后所有插件与 setup 里的日志都能落盘
+        .plugin(log_plugin())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -65,7 +111,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init());
 
     builder
-        .invoke_handler(tauri::generate_handler![get_backend_url])
+        .invoke_handler(tauri::generate_handler![get_backend_url, get_log_dir])
         .setup(|app| {
             // 1. 获取 AppHandle (Tauri v2 推荐方式)
             let app_handle = app.handle();
@@ -76,11 +122,11 @@ pub fn run() {
                 let main_clone = main.clone();
                 main.on_window_event(move |event| {
                     // 过滤掉频繁的事件，避免日志刷屏（可选）
-                    // println!("[Debug][WindowEvent] {:?}", event);
+                    // log::info!("[Debug][WindowEvent] {:?}", event);
 
                     // [修改 2] v2 中变体名称由 Dropped 改为 Drop
                     if let WindowEvent::DragDrop(DragDropEvent::Drop { paths, position }) = event {
-                        println!(
+                        log::info!(
                             "[Debug][FileDrop][Backend] paths: {:?} @ {:?}",
                             paths, position
                         );
@@ -105,12 +151,12 @@ pub fn run() {
             // B. 上传文件目录
             let upload_dir = app_data_dir.join("uploads");
 
-            println!("[Config] Database Path: {:?}", app_data_dir);
-            println!("[Config] Uploads Path : {:?}", upload_dir);
+            log::info!("[Config] Database Path: {:?}", app_data_dir);
+            log::info!("[Config] Uploads Path : {:?}", upload_dir);
             #[cfg(debug_assertions)]
-            println!("[Config] Data Mode    : development");
+            log::info!("[Config] Data Mode    : development");
             #[cfg(not(debug_assertions))]
-            println!("[Config] Data Mode    : production");
+            log::info!("[Config] Data Mode    : production");
 
             // 2. 确保目录存在
             if !upload_dir.exists() {
@@ -139,7 +185,7 @@ pub fn run() {
                         .map(char::from)
                         .collect();
                     fs::write(&secret_path, &secret).expect("Failed to write jwt_secret.key");
-                    println!("[Config] Generated new JWT secret");
+                    log::info!("[Config] Generated new JWT secret");
                     secret
                 }
             };
@@ -161,7 +207,7 @@ pub fn run() {
             let (listeners, http_port, lan_https_port) = match bound {
                 Ok(((http_l, http_p), (https_l, https_p))) => (Some((http_l, https_l)), http_p, https_p),
                 Err(e) => {
-                    eprintln!("[Booth Tool] FATAL: cannot bind server ports: {e}");
+                    log::error!("[Booth Tool] FATAL: cannot bind server ports: {e}");
                     use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
                     app_handle
                         .dialog()
@@ -208,9 +254,9 @@ pub fn run() {
                     let ort_lib_path = res_dir.join(lib_name);
                     if ort_lib_path.exists() {
                         std::env::set_var("ORT_DYLIB_PATH", &ort_lib_path);
-                        println!("[Vision] ORT_DYLIB_PATH set to: {:?}", ort_lib_path);
+                        log::info!("[Vision] ORT_DYLIB_PATH set to: {:?}", ort_lib_path);
                     } else {
-                        println!(
+                        log::info!(
                             "[Vision] ORT library not found at: {:?}, will use system default",
                             ort_lib_path
                         );
@@ -218,7 +264,7 @@ pub fn run() {
                 }
 
                 #[cfg(target_os = "android")]
-                println!("[Vision] Android: using system linker for libonnxruntime.so");
+                log::info!("[Vision] Android: using system linker for libonnxruntime.so");
             }
 
             // 内嵌模型释放：从 Tauri 资源目录复制到 AppData。
@@ -227,27 +273,27 @@ pub fn run() {
             tauri::async_runtime::block_on(async {
                 // 先确保配置文件存在（bootstrap 内部也会调，但复制模型需要先有 registry）
                 if let Err(e) = vision::download::ensure_default_files(&app_data_dir).await {
-                    eprintln!("[Vision] ensure_default_files failed: {}", e);
+                    log::warn!("[Vision] ensure_default_files failed: {}", e);
                 }
                 if let Err(e) =
                     vision::download::install_builtin_models(&app_data_dir, resource_dir.as_deref())
                         .await
                 {
-                    eprintln!("[Vision] install_builtin_models failed: {}", e);
+                    log::warn!("[Vision] install_builtin_models failed: {}", e);
                 }
             });
 
             if let Err(e) =
                 tauri::async_runtime::block_on(state.vision_runtime.bootstrap(state.db.clone()))
             {
-                eprintln!("[Vision] bootstrap failed: {}", e);
+                log::warn!("[Vision] bootstrap failed: {}", e);
             }
 
             // 获取后端 URL
             let backend_url = std::env::var("BACKEND_URL")
                 .unwrap_or_else(|_| format!("http://127.0.0.1:{http_port}"));
 
-            println!("[Config] Backend URL  : {}", backend_url);
+            log::info!("[Config] Backend URL  : {}", backend_url);
 
             app.manage(backend_url.clone());
 
@@ -257,7 +303,7 @@ pub fn run() {
             let app_data_dir_for_server = app_data_dir.clone();
             if let Some((http_listener, https_listener)) = listeners {
                 tauri::async_runtime::spawn(async move {
-                    println!(
+                    log::info!(
                         "[Booth Tool] Starting HTTP+HTTPS server ({http_port} loopback / {lan_https_port} LAN)..."
                     );
                     server::start_server(

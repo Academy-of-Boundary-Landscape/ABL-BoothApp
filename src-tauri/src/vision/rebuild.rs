@@ -103,9 +103,10 @@ impl RebuildExecutor {
                     embedded_count += 1;
                 }
                 Err(e) => {
-                    eprintln!(
+                    log::warn!(
                         "[Vision Rebuild] embed failed for image_id={}: {}",
-                        row.image_id, e
+                        row.image_id,
+                        e
                     );
                 }
             }

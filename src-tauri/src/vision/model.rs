@@ -43,7 +43,7 @@ pub fn preprocess(image_bytes: &[u8], manifest: &ModelManifest) -> Result<Vec<f3
     }
     let norm_us = t2.elapsed().as_micros();
 
-    println!(
+    log::info!(
         "[Vision] Preprocess: decode={}us, resize={}us, normalize={}us, total={}us (input {}x{})",
         decode_us,
         resize_us,

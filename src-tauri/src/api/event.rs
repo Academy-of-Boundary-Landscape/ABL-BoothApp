@@ -264,7 +264,7 @@ async fn create_event(
             match save_upload_file(&state.upload_dir, field, Some("events")).await {
                 Ok(path) => qr_paths.push(path),
                 Err(e) => {
-                    eprintln!("Upload Failed: {}", e);
+                    log::warn!("Upload Failed: {}", e);
                     return (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(json!({"error": "Failed to save file"})),
@@ -318,7 +318,7 @@ async fn create_event(
             (StatusCode::CREATED, Json(response)).into_response()
         }
         Err(e) => {
-            eprintln!("DB Error: {:?}", e);
+            log::warn!("DB Error: {:?}", e);
             (StatusCode::INTERNAL_SERVER_ERROR, "Database Error").into_response()
         }
     }
@@ -380,7 +380,7 @@ async fn update_event(
                     has_new_qr_upload = true;
                 }
                 Err(e) => {
-                    eprintln!("Update Upload Failed: {}", e);
+                    log::warn!("Update Upload Failed: {}", e);
                     return (StatusCode::INTERNAL_SERVER_ERROR, "File upload failed")
                         .into_response();
                 }
@@ -444,7 +444,7 @@ async fn update_event(
             (StatusCode::OK, Json(response)).into_response()
         }
         Err(e) => {
-            eprintln!("Update DB Error: {:?}", e);
+            log::warn!("Update DB Error: {:?}", e);
             (StatusCode::INTERNAL_SERVER_ERROR, "Database Error").into_response()
         }
     }
@@ -588,7 +588,7 @@ async fn delete_event(
     let mut tx = match state.db.begin().await {
         Ok(tx) => tx,
         Err(e) => {
-            eprintln!("Failed to begin transaction: {:?}", e);
+            log::warn!("Failed to begin transaction: {:?}", e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({"error": "Database error"})),
@@ -606,7 +606,7 @@ async fn delete_event(
         .execute(&mut *tx)
         .await
     {
-        eprintln!("Failed to delete event {}: {:?}", id, err);
+        log::warn!("Failed to delete event {}: {:?}", id, err);
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({"error": "Failed to delete event"})),
@@ -616,9 +616,10 @@ async fn delete_event(
 
     // 提交事务 — 失败时所有删除都会回滚
     if let Err(err) = tx.commit().await {
-        eprintln!(
+        log::warn!(
             "Transaction commit failed for delete event {}: {:?}",
-            id, err
+            id,
+            err
         );
         return (
             StatusCode::INTERNAL_SERVER_ERROR,

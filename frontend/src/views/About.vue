@@ -207,6 +207,22 @@
         </n-collapse>
       </section>
 
+      <!-- 故障排查：日志文件位置（只在桌面 / 手机应用里有） -->
+      <section v-if="logDir" class="section">
+        <div class="section-header">
+          <n-icon size="24" color="#555"><DocumentTextOutline /></n-icon>
+          <h2>故障排查</h2>
+        </div>
+        <p class="log-desc">
+          程序运行日志保存在下面的文件夹里（<code>booth.log</code>）。遇到闪退或功能异常时，
+          把这个文件发给开发者能大大加快排查。
+        </p>
+        <n-flex align="center" :wrap="true">
+          <code class="log-path">{{ logDir }}</code>
+          <n-button size="small" @click="copyLogDir">复制路径</n-button>
+        </n-flex>
+      </section>
+
       <!-- 7. 底部信息 -->
       <section class="footer-section">
         <n-flex vertical align="center" size="large">
@@ -316,6 +332,27 @@ import {
 } from 'naive-ui'
 import { api, unwrap, errorMessage } from '@/api/client'
 import { copyLink as copyLinkUtil } from '@/services/clipboard'
+import { onMounted, ref } from 'vue'
+
+// ---- 故障排查：日志目录 ----
+const logDir = ref('')
+onMounted(async () => {
+  if (window.__TAURI_INTERNALS__ === undefined) return
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    logDir.value = await invoke<string>('get_log_dir')
+  } catch (e) {
+    console.warn('[About] get_log_dir failed', e)
+  }
+})
+async function copyLogDir() {
+  try {
+    await copyLinkUtil(logDir.value)
+    message.success('已复制日志文件夹路径')
+  } catch {
+    message.info(logDir.value)
+  }
+}
 import {
   BookOutline,
   HardwareChipOutline,
@@ -601,5 +638,15 @@ const resetDatabase = () => {
     width: 80px !important;
     height: 80px !important;
   }
+}
+.log-desc {
+  color: var(--text-muted);
+  margin: 0 0 12px;
+}
+.log-path {
+  word-break: break-all;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--bg-muted, rgba(127, 127, 127, 0.12));
 }
 </style>

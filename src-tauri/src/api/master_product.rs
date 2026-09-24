@@ -237,7 +237,7 @@ async fn create_product(
             match save_upload_file(&state.upload_dir, field, Some("products")).await {
                 Ok(path) => image_path = Some(path),
                 Err(e) => {
-                    eprintln!("Upload error: {}", e);
+                    log::warn!("Upload error: {}", e);
                     return Ok(
                         (StatusCode::INTERNAL_SERVER_ERROR, "File upload failed").into_response()
                     );
@@ -290,7 +290,7 @@ async fn create_product(
             if error_msg.contains("UNIQUE constraint failed") {
                 Err(ApiError::Conflict("Product code already exists".into()))
             } else {
-                eprintln!("DB Error: {:?}", e);
+                log::warn!("DB Error: {:?}", e);
                 Ok((StatusCode::INTERNAL_SERVER_ERROR, "Database Error").into_response())
             }
         }
@@ -352,7 +352,7 @@ async fn update_product(
                     }
                     image_path = Some(new_path);
                 }
-                Err(e) => eprintln!("Update upload error: {}", e),
+                Err(e) => log::warn!("Update upload error: {}", e),
             }
         } else {
             let value = field.text().await.unwrap_or_default();
