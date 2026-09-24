@@ -7,7 +7,15 @@
  *   - 优先加粗三类内容：① UI 控件/区域名 ② 关键概念定义 ③ 重要提醒
  *   - 不要无节制加粗，每条 tip 最多 1~2 处为宜
  */
-export const helpContent = {
+
+/** 单个页面的帮助内容：标题 + 若干条提示（tip 支持 **加粗** 简易 Markdown）。 */
+export interface HelpContentEntry {
+  title: string
+  tips: string[]
+}
+
+/** page key（如 `'control-panel'`、`'events'`）→ 帮助内容。 */
+export const helpContent: Record<string, HelpContentEntry> = {
   'control-panel': {
     title: '控制台',
     tips: [

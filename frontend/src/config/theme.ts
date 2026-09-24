@@ -2,9 +2,122 @@
  * 主题配置文件
  * 集中管理所有颜色定义，方便主题切换
  */
+import type { GlobalThemeOverrides } from 'naive-ui'
+
+/** 一套完整主题的颜色定义（深/浅主题同构）。 */
+export interface ThemeColors {
+  background: {
+    primary: string
+    secondary: string
+    card: string
+    elevated: string
+    input: string
+  }
+  text: {
+    primary: string
+    secondary: string
+    tertiary: string
+    disabled: string
+    muted: string
+    placeholder: string
+    white: string
+  }
+  primary: {
+    base: string
+    hover: string
+    pressed: string
+    dark: string
+    light: string
+  }
+  status: {
+    success: string
+    successHover: string
+    warning: string
+    warningAlt: string
+    warningHover: string
+    error: string
+    errorAlt: string
+    errorHover: string
+    info: string
+    infoHover: string
+    cancelled: string
+  }
+  border: {
+    base: string
+    hover: string
+    focus: string
+    light: string
+    dark: string
+    divider: string
+  }
+  special: {
+    overlay: string
+    shadow: string
+    tooltipBg: string
+    highlight: string
+    delete: string
+  }
+  components: {
+    alert: {
+      bg: string
+      info: string
+      success: string
+      warning: string
+      error: string
+    }
+    button: {
+      secondary: string
+      secondaryHover: string
+    }
+    order: {
+      completed: string
+    }
+  }
+}
+
+/** 不随主题切换的几何常量（间距 / 圆角 / 字号 / 阴影）。 */
+export interface DesignTokens {
+  spacing: {
+    xs: string
+    sm: string
+    md: string
+    lg: string
+    xl: string
+    '2xl': string
+  }
+  radius: {
+    sm: string
+    md: string
+    lg: string
+    xl: string
+    pill: string
+  }
+  font: {
+    xs: string
+    sm: string
+    base: string
+    md: string
+    lg: string
+    xl: string
+    '2xl': string
+  }
+  shadow: {
+    sm: string
+    md: string
+    lg: string
+    xl: string
+  }
+}
+
+/**
+ * Naive UI common 覆盖项。naive-ui 的 `ThemeCommonVars` 里没有
+ * `borderColorHover` / `borderColorPressed`（原配置保留了这两项，是无效键），
+ * 为原样保留运行时对象，这里用索引签名放宽类型。
+ */
+type NaiveCommonOverrides = NonNullable<GlobalThemeOverrides['common']> & Record<string, string>
 
 // 深色主题配置（当前主题）
-export const darkTheme = {
+export const darkTheme: ThemeColors = {
   // === 基础颜色 ===
   background: {
     primary: '#121212', // 主背景色
@@ -86,7 +199,7 @@ export const darkTheme = {
     },
   },
 }
-export const lightTheme = {
+export const lightTheme: ThemeColors = {
   // === 基础颜色 ===
   background: {
     // 关键修改：主背景不再是纯白，而是带有极淡蓝紫调的冷灰，护眼且显高级
@@ -182,7 +295,7 @@ export const lightTheme = {
 // Design Tokens — 间距 / 圆角 / 字号 / 阴影
 // 这些不随主题切换而改变，是全局几何常量
 // ============================================================
-export const tokens = {
+export const tokens: DesignTokens = {
   // 4px 基准的间距刻度
   spacing: {
     xs: '4px', // 紧凑内间距、icon 与文字间距
@@ -223,7 +336,7 @@ export const tokens = {
 }
 
 // 生成 CSS 变量
-export function generateCSSVariables(theme) {
+export function generateCSSVariables(theme: ThemeColors): string {
   const t = tokens
   return `
     /* ===== 间距 ===== */
@@ -323,33 +436,34 @@ export function generateCSSVariables(theme) {
 }
 
 // 生成 Naive UI 主题覆盖配置（包含常用组件的主色同步）
-export function generateNaiveUITheme(theme) {
+export function generateNaiveUITheme(theme: ThemeColors): GlobalThemeOverrides {
   const primary = theme.primary
   const text = theme.text
+  const common: NaiveCommonOverrides = {
+    primaryColor: primary.base,
+    primaryColorHover: primary.hover,
+    primaryColorPressed: primary.pressed,
+    primaryColorSuppl: primary.base,
+    textColorBase: text.primary,
+    textColor1: text.primary,
+    textColor2: text.secondary,
+    bodyColor: theme.background.primary,
+    cardColor: theme.background.card,
+    modalColor: theme.background.card,
+    popoverColor: theme.background.card,
+    tableColor: theme.background.card,
+    inputColor: theme.background.input,
+    borderColor: theme.border.base,
+    borderColorHover: theme.border.hover,
+    borderColorPressed: theme.border.focus,
+    dividerColor: theme.border.divider,
+    successColor: theme.status.success,
+    errorColor: theme.status.error,
+    warningColor: theme.status.warning,
+    infoColor: theme.status.info,
+  }
   return {
-    common: {
-      primaryColor: primary.base,
-      primaryColorHover: primary.hover,
-      primaryColorPressed: primary.pressed,
-      primaryColorSuppl: primary.base,
-      textColorBase: text.primary,
-      textColor1: text.primary,
-      textColor2: text.secondary,
-      bodyColor: theme.background.primary,
-      cardColor: theme.background.card,
-      modalColor: theme.background.card,
-      popoverColor: theme.background.card,
-      tableColor: theme.background.card,
-      inputColor: theme.background.input,
-      borderColor: theme.border.base,
-      borderColorHover: theme.border.hover,
-      borderColorPressed: theme.border.focus,
-      dividerColor: theme.border.divider,
-      successColor: theme.status.success,
-      errorColor: theme.status.error,
-      warningColor: theme.status.warning,
-      infoColor: theme.status.info,
-    },
+    common,
     Button: {
       colorPrimary: primary.base,
       colorHoverPrimary: primary.hover,
