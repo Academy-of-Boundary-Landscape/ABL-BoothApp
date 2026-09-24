@@ -81,13 +81,13 @@ function onInterval(e: Event) {
 .filters {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1rem;
-  margin-bottom: 1.5rem;
+  gap: var(--space-lg);
+  margin-bottom: var(--space-xl);
 }
 .filter-group {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-sm);
 }
 .filter-group label {
   color: var(--secondary-text-color);
@@ -99,6 +99,6 @@ function onInterval(e: Event) {
   color: var(--primary-text-color);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
-  padding: 0.65rem 0.75rem;
+  padding: var(--space-sm) var(--space-md);
 }
 </style>

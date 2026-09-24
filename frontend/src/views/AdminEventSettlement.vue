@@ -1,5 +1,18 @@
 <template>
-  <div class="page">
+  <PageShell
+    title="展会结算"
+    subtitle="录垫付、结算调整和收摊清点。金额框里填「元」，提交时换算成「分」；业务规则由后端判定，这里只负责把后端那句话原样显示出来。"
+    width="wide"
+  >
+    <template #actions>
+      <n-space class="header-actions">
+        <n-button :disabled="!store.report" @click="reloadReport">刷新</n-button>
+        <n-button type="primary" ghost :disabled="!store.report" @click="exportXlsx">
+          导出 Excel
+        </n-button>
+      </n-space>
+    </template>
+
     <!-- warnings 必须最显眼：这里非空意味着业务表加出来的数和账本对不上，
          也就是某笔账记错了。不折叠、不放底部，逐条列在整张单最上方。 -->
     <n-alert
@@ -13,28 +26,11 @@
       <p class="warning-line muted">说明某笔账记错了，核对无误后再导出。</p>
     </n-alert>
 
-    <header class="page-header">
-      <div class="header-main">
-        <h1>展会结算</h1>
-        <p v-if="store.report" class="event-title">
-          {{ store.report.event_name }} · {{ store.report.event_date }}
-        </p>
-        <p>
-          录垫付、结算调整和收摊清点。金额框里填「元」，提交时换算成「分」；
-          业务规则由后端判定，这里只负责把后端那句话原样显示出来。
-        </p>
-      </div>
-      <n-space class="header-actions">
-        <n-button :disabled="!store.report" @click="reloadReport">刷新</n-button>
-        <n-button type="primary" ghost :disabled="!store.report" @click="exportXlsx">
-          导出 Excel
-        </n-button>
-      </n-space>
-    </header>
+    <p v-if="store.report" class="event-title">
+      {{ store.report.event_name }} · {{ store.report.event_date }}
+    </p>
 
-    <div v-if="store.isLoading && !store.report" class="loading-message">正在加载结算数据...</div>
-
-    <template v-else>
+    <AsyncState :loading="store.isLoading && !store.report" loading-text="正在加载结算数据...">
       <n-alert v-if="store.error" type="error" class="store-error" :bordered="false">
         {{ store.error }}
       </n-alert>
@@ -103,7 +99,7 @@
                   <td class="text-right amount-cell">{{ formatYuan(g.allocated) }}</td>
                 </tr>
                 <tr v-if="!s.goods.length">
-                  <td colspan="11" class="empty-line">这个货主没有上架商品</td>
+                  <td colspan="11"><EmptyState compact title="这个货主没有上架商品" /></td>
                 </tr>
               </tbody>
             </table>
@@ -214,7 +210,7 @@
           </div>
         </div>
 
-        <div v-if="store.advances.length" class="table-wrapper">
+        <div v-if="store.advances.length" class="table-scroll">
           <table class="data-table">
             <thead>
               <tr>
@@ -244,7 +240,7 @@
             </tbody>
           </table>
         </div>
-        <p v-else class="empty-line">暂无垫付</p>
+        <EmptyState v-else compact title="暂无垫付" />
       </section>
 
       <!-- 结算调整 -->
@@ -292,7 +288,7 @@
           </div>
         </div>
 
-        <div v-if="store.adjustments.length" class="table-wrapper">
+        <div v-if="store.adjustments.length" class="table-scroll">
           <table class="data-table">
             <thead>
               <tr>
@@ -322,7 +318,7 @@
             </tbody>
           </table>
         </div>
-        <p v-else class="empty-line">暂无结算调整</p>
+        <EmptyState v-else compact title="暂无结算调整" />
       </section>
 
       <!-- 收摊清点 -->
@@ -333,7 +329,7 @@
           「我数了，一致」和「我没数」是两件事。
         </p>
 
-        <div class="table-wrapper">
+        <div class="table-scroll">
           <table class="data-table">
             <thead>
               <tr>
@@ -365,9 +361,11 @@
           </table>
         </div>
 
-        <p v-if="!store.report.channels.length" class="empty-line">
-          本场还没有用过的收款渠道，无需清点。
-        </p>
+        <EmptyState
+          v-if="!store.report.channels.length"
+          compact
+          title="本场还没有用过的收款渠道，无需清点。"
+        />
 
         <div v-if="hasDiff" class="shortfall-note">
           差额由摊主自己承担，不进任何货主的结算。要推给某个货主，请到上面加一条结算调整。
@@ -383,8 +381,8 @@
           </n-button>
         </div>
       </section>
-    </template>
-  </div>
+    </AsyncState>
+  </PageShell>
 </template>
 
 <script setup lang="ts">
@@ -399,8 +397,6 @@ import {
   NRadioGroup,
   NRadioButton,
   NTag,
-  useDialog,
-  useMessage,
 } from 'naive-ui'
 import { useSettlementStore } from '@/stores/settlementStore'
 import { useSocietyStore } from '@/stores/societyStore'
@@ -415,13 +411,14 @@ import { save } from '@tauri-apps/plugin-dialog'
 import { writeFile } from '@tauri-apps/plugin-fs'
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 import type { Schemas } from '@/api/client'
+import { PageShell, AsyncState, EmptyState } from '@/components/ui'
+import { useFeedback } from '@/composables/useFeedback'
 
 const props = defineProps<{ id: string | number }>()
 
 const store = useSettlementStore()
 const societyStore = useSocietyStore()
-const dialog = useDialog()
-const message = useMessage()
+const fb = useFeedback()
 
 const isBusy = ref(false)
 
@@ -569,7 +566,7 @@ async function exportXlsx() {
       if (!filePath) return
 
       await writeFile(filePath, bytes)
-      alert('导出成功')
+      fb.success('导出成功')
       return
     }
 
@@ -595,17 +592,17 @@ async function exportXlsx() {
     }, 100)
   } catch (error) {
     console.error('下载结算单失败:', error)
-    alert((error instanceof Error && error.message) || '下载失败')
+    fb.error(error, '下载失败')
   }
 }
 
 async function submitAdvance() {
   const { societyId, label: rawLabel, amountYuan } = advanceForm.value
-  if (!societyId) return message.warning('请选择社团')
+  if (!societyId) return fb.warning('请选择社团')
   const label = rawLabel.trim()
-  if (!label) return message.warning('请填写名目')
+  if (!label) return fb.warning('请填写名目')
   if (amountYuan === null || !Number.isFinite(amountYuan) || amountYuan <= 0) {
-    return message.warning('垫付金额必须大于 0')
+    return fb.warning('垫付金额必须大于 0')
   }
 
   isBusy.value = true
@@ -615,43 +612,45 @@ async function submitAdvance() {
       label,
       amount: toCents(amountYuan),
     })
-    message.success('垫付已记录')
+    fb.success('垫付已记录')
     advanceForm.value = defaultAdvanceForm()
   } catch (error) {
-    message.error((error instanceof Error && error.message) || '新增垫付失败')
+    fb.error(error, '新增垫付失败')
   } finally {
     isBusy.value = false
   }
 }
 
-function removeAdvance(entry: Schemas['LedgerEntryRow']) {
-  dialog.warning({
-    title: '确认删除',
-    content: `删除垫付「${entry.label}」（${formatYuan(entry.amount)}）？`,
-    positiveText: '确认删除',
-    negativeText: '取消',
-    async onPositiveClick() {
-      isBusy.value = true
-      try {
-        await store.deleteAdvance(Number(props.id), entry.id)
-        message.success('垫付已删除')
-      } catch (error) {
-        message.error((error instanceof Error && error.message) || '删除垫付失败')
-      } finally {
-        isBusy.value = false
-      }
-    },
-  })
+async function removeAdvance(entry: Schemas['LedgerEntryRow']) {
+  if (
+    await fb.confirm({
+      title: '确认删除',
+      content: `删除垫付「${entry.label}」（${formatYuan(entry.amount)}）？`,
+      positiveText: '确认删除',
+      negativeText: '取消',
+      danger: true,
+    })
+  ) {
+    isBusy.value = true
+    try {
+      await store.deleteAdvance(Number(props.id), entry.id)
+      fb.success('垫付已删除')
+    } catch (error) {
+      fb.error(error, '删除垫付失败')
+    } finally {
+      isBusy.value = false
+    }
+  }
 }
 
 async function submitAdjustment() {
   const { societyId, direction, label: rawLabel, amountYuan } = adjustmentForm.value
-  if (!societyId) return message.warning('请选择社团')
-  if (!direction) return message.warning('请选择方向')
+  if (!societyId) return fb.warning('请选择社团')
+  if (!direction) return fb.warning('请选择方向')
   const label = rawLabel.trim()
-  if (!label) return message.warning('请填写名目')
+  if (!label) return fb.warning('请填写名目')
   if (amountYuan === null || !Number.isFinite(amountYuan) || amountYuan <= 0) {
-    return message.warning('调整金额必须大于 0')
+    return fb.warning('调整金额必须大于 0')
   }
 
   isBusy.value = true
@@ -662,40 +661,42 @@ async function submitAdjustment() {
       direction,
       amount: toCents(amountYuan),
     })
-    message.success('结算调整已记录')
+    fb.success('结算调整已记录')
     adjustmentForm.value = defaultAdjustmentForm()
   } catch (error) {
-    message.error((error instanceof Error && error.message) || '新增结算调整失败')
+    fb.error(error, '新增结算调整失败')
   } finally {
     isBusy.value = false
   }
 }
 
-function removeAdjustment(entry: Schemas['LedgerEntryRow']) {
-  dialog.warning({
-    title: '确认删除',
-    content: `删除结算调整「${entry.label}」（${describeEntryAdjustment(entry.amount)}）？`,
-    positiveText: '确认删除',
-    negativeText: '取消',
-    async onPositiveClick() {
-      isBusy.value = true
-      try {
-        await store.deleteAdjustment(Number(props.id), entry.id)
-        message.success('结算调整已删除')
-      } catch (error) {
-        message.error((error instanceof Error && error.message) || '删除结算调整失败')
-      } finally {
-        isBusy.value = false
-      }
-    },
-  })
+async function removeAdjustment(entry: Schemas['LedgerEntryRow']) {
+  if (
+    await fb.confirm({
+      title: '确认删除',
+      content: `删除结算调整「${entry.label}」（${describeEntryAdjustment(entry.amount)}）？`,
+      positiveText: '确认删除',
+      negativeText: '取消',
+      danger: true,
+    })
+  ) {
+    isBusy.value = true
+    try {
+      await store.deleteAdjustment(Number(props.id), entry.id)
+      fb.success('结算调整已删除')
+    } catch (error) {
+      fb.error(error, '删除结算调整失败')
+    } finally {
+      isBusy.value = false
+    }
+  }
 }
 
 async function submitReconcile() {
   const rows = store.report?.channels ?? []
   const blank = rows.filter((c) => !Number.isFinite(counts.value[c.channel]))
   if (blank.length) {
-    message.warning(`这些渠道还没填实际到手：${blank.map((c) => c.channel).join('、')}`)
+    fb.warning(`这些渠道还没填实际到手：${blank.map((c) => c.channel).join('、')}`)
     return
   }
   const payload: Schemas['ReconcileRequest']['counts'] = rows.map((c) => ({
@@ -706,10 +707,10 @@ async function submitReconcile() {
   isBusy.value = true
   try {
     await store.reconcile(Number(props.id), payload)
-    message.success('清点已提交')
+    fb.success('清点已提交')
   } catch (error) {
     // 漏渠道、重复渠道、本场没用过的渠道，后端 400 的原文原样显示。
-    message.error((error instanceof Error && error.message) || '提交清点失败')
+    fb.error(error, '提交清点失败')
   } finally {
     isBusy.value = false
   }
@@ -726,34 +727,9 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.page {
-  max-width: 1080px;
-}
-.page-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
-  margin-bottom: 1.5rem;
-}
-.header-main {
-  min-width: 0;
-}
-.page-header h1 {
-  margin: 0 0 0.25rem;
-  font-size: var(--font-xl);
-  color: var(--accent-color);
-}
-.page-header p {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: var(--font-base);
-  line-height: 1.6;
-}
-.page-header .event-title {
+.event-title {
   color: var(--primary-text-color);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
 }
 .header-actions {
   flex: 0 0 auto;
@@ -761,11 +737,12 @@ onUnmounted(() => {
 
 /* warnings 是「业务表加出来的数和账本对不上」，n-alert 自带红底，这里只压间距。 */
 .warnings-block {
-  margin-bottom: 1.25rem;
+  margin-bottom: var(--space-lg);
 }
 .warning-line {
-  margin: 0.2rem 0;
+  margin: var(--space-xs) 0;
   line-height: 1.6;
+  /* stylelint-disable-next-line declaration-property-value-keyword-no-deprecated -- 保留原关键字，不做行为变更 */
   word-break: break-word;
 }
 .warning-line.muted {
@@ -776,13 +753,13 @@ onUnmounted(() => {
 .report-block {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
-  padding: 1rem 1.25rem;
+  padding: var(--space-lg) var(--space-xl);
   background-color: var(--card-bg-color);
 }
 .society-card {
   border-bottom: 1px solid var(--border-color);
-  padding-bottom: 0.75rem;
-  margin-bottom: 0.75rem;
+  padding-bottom: var(--space-md);
+  margin-bottom: var(--space-md);
 }
 .society-card:last-of-type {
   border-bottom: none;
@@ -790,17 +767,17 @@ onUnmounted(() => {
 .society-head {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.35rem;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-xs);
 }
 .society-name {
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   color: var(--primary-text-color);
 }
 .society-line {
   display: flex;
-  gap: 0.4rem;
-  padding: 0.15rem 0;
+  gap: var(--space-sm);
+  padding: var(--space-xs) 0;
   font-size: var(--font-sm);
   line-height: 1.7;
   color: var(--text-placeholder);
@@ -808,47 +785,47 @@ onUnmounted(() => {
 .line-tag {
   flex: 0 0 auto;
   color: var(--accent-color);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
 }
 .line-body {
   min-width: 0;
 }
 .variance {
-  margin-left: 0.75rem;
+  margin-left: var(--space-md);
 }
 .stocktake-tag {
-  margin-left: 0.5rem;
+  margin-left: var(--space-sm);
 }
 .detail-toggle {
-  margin-left: 0.5rem;
+  margin-left: var(--space-sm);
 }
 .goods-detail {
-  margin: 0.5rem 0;
+  margin: var(--space-sm) 0;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
   overflow-x: auto;
 }
 .transfer-row {
-  margin-top: 0.5rem;
-  padding-top: 0.5rem;
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
   border-top: 1px solid var(--border-color);
   font-size: var(--font-base);
   color: var(--primary-text-color);
 }
 /* 这一块唯一要被记住的数字，视觉上压过其它行。 */
 .transfer-amount {
-  margin-left: 0.35rem;
-  font-size: 1.6rem;
-  font-weight: 700;
+  margin-left: var(--space-xs);
+  font-size: var(--font-xl);
+  font-weight: var(--weight-bold);
   color: var(--accent-color);
   font-variant-numeric: tabular-nums;
 }
 .report-totals {
   display: flex;
   flex-wrap: wrap;
-  gap: 1.25rem;
+  gap: var(--space-lg);
   justify-content: flex-end;
-  padding-top: 0.5rem;
+  padding-top: var(--space-sm);
   border-top: 2px solid var(--accent-color);
   font-size: var(--font-sm);
   color: var(--text-muted);
@@ -858,33 +835,33 @@ onUnmounted(() => {
   font-variant-numeric: tabular-nums;
 }
 .report-meta {
-  margin: 0.75rem 0 0;
-  font-size: var(--font-xs, 0.75rem);
+  margin: var(--space-md) 0 0;
+  font-size: var(--font-xs);
   color: var(--text-muted);
   line-height: 1.6;
 }
 
 .store-error {
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-lg);
 }
 
 .block {
-  margin-bottom: 2rem;
+  margin-bottom: var(--space-2xl);
 }
 .block h2 {
-  margin: 0 0 0.25rem;
-  font-size: var(--font-lg, 1.125rem);
+  margin: 0 0 var(--space-xs);
+  font-size: var(--font-lg);
   color: var(--primary-text-color);
 }
 /* 「展会结算之后，这两项仍然可以增删」是冻结例外的用户可见部分，
    单列一行、不用 muted 灰掉，免得摊主以为结算之后就补不了了。 */
 .block-note {
-  margin: 0 0 0.25rem;
+  margin: 0 0 var(--space-xs);
   color: var(--warning-color);
   font-size: var(--font-sm);
 }
 .block-hint {
-  margin: 0 0 0.75rem;
+  margin: 0 0 var(--space-md);
   color: var(--text-muted);
   font-size: var(--font-sm);
   line-height: 1.6;
@@ -893,14 +870,14 @@ onUnmounted(() => {
 .form-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.9rem 1rem;
+  gap: var(--space-md) var(--space-lg);
   align-items: end;
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-lg);
 }
 .field {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: var(--space-xs);
   min-width: 0;
 }
 .field-wide {
@@ -919,20 +896,14 @@ onUnmounted(() => {
 .actions-row {
   display: flex;
   justify-content: flex-end;
-  margin-top: 0.75rem;
+  margin-top: var(--space-md);
 }
-@media (max-width: 640px) {
+@media (--phone) {
   .form-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
-.table-wrapper {
-  width: 100%;
-  overflow-x: auto;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-}
 .data-table {
   width: 100%;
   border-collapse: collapse;
@@ -940,15 +911,15 @@ onUnmounted(() => {
   font-size: var(--font-base);
 }
 .data-table th {
-  padding: 10px 14px;
+  padding: var(--space-sm) var(--space-md);
   background-color: var(--card-bg-color);
   color: var(--primary-text-color);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   border-bottom: 2px solid var(--accent-color);
   white-space: nowrap;
 }
 .data-table td {
-  padding: 10px 14px;
+  padding: var(--space-sm) var(--space-md);
   border-bottom: 1px solid var(--border-color);
   color: var(--text-placeholder);
   vertical-align: middle;
@@ -965,33 +936,21 @@ onUnmounted(() => {
 }
 .diff-short {
   color: var(--error-color);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
 }
 .diff-over {
   color: var(--warning-color);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
 }
 
 /* 短款第一反应是「能不能算到某个货主头上」，把母 spec 第 5 节那句话直接摆出来。 */
 .shortfall-note {
-  margin-top: 0.75rem;
-  padding: 0.6rem 0.9rem;
+  margin-top: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
   border-left: 3px solid var(--error-color);
   background-color: var(--card-bg-color);
   color: var(--error-color);
   font-size: var(--font-sm);
   line-height: 1.6;
-}
-
-.empty-line {
-  margin: 0.5rem 0 0;
-  color: var(--text-muted);
-  font-size: var(--font-sm);
-}
-
-.loading-message {
-  padding: 1rem;
-  text-align: center;
-  color: var(--text-muted);
 }
 </style>
