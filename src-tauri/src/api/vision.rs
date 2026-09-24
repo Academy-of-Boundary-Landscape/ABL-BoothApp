@@ -1,16 +1,19 @@
 use axum::{
     extract::{DefaultBodyLimit, Multipart, Path, State},
     http::StatusCode,
-    response::IntoResponse,
-    routing::{delete, get, post, put},
-    Json, Router,
+    response::{IntoResponse, Response},
+    Json,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashSet;
 use tokio::time::{timeout, Duration};
+use utoipa::ToSchema;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::{
+    api::openapi::ApiErrorBody,
+    error::{ApiError, ApiResult},
     state::AppState,
     utils::file::{save_upload_bytes, save_upload_file},
     vision::{index, store::VisionStore},
@@ -18,29 +21,22 @@ use crate::{
 
 const VISION_UPLOAD_LIMIT_BYTES: usize = 10 * 1024 * 1024;
 
-/// ③b 过渡：本模块的路由还没标 utoipa 注解，整体包进 OpenApiRouter——路由照常工作，
-/// 只是文档里没有它的路径。阶段 2 迁移本模块时改为 `routes!(...)` 并删掉 `legacy_router`。
-pub fn router() -> utoipa_axum::router::OpenApiRouter<AppState> {
-    utoipa_axum::router::OpenApiRouter::from(legacy_router())
-}
-
-fn legacy_router() -> Router<AppState> {
-    Router::new()
-        .route("/status", get(get_vision_status))
-        .route("/search", post(search_by_image))
-        .route("/rebuild", post(rebuild_index))
-        .route("/feedback", post(save_feedback))
-        .route("/models", get(list_models))
-        .route("/models/install", post(install_model))
-        .route("/models/tasks/{task_id}", get(get_install_task))
-        .route("/models/activate", post(activate_model))
-        .route("/models/{model_id}", delete(delete_model))
-        .route("/settings/ep", get(get_ep_setting))
-        .route("/settings/ep", put(set_ep_setting))
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(get_vision_status))
+        .routes(routes!(search_by_image))
+        .routes(routes!(rebuild_index))
+        .routes(routes!(save_feedback))
+        .routes(routes!(list_models))
+        .routes(routes!(install_model))
+        .routes(routes!(get_install_task))
+        .routes(routes!(activate_model))
+        .routes(routes!(delete_model))
+        .routes(routes!(get_ep_setting, set_ep_setting))
         .layer(DefaultBodyLimit::max(VISION_UPLOAD_LIMIT_BYTES))
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct VisionStatusResponse {
     model_id: String,
     model_version: String,
@@ -55,7 +51,14 @@ struct VisionStatusResponse {
     execution_provider: String,
 }
 
-async fn get_vision_status(State(state): State<AppState>) -> impl IntoResponse {
+/// Vision 运行时状态：模型、索引版本/大小、重建进度与当前推理设备。
+#[utoipa::path(
+    get,
+    path = "/status",
+    tag = "vision",
+    responses((status = 200, body = VisionStatusResponse)),
+)]
+async fn get_vision_status(State(state): State<AppState>) -> Json<VisionStatusResponse> {
     let snapshot = state.vision_runtime.snapshot().await;
 
     Json(VisionStatusResponse {
@@ -73,7 +76,7 @@ async fn get_vision_status(State(state): State<AppState>) -> impl IntoResponse {
     })
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct VisionSearchResult {
     master_product_id: i64,
     product_code: String,
@@ -82,7 +85,7 @@ struct VisionSearchResult {
     thumb_url: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct VisionSearchResponse {
     model_id: String,
     model_version: String,
@@ -91,7 +94,7 @@ struct VisionSearchResponse {
     results: Vec<VisionSearchResult>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct VisionModelItem {
     model_id: String,
     model_version: String,
@@ -104,24 +107,27 @@ struct VisionModelItem {
     is_active: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct VisionModelsResponse {
     active_model_id: String,
     models: Vec<VisionModelItem>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
+#[schema(as = VisionActivateModelRequest)]
 struct ActivateModelRequest {
     model_id: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
+#[schema(as = VisionInstallModelRequest)]
 struct InstallModelRequest {
     model_id: String,
     source: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
+#[schema(as = VisionRebuildRequest)]
 struct RebuildRequest {
     force_full: Option<bool>,
 }
@@ -147,6 +153,106 @@ struct FeedbackRequestContext {
     image_url: String,
     chosen_master_product_id: i64,
     is_correct: bool,
+}
+
+/// 仅用于 OpenAPI 文档：`/search` 的 multipart 表单字段。
+#[derive(ToSchema)]
+#[allow(dead_code)]
+struct VisionSearchForm {
+    /// 查询图片，必填。
+    #[schema(value_type = String, format = Binary)]
+    image: Vec<u8>,
+    /// 返回前 K 个结果，1..=20，缺省 5。
+    top_k: Option<String>,
+    /// `order` | `admin_event` | `admin_master`。
+    mode: Option<String>,
+    /// mode 为 order/admin_event 时必填。
+    event_id: Option<String>,
+    /// JSON 数组或逗号分隔的商品 id。
+    master_product_ids: Option<String>,
+    /// ROI JSON：`{"x":..,"y":..,"w":..,"h":..}`。
+    roi: Option<String>,
+}
+
+/// 仅用于 OpenAPI 文档：`/feedback` 的 multipart 表单字段。
+#[derive(ToSchema)]
+#[allow(dead_code)]
+struct VisionFeedbackForm {
+    /// 反馈图片，必填。
+    #[schema(value_type = String, format = Binary)]
+    image: Vec<u8>,
+    /// 用户选中的商品 id，必填。
+    chosen_master_product_id: String,
+    /// `1`/`true`/`TRUE`/`True` 表示识别正确，缺省正确。
+    is_correct: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+struct VisionRebuildResponse {
+    ok: bool,
+    message: String,
+    force_full: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+struct VisionFeedbackResponse {
+    ok: bool,
+    image_id: i64,
+    image_url: String,
+    kind: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+struct VisionInstallModelResponse {
+    ok: bool,
+    task_id: String,
+    model_id: String,
+    source: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+struct VisionInstallTaskResponse {
+    task_id: String,
+    model_id: String,
+    status: String,
+    progress: i32,
+    message: Option<String>,
+    error: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+struct VisionActivateModelResponse {
+    ok: bool,
+    active_model_id: String,
+    rebuild_started: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+struct VisionDeleteModelResponse {
+    ok: bool,
+    deleted_model_id: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+struct VisionGpuDevice {
+    device_id: i32,
+    name: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+struct VisionEpSettingResponse {
+    configured: String,
+    active: String,
+    platform: String,
+    gpu_devices: Vec<VisionGpuDevice>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+struct VisionSetEpResponse {
+    ok: bool,
+    execution_provider: String,
+    active: String,
+    message: String,
 }
 
 fn validate_mode(mode: &Option<String>, event_id: Option<i64>) -> Result<(), (StatusCode, String)> {
@@ -342,7 +448,23 @@ async fn parse_feedback_request(
     })
 }
 
-async fn search_by_image(State(state): State<AppState>, multipart: Multipart) -> impl IntoResponse {
+/// 以图搜图：multipart 上传查询图片，返回按相似度排序的商品候选。
+///
+/// 索引未就绪或正在重建时返回 503；`mode` 为 `order`/`admin_event` 时 `event_id` 必填。
+#[utoipa::path(
+    post,
+    path = "/search",
+    tag = "vision",
+    request_body(content = VisionSearchForm, content_type = "multipart/form-data"),
+    responses(
+        (status = 200, body = VisionSearchResponse),
+        (status = 400, body = ApiErrorBody, description = "缺少图片、mode/roi/master_product_ids 非法"),
+        (status = 408, body = ApiErrorBody, description = "识别超时"),
+        (status = 500, body = ApiErrorBody, description = "上传或推理失败"),
+        (status = 503, body = ApiErrorBody, description = "索引重建中、未就绪或并发已满"),
+    ),
+)]
+async fn search_by_image(State(state): State<AppState>, multipart: Multipart) -> Response {
     // 不需要展会守卫：只读识别，不写任何账
     let snapshot = state.vision_runtime.snapshot().await;
 
@@ -478,7 +600,20 @@ fn compute_uncertainty(top1_min: f32, gap_min: f32, results: &[index::ProductSea
     false
 }
 
-async fn save_feedback(State(state): State<AppState>, multipart: Multipart) -> impl IntoResponse {
+/// 保存一次以图搜图的用户反馈（正确/纠错），并把图片加入识别索引。
+#[utoipa::path(
+    post,
+    path = "/feedback",
+    tag = "vision",
+    request_body(content = VisionFeedbackForm, content_type = "multipart/form-data"),
+    responses(
+        (status = 201, body = VisionFeedbackResponse),
+        (status = 400, body = ApiErrorBody, description = "缺少图片或 chosen_master_product_id"),
+        (status = 404, body = ApiErrorBody, description = "商品不存在"),
+        (status = 500, body = ApiErrorBody, description = "上传或数据库失败"),
+    ),
+)]
+async fn save_feedback(State(state): State<AppState>, multipart: Multipart) -> Response {
     // 不需要展会守卫：只写识别反馈图片，不写展会的账
     let req = match parse_feedback_request(&state, multipart).await {
         Ok(req) => req,
@@ -527,12 +662,12 @@ async fn save_feedback(State(state): State<AppState>, multipart: Multipart) -> i
 
             (
                 StatusCode::CREATED,
-                Json(json!({
-                    "ok": true,
-                    "image_id": image_id,
-                    "image_url": req.image_url,
-                    "kind": kind
-                })),
+                Json(VisionFeedbackResponse {
+                    ok: true,
+                    image_id,
+                    image_url: req.image_url,
+                    kind: kind.to_string(),
+                }),
             )
                 .into_response()
         }
@@ -544,7 +679,14 @@ async fn save_feedback(State(state): State<AppState>, multipart: Multipart) -> i
     }
 }
 
-async fn list_models(State(state): State<AppState>) -> impl IntoResponse {
+/// 列出注册表中的所有 Vision 模型及其安装/激活状态。
+#[utoipa::path(
+    get,
+    path = "/models",
+    tag = "vision",
+    responses((status = 200, body = VisionModelsResponse)),
+)]
+async fn list_models(State(state): State<AppState>) -> Json<VisionModelsResponse> {
     let models = state
         .vision_runtime
         .list_models()
@@ -575,10 +717,21 @@ async fn list_models(State(state): State<AppState>) -> impl IntoResponse {
     })
 }
 
+/// 安装（下载）一个 Vision 模型，返回后台任务 id。
+#[utoipa::path(
+    post,
+    path = "/models/install",
+    tag = "vision",
+    request_body = InstallModelRequest,
+    responses(
+        (status = 202, body = VisionInstallModelResponse),
+        (status = 400, body = ApiErrorBody, description = "source 不受支持、模型不存在或已安装"),
+    ),
+)]
 async fn install_model(
     State(state): State<AppState>,
     Json(payload): Json<InstallModelRequest>,
-) -> impl IntoResponse {
+) -> Response {
     // 不需要展会守卫：模型文件管理，不属于任何展会
     if let Some(source) = &payload.source {
         let supported = ["auto", "github", "hf", "hf_mirror"];
@@ -598,12 +751,12 @@ async fn install_model(
     {
         Ok(task_id) => (
             StatusCode::ACCEPTED,
-            Json(json!({
-                "ok": true,
-                "task_id": task_id,
-                "model_id": payload.model_id,
-                "source": payload.source.unwrap_or_else(|| "auto".to_string())
-            })),
+            Json(VisionInstallModelResponse {
+                ok: true,
+                task_id,
+                model_id: payload.model_id,
+                source: payload.source.unwrap_or_else(|| "auto".to_string()),
+            }),
         )
             .into_response(),
         Err(msg) => (
@@ -614,35 +767,49 @@ async fn install_model(
     }
 }
 
+/// 查询模型安装任务的状态。
+#[utoipa::path(
+    get,
+    path = "/models/tasks/{task_id}",
+    tag = "vision",
+    params(("task_id" = String, Path, description = "安装任务 id")),
+    responses(
+        (status = 200, body = VisionInstallTaskResponse),
+        (status = 404, body = ApiErrorBody, description = "任务不存在"),
+    ),
+)]
 async fn get_install_task(
     State(state): State<AppState>,
     Path(task_id): Path<String>,
-) -> impl IntoResponse {
+) -> ApiResult<Json<VisionInstallTaskResponse>> {
     match state.vision_runtime.get_install_task(&task_id).await {
-        Some(task) => (
-            StatusCode::OK,
-            Json(json!({
-                "task_id": task.task_id,
-                "model_id": task.model_id,
-                "status": task.status,
-                "progress": task.progress,
-                "message": task.message,
-                "error": task.error
-            })),
-        )
-            .into_response(),
-        None => (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": "task not found" })),
-        )
-            .into_response(),
+        Some(task) => Ok(Json(VisionInstallTaskResponse {
+            task_id: task.task_id,
+            model_id: task.model_id,
+            status: task.status,
+            progress: task.progress,
+            message: task.message,
+            error: task.error,
+        })),
+        None => Err(ApiError::NotFound("task not found".into())),
     }
 }
 
+/// 激活一个已安装的 Vision 模型，并触发索引重建。
+#[utoipa::path(
+    post,
+    path = "/models/activate",
+    tag = "vision",
+    request_body = ActivateModelRequest,
+    responses(
+        (status = 202, body = VisionActivateModelResponse),
+        (status = 400, body = ApiErrorBody, description = "模型不存在或未安装"),
+    ),
+)]
 async fn activate_model(
     State(state): State<AppState>,
     Json(payload): Json<ActivateModelRequest>,
-) -> impl IntoResponse {
+) -> Response {
     // 不需要展会守卫：模型选择，不属于任何展会
     let result = state
         .vision_runtime
@@ -660,11 +827,11 @@ async fn activate_model(
 
             (
                 StatusCode::ACCEPTED,
-                Json(json!({
-                    "ok": true,
-                    "active_model_id": payload.model_id,
-                    "rebuild_started": true
-                })),
+                Json(VisionActivateModelResponse {
+                    ok: true,
+                    active_model_id: payload.model_id,
+                    rebuild_started: true,
+                }),
             )
                 .into_response()
         }
@@ -679,18 +846,25 @@ async fn activate_model(
     }
 }
 
+/// 触发 Vision 索引重建；请求体可选，`force_full` 决定全量还是增量。
+#[utoipa::path(
+    post,
+    path = "/rebuild",
+    tag = "vision",
+    request_body = Option<RebuildRequest>,
+    responses(
+        (status = 202, body = VisionRebuildResponse),
+        (status = 409, body = ApiErrorBody, description = "索引正在重建"),
+    ),
+)]
 async fn rebuild_index(
     State(state): State<AppState>,
     payload: Option<Json<RebuildRequest>>,
-) -> impl IntoResponse {
+) -> ApiResult<(StatusCode, Json<VisionRebuildResponse>)> {
     // 不需要展会守卫：重建全局识别索引，不写展会的账
     let snapshot = state.vision_runtime.snapshot().await;
     if snapshot.is_rebuilding {
-        return (
-            StatusCode::CONFLICT,
-            Json(json!({ "error": "VISION_REBUILDING" })),
-        )
-            .into_response();
+        return Err(ApiError::Conflict("VISION_REBUILDING".into()));
     }
 
     let force_full = payload
@@ -705,26 +879,40 @@ async fn rebuild_index(
         None,
     );
 
-    (
+    Ok((
         StatusCode::ACCEPTED,
-        Json(json!({
-            "ok": true,
-            "message": if force_full { "full rebuild started" } else { "incremental rebuild started" },
-            "force_full": force_full
-        })),
-    )
-        .into_response()
+        Json(VisionRebuildResponse {
+            ok: true,
+            message: if force_full {
+                "full rebuild started".to_string()
+            } else {
+                "incremental rebuild started".to_string()
+            },
+            force_full,
+        }),
+    ))
 }
 
-async fn delete_model(
-    State(state): State<AppState>,
-    Path(model_id): Path<String>,
-) -> impl IntoResponse {
+/// 删除一个已安装且非当前激活的 Vision 模型文件。
+#[utoipa::path(
+    delete,
+    path = "/models/{model_id}",
+    tag = "vision",
+    params(("model_id" = String, Path, description = "模型 id")),
+    responses(
+        (status = 200, body = VisionDeleteModelResponse),
+        (status = 400, body = ApiErrorBody, description = "不能删除激活模型、模型不存在或未安装"),
+    ),
+)]
+async fn delete_model(State(state): State<AppState>, Path(model_id): Path<String>) -> Response {
     // 不需要展会守卫：模型文件管理，不属于任何展会
     match state.vision_runtime.delete_model(&model_id).await {
         Ok(_) => (
             StatusCode::OK,
-            Json(json!({ "ok": true, "deleted_model_id": model_id })),
+            Json(VisionDeleteModelResponse {
+                ok: true,
+                deleted_model_id: model_id,
+            }),
         )
             .into_response(),
         Err(msg) => (
@@ -737,7 +925,14 @@ async fn delete_model(
 
 // ==================== EP 设置 ====================
 
-async fn get_ep_setting(State(state): State<AppState>) -> impl IntoResponse {
+/// 读取 Vision 推理设备（execution provider）配置与可用 GPU 列表。
+#[utoipa::path(
+    get,
+    path = "/settings/ep",
+    tag = "vision",
+    responses((status = 200, body = VisionEpSettingResponse)),
+)]
+async fn get_ep_setting(State(state): State<AppState>) -> Json<VisionEpSettingResponse> {
     let ep = state
         .vision_runtime
         .model_manager
@@ -747,7 +942,13 @@ async fn get_ep_setting(State(state): State<AppState>) -> impl IntoResponse {
         .unwrap_or_else(|| "auto".to_string());
 
     let current = crate::vision::session::get_active_ep_name();
-    let gpu_devices = crate::vision::session::probe_gpu_devices();
+    let gpu_devices = crate::vision::session::probe_gpu_devices()
+        .into_iter()
+        .map(|device| VisionGpuDevice {
+            device_id: device.device_id,
+            name: device.name,
+        })
+        .collect();
     let platform = if cfg!(target_os = "windows") {
         "windows"
     } else if cfg!(target_os = "android") {
@@ -756,23 +957,36 @@ async fn get_ep_setting(State(state): State<AppState>) -> impl IntoResponse {
         "other"
     };
 
-    Json(json!({
-        "configured": ep,
-        "active": current,
-        "platform": platform,
-        "gpu_devices": gpu_devices
-    }))
+    Json(VisionEpSettingResponse {
+        configured: ep,
+        active: current,
+        platform: platform.to_string(),
+        gpu_devices,
+    })
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
+#[schema(as = VisionSetEpRequest)]
 struct SetEpRequest {
     execution_provider: String,
 }
 
+/// 设置 Vision 推理设备并立即重新加载模型。
+#[utoipa::path(
+    put,
+    path = "/settings/ep",
+    tag = "vision",
+    request_body = SetEpRequest,
+    responses(
+        (status = 200, body = VisionSetEpResponse),
+        (status = 400, body = ApiErrorBody, description = "EP 取值非法"),
+        (status = 500, body = ApiErrorBody, description = "配置保存或加载失败"),
+    ),
+)]
 async fn set_ep_setting(
     State(state): State<AppState>,
     Json(payload): Json<SetEpRequest>,
-) -> impl IntoResponse {
+) -> Response {
     // 不需要展会守卫：全局 OCR 设置，不属于任何展会
     let ep = &payload.execution_provider;
     let valid = ep == "auto" || ep == "cpu" || ep == "nnapi" || ep.starts_with("gpu:");
@@ -842,23 +1056,623 @@ async fn set_ep_setting(
     match reload_result {
         Ok(_) => (
             StatusCode::OK,
-            Json(json!({
-                "ok": true,
-                "execution_provider": ep,
-                "active": active,
-                "message": "设备已切换并重新加载模型"
-            })),
+            Json(VisionSetEpResponse {
+                ok: true,
+                execution_provider: ep.clone(),
+                active,
+                message: "设备已切换并重新加载模型".to_string(),
+            }),
         )
             .into_response(),
         Err(e) => (
             StatusCode::OK,
-            Json(json!({
-                "ok": true,
-                "execution_provider": ep,
-                "active": active,
-                "message": format!("配置已保存，但重新加载失败: {}", e)
-            })),
+            Json(VisionSetEpResponse {
+                ok: true,
+                execution_provider: ep.clone(),
+                active,
+                message: format!("配置已保存，但重新加载失败: {}", e),
+            }),
         )
             .into_response(),
+    }
+}
+
+#[cfg(test)]
+mod shape_tests {
+    use super::{
+        VisionInstallModelResponse, VisionInstallTaskResponse, VisionSearchResponse,
+        VisionSearchResult,
+    };
+    use crate::state::AppState;
+    use crate::test_support::{
+        json_request, read_json, seed_event_and_product, shape_of, test_state,
+    };
+    use crate::vision::download::model_root_dir;
+    use crate::vision::state::VisionStatusSnapshot;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use axum::Router;
+    use serde_json::{json, Value};
+    use tower::ServiceExt;
+
+    /// Vision registry / runtime config 已 bootstrap、且带两个商品的展会。
+    ///
+    /// 返回 `AppState` 是为了能直接摆弄 `vision_runtime.state`——搜索与重建的有
+    /// 状态分支（未就绪 / 重建中 / 已就绪）只能这样构造，没有别的注入点。
+    async fn seeded() -> (Router, tempfile::TempDir, AppState) {
+        let (state, dir) = test_state().await;
+        state
+            .vision_runtime
+            .bootstrap(state.db.clone())
+            .await
+            .expect("bootstrap vision runtime");
+        seed_event_and_product(&state.db).await;
+        let router = Router::new()
+            .nest("/api", crate::api::router().split_for_parts().0)
+            .with_state(state.clone());
+        (router, dir, state)
+    }
+
+    async fn call(
+        router: &Router,
+        method: &str,
+        uri: &str,
+        token: Option<&str>,
+        body: Value,
+    ) -> (StatusCode, Value) {
+        let res = router
+            .clone()
+            .oneshot(json_request(method, uri, token, body))
+            .await
+            .unwrap();
+        let status = res.status();
+        (status, read_json(res).await)
+    }
+
+    fn multipart_request(uri: &str, fields: &[(&str, &str)]) -> Request<Body> {
+        let boundary = "X-BOUNDARY";
+        let mut body = String::new();
+        for (name, value) in fields {
+            body.push_str(&format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n"
+            ));
+        }
+        body.push_str(&format!("--{boundary}--\r\n"));
+        Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header(
+                "content-type",
+                format!("multipart/form-data; boundary={boundary}"),
+            )
+            .body(Body::from(body))
+            .expect("build multipart request")
+    }
+
+    async fn multipart_call(
+        router: &Router,
+        uri: &str,
+        fields: &[(&str, &str)],
+    ) -> (StatusCode, Value) {
+        let res = router
+            .clone()
+            .oneshot(multipart_request(uri, fields))
+            .await
+            .unwrap();
+        let status = res.status();
+        (status, read_json(res).await)
+    }
+
+    fn ready_state(model_id: &str, model_version: &str) -> VisionStatusSnapshot {
+        VisionStatusSnapshot {
+            model_id: model_id.to_string(),
+            model_version: model_version.to_string(),
+            index_version: 1,
+            index_size: 3,
+            is_ready: true,
+            is_rebuilding: false,
+            last_rebuild_at: Some("2026-10-01 12:00:00".to_string()),
+            reason: None,
+            rebuild_processed: 0,
+            rebuild_total: 0,
+        }
+    }
+
+    /// 造一个模型文件，让 activate/delete 走到成功分支（内容无所谓，不会真的加载）。
+    fn write_fake_model(state: &AppState, model_id: &str) {
+        let path = model_root_dir(&state.app_data_dir).join(format!("{model_id}/model.onnx"));
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, b"not-a-real-onnx").unwrap();
+    }
+
+    #[tokio::test]
+    async fn shape_get_vision_status() {
+        let (router, _dir, _state) = seeded().await;
+        let (s, body) = call(&router, "GET", "/api/vision/status", None, json!(null)).await;
+        println!(
+            "shape_get_vision_status status={s} shape={}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(
+            shape_of(&body),
+            json!({
+                "model_id": "string",
+                "model_version": "string",
+                "index_version": "int",
+                "index_size": "int",
+                "last_rebuild_at": "string",
+                "is_ready": "bool",
+                "is_rebuilding": "bool",
+                "reason": "string",
+                "rebuild_processed": "int",
+                "rebuild_total": "int",
+                "execution_provider": "string",
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_search_by_image() {
+        let (router, _dir, state) = seeded().await;
+
+        // bootstrap 后 index_size=0：未就绪
+        let (s, body) = multipart_call(&router, "/api/vision/search", &[("image", "x")]).await;
+        println!(
+            "shape_search_by_image not_ready status={s} shape={}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            shape_of(&body),
+            json!({"error": "string", "reason": "string"})
+        );
+
+        // 重建中优先于未就绪
+        let mut snap = state.vision_runtime.snapshot().await;
+        snap.is_rebuilding = true;
+        state.vision_runtime.state.set(snap).await;
+        let (s, body) = multipart_call(&router, "/api/vision/search", &[("image", "x")]).await;
+        println!(
+            "shape_search_by_image rebuilding status={s} shape={}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            shape_of(&body),
+            json!({"error": "string", "reason": "string"})
+        );
+
+        // 已就绪但缺 image
+        state
+            .vision_runtime
+            .state
+            .set(ready_state(
+                "convnextv2_pico_fp16",
+                "convnextv2_pico_fp16-v1",
+            ))
+            .await;
+        let (s, body) = multipart_call(&router, "/api/vision/search", &[("top_k", "5")]).await;
+        println!(
+            "shape_search_by_image no_image status={s} shape={}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::BAD_REQUEST);
+        assert_eq!(shape_of(&body), json!({"error": "string"}));
+
+        // 已就绪 + image，但没有模型文件：解析通过，推理失败成 500
+        let (s, body) = multipart_call(
+            &router,
+            "/api/vision/search",
+            &[("image", "x"), ("top_k", "5")],
+        )
+        .await;
+        println!(
+            "shape_search_by_image embed_fail status={s} shape={}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(shape_of(&body), json!({"error": "string"}));
+
+        // 成功分支需要真 ONNX 模型文件（测试环境没有），所以 HTTP 只能钉到 500。
+        // 这里直接对 handler 构造的同一个响应结构做序列化快照，防止字段改名漏网。
+        let success = VisionSearchResponse {
+            model_id: "m".to_string(),
+            model_version: "v".to_string(),
+            index_version: 1,
+            is_uncertain: false,
+            results: vec![VisionSearchResult {
+                master_product_id: 1,
+                product_code: "A".to_string(),
+                name: "本子A".to_string(),
+                score: 0.5,
+                thumb_url: Some("/uploads/x.jpg".to_string()),
+            }],
+        };
+        assert_eq!(
+            shape_of(&serde_json::to_value(&success).unwrap()),
+            json!({
+                "model_id": "string",
+                "model_version": "string",
+                "index_version": "int",
+                "is_uncertain": "bool",
+                "results": [{
+                    "master_product_id": "int",
+                    "product_code": "string",
+                    "name": "string",
+                    "score": "float",
+                    "thumb_url": "string",
+                }],
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_rebuild_index() {
+        let (router, _dir, _state) = seeded().await;
+        let (s, body) = call(
+            &router,
+            "POST",
+            "/api/vision/rebuild",
+            None,
+            json!({"force_full": true}),
+        )
+        .await;
+        println!(
+            "shape_rebuild_index full status={s} shape={}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::ACCEPTED);
+        assert_eq!(
+            shape_of(&body),
+            json!({"ok": "bool", "message": "string", "force_full": "bool"})
+        );
+
+        let (router, _dir, state) = seeded().await;
+        let mut snap = state.vision_runtime.snapshot().await;
+        snap.is_rebuilding = true;
+        state.vision_runtime.state.set(snap).await;
+        let (s, body) = call(
+            &router,
+            "POST",
+            "/api/vision/rebuild",
+            None,
+            json!({"force_full": false}),
+        )
+        .await;
+        println!(
+            "shape_rebuild_index conflict status={s} shape={}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::CONFLICT);
+        assert_eq!(shape_of(&body), json!({"error": "string"}));
+    }
+
+    #[tokio::test]
+    async fn shape_save_feedback() {
+        let (router, _dir, _state) = seeded().await;
+        let (s, body) = multipart_call(
+            &router,
+            "/api/vision/feedback",
+            &[
+                ("image", "x"),
+                ("chosen_master_product_id", "1"),
+                ("is_correct", "1"),
+            ],
+        )
+        .await;
+        println!(
+            "shape_save_feedback created status={s} shape={}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::CREATED);
+        assert_eq!(
+            shape_of(&body),
+            json!({"ok": "bool", "image_id": "int", "image_url": "string", "kind": "string"})
+        );
+
+        let (s, body) = multipart_call(
+            &router,
+            "/api/vision/feedback",
+            &[("image", "x"), ("chosen_master_product_id", "999")],
+        )
+        .await;
+        println!(
+            "shape_save_feedback not_found status={s} shape={}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::NOT_FOUND);
+        assert_eq!(shape_of(&body), json!({"error": "string"}));
+
+        let (s, body) = multipart_call(
+            &router,
+            "/api/vision/feedback",
+            &[("chosen_master_product_id", "1")],
+        )
+        .await;
+        println!(
+            "shape_save_feedback no_image status={s} shape={}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::BAD_REQUEST);
+        assert_eq!(shape_of(&body), json!({"error": "string"}));
+
+        let (s, body) = multipart_call(&router, "/api/vision/feedback", &[("image", "x")]).await;
+        println!(
+            "shape_save_feedback no_id status={s} shape={}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::BAD_REQUEST);
+        assert_eq!(shape_of(&body), json!({"error": "string"}));
+    }
+
+    #[tokio::test]
+    async fn shape_list_models() {
+        let (router, _dir, _state) = seeded().await;
+        let (s, body) = call(&router, "GET", "/api/vision/models", None, json!(null)).await;
+        println!(
+            "shape_list_models status={s} shape={}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(
+            shape_of(&body),
+            json!({
+                "active_model_id": "string",
+                "models": [{
+                    "model_id": "string",
+                    "model_version": "string",
+                    "description": "string",
+                    "tier": "string",
+                    "dim": "int",
+                    "input_size": "int",
+                    "size_mb": "float",
+                    "installed": "bool",
+                    "is_active": "bool",
+                }],
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_install_model() {
+        let (router, _dir, _state) = seeded().await;
+        let (s, body) = call(
+            &router,
+            "POST",
+            "/api/vision/models/install",
+            None,
+            json!({"model_id": "convnextv2_pico_fp16", "source": "bogus"}),
+        )
+        .await;
+        println!(
+            "shape_install_model bad_source status={s} shape={}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::BAD_REQUEST);
+        assert_eq!(shape_of(&body), json!({"error": "string"}));
+
+        let (s, body) = call(
+            &router,
+            "POST",
+            "/api/vision/models/install",
+            None,
+            json!({"model_id": "nope"}),
+        )
+        .await;
+        println!(
+            "shape_install_model unknown status={s} shape={}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::BAD_REQUEST);
+        assert_eq!(shape_of(&body), json!({"ok": "bool", "error": "string"}));
+
+        // 202 成功分支会真的起一个下载任务（测试不打网络），所以直接对 handler
+        // 构造的同一响应结构做序列化快照；字段改名会在这里变红。
+        let success = VisionInstallModelResponse {
+            ok: true,
+            task_id: "t".to_string(),
+            model_id: "m".to_string(),
+            source: "auto".to_string(),
+        };
+        assert_eq!(
+            shape_of(&serde_json::to_value(&success).unwrap()),
+            json!({"ok": "bool", "task_id": "string", "model_id": "string", "source": "string"})
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_get_install_task() {
+        let (router, _dir, _state) = seeded().await;
+        let (s, body) = call(
+            &router,
+            "GET",
+            "/api/vision/models/tasks/nope",
+            None,
+            json!(null),
+        )
+        .await;
+        println!(
+            "shape_get_install_task not_found status={s} shape={}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::NOT_FOUND);
+        assert_eq!(shape_of(&body), json!({"error": "string"}));
+
+        // 成功分支同样要有一个真实安装任务，直接对具名结构做序列化快照。
+        let success = VisionInstallTaskResponse {
+            task_id: "t".to_string(),
+            model_id: "m".to_string(),
+            status: "downloading".to_string(),
+            progress: 1,
+            message: Some("Task created".to_string()),
+            error: None,
+        };
+        assert_eq!(
+            shape_of(&serde_json::to_value(&success).unwrap()),
+            json!({
+                "task_id": "string",
+                "model_id": "string",
+                "status": "string",
+                "progress": "int",
+                "message": "string",
+                "error": "null",
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_activate_model() {
+        let (router, _dir, state) = seeded().await;
+        write_fake_model(&state, "dinov2_small_fp16");
+        let (s, body) = call(
+            &router,
+            "POST",
+            "/api/vision/models/activate",
+            None,
+            json!({"model_id": "dinov2_small_fp16"}),
+        )
+        .await;
+        println!(
+            "shape_activate_model ok status={s} shape={}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::ACCEPTED);
+        assert_eq!(
+            shape_of(&body),
+            json!({"ok": "bool", "active_model_id": "string", "rebuild_started": "bool"})
+        );
+
+        let (s, body) = call(
+            &router,
+            "POST",
+            "/api/vision/models/activate",
+            None,
+            json!({"model_id": "nope"}),
+        )
+        .await;
+        println!(
+            "shape_activate_model unknown status={s} shape={}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::BAD_REQUEST);
+        assert_eq!(shape_of(&body), json!({"ok": "bool", "error": "string"}));
+    }
+
+    #[tokio::test]
+    async fn shape_delete_model() {
+        let (router, _dir, state) = seeded().await;
+        write_fake_model(&state, "dinov2_small_fp16");
+        let (s, body) = call(
+            &router,
+            "DELETE",
+            "/api/vision/models/dinov2_small_fp16",
+            None,
+            json!(null),
+        )
+        .await;
+        println!(
+            "shape_delete_model ok status={s} shape={}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(
+            shape_of(&body),
+            json!({"ok": "bool", "deleted_model_id": "string"})
+        );
+
+        let (s, body) = call(
+            &router,
+            "DELETE",
+            "/api/vision/models/convnextv2_pico_fp16",
+            None,
+            json!(null),
+        )
+        .await;
+        println!(
+            "shape_delete_model active status={s} shape={}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::BAD_REQUEST);
+        assert_eq!(shape_of(&body), json!({"ok": "bool", "error": "string"}));
+    }
+
+    #[tokio::test]
+    async fn shape_get_ep_setting() {
+        let (router, _dir, _state) = seeded().await;
+        let (s, body) = call(&router, "GET", "/api/vision/settings/ep", None, json!(null)).await;
+        println!(
+            "shape_get_ep_setting status={s} shape={}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(
+            shape_of(&body),
+            json!({
+                "configured": "string",
+                "active": "string",
+                "platform": "string",
+                "gpu_devices": ["empty"],
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_set_ep_setting() {
+        let (router, _dir, _state) = seeded().await;
+        let (s, body) = call(
+            &router,
+            "PUT",
+            "/api/vision/settings/ep",
+            None,
+            json!({"execution_provider": "cpu"}),
+        )
+        .await;
+        println!(
+            "shape_set_ep_setting ok status={s} shape={}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(
+            shape_of(&body),
+            json!({
+                "ok": "bool",
+                "execution_provider": "string",
+                "active": "string",
+                "message": "string",
+            })
+        );
+
+        let (s, body) = call(
+            &router,
+            "PUT",
+            "/api/vision/settings/ep",
+            None,
+            json!({"execution_provider": "bogus"}),
+        )
+        .await;
+        println!(
+            "shape_set_ep_setting invalid status={s} shape={}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::BAD_REQUEST);
+        assert_eq!(shape_of(&body), json!({"error": "string"}));
+
+        let (router, dir, _state) = seeded().await;
+        std::fs::remove_file(dir.path().join("models/vision/vision_model.json")).unwrap();
+        let (s, body) = call(
+            &router,
+            "PUT",
+            "/api/vision/settings/ep",
+            None,
+            json!({"execution_provider": "cpu"}),
+        )
+        .await;
+        println!(
+            "shape_set_ep_setting load_fail status={s} shape={}",
+            serde_json::to_string(&shape_of(&body)).unwrap()
+        );
+        assert_eq!(s, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(shape_of(&body), json!({"error": "string"}));
     }
 }
