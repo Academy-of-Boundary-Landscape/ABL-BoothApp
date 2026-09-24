@@ -1,28 +1,32 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import api from '@/services/api'
+import { api, errorMessage, unwrap, type Schemas } from '@/api/client'
 import { useAlert } from '@/services/useAlert'
 import { getImageUrl } from '@/services/url'
-import { summarizeQuote } from '@/utils/quote'
+import { summarizeQuote, type QuoteSummary } from '@/utils/quote'
+import { cents, type Cents } from '@/utils/money'
+
+// 购物车条目 = 场次商品 + 数量
+type CartItem = Schemas['ProductEventProduct'] & { quantity: number }
 
 // 获取弹窗函数
 
 export const useCustomerStore = defineStore('customer', () => {
   // --- State ---
-  const products = ref([])
-  const cart = ref([])
+  const products = ref<Schemas['ProductEventProduct'][]>([])
+  const cart = ref<CartItem[]>([])
   const isLoading = ref(false)
-  const error = ref(null)
-  const activeEventId = ref(null)
-  const activeEvent = ref(null) // 新增：当前展会信息
+  const error = ref<string | null>(null)
+  const activeEventId = ref<number | null>(null)
+  const activeEvent = ref<Schemas['EventResponse'] | null>(null) // 新增：当前展会信息
 
   // --- Actions ---
-  async function setupStoreForEvent(eventId) {
+  async function setupStoreForEvent(eventId: string | number) {
     if (!eventId) {
       error.value = '未提供展会ID。'
       return
     }
-    activeEventId.value = parseInt(eventId, 10)
+    activeEventId.value = parseInt(String(eventId), 10)
     // 并行加载商品和展会信息，都完成后再允许下单
     await Promise.all([fetchProductsForEvent(), fetchEventInfo()])
   }
@@ -40,18 +44,22 @@ export const useCustomerStore = defineStore('customer', () => {
 
   // 获取商品列表 (HTTP)
   async function fetchProductsForEvent() {
-    if (!activeEventId.value) return
+    const eventId = activeEventId.value
+    if (!eventId) return
     isLoading.value = true
     error.value = null
     try {
-      const response = await api.get(`/events/${activeEventId.value}/products`)
-      products.value = response.data.map((product) => ({
+      const list = await unwrap<Schemas['ProductEventProduct'][]>(
+        // @ts-expect-error openapi-fetch 的 Readable<> 会把 branded Cents 展平成对象，与 schema 的 Cents 不兼容（第三方类型缺陷）
+        api.GET('/events/{event_id}/products', { params: { path: { event_id: eventId } } })
+      )
+      products.value = list.map((product) => ({
         ...product,
-        image_url: getImageUrl(product.image_url),
+        image_url: getImageUrl(product.image_url ?? ''),
       }))
-    } catch (err) {
+    } catch (e) {
       error.value = '加载商品失败，请联系摊主。'
-      console.error(err)
+      console.error(e)
     } finally {
       isLoading.value = false
     }
@@ -59,23 +67,26 @@ export const useCustomerStore = defineStore('customer', () => {
 
   // 新增：获取展会信息
   async function fetchEventInfo() {
-    if (!activeEventId.value) return
+    const eventId = activeEventId.value
+    if (!eventId) return
     try {
-      const response = await api.get(`/events/${activeEventId.value}`)
+      const data = await unwrap<Schemas['EventResponse']>(
+        api.GET('/events/{id}', { params: { path: { id: eventId } } })
+      )
       activeEvent.value = {
-        ...response.data,
-        qrcode_url: getImageUrl(response.data.qrcode_url),
-        qrcode_urls: (response.data.qrcode_urls || []).map((u) => getImageUrl(u)).filter(Boolean),
+        ...data,
+        qrcode_url: getImageUrl(data.qrcode_url ?? ''),
+        qrcode_urls: (data.qrcode_urls || []).map((u) => getImageUrl(u)).filter(Boolean),
       }
-    } catch (err) {
-      console.error('加载展会信息失败:', err)
+    } catch (e) {
+      console.error('加载展会信息失败:', e)
       // 不设置error，因为这不是关键功能
     }
   }
 
   // --- 购物车操作 ---
 
-  function addToCart(product) {
+  function addToCart(product: Schemas['ProductEventProduct']) {
     const existingItem = cart.value.find((item) => item.id === product.id)
     if (existingItem) {
       if (existingItem.quantity < product.onsite_qty) {
@@ -92,7 +103,7 @@ export const useCustomerStore = defineStore('customer', () => {
     scheduleQuote()
   }
 
-  function removeFromCart(productId) {
+  function removeFromCart(productId: number) {
     const itemIndex = cart.value.findIndex((item) => item.id === productId)
     if (itemIndex !== -1) {
       if (cart.value[itemIndex].quantity > 1) {
@@ -110,9 +121,10 @@ export const useCustomerStore = defineStore('customer', () => {
   }
 
   async function submitOrder() {
-    if (!activeEventId.value || cart.value.length === 0) return
+    const eventId = activeEventId.value
+    if (!eventId || cart.value.length === 0) return
 
-    const orderData = {
+    const orderData: Schemas['CreateOrderRequest'] = {
       items: cart.value.map((item) => ({
         product_id: item.id,
         quantity: item.quantity,
@@ -120,34 +132,38 @@ export const useCustomerStore = defineStore('customer', () => {
     }
 
     try {
-      // 使用 axios.post 发送 HTTP 请求
-      const response = await api.post(`/events/${activeEventId.value}/orders`, orderData)
       // 成功后返回订单数据，让视图可以触发后续操作（如弹窗）
-      return response.data
-    } catch (err) {
-      console.error('Order submission failed:', err)
+      return await unwrap<Schemas['OrderResponse']>(
+        // @ts-expect-error openapi-fetch 的 Readable<> 会把 branded Cents 展平成对象，与 schema 的 Cents 不兼容（第三方类型缺陷）
+        api.POST('/events/{event_id}/orders', {
+          params: { path: { event_id: eventId } },
+          body: orderData,
+        })
+      )
+    } catch (e) {
+      console.error('Order submission failed:', e)
 
-      throw new Error(err.response?.data?.error || '下单失败，请重试。')
+      throw e
     }
   }
 
   // --- Getters ---
   // 单位：分（整数运算，展示端由 formatYuan 除以 100）。
-  const cartTotal = computed(() => {
-    return cart.value.reduce((total, item) => total + item.unit_price * item.quantity, 0)
+  const cartTotal = computed<Cents>(() => {
+    return cents(cart.value.reduce((total, item) => total + item.unit_price * item.quantity, 0))
   })
 
   // --- 报价 ---
   // 折扣由服务端算（`domain/solver.rs`）。前端不重写一份求解器：同一套集合覆盖
   // 两份实现，取整规则一漂移就是「显示 145 实收 150」。
-  const quote = ref(null)
-  const quoteError = ref(null)
+  const quote = ref<Schemas['LotQuoteResponse'] | null>(null)
+  const quoteError = ref<string | null>(null)
   // 报价在途（debounce 窗口 + 请求往返）。为真时 cartSummary 必须按原价显示：
   // 否则上一车的 quote 配上这一车的 cartTotal，会渲染出「原价 ~~¥50~~ / 应付 ¥30」
   // 却一条优惠说明都没有，正好打中 D3 要保护的那个决策点。
   const quotePending = ref(false)
   let quoteSeq = 0
-  let quoteTimer = null
+  let quoteTimer: ReturnType<typeof setTimeout> | null = null
 
   /**
    * 购物车一变就重新报价。300ms debounce + 请求序号两道都需要：
@@ -174,23 +190,31 @@ export const useCustomerStore = defineStore('customer', () => {
 
   async function fetchQuote() {
     const seq = (quoteSeq += 1)
+    const eventId = activeEventId.value
+    if (!eventId) return
     const items = cart.value.map((item) => ({ product_id: item.id, quantity: item.quantity }))
     try {
-      const response = await api.post(`/events/${activeEventId.value}/quote`, { items })
+      const data = await unwrap<Schemas['LotQuoteResponse']>(
+        // @ts-expect-error openapi-fetch 的 Readable<> 会把 branded Cents 展平成对象，与 schema 的 Cents 不兼容（第三方类型缺陷）
+        api.POST('/events/{event_id}/quote', {
+          params: { path: { event_id: eventId } },
+          body: { items },
+        })
+      )
       if (seq !== quoteSeq) return // 旧请求，结果丢掉
-      quote.value = response.data
+      quote.value = data
       quoteError.value = null
-    } catch (err) {
+    } catch (e) {
       if (seq !== quoteSeq) return
       // **不静默**：退回原价，同时明说没套用优惠。后端在超限时给的就是人话。
       quote.value = null
-      quoteError.value = err.response?.data?.error || '优惠暂时算不出来，按原价显示'
+      quoteError.value = errorMessage(e, '优惠暂时算不出来，按原价显示')
     } finally {
       if (seq === quoteSeq) quotePending.value = false
     }
   }
 
-  const cartSummary = computed(() => {
+  const cartSummary = computed<QuoteSummary>(() => {
     // 在途期间先按原价显示，宁可少报优惠也不显示无法解释的价格。
     if (quotePending.value) {
       return { gross: cartTotal.value, payable: cartTotal.value, discounts: [] }
