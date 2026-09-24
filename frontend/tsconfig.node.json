@@ -1,6 +1,7 @@
 {
   "extends": "@tsconfig/node22/tsconfig.json",
   "include": ["vite.config.*", "eslint.config.*", "scripts/**/*"],
+  "exclude": ["scripts/fixtures/**"],
   "compilerOptions": {
     "noEmit": true,
     "module": "ESNext",

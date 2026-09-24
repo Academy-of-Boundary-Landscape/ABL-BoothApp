@@ -18,6 +18,8 @@ export default defineConfigWithVueTs(
     '**/coverage/**',
     // 生成物：由 scripts/gen-api.mjs 从 src-tauri/openapi.json 生成
     'src/api/schema.d.ts',
+    // 门禁自测样本：故意含违规写法，由 src/gates.spec.ts 而非 eslint 检查
+    'scripts/fixtures/**',
     // 第三方类型定义的修补副本，保持与上游近乎逐字一致
     'types/openapi-typescript-helpers.d.ts',
   ]),

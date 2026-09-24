@@ -1,2 +1,4 @@
 src/api/schema.d.ts
 package-lock.json
+# 门禁自测样本：故意保留违规写法，不参与格式化
+scripts/fixtures/
