@@ -1,9 +1,5 @@
 <template>
-  <div class="list-container">
-    <div class="section-header">
-      <h2>展会列表</h2>
-    </div>
-
+  <SectionCard class="list-container" title="展会列表">
     <!-- 搜索和过滤区域（Naive UI） -->
     <div class="search-container">
       <n-space wrap align="end" :size="16">
@@ -40,97 +36,106 @@
       </n-space>
     </div>
 
-    <div v-if="store.isLoading" class="loading-message">正在加载展会数据...</div>
-    <div v-else-if="store.error" class="error-message">{{ store.error }}</div>
-
-    <!-- 【修改】v-for 循环现在使用 filteredEvents 计算属性 -->
-    <ul v-else-if="filteredEvents.length" class="event-list">
-      <RouterLink
-        v-for="event in filteredEvents"
-        :key="event.id"
-        :to="`/admin/events/${event.id}/products`"
-        custom
-        v-slot="{ navigate }"
-      >
-        <li @click="navigate" class="event-card clickable" role="link">
-          <n-card :title="event.name" :hoverable="true" embedded>
-            <div class="event-info">
-              <p>日期: {{ event.date }}</p>
-              <p>地点: {{ event.location || '未指定' }}</p>
-            </div>
-            <template #header-extra>
-              <n-tag :type="statusType(event.status)" size="small">{{ event.status }}</n-tag>
-            </template>
-            <template #footer>
-              <div class="status-actions">
-                <n-button
-                  v-if="event.status === '筹备'"
-                  size="small"
-                  @click.stop="changeStatus(event.id, '进行中')"
-                  >► 开始</n-button
-                >
-                <!--
-                  结束展会不再直接改状态：`PUT /events/:id/status` 的迁移守卫
-                  拒绝把展会置为「已结算」（要走收摊流程），也拒绝让已结算的展会
-                  离开「已结算」。管理端与摊主端角色互斥，跳摊主端会被要求重新登录，
-                  所以这里只留一个禁用态 + 提示，把摊主引到收摊向导。
-                -->
-                <template v-if="event.status === '进行中'">
-                  <n-button size="small" disabled>■ 结束</n-button>
-                  <span class="end-event-hint"
-                    >请在摊主端走收摊流程（清点订单 → 盘点 → 带回 → 结算）</span
-                  >
-                </template>
-                <n-button size="small" type="primary" @click.stop="openEditModal(event)"
-                  >编辑</n-button
-                >
-                <n-button size="small" type="error" @click.stop="confirmDelete(event)"
-                  >删除</n-button
-                >
+    <AsyncState
+      :loading="store.isLoading"
+      :error="store.error"
+      :empty="!filteredEvents.length"
+      loading-text="正在加载展会数据..."
+    >
+      <!-- 【修改】v-for 循环现在使用 filteredEvents 计算属性 -->
+      <ul class="event-list">
+        <RouterLink
+          v-for="event in filteredEvents"
+          :key="event.id"
+          :to="`/admin/events/${event.id}/products`"
+          custom
+          v-slot="{ navigate }"
+        >
+          <li @click="navigate" class="event-card clickable" role="link">
+            <n-card :title="event.name" :hoverable="true" embedded>
+              <div class="event-info">
+                <p>日期: {{ event.date }}</p>
+                <p>地点: {{ event.location || '未指定' }}</p>
               </div>
-            </template>
-          </n-card>
-        </li>
-      </RouterLink>
-    </ul>
+              <template #header-extra>
+                <n-tag :type="statusType(event.status)" size="small">{{ event.status }}</n-tag>
+              </template>
+              <template #footer>
+                <div class="status-actions">
+                  <n-button
+                    v-if="event.status === '筹备'"
+                    size="small"
+                    @click.stop="changeStatus(event.id, '进行中')"
+                    >► 开始</n-button
+                  >
+                  <!--
+                    结束展会不再直接改状态：`PUT /events/:id/status` 的迁移守卫
+                    拒绝把展会置为「已结算」（要走收摊流程），也拒绝让已结算的展会
+                    离开「已结算」。管理端与摊主端角色互斥，跳摊主端会被要求重新登录，
+                    所以这里只留一个禁用态 + 提示，把摊主引到收摊向导。
+                  -->
+                  <template v-if="event.status === '进行中'">
+                    <n-button size="small" disabled>■ 结束</n-button>
+                    <span class="end-event-hint"
+                      >请在摊主端走收摊流程（清点订单 → 盘点 → 带回 → 结算）</span
+                    >
+                  </template>
+                  <n-button size="small" type="primary" @click.stop="openEditModal(event)"
+                    >编辑</n-button
+                  >
+                  <n-button size="small" type="error" @click.stop="confirmDelete(event)"
+                    >删除</n-button
+                  >
+                </div>
+              </template>
+            </n-card>
+          </li>
+        </RouterLink>
+      </ul>
 
-    <!-- 【修改】处理“无搜索结果”和“无任何展会”两种情况 -->
-    <p v-else-if="store.events.length && !filteredEvents.length" class="no-results-message">
-      没有找到符合筛选条件的展会。
-    </p>
-    <EmptyGuide
-      v-else
-      icon="📋"
-      title="还没有创建展会"
-      desc="展会是管理摊位的核心单位。每场漫展创建一个展会，然后在其中管理商品库存和订单。"
-      hint="在上方「创建新展会」表单中填写信息开始吧"
-    />
+      <template #empty>
+        <!-- 【修改】处理“无搜索结果”和“无任何展会”两种情况 -->
+        <p v-if="store.events.length && !filteredEvents.length" class="no-results-message">
+          没有找到符合筛选条件的展会。
+        </p>
+        <EmptyState
+          v-else
+          icon="📋"
+          title="还没有创建展会"
+          desc="展会是管理摊位的核心单位。每场漫展创建一个展会，然后在其中管理商品库存和订单。"
+          hint="在上方「创建新展会」表单中填写信息开始吧"
+        />
+      </template>
+    </AsyncState>
 
     <!-- 编辑模态框 (保持不变) -->
-    <AppModal :show="isEditModalVisible" @close="closeEditModal">
-      <template #header><h3>编辑展会</h3></template>
-      <template #body
-        ><EditEventForm v-if="selectedEvent" ref="editForm" :event="selectedEvent"
-      /></template>
+    <AppModal
+      :show="isEditModalVisible"
+      title="编辑展会"
+      size="sm"
+      @update:show="(v) => !v && closeEditModal()"
+    >
+      <EditEventForm v-if="selectedEvent" ref="editForm" :event="selectedEvent" />
       <template #footer>
         <n-button @click="closeEditModal">取消</n-button>
         <n-button type="primary" @click="handleUpdateEvent">保存更改</n-button>
       </template>
     </AppModal>
-  </div>
+  </SectionCard>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
 import { useEventStore } from '@/stores/eventStore'
-import AppModal from '@/components/shared/AppModal.vue'
+import { SectionCard, AsyncState, EmptyState, AppModal } from '@/components/ui'
+import { useFeedback } from '@/composables/useFeedback'
 import EditEventForm from '@/components/event/EditEventForm.vue'
-import EmptyGuide from '@/components/shared/EmptyGuide.vue'
 import { RouterLink } from 'vue-router'
 import { NInput, NDatePicker, NButton, NCard, NSpace, NTag } from 'naive-ui'
 import type { Schemas } from '@/api/client'
 
 const store = useEventStore()
+const fb = useFeedback()
 const updatingStatusId = ref<number | null>(null)
 
 // =======================================================
@@ -196,18 +201,16 @@ async function confirmDelete(event: Schemas['EventResponse']) {
     event.status === '已结算'
       ? `「${event.name}」已结算。删除将永久删除该展会的全部订单与账本流水，且无法恢复。确定继续吗？`
       : `您确定要删除「${event.name}」吗？此操作无法撤销。`
-  // 弹出浏览器原生确认框
-  if (window.confirm(message)) {
+  if (await fb.confirm({ title: message, danger: true })) {
     try {
       // 调用 store 中的 deleteEvent 方法执行删除操作
       // 您需要在 eventStore.js 中实现 deleteEvent 方法，
       // 该方法会向后端发送 DELETE 请求。
       await store.deleteEvent(event.id)
       // 可选：删除成功后显示提示
-      // alert('展会已删除');
     } catch (error) {
       // 显示错误信息
-      alert((error instanceof Error ? error.message : String(error)) || '删除失败，请稍后再试。')
+      fb.error(error, '删除失败，请稍后再试。')
     }
   }
 }
@@ -221,7 +224,7 @@ async function changeStatus(eventId: number, newStatus: Schemas['EventStatus']) 
     await store.updateEventStatus(eventId, newStatus)
   } catch (error) {
     // 如果 store 抛出错误，在这里通知用户
-    alert(error instanceof Error ? error.message : String(error))
+    fb.error(error)
   } finally {
     // 无论成功或失败，最后都清除更新中的状态
     updatingStatusId.value = null
@@ -253,7 +256,7 @@ async function handleUpdateEvent() {
         console.log('更新成功')
         closeEditModal() // 成功后关闭模态框
       } catch (error) {
-        alert(error instanceof Error ? error.message : String(error)) // 显示错误
+        fb.error(error) // 显示错误
       }
     }
   }
@@ -262,36 +265,22 @@ async function handleUpdateEvent() {
 
 <style scoped>
 .list-container {
-  background-color: var(--card-bg-color);
-  border: 2px solid var(--border-color);
-  border-radius: var(--radius-md);
-  margin-bottom: 1.5rem;
-  overflow: hidden;
-}
-
-.section-header {
-  background: var(--card-bg-color);
-  border-bottom: 2px solid var(--border-color);
-  padding: 1rem 1.5rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.section-header h2 {
-  margin: 0;
-  color: var(--accent-color);
-  font-size: var(--font-lg);
-  font-weight: 600;
+  margin-bottom: var(--space-xl);
 }
 
 .search-container {
-  padding: 1rem 1.5rem;
+  padding: var(--space-lg) var(--space-xl);
+  display: flex;
+  flex-wrap: wrap; /* 在小屏幕上换行 */
+  gap: var(--space-lg);
+  align-items: flex-end; /* 让元素底部对齐 */
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: var(--space-lg);
 }
 
 .event-list {
   list-style: none;
-  padding: 1.5rem;
+  padding: var(--space-xl);
   margin: 0;
 }
 
@@ -302,13 +291,13 @@ async function handleUpdateEvent() {
   flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--space-lg);
   width: 100%;
   background-color: var(--card-bg-color);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
-  padding: 18px 20px;
-  margin-bottom: 16px; /* 卡片之间的间距 */
+  padding: var(--space-lg) var(--space-lg);
+  margin-bottom: var(--space-lg); /* 卡片之间的间距 */
   box-shadow: var(--shadow-md);
   transition:
     transform 0.12s ease,
@@ -320,10 +309,15 @@ async function handleUpdateEvent() {
 /* 保持原有 clickable 行为（整行可点击） */
 .event-card.clickable {
   cursor: pointer;
+  transition:
+    background-color 0.2s,
+    border-color 0.2s;
 }
 .event-card.clickable:hover {
   transform: translateY(-6px);
   box-shadow: var(--shadow-xl);
+  background-color: var(--accent-color-light);
+  border-color: var(--accent-color);
 }
 /* 左侧信息区域占满剩余空间 */
 .event-info {
@@ -331,10 +325,10 @@ async function handleUpdateEvent() {
   min-width: 0; /* 保证文本可以正确换行 */
 }
 .event-info h3 {
-  margin: 0 0 6px 0;
+  margin: 0 0 var(--space-sm) 0;
   font-size: var(--font-lg);
   line-height: 1.25;
-  font-weight: 700;
+  font-weight: var(--weight-bold);
 }
 .event-info p {
   margin: 0;
@@ -349,17 +343,17 @@ async function handleUpdateEvent() {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 10px;
+  gap: var(--space-sm);
   text-align: right;
 }
 
 /* 状态徽章样式 */
 .status-badge {
   display: inline-block;
-  padding: 6px 10px;
+  padding: var(--space-sm) var(--space-sm);
   border-radius: var(--radius-pill);
   font-size: var(--font-base);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   color: var(--primary-text-color);
   border: 1px solid transparent;
 }
@@ -367,7 +361,7 @@ async function handleUpdateEvent() {
 /* 状态颜色类（保留现有类名） */
 .status-ongoing {
   background: var(--accent-color-light);
-  border-color: rgba(255, 223, 87, 0.25);
+  border-color: color-mix(in srgb, var(--highlight-color) 25%, transparent);
 }
 .status-finished {
   background: var(--bg-elevated);
@@ -379,10 +373,10 @@ async function handleUpdateEvent() {
 }
 
 .status-actions {
-  margin-top: 0.5rem;
+  margin-top: var(--space-sm);
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: var(--space-sm);
   justify-content: flex-end;
   align-items: center;
   width: 100%;
@@ -400,7 +394,7 @@ async function handleUpdateEvent() {
   background: none;
   border: 1px solid var(--primary-text-color);
   color: var(--primary-text-color);
-  padding: 8px 12px;
+  padding: var(--space-sm) var(--space-md);
   border-radius: var(--radius-md);
   cursor: pointer;
   font-size: var(--font-base);
@@ -408,16 +402,6 @@ async function handleUpdateEvent() {
 .action-btn:hover {
   background-color: var(--primary-text-color);
   color: var(--bg-color);
-}
-.event-card.clickable {
-  cursor: pointer;
-  transition:
-    background-color 0.2s,
-    border-color 0.2s;
-}
-.event-card.clickable:hover {
-  background-color: var(--accent-color-light);
-  border-color: var(--accent-color);
 }
 .delete-btn {
   border-color: var(--delete-color);
@@ -428,20 +412,11 @@ async function handleUpdateEvent() {
   background-color: var(--delete-color);
   color: var(--text-white);
 }
-.search-container {
-  padding: 1rem 1.5rem;
-  display: flex;
-  flex-wrap: wrap; /* 在小屏幕上换行 */
-  gap: 1rem;
-  align-items: flex-end; /* 让元素底部对齐 */
-  border-bottom: 1px solid var(--border-color);
-  margin-bottom: 1rem;
-}
 
 .search-group {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-sm);
   flex-grow: 1; /* 让组占据可用空间 */
 }
 
@@ -455,7 +430,7 @@ async function handleUpdateEvent() {
   background-color: var(--bg-color);
   border: 1px solid var(--border-color);
   color: var(--primary-text-color);
-  padding: 8px;
+  padding: var(--space-sm);
   border-radius: var(--radius-sm);
   font-size: var(--font-md);
 }
@@ -463,7 +438,7 @@ async function handleUpdateEvent() {
 .date-range-inputs {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-sm);
 }
 
 .date-range-inputs span {
@@ -472,17 +447,17 @@ async function handleUpdateEvent() {
 
 .no-results-message {
   text-align: center;
-  padding: 2rem 1.5rem;
+  padding: var(--space-2xl) var(--space-xl);
   color: var(--text-muted);
 }
 
 /* 响应式布局调整 */
-@media (max-width: 768px) {
+@media (--phone) {
   .event-card {
     flex-direction: column;
     align-items: flex-start;
     min-height: auto;
-    padding: 16px;
+    padding: var(--space-lg);
   }
 
   .event-info {
@@ -501,7 +476,7 @@ async function handleUpdateEvent() {
 
   .search-container {
     flex-direction: column;
-    padding: 0.75rem;
+    padding: var(--space-md);
   }
 
   .search-group {
@@ -518,26 +493,26 @@ async function handleUpdateEvent() {
   }
 }
 
-@media (max-width: 480px) {
+@media (--phone) {
   .event-card {
-    padding: 12px;
-    gap: 8px;
+    padding: var(--space-md);
+    gap: var(--space-sm);
   }
 
   .event-info h3 {
-    font-size: 1rem;
+    font-size: var(--font-base);
   }
 
   .event-info p {
-    font-size: 0.9rem;
+    font-size: var(--font-sm);
   }
 
   .status-actions {
-    gap: 6px;
+    gap: var(--space-sm);
   }
 
   .search-group label {
-    font-size: 0.8rem;
+    font-size: var(--font-sm);
   }
 }
 </style>

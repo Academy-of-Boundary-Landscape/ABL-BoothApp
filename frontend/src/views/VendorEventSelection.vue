@@ -6,32 +6,32 @@
       </template>
       <p>选择后将需要输入该展会的摊主密码。</p>
 
-      <div v-if="eventStore.isLoading" class="loading-message">
-        <n-spin>
-          <template #description>正在加载展会列表...</template>
-        </n-spin>
-      </div>
-      <div v-else-if="eventStore.error" class="error-message">
-        <n-alert type="error" :bordered="false">{{ eventStore.error }}</n-alert>
-      </div>
+      <AsyncState
+        :loading="eventStore.isLoading"
+        :error="eventStore.error"
+        :empty="!ongoingEvents.length"
+        loading-text="正在加载展会列表..."
+      >
+        <div class="event-list">
+          <n-space vertical size="large">
+            <n-card
+              v-for="event in ongoingEvents"
+              :key="event.id"
+              class="event-item"
+              hoverable
+              :bordered="true"
+              @click="selectEvent(event)"
+            >
+              <h3>{{ event.name }}</h3>
+              <span>{{ event.date }}</span>
+            </n-card>
+          </n-space>
+        </div>
 
-      <div v-else-if="ongoingEvents.length" class="event-list">
-        <n-space vertical size="large">
-          <n-card
-            v-for="event in ongoingEvents"
-            :key="event.id"
-            class="event-item"
-            hoverable
-            :bordered="true"
-            @click="selectEvent(event)"
-          >
-            <h3>{{ event.name }}</h3>
-            <span>{{ event.date }}</span>
-          </n-card>
-        </n-space>
-      </div>
-
-      <p v-else class="no-events-message">当前没有正在进行的展会。</p>
+        <template #empty>
+          <EmptyState title="当前没有正在进行的展会。" />
+        </template>
+      </AsyncState>
 
       <div class="admin-login-link">
         <RouterLink to="/login/admin">
@@ -46,7 +46,8 @@
 import { computed, onMounted } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import { useEventStore } from '@/stores/eventStore'
-import { NCard, NSpin, NAlert, NSpace, NButton } from 'naive-ui'
+import { NCard, NSpace, NButton } from 'naive-ui'
+import { AsyncState, EmptyState } from '@/components/ui'
 import type { Schemas } from '@/api/client'
 
 const eventStore = useEventStore()
@@ -91,26 +92,22 @@ onMounted(() => {
 .selection-box {
   width: 500px;
   max-width: 90%;
-  padding: 2rem;
+  padding: var(--space-2xl);
   background-color: var(--card-bg-color);
   border-radius: var(--radius-md);
   text-align: center;
 }
 .event-list {
-  margin-top: 2rem;
+  margin-top: var(--space-2xl);
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--space-lg);
 }
 .event-item {
   cursor: pointer;
 }
-.no-events-message {
-  margin-top: 2rem;
-  color: var(--text-muted);
-}
 .admin-login-link {
-  margin-top: 2rem;
+  margin-top: var(--space-2xl);
   font-size: var(--font-base);
 }
 .admin-login-link a {

@@ -7,7 +7,7 @@
         v-if="props.role === 'admin' && isDefaultAdmin"
         type="warning"
         :bordered="false"
-        style="margin-bottom: 1rem"
+        style="margin-bottom: var(--space-lg)"
       >
         默认管理员密码为 admin123，请登录后尽快修改。
       </n-alert>
@@ -23,7 +23,7 @@
           :disabled="loading"
         />
 
-        <div style="margin-top: 1rem">
+        <div style="margin-top: var(--space-lg)">
           <!-- 添加 :loading 和 :disabled 属性 -->
           <n-button type="primary" attr-type="submit" block :loading="loading" :disabled="loading">
             <!-- 登录中显示的文字（可选，NaiveUI loading时通常只显示圈圈，这里保持原样即可） -->
@@ -31,7 +31,7 @@
           </n-button>
         </div>
 
-        <div v-if="error" class="error-message" style="margin-top: 1rem">
+        <div v-if="error" style="margin-top: var(--space-lg)">
           <n-alert type="error" :bordered="false">{{ error }}</n-alert>
         </div>
       </form>
@@ -115,7 +115,7 @@ onMounted(async () => {
 .login-box {
   width: 420px;
   max-width: 90vw;
-  padding: 2rem;
+  padding: var(--space-2xl);
   background-color: var(--card-bg-color);
   border-radius: var(--radius-md);
   text-align: center;

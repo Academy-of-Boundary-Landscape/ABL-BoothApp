@@ -1,50 +1,48 @@
 <template>
-  <AppModal :show="show" @close="$emit('cancel')">
-    <template #header><h3>确认收款</h3></template>
-    <template #body>
-      <div class="price-block">
-        <div v-if="grossAmount !== effectiveSolved" class="price-row subtle">
-          <span>原价</span>
-          <span class="struck">{{ formatYuan(grossAmount) }}</span>
-        </div>
-        <div class="price-row total">
-          <span>应收</span>
-          <span>{{ formatYuan(effectiveSolved) }}</span>
-        </div>
+  <AppModal :show="show" title="确认收款" size="sm" @update:show="(v) => !v && $emit('cancel')">
+    <div class="price-block">
+      <div v-if="grossAmount !== effectiveSolved" class="price-row subtle">
+        <span>原价</span>
+        <span class="struck">{{ formatYuan(grossAmount) }}</span>
       </div>
-
-      <!-- 已套用的套装，逐个可拆。取消勾选 = 这一单不套用它，成分回到原价。
-           这和「直接改实收」不是一回事：改实收把差额记成手工折让、整笔落本社团，
-           而拆套装是纠错，钱回到真正的货主头上（spec 4.3 的 2026-09-23 修正）。 -->
-      <div v-if="lots.length" class="lot-block">
-        <p class="lot-title">已套用的套装</p>
-        <div v-for="lot in lots" :key="lot.id" class="lot-row" @click="toggle(lot.id)">
-          <n-checkbox :checked="!unapplied.includes(lot.id)" />
-          <span class="lot-name">{{ lot.name }}</span>
-          <span class="lot-saved">−{{ formatYuan(cents(lot.original_amount - lot.price)) }}</span>
-        </div>
-        <p v-if="unapplied.length" class="lot-note">
-          已拆掉 {{ unapplied.length }} 个套装，这些商品按原价计算。
-        </p>
+      <div class="price-row total">
+        <span>应收</span>
+        <span>{{ formatYuan(effectiveSolved) }}</span>
       </div>
+    </div>
 
-      <label class="field">
-        <span class="field-label">实收（元）</span>
-        <n-input-number v-model:value="finalYuan" :min="0" :precision="2" class="field-input" />
-      </label>
-      <p v-if="adjustment !== 0" class="adjustment">
-        {{ adjustment > 0 ? '手工折让' : '手工加价' }} {{ formatYuan(cents(Math.abs(adjustment))) }}
-        <span class="adjustment-note">——全部算在本社团头上，代卖社团按自己的定价结算</span>
+    <!-- 已套用的套装，逐个可拆。取消勾选 = 这一单不套用它，成分回到原价。
+         这和「直接改实收」不是一回事：改实收把差额记成手工折让、整笔落本社团，
+         而拆套装是纠错，钱回到真正的货主头上（spec 4.3 的 2026-09-23 修正）。 -->
+    <div v-if="lots.length" class="lot-block">
+      <p class="lot-title">已套用的套装</p>
+      <div v-for="lot in lots" :key="lot.id" class="lot-row" @click="toggle(lot.id)">
+        <n-checkbox :checked="!unapplied.includes(lot.id)" />
+        <span class="lot-name">{{ lot.name }}</span>
+        <span class="lot-saved">−{{ formatYuan(cents(lot.original_amount - lot.price)) }}</span>
+      </div>
+      <p v-if="unapplied.length" class="lot-note">
+        已拆掉 {{ unapplied.length }} 个套装，这些商品按原价计算。
       </p>
+    </div>
 
-      <ChannelSelect v-model="channel" />
+    <label class="field">
+      <span class="field-label">实收（元）</span>
+      <n-input-number v-model:value="finalYuan" :min="0" :precision="2" class="field-input" />
+    </label>
+    <p v-if="adjustment !== 0" class="adjustment">
+      {{ adjustment > 0 ? '手工折让' : '手工加价' }} {{ formatYuan(cents(Math.abs(adjustment))) }}
+      <span class="adjustment-note">——全部算在本社团头上，代卖社团按自己的定价结算</span>
+    </p>
 
-      <!-- spec 第 11 节的不可破坏项：不得让复式记账制造出「钱已到账」的错觉。
-           系统始终不知道顾客有没有真付，摊主点的是「我看到到账提示了」。
-           这个弹窗现在还能改金额、还能拆套装，**看起来**更像在处理真钱——
-           所以这句话比以前更不能删。 -->
-      <p class="disclosure">这只是记账。请先确认手机上真的收到了到账提示，再点确认。</p>
-    </template>
+    <ChannelSelect v-model="channel" />
+
+    <!-- spec 第 11 节的不可破坏项：不得让复式记账制造出「钱已到账」的错觉。
+         系统始终不知道顾客有没有真付，摊主点的是「我看到到账提示了」。
+         这个弹窗现在还能改金额、还能拆套装，**看起来**更像在处理真钱——
+         所以这句话比以前更不能删。 -->
+    <p class="disclosure">这只是记账。请先确认手机上真的收到了到账提示，再点确认。</p>
+
     <template #footer>
       <n-space>
         <n-button @click="$emit('cancel')">取消</n-button>
@@ -56,8 +54,9 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { NSpace, NButton, NInputNumber, NCheckbox, useMessage } from 'naive-ui'
-import AppModal from '@/components/shared/AppModal.vue'
+import { NSpace, NButton, NInputNumber, NCheckbox } from 'naive-ui'
+import { AppModal } from '@/components/ui'
+import { useFeedback } from '@/composables/useFeedback'
 import ChannelSelect from '@/components/shared/ChannelSelect.vue'
 import { formatYuan, cents, toCents, fromCents, type Cents } from '@/utils/money'
 import type { Schemas } from '@/api/client'
@@ -87,7 +86,7 @@ const emit = defineEmits<{
   (e: 'confirm', payload: { channel: string; finalAmount: Cents; unapplyLotIds: number[] }): void
   (e: 'cancel'): void
 }>()
-const message = useMessage()
+const fb = useFeedback()
 
 const channel = ref('微信')
 const finalYuan = ref<number | null>(0)
@@ -139,7 +138,7 @@ function handleConfirm() {
   // n-input-number 被清空 → finalYuan 为 null，而 toCents(null) 会回落成 0，
   // 于是静默提交一张 ¥0 的收款单：整单白送，全额记成对本社团的手工折让。
   if (finalYuan.value === null || !Number.isFinite(finalYuan.value)) {
-    message.warning('请填写实收金额')
+    fb.warning('请填写实收金额')
     return
   }
   localStorage.setItem(CHANNEL_STORAGE_KEY, channel.value)
@@ -153,13 +152,13 @@ function handleConfirm() {
 
 <style scoped>
 .price-block {
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-lg);
 }
 .price-row {
   display: flex;
   justify-content: space-between;
-  gap: 1rem;
-  padding: 2px 0;
+  gap: var(--space-lg);
+  padding: var(--space-xs) 0;
 }
 .price-row.subtle {
   color: var(--text-muted);
@@ -169,26 +168,26 @@ function handleConfirm() {
   text-decoration: line-through;
 }
 .price-row.total {
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   font-size: var(--font-lg);
 }
 
 .lot-block {
-  margin-bottom: 1rem;
-  padding: 0.5rem 0.75rem;
+  margin-bottom: var(--space-lg);
+  padding: var(--space-sm) var(--space-md);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
 }
 .lot-title {
-  margin: 0 0 0.25rem;
+  margin: 0 0 var(--space-xs);
   font-size: var(--font-sm);
   color: var(--text-muted);
 }
 .lot-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 4px 0;
+  gap: var(--space-sm);
+  padding: var(--space-xs) 0;
   cursor: pointer;
 }
 .lot-name {
@@ -200,7 +199,7 @@ function handleConfirm() {
   white-space: nowrap;
 }
 .lot-note {
-  margin: 0.25rem 0 0;
+  margin: var(--space-xs) 0 0;
   font-size: var(--font-sm);
   color: var(--warning-color);
 }
@@ -208,8 +207,8 @@ function handleConfirm() {
 .field {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 0.5rem;
+  gap: var(--space-md);
+  margin-bottom: var(--space-sm);
 }
 .field-label {
   white-space: nowrap;
@@ -219,7 +218,7 @@ function handleConfirm() {
   flex: 1;
 }
 .adjustment {
-  margin: 0 0 1rem;
+  margin: 0 0 var(--space-lg);
   font-size: var(--font-sm);
   color: var(--accent-color);
   line-height: 1.5;
@@ -228,7 +227,7 @@ function handleConfirm() {
   color: var(--text-muted);
 }
 .disclosure {
-  margin: 16px 0 0;
+  margin: var(--space-lg) 0 0;
   font-size: var(--font-sm);
   line-height: 1.5;
   color: var(--text-muted);

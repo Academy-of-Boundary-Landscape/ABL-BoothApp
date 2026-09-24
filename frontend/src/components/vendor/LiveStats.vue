@@ -129,8 +129,8 @@ onUnmounted(() => {
   background-color: var(--card-bg-color);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  padding: 1rem;
-  margin-bottom: 1.5rem;
+  padding: var(--space-lg);
+  margin-bottom: var(--space-xl);
 }
 
 .stats-header {
@@ -151,26 +151,26 @@ onUnmounted(() => {
 /* 营业额卡片 */
 .stat-row {
   display: flex;
-  gap: 10px;
-  margin-top: 12px;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
 }
 .stat-card {
   flex: 1;
   background: var(--bg-color);
   border-radius: var(--radius-md);
-  padding: 10px 12px;
+  padding: var(--space-sm) var(--space-md);
   text-align: center;
 }
 .stat-card .label {
   display: block;
   font-size: var(--font-sm);
   color: var(--text-muted);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-xs);
 }
 .stat-card .value {
   display: block;
   font-size: var(--font-xl);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
 }
 .stat-card .revenue {
   color: var(--accent-color);
@@ -178,39 +178,39 @@ onUnmounted(() => {
 
 /* 库存区域 */
 .stock-section {
-  margin-top: 12px;
+  margin-top: var(--space-md);
 }
 .stock-section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-sm);
 }
 .stock-section-header h4 {
   margin: 0;
   font-size: var(--font-base);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   color: var(--primary-text-color);
 }
 
 .loading {
   display: flex;
   justify-content: center;
-  padding: 16px 0;
+  padding: var(--space-lg) 0;
 }
 
 /* ===== 紧凑色块网格 ===== */
 .stock-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-sm);
 }
 
 .stock-chip {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-pill);
   font-size: var(--font-sm);
   line-height: 1.3;
@@ -228,7 +228,7 @@ onUnmounted(() => {
 }
 
 .chip-count {
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
 }
 
@@ -254,7 +254,7 @@ onUnmounted(() => {
 }
 .stock-chip.level-critical .chip-count {
   color: var(--error-color);
-  font-weight: 800;
+  font-weight: var(--weight-bold);
 }
 
 .stock-chip.level-out {
@@ -269,14 +269,14 @@ onUnmounted(() => {
 .stock-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 
 .stock-item {
   display: grid;
   grid-template-columns: 2.5fr 2fr 1fr;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 
 .product-name {
@@ -300,7 +300,7 @@ onUnmounted(() => {
 }
 .stock-value.level-critical {
   color: var(--error-color);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
 }
 .stock-value.level-out {
   color: var(--text-disabled);

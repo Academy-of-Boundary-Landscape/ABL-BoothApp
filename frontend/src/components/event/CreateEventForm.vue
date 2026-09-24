@@ -1,6 +1,6 @@
 <template>
   <section class="form-container">
-    <div class="section-header" @click="isCollapsed = !isCollapsed">
+    <div class="collapse-header" @click="isCollapsed = !isCollapsed">
       <h2>创建新展会</h2>
       <n-button text class="toggle-btn">
         {{ isCollapsed ? '展开' : '折叠' }}
@@ -59,7 +59,7 @@
             <n-button type="primary" :loading="isSubmitting" @click="handleSubmit">
               {{ isSubmitting ? '创建中...' : '创建' }}
             </n-button>
-            <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
+            <p v-if="errorMessage" class="form-error">{{ errorMessage }}</p>
           </div>
         </n-form>
       </div>
@@ -139,71 +139,53 @@ async function handleSubmit() {
 
 <style scoped>
 .form-container {
-  margin-bottom: 2rem;
+  margin-bottom: var(--space-2xl);
 }
 
-.section-header {
+.collapse-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   cursor: pointer;
   user-select: none;
-  padding: 0.75rem 1rem;
+  padding: var(--space-md) var(--space-lg);
   background: var(--card-bg-color);
   border: 2px solid var(--border-color);
   border-radius: var(--radius-md);
   transition: all 0.2s ease;
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--space-sm);
 }
 
-.section-header:hover {
+.collapse-header:hover {
   background: var(--hover-bg-color, var(--card-bg-color));
   border-color: var(--accent-color);
 }
 
-.section-header h2 {
+.collapse-header h2 {
   margin: 0;
   font-size: var(--font-lg);
   color: var(--accent-color);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
 }
 
 .toggle-btn {
   font-size: var(--font-base);
-  padding: 0.25rem 0.75rem;
+  padding: var(--space-xs) var(--space-md);
   min-width: auto;
   color: var(--accent-color);
-}
-
-.expand-enter-active,
-.expand-leave-active {
-  transition: all 0.3s ease;
-  overflow: hidden;
-}
-
-.expand-enter-from,
-.expand-leave-to {
-  max-height: 0;
-  opacity: 0;
-}
-
-.expand-enter-to,
-.expand-leave-from {
-  max-height: 2000px;
-  opacity: 1;
 }
 
 .section-container {
   background-color: var(--card-bg-color);
   border: 2px solid var(--border-color);
   border-radius: var(--radius-md);
-  padding: 1.5rem;
+  padding: var(--space-xl);
 }
 
 .two-column-form {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.6rem 1rem;
+  gap: var(--space-sm) var(--space-lg);
 }
 
 .full-width {
@@ -218,18 +200,18 @@ async function handleSubmit() {
 
 label {
   display: block;
-  margin-bottom: 0.3rem;
-  font-size: 0.95em;
-  font-weight: 500;
+  margin-bottom: var(--space-xs);
+  font-size: var(--font-base);
+  font-weight: var(--weight-medium);
 }
 
 .form-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-md);
 }
 
-.error-message {
+.form-error {
   color: var(--error-color);
   margin: 0;
 }
