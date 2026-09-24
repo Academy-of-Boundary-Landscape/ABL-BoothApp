@@ -11,3 +11,4 @@
 | closing | POST /events/{id}/closing/stocktake | `book.get(&event_product_id).unwrap_or(&0)` 把「账面查不到该商品」当余额 0 | 显式判缺失并返回 400 | 目前靠后面 `event_products` 的名字查询兜底，但默认 0 会掩盖 `book_balances` 漏项；新调用路径可能绕过 | 无 |
 
 | inventory | `POST /events/{event_id}/scraps` | 请求体沿用 `LogRequest`，其中的 `vendor_pays` 被静默置为 false（不报错） | 报废单独定义一个不含 `vendor_pays` 的请求类型 | 该字段对本接口无意义，但 OpenAPI 把它列成可填，客户端会误以为生效 | `frontend/src/components/vendor/InventoryLogModal.vue`（报废时本就不发该字段） |
+| lot | GET /events/{event_id}/lots | 候选被级联删空后，LEFT JOIN 的 NULL 被 `owner.unwrap_or(0)` / `owner_name.unwrap_or_else(...)` 吞掉，`owner_society_id` 输出哨兵 `0`、`owner_society_name` 输出 `"（候选已被删除）"` | 两个字段改 `Option<...>`，无候选时输出 `null`，显示文案交给前端 | 库里不存在 0 号社团；哨兵 `0` 让「没有货主」和「货主 id 恰好是 0」在 JSON 上无法区分，且字符串文案是后端替前端做的显示决定 | frontend/src/views/AdminEventLots.vue（`lot.owner_society_name` 表格列） |
