@@ -1579,3 +1579,22 @@ Claude 审查。台账在 `.superpowers/sdd/2026-09-24-api-contract-and-ts/progr
 `scripts/worktree-new.sh` 约 65 秒（主要是复制 8G 的 `target/debug`）；worktree 里第一次 `cargo test`
 墙钟约 1 分 50 秒、CPU 约 30 分钟——复制的 target 大半没被复用（路径变了）。112 核上可以接受；
 纯前端的 worker 其实不需要 target，下次可以加个开关跳过。
+
+### 整支分支审查（2026-09-25）
+
+一个没参与实现的审查者（Claude Opus）看了整支分支：0 Critical、3 Important、9 Minor。三条 Important 都修了，
+每条先写能复现的测试：
+
+1. **store 失败时的提示文案变了**（约 34 处）。旧 store 一律 `throw new Error(后端原文 || 中文兜底)`，组件读
+   `err.message`；F1 改成原样抛 `ApiRequestError`，它的 message 永远非空，于是断网时点「完成配货」从
+   「更新订单状态失败。」变成「网络错误」。根因在 brief-store 的一句假设（「组件读 `err.response.data.error`」，
+   实际读的是 `err.message`）——**worker 忠实执行了一条错误的规则，批次审查也照着同一条规则审，看不出来。**
+   现在由 `storeErrors.spec.ts` 表驱动钉住每个写操作的旧文案。
+2. **Tauri 里多了 30 秒超时。** 旧版在 Tauri 里挂的是自定义 axios adapter，axios 的 timeout 只在内置 adapter
+   里实现，所以桌面 / Android 以前从不超时。大号 `.boothpack` 导入会在前端报超时而后端仍在写。
+3. **登录页输错密码被带到 404**（旧 bug）。登录路由是 `/login/:role`，401 处理却判断 `!== '/login'` 并跳去
+   不存在的 `/login`。Review Focus 第 5 条的测试用的是字面量 `'/login'`，一直在空转。
+
+9 条 Minor 记在台账里没有修，其中值得在真机上看一眼的是：`EditEventForm` 的日期绑定改成了
+`formatted-value`（大概率是修了一个 bug，但属于未声明的行为变化），以及旧 iOS 上识图的超时提示。
+测试：前端 67 → **170**（主要是 store 文案的表驱动测试）。
