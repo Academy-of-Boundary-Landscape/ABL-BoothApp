@@ -17,6 +17,7 @@ mod order;
 mod product;
 mod refund;
 mod settlement;
+mod smoke;
 mod society;
 mod stats;
 mod sync;
