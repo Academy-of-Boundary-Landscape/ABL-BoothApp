@@ -37,11 +37,7 @@
         <span class="adjustment-note">——全部算在本社团头上，代卖社团按自己的定价结算</span>
       </p>
 
-      <n-radio-group v-model:value="channel" name="payment-channel">
-        <n-space>
-          <n-radio v-for="c in CHANNELS" :key="c" :value="c">{{ c }}</n-radio>
-        </n-space>
-      </n-radio-group>
+      <ChannelSelect v-model="channel" />
 
       <!-- spec 第 11 节的不可破坏项：不得让复式记账制造出「钱已到账」的错觉。
            系统始终不知道顾客有没有真付，摊主点的是「我看到到账提示了」。
@@ -60,12 +56,13 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { NRadioGroup, NRadio, NSpace, NButton, NInputNumber, NCheckbox, useMessage } from 'naive-ui'
+import { NSpace, NButton, NInputNumber, NCheckbox, useMessage } from 'naive-ui'
 import AppModal from '@/components/shared/AppModal.vue'
+import ChannelSelect from '@/components/shared/ChannelSelect.vue'
 import { formatYuan, toCents, fromCents } from '@/utils/money'
 
 // 现场一场展会里收款渠道基本不变，上次选的记 localStorage 做默认值。
-const CHANNELS = ['现金', '微信', '支付宝']
+// 渠道列表本身由 ChannelSelect 从后端拉（预置三个 + 历史用过的）。
 const CHANNEL_STORAGE_KEY = 'last_payment_channel'
 
 const props = defineProps({
@@ -101,8 +98,9 @@ const effectiveSolved = computed(() =>
 const adjustment = computed(() => effectiveSolved.value - toCents(finalYuan.value))
 
 function reset() {
+  // 非空就用：自定义渠道也该被记住，不能在下次打开时被悄悄换回预置值。
   const saved = localStorage.getItem(CHANNEL_STORAGE_KEY)
-  channel.value = CHANNELS.includes(saved) ? saved : '微信'
+  channel.value = saved || '微信'
   unapplied.value = []
   finalYuan.value = fromCents(props.solvedAmount)
 }

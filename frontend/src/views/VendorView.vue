@@ -11,9 +11,12 @@
         </p>
         <p v-else>正在加载展会信息...</p>
       </div>
-      <n-button type="primary" :loading="isRefreshing" @click="manualRefresh">
-        {{ isRefreshing ? '刷新中' : '手动刷新' }}
-      </n-button>
+      <div class="header-actions">
+        <n-button @click="showInventoryModal = true">登记赠送/报废</n-button>
+        <n-button type="primary" :loading="isRefreshing" @click="manualRefresh">
+          {{ isRefreshing ? '刷新中' : '手动刷新' }}
+        </n-button>
+      </div>
     </header>
 
     <main class="vendor-body">
@@ -86,6 +89,14 @@
       @confirm="onReceiptConfirm"
       @cancel="closeReceipt"
     />
+
+    <!-- 赠送/报废登记：商品候选复用收摊接口的现场仓余额，登记成功刷新库存统计 -->
+    <InventoryLogModal
+      :show="showInventoryModal"
+      :event-id="props.id"
+      @close="showInventoryModal = false"
+      @logged="onInventoryLogged"
+    />
   </div>
 </template>
 
@@ -98,6 +109,7 @@ import { useEventDetailStore } from '@/stores/eventDetailStore'
 import LiveStats from '@/components/vendor/LiveStats.vue'
 import OrderCard from '@/components/order/OrderCard.vue'
 import ReceiptModal from '@/components/vendor/ReceiptModal.vue'
+import InventoryLogModal from '@/components/vendor/InventoryLogModal.vue'
 import { formatYuan } from '@/utils/money'
 
 const props = defineProps({
@@ -169,6 +181,13 @@ watch(
 // 点「完成配货」先确认收款，确认了才真正调接口。
 const showReceiptModal = ref(false)
 const pendingOrder = ref(null)
+
+// 赠送/报废登记弹窗。登记会动现场仓余额，成功后刷一次库存统计。
+const showInventoryModal = ref(false)
+
+async function onInventoryLogged() {
+  await eventDetailStore.fetchProductsForEvent(props.id)
+}
 
 function completeOrder(orderId) {
   pendingOrder.value = store.pendingOrders.find((o) => o.id === orderId) || null
@@ -276,6 +295,12 @@ onUnmounted(() => {
   margin: 4px 0 0;
   font-size: var(--font-sm);
   color: var(--text-muted);
+}
+.header-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 /* ===== Body: 自适应双栏 ===== */
