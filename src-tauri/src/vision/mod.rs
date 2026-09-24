@@ -351,6 +351,8 @@ impl VisionRuntime {
         Ok(())
     }
 
+    // 桩实现：vision 关闭时调用方（master_product 的图片上传）也被 cfg 掉了。
+    #[allow(dead_code)]
     pub fn start_incremental_for_images(
         self: Arc<Self>,
         _db: SqlitePool,

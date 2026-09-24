@@ -158,6 +158,7 @@ pub fn run() {
             };
 
             // 初始化 ONNX Runtime 动态库路径
+            #[cfg(feature = "vision")]
             let resource_dir = app_handle.path().resource_dir().ok();
             #[cfg(feature = "vision")]
             {
@@ -188,7 +189,9 @@ pub fn run() {
                 println!("[Vision] Android: using system linker for libonnxruntime.so");
             }
 
-            // 内嵌模型释放：从 Tauri 资源目录复制到 AppData
+            // 内嵌模型释放：从 Tauri 资源目录复制到 AppData。
+            // 关掉 vision 时 vision::download 整个模块不存在，这段也就不编译。
+            #[cfg(feature = "vision")]
             tauri::async_runtime::block_on(async {
                 // 先确保配置文件存在（bootstrap 内部也会调，但复制模型需要先有 registry）
                 if let Err(e) = vision::download::ensure_default_files(&app_data_dir).await {

@@ -68,6 +68,11 @@ jobs:
         working-directory: src-tauri
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+      # vision 关闭的构建（不带 ONNX 的轻量版）此前没有任何检查，曾静默坏掉过（③b 修复）。
+      - name: cargo clippy (vision off)
+        working-directory: src-tauri
+        run: cargo clippy --no-default-features -- -D warnings
+
       - name: 展会守卫门禁
         run: python3 scripts/check-event-guards.py
 
