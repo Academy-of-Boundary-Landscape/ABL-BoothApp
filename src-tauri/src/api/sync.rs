@@ -3,17 +3,20 @@ use axum::{
     extract::{Multipart, State},
     http::{header, StatusCode},
     response::{IntoResponse, Response},
-    routing::{get, post},
-    Json, Router,
+    Json,
 };
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 use sqlx::{query, query_as, FromRow};
 use std::io::{Cursor, Read, Write};
 use std::time::Instant;
+use utoipa::ToSchema;
+use utoipa_axum::{router::OpenApiRouter, routes};
 use zip::{write::FileOptions, ZipArchive, ZipWriter};
 
-use crate::{api::guard::AdminOnly, db::models::MasterProduct, state::AppState};
+use crate::{
+    api::guard::AdminOnly, api::openapi::ApiErrorBody, db::models::MasterProduct, state::AppState,
+};
 
 // 日志前缀，方便从大堆 stdout/stderr 里 grep 出来。
 // 用 eprintln! 是为了和现有错误日志风格一致；dev 与 release 都会写到 stderr。
@@ -31,20 +34,14 @@ use axum::extract::DefaultBodyLimit;
 
 const SYNC_IMPORT_LIMIT_BYTES: usize = 1000 * 1024 * 1024;
 
-/// ③b 过渡：本模块的路由还没标 utoipa 注解，整体包进 OpenApiRouter——路由照常工作，
-/// 只是文档里没有它的路径。阶段 2 迁移本模块时改为 `routes!(...)` 并删掉 `legacy_router`。
-pub fn router() -> utoipa_axum::router::OpenApiRouter<AppState> {
-    utoipa_axum::router::OpenApiRouter::from(legacy_router())
-}
-
-fn legacy_router() -> Router<AppState> {
-    Router::new()
-        .route("/sync/export-products", get(export_products))
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(export_products))
         // 多部分（multipart/form-data）端点 —— 老路径，LAN 客户端 / 浏览器 fallback 走这里，保留向后兼容
-        .route("/sync/import-products", post(import_products))
+        .routes(routes!(import_products))
         // 原始字节端点 —— Tauri webview 走这里，避开 plugin-http 的 IPC 序列化阻塞
         // body 直接是 zip 字节流，Content-Type 期望 application/zip 或 application/octet-stream
-        .route("/sync/import-products-raw", post(import_products_raw))
+        .routes(routes!(import_products_raw))
         .layer(DefaultBodyLimit::max(SYNC_IMPORT_LIMIT_BYTES))
 }
 
@@ -80,7 +77,20 @@ struct CatalogExport {
 // - catalog.json       (商品数据 + 识别用图片元数据)
 // - products/xxx.jpg   (商品缩略图)
 // - vision/xxx.jpg     (AI 识别用图片)
-async fn export_products(State(state): State<AppState>, _: AdminOnly) -> impl IntoResponse {
+/// 导出商品库与识别图片为 `.boothpack`（zip）压缩包。需要管理员。
+#[utoipa::path(
+    get,
+    path = "/sync/export-products",
+    tag = "sync",
+    security(("bearer" = [])),
+    responses(
+        (status = 200, content_type = "application/zip", body = Vec<u8>),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "需要管理员"),
+        (status = 500, content_type = "text/plain", body = String, description = "读取数据或打包失败"),
+    ),
+)]
+async fn export_products(State(state): State<AppState>, _: AdminOnly) -> Response {
     let t0 = Instant::now();
     eprintln!("{} export: start", TAG);
 
@@ -314,6 +324,15 @@ async fn export_products(State(state): State<AppState>, _: AdminOnly) -> impl In
 //                                       Tauri webview 走这条，避开 plugin-http 的 IPC 序列化阻塞主线程
 //
 // 共享部分抽到 process_import_bytes() 里，两个 handler 只负责把字节拿出来。
+
+/// 导入成功后的响应体。
+#[derive(Serialize, ToSchema)]
+#[schema(as = SyncImportResponse)]
+struct SyncImportResponse {
+    message: String,
+    products_count: usize,
+    images_count: usize,
+}
 
 /// 共享导入处理：拿到完整 zip 字节后做解压 + DB 写入，返回 axum Response。
 /// `t0` 是请求入口时间戳，用于打印总耗时。
@@ -744,17 +763,40 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
 
     (
         StatusCode::OK,
-        Json(serde_json::json!({
-            "message": "Import successful",
-            "products_count": products_count,
-            "images_count": images_count
-        })),
+        Json(SyncImportResponse {
+            message: "Import successful".to_string(),
+            products_count,
+            images_count,
+        }),
     )
         .into_response()
 }
 
+/// 仅用于 OpenAPI 文档：multipart 表单的字段。
+#[derive(ToSchema)]
+#[allow(dead_code)]
+struct ImportProductsForm {
+    /// `.boothpack` / `.zip` 文件内容。
+    #[schema(value_type = String, format = Binary)]
+    file: Vec<u8>,
+}
+
 // ─── 端点 1: multipart/form-data（向后兼容）────────────────────────────────
 // LAN 浏览器、curl、任何用标准 FormData 上传的客户端走这条。
+/// 以 `multipart/form-data` 上传 `.boothpack` 并导入商品库（向后兼容的老路径）。需要管理员。
+#[utoipa::path(
+    post,
+    path = "/sync/import-products",
+    tag = "sync",
+    request_body(content = ImportProductsForm, content_type = "multipart/form-data"),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = SyncImportResponse, description = "导入成功"),
+        (status = 400, content_type = "text/plain", body = String, description = "没有 file 字段或读取上传字节失败"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "需要管理员"),
+    ),
+)]
 async fn import_products(
     State(state): State<AppState>,
     _: AdminOnly,
@@ -796,6 +838,21 @@ async fn import_products(
 // ─── 端点 2: 原始字节（Tauri webview 主用）────────────────────────────────
 // body 直接是 zip 字节流，无需 multipart 解析。客户端把 Uint8Array 直接当 body 发即可，
 // 这条路径不走 plugin-http 的 multipart 编码 / IPC 字符串化，主线程不会被冻住。
+/// 以 `application/octet-stream` 原始字节上传 `.boothpack` 并导入（Tauri webview 主用）。需要管理员。
+#[utoipa::path(
+    post,
+    path = "/sync/import-products-raw",
+    tag = "sync",
+    request_body(content = Vec<u8>, content_type = "application/octet-stream"),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = SyncImportResponse, description = "导入成功"),
+        (status = 400, content_type = "text/plain", body = String, description = "zip 或 catalog.json 无效"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "需要管理员"),
+        (status = 500, content_type = "text/plain", body = String, description = "数据库写入或 zip 处理失败"),
+    ),
+)]
 async fn import_products_raw(State(state): State<AppState>, _: AdminOnly, body: Bytes) -> Response {
     // 不需要展会守卫：只同步全局商品库和社团名单，不写任何展会的账
     let t0 = Instant::now();
@@ -898,5 +955,221 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(homes, 1, "导入新建社团时 is_home 必须恒为 0");
+    }
+}
+
+#[cfg(test)]
+mod shape_tests {
+    use crate::test_support::{
+        admin_token, read_json, seed_event_and_product, shape_of, test_router_with, vendor_token,
+    };
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use axum::Router;
+    use serde_json::{json, Value};
+    use std::io::Write;
+    use tower::ServiceExt;
+
+    /// 把一个 catalog.json 打成 .boothpack（zip）字节流。和 `tests::make_pack` 同形；
+    /// 两边同处一个文件，但分属不同的 `mod`，私有 helper 不能跨模块引用。
+    fn make_pack(catalog: Value) -> Vec<u8> {
+        let mut buf = std::io::Cursor::new(Vec::new());
+        {
+            let mut zip = zip::ZipWriter::new(&mut buf);
+            zip.start_file("catalog.json", zip::write::FileOptions::default())
+                .unwrap();
+            zip.write_all(catalog.to_string().as_bytes()).unwrap();
+            zip.finish().unwrap();
+        }
+        buf.into_inner()
+    }
+
+    /// 一个带两张商品的商品库，让导入响应里的计数不是 0。
+    fn sample_catalog() -> Value {
+        json!({
+            "products": [
+                {
+                    "id": 1, "product_code": "A", "name": "本子A",
+                    "default_price": 30.0, "image_url": null, "category": null,
+                    "is_active": true, "tags": "", "image_count": null,
+                    "owner_society_id": 1
+                },
+                {
+                    "id": 2, "product_code": "B", "name": "本子B",
+                    "default_price": 20.0, "image_url": "/uploads/b.jpg", "category": "周边",
+                    "is_active": true, "tags": "红色", "image_count": 1,
+                    "owner_society_id": 2
+                }
+            ],
+            "product_images": [
+                {"product_code": "B", "image_url": "/uploads/b.jpg", "kind": "main"}
+            ],
+            "societies": ["黄昏堂"],
+            "product_owners": [["A", "本子A"], ["B", "黄昏堂"]]
+        })
+    }
+
+    async fn seeded() -> (Router, tempfile::TempDir) {
+        let (router, dir, pool) = test_router_with().await;
+        seed_event_and_product(&pool).await;
+        (router, dir)
+    }
+
+    /// 读非 JSON 响应体（本模块的错误分支是 text/plain）。
+    async fn read_text(res: axum::response::Response) -> String {
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        String::from_utf8(bytes.to_vec()).unwrap()
+    }
+
+    /// 手写 multipart body：只放一个名为 `file` 的文件域，内容是 zip 字节。
+    fn import_products_request(pack: &[u8]) -> Request<Body> {
+        let boundary = "X-BOUNDARY";
+        let mut body: Vec<u8> = Vec::new();
+        body.extend_from_slice(
+            format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; \
+                 filename=\"pack.boothpack\"\r\nContent-Type: application/zip\r\n\r\n"
+            )
+            .as_bytes(),
+        );
+        body.extend_from_slice(pack);
+        body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+        Request::builder()
+            .method("POST")
+            .uri("/api/sync/import-products")
+            .header("authorization", format!("Bearer {}", admin_token()))
+            .header(
+                "content-type",
+                format!("multipart/form-data; boundary={boundary}"),
+            )
+            .body(Body::from(body))
+            .unwrap()
+    }
+
+    fn raw_request(pack: &[u8]) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri("/api/sync/import-products-raw")
+            .header("authorization", format!("Bearer {}", admin_token()))
+            .header("content-type", "application/octet-stream")
+            .body(Body::from(pack.to_vec()))
+            .unwrap()
+    }
+
+    fn import_response_shape() -> Value {
+        json!({"images_count": "int", "message": "string", "products_count": "int"})
+    }
+
+    #[tokio::test]
+    async fn shape_export_products() {
+        let (router, _dir) = seeded().await;
+        let res = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/sync/export-products")
+                    .header("authorization", format!("Bearer {}", admin_token()))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(
+            res.headers().get("content-type").unwrap(),
+            "application/zip"
+        );
+        assert!(res
+            .headers()
+            .get("content-disposition")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .starts_with("attachment; filename=\"booth_catalog_"));
+
+        // 未登录 → 401；非管理员 → 403。两者都是 ApiErrorBody 形状。
+        let res = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/sync/export-products")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(shape_of(&read_json(res).await), json!({"error": "string"}));
+
+        let res = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/sync/export-products")
+                    .header("authorization", format!("Bearer {}", vendor_token(1)))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        assert_eq!(shape_of(&read_json(res).await), json!({"error": "string"}));
+    }
+
+    #[tokio::test]
+    async fn shape_import_products() {
+        let (router, _dir) = seeded().await;
+        let pack = make_pack(sample_catalog());
+
+        let res = router
+            .clone()
+            .oneshot(import_products_request(&pack))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(shape_of(&read_json(res).await), import_response_shape());
+
+        // 没有 file 字段 → 400，非标准错误体（纯文本）。
+        let boundary = "X-BOUNDARY";
+        let body = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"other\"\r\n\r\nx\r\n--{boundary}--\r\n"
+        );
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/sync/import-products")
+            .header("authorization", format!("Bearer {}", admin_token()))
+            .header(
+                "content-type",
+                format!("multipart/form-data; boundary={boundary}"),
+            )
+            .body(Body::from(body))
+            .unwrap();
+        let res = router.clone().oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(read_text(res).await, "No file found in request");
+    }
+
+    #[tokio::test]
+    async fn shape_import_products_raw() {
+        let (router, _dir) = seeded().await;
+        let pack = make_pack(sample_catalog());
+
+        let res = router.clone().oneshot(raw_request(&pack)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(shape_of(&read_json(res).await), import_response_shape());
+
+        // 无效 zip → 400，非标准错误体（纯文本）。
+        let res = router
+            .clone()
+            .oneshot(raw_request(b"not a zip"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(read_text(res).await, "Invalid ZIP/Boothpack file");
     }
 }
