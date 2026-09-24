@@ -31,14 +31,9 @@ export interface ThemeColors {
   }
   status: {
     success: string
-    successHover: string
     warning: string
-    warningAlt: string
-    warningHover: string
     error: string
-    errorHover: string
     info: string
-    infoHover: string
     cancelled: string
   }
   border: {
@@ -52,18 +47,6 @@ export interface ThemeColors {
     tooltipBg: string
     highlight: string
     delete: string
-  }
-  components: {
-    alert: {
-      bg: string
-      info: string
-      success: string
-      warning: string
-      error: string
-    }
-    order: {
-      completed: string
-    }
   }
 }
 
@@ -170,14 +153,9 @@ export const darkTheme: ThemeColors = {
   // === 状态颜色 ===
   status: {
     success: '#4CAF50', // 成功/完成
-    successHover: '#38A88F', // 成功悬停
     warning: '#F5A623', // 警告/待处理
-    warningAlt: '#FB8C00', // 警告替代色
-    warningHover: '#D48E1A', // 警告悬停
     error: '#F44336', // 错误/取消
-    errorHover: '#A00114', // 错误悬停
     info: '#4A90E2', // 信息
-    infoHover: '#357ABD', // 信息悬停
     cancelled: '#9E9E9E', // 已取消
   },
 
@@ -195,20 +173,6 @@ export const darkTheme: ThemeColors = {
     tooltipBg: 'rgba(0, 0, 0, 0.75)', // 提示框背景
     highlight: '#FFDF57', // 高亮/强调
     delete: '#DC3545', // 删除按钮
-  },
-
-  // === 组件特定颜色 ===
-  components: {
-    alert: {
-      bg: '#2C2C3E', // 弹窗背景
-      info: '#4A90E2', // 信息边框
-      success: '#50E3C2', // 成功边框
-      warning: '#F5A623', // 警告边框
-      error: '#D0021B', // 错误边框
-    },
-    order: {
-      completed: '#555555', // 已完成订单
-    },
   },
 }
 export const lightTheme: ThemeColors = {
@@ -250,14 +214,9 @@ export const lightTheme: ThemeColors = {
   // 保持你原有的现代色盘，这些颜色在白底上表现良好
   status: {
     success: '#10B981',
-    successHover: '#059669',
     warning: '#F59E0B',
-    warningAlt: '#D97706',
-    warningHover: '#B45309',
     error: '#EF4444',
-    errorHover: '#B91C1C',
     info: '#3B82F6',
-    infoHover: '#2563EB',
     cancelled: '#9CA3AF',
   },
 
@@ -277,20 +236,6 @@ export const lightTheme: ThemeColors = {
     tooltipBg: '#1F2937', // Tooltip 保持深色背景
     highlight: '#FEF3C7',
     delete: '#EF4444',
-  },
-
-  // === 组件特定颜色 ===
-  components: {
-    alert: {
-      bg: '#F3F8FC', // 给 Alert 一个极淡的蓝色/灰色底，不要纯白
-      info: '#3B82F6',
-      success: '#10B981',
-      warning: '#F59E0B',
-      error: '#EF4444',
-    },
-    order: {
-      completed: '#F3F4F6',
-    },
   },
 }
 // ============================================================
@@ -437,14 +382,9 @@ export function generateCSSVariables(theme: ThemeColors): string {
 
     /* 状态颜色 */
     --success-color: ${theme.status.success};
-    --success-color-hover: ${theme.status.successHover};
     --warning-color: ${theme.status.warning};
-    --warning-color-alt: ${theme.status.warningAlt};
-    --warning-color-hover: ${theme.status.warningHover};
     --error-color: ${theme.status.error};
-    --error-color-hover: ${theme.status.errorHover};
     --info-color: ${theme.status.info};
-    --info-color-hover: ${theme.status.infoHover};
     --cancelled-color: ${theme.status.cancelled};
 
     /* 边框颜色 */
@@ -462,12 +402,6 @@ export function generateCSSVariables(theme: ThemeColors): string {
     --hover-bg-color: ${theme.primary.light};
 
     /* 组件颜色 */
-    --alert-bg: ${theme.components.alert.bg};
-    --alert-info: ${theme.components.alert.info};
-    --alert-success: ${theme.components.alert.success};
-    --alert-warning: ${theme.components.alert.warning};
-    --alert-error: ${theme.components.alert.error};
-    --order-completed: ${theme.components.order.completed};
   `
 }
 

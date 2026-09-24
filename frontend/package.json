@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "test:unit": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "eslint . --max-warnings 0 && npm run lint:style && npm run lint:boundary",
     "lint:style": "stylelint \"src/**/*.{vue,css}\"",
     "lint:boundary": "node scripts/check-ui-boundary.mjs",
     "format": "prettier --write src/ scripts/ '*.ts' '*.json' '../.github/**/*.yml'",
