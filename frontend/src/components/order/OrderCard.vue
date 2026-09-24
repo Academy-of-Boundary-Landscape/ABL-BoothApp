@@ -68,23 +68,20 @@ const formattedTime = computed(() => {
 
 <style scoped>
 .order-card.is-completed {
-  border-left-color: var(--order-completed); /* 已完成的订单用灰色边框 */
+  border-left-color: var(--bg-secondary); /* 已完成的订单用灰色边框 */
   opacity: 0.8;
 }
 .button-group {
   display: flex;
-  gap: 8px;
-}
-.btn-cancel {
-  /* ... 危险操作的样式 ... */
+  gap: var(--space-sm);
 }
 /* --- 整体卡片样式 --- */
 .order-card {
   background-color: var(--card-bg-color);
   border: 1px solid var(--border-color);
   border-left: 4px solid var(--accent-color);
-  padding: 10px 14px;
-  margin-bottom: 10px;
+  padding: var(--space-sm) var(--space-md);
+  margin-bottom: var(--space-sm);
   border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
@@ -95,8 +92,8 @@ const formattedTime = computed(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 6px;
-  padding-bottom: 6px;
+  margin-bottom: var(--space-sm);
+  padding-bottom: var(--space-sm);
   border-bottom: 1px solid var(--border-color);
 }
 .order-header h4 {
@@ -113,14 +110,14 @@ const formattedTime = computed(() => {
 .item-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 6px;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
 }
 
 .order-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 
 .item-thumbnail {
@@ -150,12 +147,12 @@ const formattedTime = computed(() => {
   display: flex;
   flex-direction: row;
   align-items: baseline;
-  gap: 6px;
+  gap: var(--space-sm);
   min-width: 0;
 }
 
 .item-name {
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   font-size: var(--font-base);
   color: var(--primary-text-color);
   white-space: nowrap;
@@ -165,7 +162,7 @@ const formattedTime = computed(() => {
 
 .item-lot {
   align-self: flex-start;
-  padding: 0 6px;
+  padding: 0 var(--space-sm);
   border-radius: var(--radius-sm);
   background-color: var(--accent-color-light);
   color: var(--accent-color);
@@ -181,7 +178,7 @@ const formattedTime = computed(() => {
 
 .item-quantity {
   font-size: var(--font-md);
-  font-weight: 800;
+  font-weight: var(--weight-bold);
   color: var(--accent-color);
   flex-shrink: 0;
   min-width: 32px;
@@ -193,7 +190,7 @@ const formattedTime = computed(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-top: 8px;
+  padding-top: var(--space-sm);
   border-top: 1px solid var(--border-color);
 }
 .total-amount strong {
@@ -201,45 +198,9 @@ const formattedTime = computed(() => {
   color: var(--accent-color);
 }
 .total-amount .struck {
-  margin-right: 0.5rem;
+  margin-right: var(--space-sm);
   color: var(--text-disabled);
   text-decoration: line-through;
-  font-weight: 400;
-}
-/* 【新增】按钮组容器样式 */
-.actions {
-  display: flex;
-  gap: 0.75rem; /* 按钮之间的间距 */
-}
-
-/* 【修改】通用按钮样式，确保 .btn 基础样式存在 */
-.btn {
-  padding: 8px 16px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-weight: bold;
-  border: 1px solid;
-  transition:
-    background-color 0.2s,
-    color 0.2s;
-}
-
-/* “完成”按钮样式 */
-.btn-complete {
-  background-color: var(--accent-color);
-  color: var(--bg-color);
-  border-color: var(--accent-color);
-}
-
-/* “取消”按钮样式 */
-.btn-cancel {
-  background-color: transparent;
-  color: var(--error-color);
-  border-color: var(--error-color);
-}
-
-.btn-cancel:hover {
-  background-color: var(--error-color);
-  color: var(--text-white);
+  font-weight: var(--weight-regular);
 }
 </style>
