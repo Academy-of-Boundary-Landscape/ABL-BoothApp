@@ -1,11 +1,5 @@
 <template>
   <SectionCard title="商品数据包（.boothpack）" collapsible v-model:collapsed="isCollapsed">
-    <template #extra>
-      <n-button text class="toggle-btn" @click="isCollapsed = !isCollapsed">
-        {{ isCollapsed ? '展开' : '折叠' }}
-      </n-button>
-    </template>
-
     <n-alert type="info" :bordered="false" class="info-alert">
       <div class="info-text">
         你可以导出当前商品库为 <code>.boothpack</code> 备份，也可以在其他设备导入。
@@ -235,34 +229,34 @@ async function confirmAndImport(target: ImportTarget) {
     (target.kind === 'path' ? String(target.path).split(/[/\\]/).pop() : target.file?.name) ||
     'unknown'
 
-  const confirmed = await fb.confirm({
+  await fb.confirm({
     title: target.kind === 'path' ? '检测到文件拖入' : '确认导入',
     content: `文件名：${name}\n\n确认要导入吗？这会覆盖或更新现有商品数据。\n建议先导出当前数据作为备份。`,
     positiveText: '确认导入',
     negativeText: '取消',
+    onConfirm: async () => {
+      if (isImporting.value) {
+        fb.info('正在导入中，请稍候')
+        return
+      }
+
+      clearSyncHints()
+      startImportProgress()
+      try {
+        const result = await runImport(target)
+
+        stopImportProgress(true)
+        const pCount = result?.products_count ?? 0
+        const iCount = result?.images_count ?? 0
+        syncMessage.value = `导入成功，更新了 ${pCount} 条商品、${iCount} 张图片。`
+        fb.success(`导入成功，已更新 ${pCount} 条商品、${iCount} 张图片`)
+        emit('imported')
+      } catch (error) {
+        stopImportProgress(false)
+        syncError.value = normalizeUploadError(error, SYNC_IMPORT_LIMIT_MB)
+      }
+    },
   })
-  if (!confirmed) return
-
-  if (isImporting.value) {
-    fb.info('正在导入中，请稍候')
-    return
-  }
-
-  clearSyncHints()
-  startImportProgress()
-  try {
-    const result = await runImport(target)
-
-    stopImportProgress(true)
-    const pCount = result?.products_count ?? 0
-    const iCount = result?.images_count ?? 0
-    syncMessage.value = `导入成功，更新了 ${pCount} 条商品、${iCount} 张图片。`
-    fb.success(`导入成功，已更新 ${pCount} 条商品、${iCount} 张图片`)
-    emit('imported')
-  } catch (error) {
-    stopImportProgress(false)
-    syncError.value = normalizeUploadError(error, SYNC_IMPORT_LIMIT_MB)
-  }
 }
 
 function onDragEnter(event: DragEvent) {
@@ -337,10 +331,6 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.toggle-btn {
-  color: var(--accent-color);
-}
-
 .sync-controls {
   display: flex;
   gap: var(--space-md);

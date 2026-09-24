@@ -3,14 +3,8 @@
     class="form-section"
     title="添加新商品到仓库"
     collapsible
-    v-model:collapsed="isFormExpanded"
+    v-model:collapsed="isFormCollapsed"
   >
-    <template #extra>
-      <n-button text class="toggle-btn" @click="isFormExpanded = !isFormExpanded">
-        {{ isFormExpanded ? '折叠' : '展开' }}
-      </n-button>
-    </template>
-
     <form @submit.prevent="handleCreate">
       <div class="form-layout">
         <div class="form-fields">
@@ -134,7 +128,7 @@ const themeStore = useThemeStore()
 
 const isCreating = ref(false)
 const createError = ref('')
-const isFormExpanded = ref(true)
+const isFormCollapsed = ref(false)
 
 const createFormData = ref<CreateFormState>({
   product_code: '',
@@ -203,13 +197,6 @@ async function handleCreate() {
 <style scoped>
 .form-section {
   margin-bottom: var(--space-2xl);
-}
-
-.toggle-btn {
-  font-size: var(--font-base);
-  padding: var(--space-xs) var(--space-md);
-  min-width: auto;
-  color: var(--accent-color);
 }
 
 .form-grid {

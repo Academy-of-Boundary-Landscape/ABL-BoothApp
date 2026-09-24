@@ -177,7 +177,12 @@
       </AsyncState>
     </SectionCard>
 
-    <AppModal v-model:show="isEditModalVisible" title="编辑上架商品" size="sm">
+    <AppModal
+      :show="isEditModalVisible"
+      title="编辑上架商品"
+      size="sm"
+      @update:show="(v) => !v && closeEditModal()"
+    >
       <form v-if="editableProduct" class="edit-form" @submit.prevent="handleUpdate">
         <div class="form-group">
           <label>展会售价 (¥):</label>
@@ -439,25 +444,26 @@ async function handleRestock() {
 }
 
 async function handleDelete(product: Schemas['ProductEventProduct']) {
-  const confirmed = await fb.confirm({
+  await fb.confirm({
     title: '确认下架',
     content: `确定要从该展会下架 "${product.name}" 吗？此操作不可恢复。`,
     positiveText: '确认下架',
     negativeText: '取消',
     danger: true,
+    onConfirm: async () => {
+      try {
+        await eventDetailStore.deleteEventProduct(product.id)
+        await eventDetailStore.fetchProductsForEvent(props.id)
+      } catch (error) {
+        void fb.alert({
+          title: '删除失败',
+          content:
+            (error instanceof Error ? error.message : String(error)) || '无法下架商品，请稍后重试',
+          type: 'error',
+        })
+      }
+    },
   })
-  if (!confirmed) return
-  try {
-    await eventDetailStore.deleteEventProduct(product.id)
-    await eventDetailStore.fetchProductsForEvent(props.id)
-  } catch (error) {
-    await fb.alert({
-      title: '删除失败',
-      content:
-        (error instanceof Error ? error.message : String(error)) || '无法下架商品，请稍后重试',
-      type: 'error',
-    })
-  }
 }
 
 onMounted(() => {

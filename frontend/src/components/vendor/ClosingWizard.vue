@@ -274,16 +274,13 @@ async function submitStocktake() {
     const detail = diffs
       .map((p) => `${p.name}：账面 ${p.qty} → 实数 ${counts.value[p.event_product_id]}`)
       .join('；')
-    if (
-      await fb.confirm({
-        title: '确认盘点差异',
-        content: `以下商品的实数与账面不一致：${detail}。盘点差异提交后不可直接撤销，确认无误再提交。`,
-        positiveText: '确认提交',
-        negativeText: '返回核对',
-      })
-    ) {
-      await doSubmitStocktake(payload)
-    }
+    await fb.confirm({
+      title: '确认盘点差异',
+      content: `以下商品的实数与账面不一致：${detail}。盘点差异提交后不可直接撤销，确认无误再提交。`,
+      positiveText: '确认提交',
+      negativeText: '返回核对',
+      onConfirm: () => doSubmitStocktake(payload),
+    })
     return
   }
   await doSubmitStocktake(payload)

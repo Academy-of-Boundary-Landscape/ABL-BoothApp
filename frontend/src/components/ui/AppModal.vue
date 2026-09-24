@@ -1,5 +1,12 @@
 <template>
-  <n-modal :show="show" :mask-closable="maskClosable" @update:show="onUpdateShow">
+  <n-modal
+    :show="show"
+    :mask-closable="maskClosable"
+    :close-on-esc="closeOnEsc"
+    @update:show="onUpdateShow"
+    @after-enter="emit('after-enter')"
+    @after-leave="emit('after-leave')"
+  >
     <n-card
       class="app-modal__card"
       :class="[`app-modal__card--${size}`, { 'app-modal__card--phone': isPhone }]"
@@ -9,10 +16,18 @@
     >
       <template #header>
         <div class="app-modal__header">
-          <span class="app-modal__title">
-            <slot name="header">{{ title }}</slot>
-          </span>
-          <n-button quaternary circle size="small" class="app-modal__close" @click="close">
+          <div v-if="$slots.header" class="app-modal__header-slot">
+            <slot name="header" />
+          </div>
+          <span v-else class="app-modal__title">{{ title }}</span>
+          <n-button
+            v-if="closable"
+            quaternary
+            circle
+            size="small"
+            class="app-modal__close"
+            @click="close"
+          >
             ×
           </n-button>
         </div>
@@ -42,16 +57,22 @@ const props = withDefaults(
     title?: string
     size?: 'sm' | 'md' | 'lg'
     maskClosable?: boolean
+    closeOnEsc?: boolean
+    closable?: boolean
   }>(),
   {
     title: '',
     size: 'md',
     maskClosable: true,
+    closeOnEsc: true,
+    closable: true,
   }
 )
 
 const emit = defineEmits<{
   (e: 'update:show', v: boolean): void
+  (e: 'after-enter'): void
+  (e: 'after-leave'): void
 }>()
 
 const sizeWidth = {
@@ -98,6 +119,14 @@ function onUpdateShow(val: boolean) {
   align-items: center;
   gap: var(--space-md);
   border-bottom: 1px solid var(--border-color);
+}
+
+.app-modal__header-slot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1;
+  gap: var(--space-sm);
 }
 
 .app-modal__title {

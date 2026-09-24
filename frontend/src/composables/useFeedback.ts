@@ -39,6 +39,12 @@ export interface ConfirmOptions {
   positiveText?: string
   negativeText?: string
   danger?: boolean
+  /**
+   * 点击确认时执行的操作，接到 Naive dialog 的 `onPositiveClick` 上并原样返回其返回值。
+   * 返回 Promise 时确认按钮 loading、弹窗等 Promise 结束才关；返回 / resolve 为 `false`
+   * 时弹窗保持打开。抛错（同步 throw 或 reject）时弹窗关闭，`confirm()` reject 该错误。
+   */
+  onConfirm?: () => unknown | Promise<unknown>
 }
 
 export interface Feedback {
@@ -46,6 +52,8 @@ export interface Feedback {
   info(msg: string): void
   warning(msg: string): void
   error(e: unknown, fallback?: string): void
+  /** 常驻 loading 提示（duration: 0），返回销毁函数。 */
+  loading(msg: string): () => void
   confirm(opts: ConfirmOptions): Promise<boolean>
   alert(opts: {
     title?: string
@@ -68,20 +76,62 @@ export function useFeedback(): Feedback {
     error(e, fallback) {
       discrete().message.error(errorText(e, fallback))
     },
+    loading(msg) {
+      const instance = discrete().message.loading(msg, { duration: 0 })
+      return () => instance.destroy()
+    },
     confirm(opts) {
-      return new Promise<boolean>((resolve) => {
+      return new Promise<boolean>((resolve, reject) => {
         let settled = false
         const settle = (v: boolean) => {
           if (settled) return
           settled = true
           resolve(v)
         }
-        discrete().dialog[opts.danger ? 'error' : 'warning']({
+        const fail = (e: unknown) => {
+          if (settled) return
+          settled = true
+          reject(e)
+        }
+        let instance: { destroy: () => void } | null = null
+        const hide = () => instance?.destroy()
+
+        const handlePositiveClick = (): unknown => {
+          if (!opts.onConfirm) {
+            settle(true)
+            return
+          }
+          let result: unknown
+          try {
+            result = opts.onConfirm()
+          } catch (e) {
+            fail(e)
+            hide()
+            return
+          }
+          if (result instanceof Promise) {
+            result.then(
+              (v) => {
+                if (v !== false) settle(true)
+              },
+              (e: unknown) => {
+                fail(e)
+                hide()
+              }
+            )
+            // 原样返回同一个 Promise，交回 Naive 处理「确认按钮 loading / 等它结束才关」。
+            return result
+          }
+          if (result !== false) settle(true)
+          return result
+        }
+
+        instance = discrete().dialog[opts.danger ? 'error' : 'warning']({
           title: opts.title,
           content: opts.content,
           positiveText: opts.positiveText ?? '确定',
           negativeText: opts.negativeText ?? '取消',
-          onPositiveClick: () => settle(true),
+          onPositiveClick: handlePositiveClick,
           onNegativeClick: () => settle(false),
           onClose: () => settle(false),
           onMaskClick: () => settle(false),

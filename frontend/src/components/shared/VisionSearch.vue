@@ -155,9 +155,14 @@
     <!-- ========== 搜索结果：摄像头模式用居中悬浮弹窗，普通模式用内联列表 ========== -->
 
     <!-- 摄像头模式：悬浮弹窗 -->
-    <AppModal :show="showCameraResults" size="sm" @update:show="onCameraResultsShow">
+    <AppModal
+      :show="showCameraResults"
+      size="sm"
+      :closable="false"
+      @update:show="onCameraResultsShow"
+    >
       <template #header>
-        <span>匹配结果</span>
+        <span class="vision-popup__title">匹配结果</span>
         <n-tag v-if="isUncertain" size="small" type="warning">置信度较低</n-tag>
       </template>
       <div class="vision-popup__list">
@@ -927,6 +932,11 @@ onBeforeUnmount(() => {
 }
 
 /* 摄像头模式：结果列表（弹窗外壳由 AppModal 提供） */
+.vision-popup__title {
+  font-size: var(--font-md);
+  font-weight: var(--weight-bold);
+}
+
 .vision-popup__list {
   max-height: 70vh;
   overflow-y: auto;

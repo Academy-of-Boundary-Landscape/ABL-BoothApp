@@ -113,25 +113,24 @@ async function handleSetHome(society: Schemas['Society']) {
 }
 
 async function handleDelete(society: Schemas['Society']) {
-  if (
-    await fb.confirm({
-      title: '确认删除',
-      content: `确定要删除社团「${society.name}」吗？还有商品归属它时不能删除。`,
-      positiveText: '确认删除',
-      negativeText: '取消',
-      danger: true,
-    })
-  ) {
-    isBusy.value = true
-    try {
-      await store.deleteSociety(society.id)
-      fb.success('社团已删除')
-    } catch (error) {
-      fb.error(error, '删除失败')
-    } finally {
-      isBusy.value = false
-    }
-  }
+  await fb.confirm({
+    title: '确认删除',
+    content: `确定要删除社团「${society.name}」吗？还有商品归属它时不能删除。`,
+    positiveText: '确认删除',
+    negativeText: '取消',
+    danger: true,
+    onConfirm: async () => {
+      isBusy.value = true
+      try {
+        await store.deleteSociety(society.id)
+        fb.success('社团已删除')
+      } catch (error) {
+        fb.error(error, '删除失败')
+      } finally {
+        isBusy.value = false
+      }
+    },
+  })
 }
 
 onMounted(() => {

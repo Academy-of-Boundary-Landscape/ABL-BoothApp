@@ -541,37 +541,36 @@ async function handleCheckout() {
   const itemCount = store.cartItemCount
   const totalAmount = store.cartSummary.payable // 确认框里也该是折后价
 
-  if (
-    await fb.confirm({
-      title: '确认下单',
-      content: `共 ${itemCount} 件商品，合计 ${formatYuan(totalAmount)}`,
-      positiveText: '确认下单',
-      negativeText: '再看看',
-    })
-  ) {
-    isCheckingOut.value = true
-    try {
-      const newOrder = await store.submitOrder()
-      if (newOrder) {
-        // **金额取自下单响应，不是购物车的报价。** 报价只是预览，两次之间
-        // 摊主完全可能刚改过 Lot 配置——顾客扫码付的数必须是服务端落账的那个数。
-        orderTotal.value = newOrder.final_amount
-        showPaymentModal.value = true
+  await fb.confirm({
+    title: '确认下单',
+    content: `共 ${itemCount} 件商品，合计 ${formatYuan(totalAmount)}`,
+    positiveText: '确认下单',
+    negativeText: '再看看',
+    onConfirm: async () => {
+      isCheckingOut.value = true
+      try {
+        const newOrder = await store.submitOrder()
+        if (newOrder) {
+          // **金额取自下单响应，不是购物车的报价。** 报价只是预览，两次之间
+          // 摊主完全可能刚改过 Lot 配置——顾客扫码付的数必须是服务端落账的那个数。
+          orderTotal.value = newOrder.final_amount
+          showPaymentModal.value = true
+          store.clearCart()
+          store.fetchProductsForEvent()
+        }
+      } catch (error) {
+        fb.alert({
+          title: '错误',
+          content: (error instanceof Error && error.message) || '下单失败',
+          type: 'error',
+        })
         store.clearCart()
         store.fetchProductsForEvent()
+      } finally {
+        isCheckingOut.value = false
       }
-    } catch (error) {
-      fb.alert({
-        title: '错误',
-        content: (error instanceof Error && error.message) || '下单失败',
-        type: 'error',
-      })
-      store.clearCart()
-      store.fetchProductsForEvent()
-    } finally {
-      isCheckingOut.value = false
-    }
-  }
+    },
+  })
 }
 function closePaymentModal() {
   showPaymentModal.value = false

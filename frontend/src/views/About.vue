@@ -424,27 +424,28 @@ const copyLink = async (url: string, label: string) => {
 }
 
 const resetDatabase = async () => {
-  if (
-    await fb.confirm({
-      title: '⚠️ 危险操作',
-      content: '此操作将不可逆地删除所有展会、商品、订单数据及图片文件。\n确定要完全重置系统吗？',
-      positiveText: '确认重置',
-      negativeText: '取消',
-      danger: true,
-    })
-  ) {
-    fb.info('正在重置...')
-    try {
-      const res = await unwrap(api.PUT('/admin/reset-database'))
-      fb.success(res.message || '重置成功')
-      setTimeout(() => {
-        sessionStorage.clear()
-        window.location.href = '/admin'
-      }, 1500)
-    } catch (err) {
-      fb.error(err, '重置失败')
-    }
-  }
+  await fb.confirm({
+    title: '⚠️ 危险操作',
+    content: '此操作将不可逆地删除所有展会、商品、订单数据及图片文件。\n确定要完全重置系统吗？',
+    positiveText: '确认重置',
+    negativeText: '取消',
+    danger: true,
+    onConfirm: async () => {
+      const stopLoading = fb.loading('正在重置...')
+      try {
+        const res = await unwrap(api.PUT('/admin/reset-database'))
+        stopLoading()
+        fb.success(res.message || '重置成功')
+        setTimeout(() => {
+          sessionStorage.clear()
+          window.location.href = '/admin'
+        }, 1500)
+      } catch (err) {
+        stopLoading()
+        fb.error(err, '重置失败')
+      }
+    },
+  })
 }
 </script>
 

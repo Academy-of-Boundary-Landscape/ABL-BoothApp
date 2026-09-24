@@ -191,16 +191,15 @@ const handleAutoInstall = async () => {
 }
 
 const confirmRestart = async () => {
-  if (
-    await fb.confirm({
-      title: '即将重启摊盒',
-      content: '重启会关闭应用以完成安装。请确认当前没有未保存的订单或编辑。继续吗？',
-      positiveText: '确认重启',
-      negativeText: '再等等',
-    })
-  ) {
-    await restartApp()
-  }
+  await fb.confirm({
+    title: '即将重启摊盒',
+    content: '重启会关闭应用以完成安装。请确认当前没有未保存的订单或编辑。继续吗？',
+    positiveText: '确认重启',
+    negativeText: '再等等',
+    onConfirm: async () => {
+      await restartApp()
+    },
+  })
 }
 
 const formatDate = (dateStr: string) => {

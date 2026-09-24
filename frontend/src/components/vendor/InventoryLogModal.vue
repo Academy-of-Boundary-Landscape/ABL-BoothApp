@@ -90,6 +90,9 @@
         <n-button size="small" quaternary :disabled="isBusy" @click="undo(entry)">撤销</n-button>
       </div>
     </div>
+    <template #footer>
+      <n-button @click="emit('close')">关闭</n-button>
+    </template>
   </AppModal>
 </template>
 
@@ -231,27 +234,26 @@ async function submit() {
 }
 
 async function undo(entry: Schemas['InventoryLogEntry']) {
-  if (
-    await fb.confirm({
-      title: '确认撤销',
-      content: `撤销这条${activeTab.value === 'gift' ? '赠送' : '报废'}登记？货会回到现场仓。`,
-      positiveText: '撤销',
-      negativeText: '返回',
-      danger: true,
-    })
-  ) {
-    isBusy.value = true
-    try {
-      await store.reverse(Number(props.eventId), entry.journal_id)
-      fb.success('已撤销')
-      await loadOnsite()
-      emit('logged')
-    } catch (err) {
-      fb.error(err, '撤销失败')
-    } finally {
-      isBusy.value = false
-    }
-  }
+  await fb.confirm({
+    title: '确认撤销',
+    content: `撤销这条${activeTab.value === 'gift' ? '赠送' : '报废'}登记？货会回到现场仓。`,
+    positiveText: '撤销',
+    negativeText: '返回',
+    danger: true,
+    onConfirm: async () => {
+      isBusy.value = true
+      try {
+        await store.reverse(Number(props.eventId), entry.journal_id)
+        fb.success('已撤销')
+        await loadOnsite()
+        emit('logged')
+      } catch (err) {
+        fb.error(err, '撤销失败')
+      } finally {
+        isBusy.value = false
+      }
+    },
+  })
 }
 </script>
 

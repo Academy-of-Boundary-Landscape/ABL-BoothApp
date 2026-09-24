@@ -54,7 +54,7 @@
           <p class="revenue-summary">
             今日已完成订单总额: <strong>{{ formatYuan(store.totalRevenue) }}</strong>
           </p>
-          <EmptyState v-if="!store.completedOrders.length" title="暂无已完成订单" />
+          <EmptyState v-if="!store.completedOrders.length" icon="" title="暂无已完成订单" />
           <!-- OrderCard 本身不动（④ 要整体重做），只在外面补一个「退货」入口。
                不做「已退完」置灰预取：那要为每张已完成单各发一个请求，400 单的场次
                会把 3 秒一次的待处理轮询挤在浏览器连接队列后面。退货弹窗里每行
@@ -281,22 +281,21 @@ async function onReceiptConfirm(payload: {
 }
 
 async function cancelOrder(orderId: number) {
-  if (
-    await fb.confirm({
-      title: '确认取消',
-      content: '确定要取消这个订单吗？此操作无法撤销。',
-      positiveText: '确认',
-      negativeText: '返回',
-      danger: true,
-    })
-  ) {
-    try {
-      await store.cancelOrder(orderId)
-      fb.success('订单已取消')
-    } catch (error) {
-      fb.error(error, '取消失败')
-    }
-  }
+  await fb.confirm({
+    title: '确认取消',
+    content: '确定要取消这个订单吗？此操作无法撤销。',
+    positiveText: '确认',
+    negativeText: '返回',
+    danger: true,
+    onConfirm: async () => {
+      try {
+        await store.cancelOrder(orderId)
+        fb.success('订单已取消')
+      } catch (error) {
+        fb.error(error, '取消失败')
+      }
+    },
+  })
 }
 
 onMounted(() => {

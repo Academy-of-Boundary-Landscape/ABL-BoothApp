@@ -16,7 +16,7 @@ interface DialogCaptured {
   content?: string
   positiveText?: string
   negativeText?: string
-  onPositiveClick?: () => void
+  onPositiveClick?: () => unknown
   onNegativeClick?: () => void
   onClose?: () => void
   onMaskClick?: () => void
@@ -26,9 +26,12 @@ const mock = vi.hoisted(() => {
   const calls: CapturedCall[] = []
   const dialogCalls: DialogCaptured[] = []
   const messageCalls: Array<{ method: string; args: unknown[] }> = []
+  const instances: Array<{ destroy: ReturnType<typeof vi.fn> }> = []
   const makeReactive = (o: DialogCaptured) => {
     dialogCalls.push(o)
-    return { key: 'k', destroy: () => {} }
+    const instance = { key: 'k', destroy: vi.fn() }
+    instances.push(instance)
+    return instance
   }
   const dialog = {
     warning: vi.fn(makeReactive),
@@ -49,8 +52,12 @@ const mock = vi.hoisted(() => {
     error: vi.fn((...a: unknown[]) => {
       messageCalls.push({ method: 'error', args: a })
     }),
+    loading: vi.fn((...a: unknown[]) => {
+      messageCalls.push({ method: 'loading', args: a })
+      return { destroy: vi.fn() }
+    }),
   }
-  return { calls, dialogCalls, messageCalls, dialog, message }
+  return { calls, dialogCalls, messageCalls, instances, dialog, message }
 })
 
 vi.mock('naive-ui', async (importOriginal) => {
@@ -71,9 +78,11 @@ beforeEach(() => {
   // 清掉就看不到那次捕获的参数了。
   mock.dialogCalls.length = 0
   mock.messageCalls.length = 0
+  mock.instances.length = 0
   mock.dialog.warning.mockClear()
   mock.dialog.error.mockClear()
   mock.message.success.mockClear()
+  mock.message.loading.mockClear()
 })
 
 describe('errorText', () => {
@@ -150,6 +159,83 @@ describe('useFeedback', () => {
     opts.onPositiveClick?.()
     opts.onNegativeClick?.()
     await expect(p).resolves.toBe(true)
+  })
+
+  it('confirm onConfirm 返回 Promise 时 onPositiveClick 返回同一 Promise，完成后 resolve(true)', async () => {
+    const fb = useFeedback()
+    let release!: (v: unknown) => void
+    const inner = new Promise((r) => {
+      release = r
+    })
+    const p = fb.confirm({ title: 'x', onConfirm: () => inner })
+    const returned = mock.dialogCalls.at(-1)!.onPositiveClick?.()
+    expect(returned).toBe(inner)
+    release(undefined)
+    await expect(p).resolves.toBe(true)
+  })
+
+  it('confirm onConfirm resolve(false) 时不 resolve、弹窗不关，之后取消才 resolve(false)', async () => {
+    const fb = useFeedback()
+    let settled = false
+    const p = fb.confirm({ title: 'x', onConfirm: () => Promise.resolve(false) })
+    p.then(() => {
+      settled = true
+    })
+    const opts = mock.dialogCalls.at(-1)!
+    const returned = opts.onPositiveClick?.()
+    expect(returned).toBeInstanceOf(Promise)
+    await returned
+    expect(settled).toBe(false)
+    opts.onNegativeClick?.()
+    await expect(p).resolves.toBe(false)
+  })
+
+  it('confirm onConfirm 同步返回 false 时不 resolve', () => {
+    const fb = useFeedback()
+    const p = fb.confirm({ title: 'x', onConfirm: () => false })
+    mock.dialogCalls.at(-1)!.onPositiveClick?.()
+    let settled = false
+    void p.then(() => {
+      settled = true
+    })
+    return Promise.resolve().then(() => expect(settled).toBe(false))
+  })
+
+  it('confirm onConfirm 同步抛错 → reject 且销毁弹窗', async () => {
+    const fb = useFeedback()
+    const err = new Error('boom')
+    const p = fb.confirm({
+      title: 'x',
+      onConfirm: () => {
+        throw err
+      },
+    })
+    const instance = mock.instances.at(-1)!
+    expect(() => mock.dialogCalls.at(-1)!.onPositiveClick?.()).not.toThrow()
+    await expect(p).rejects.toBe(err)
+    expect(instance.destroy).toHaveBeenCalledOnce()
+  })
+
+  it('confirm onConfirm 异步 reject → reject 且销毁弹窗', async () => {
+    const fb = useFeedback()
+    const err = new Error('async boom')
+    const p = fb.confirm({ title: 'x', onConfirm: () => Promise.reject(err) })
+    const instance = mock.instances.at(-1)!
+    mock.dialogCalls.at(-1)!.onPositiveClick?.()
+    await expect(p).rejects.toBe(err)
+    expect(instance.destroy).toHaveBeenCalledOnce()
+  })
+
+  it('loading 返回销毁函数并调用 destroy', () => {
+    const fb = useFeedback()
+    const stop = fb.loading('正在重置...')
+    expect(mock.message.loading).toHaveBeenCalledWith('正在重置...', { duration: 0 })
+    const result = mock.message.loading.mock.results.at(-1)!.value as {
+      destroy: ReturnType<typeof vi.fn>
+    }
+    expect(result.destroy).not.toHaveBeenCalled()
+    stop()
+    expect(result.destroy).toHaveBeenCalledOnce()
   })
 
   it('alert 任何关闭都 resolve', async () => {

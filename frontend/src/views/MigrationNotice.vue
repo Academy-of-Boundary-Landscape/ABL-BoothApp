@@ -1,5 +1,11 @@
 <template>
-  <AppModal v-model:show="visible" title="v1.2 更新了账本模型" size="sm" :mask-closable="false">
+  <AppModal
+    v-model:show="visible"
+    title="v1.2 更新了账本模型"
+    size="sm"
+    :mask-closable="false"
+    :closable="false"
+  >
     <div class="migration-box">
       <p>
         旧版的展会和订单记录没有迁移到新模型——新模型要记录每一件货的来源和去向，

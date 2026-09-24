@@ -622,25 +622,24 @@ async function submitAdvance() {
 }
 
 async function removeAdvance(entry: Schemas['LedgerEntryRow']) {
-  if (
-    await fb.confirm({
-      title: '确认删除',
-      content: `删除垫付「${entry.label}」（${formatYuan(entry.amount)}）？`,
-      positiveText: '确认删除',
-      negativeText: '取消',
-      danger: true,
-    })
-  ) {
-    isBusy.value = true
-    try {
-      await store.deleteAdvance(Number(props.id), entry.id)
-      fb.success('垫付已删除')
-    } catch (error) {
-      fb.error(error, '删除垫付失败')
-    } finally {
-      isBusy.value = false
-    }
-  }
+  await fb.confirm({
+    title: '确认删除',
+    content: `删除垫付「${entry.label}」（${formatYuan(entry.amount)}）？`,
+    positiveText: '确认删除',
+    negativeText: '取消',
+    danger: true,
+    onConfirm: async () => {
+      isBusy.value = true
+      try {
+        await store.deleteAdvance(Number(props.id), entry.id)
+        fb.success('垫付已删除')
+      } catch (error) {
+        fb.error(error, '删除垫付失败')
+      } finally {
+        isBusy.value = false
+      }
+    },
+  })
 }
 
 async function submitAdjustment() {
@@ -671,25 +670,24 @@ async function submitAdjustment() {
 }
 
 async function removeAdjustment(entry: Schemas['LedgerEntryRow']) {
-  if (
-    await fb.confirm({
-      title: '确认删除',
-      content: `删除结算调整「${entry.label}」（${describeEntryAdjustment(entry.amount)}）？`,
-      positiveText: '确认删除',
-      negativeText: '取消',
-      danger: true,
-    })
-  ) {
-    isBusy.value = true
-    try {
-      await store.deleteAdjustment(Number(props.id), entry.id)
-      fb.success('结算调整已删除')
-    } catch (error) {
-      fb.error(error, '删除结算调整失败')
-    } finally {
-      isBusy.value = false
-    }
-  }
+  await fb.confirm({
+    title: '确认删除',
+    content: `删除结算调整「${entry.label}」（${describeEntryAdjustment(entry.amount)}）？`,
+    positiveText: '确认删除',
+    negativeText: '取消',
+    danger: true,
+    onConfirm: async () => {
+      isBusy.value = true
+      try {
+        await store.deleteAdjustment(Number(props.id), entry.id)
+        fb.success('结算调整已删除')
+      } catch (error) {
+        fb.error(error, '删除结算调整失败')
+      } finally {
+        isBusy.value = false
+      }
+    },
+  })
 }
 
 async function submitReconcile() {

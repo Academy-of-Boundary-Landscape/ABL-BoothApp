@@ -60,8 +60,10 @@ describe('原语边界门禁', () => {
   it('边界脚本：src 下对干净文件零命中', () => {
     const r = spawnSync(
       'node',
-      ['scripts/check-ui-boundary.mjs', '--files', 'src/components/ui/AppModal.vue'],
-      { encoding: 'utf8' }
+      ['scripts/check-ui-boundary.mjs', '--files', 'src/views/NotFound.vue'],
+      {
+        encoding: 'utf8',
+      }
     )
     expect(r.status, r.stdout + r.stderr).toBe(0)
   })

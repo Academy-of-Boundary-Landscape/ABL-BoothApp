@@ -37,6 +37,11 @@
   max-width: 900px;
 }
 
+.g {
+  /* expect: declaration-property-value-allowed-list */
+  font: 14px/1.4 sans-serif;
+}
+
 /* expect: media-feature-name-disallowed-list */
 @media (max-width: 768px) {
   .e {

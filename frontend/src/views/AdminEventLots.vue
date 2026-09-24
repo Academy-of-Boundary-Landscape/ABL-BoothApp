@@ -326,24 +326,25 @@ async function handleSubmit() {
 }
 
 async function handleDelete(lot: Schemas['LotResponse']) {
-  const confirmed = await fb.confirm({
+  await fb.confirm({
     title: '确认删除',
     // 快照的存在是这句话成立的理由，不是安慰剧。
     content: `删除套装「${lot.name}」？已经下过的订单不受影响——它们存的是名字和价格的快照。`,
     positiveText: '确认删除',
     negativeText: '取消',
     danger: true,
+    onConfirm: async () => {
+      isBusy.value = true
+      try {
+        await store.deleteLot(props.id, lot.id)
+        fb.success('套装已删除')
+      } catch (error) {
+        fb.error(error, '删除失败')
+      } finally {
+        isBusy.value = false
+      }
+    },
   })
-  if (!confirmed) return
-  isBusy.value = true
-  try {
-    await store.deleteLot(props.id, lot.id)
-    fb.success('套装已删除')
-  } catch (error) {
-    fb.error(error, '删除失败')
-  } finally {
-    isBusy.value = false
-  }
 }
 
 onMounted(async () => {

@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { createPinia } from 'pinia'
-import { NButton, NCard, NSpin } from 'naive-ui'
+import { NButton, NCard, NModal, NSpin } from 'naive-ui'
 import AsyncState from './AsyncState.vue'
 import EmptyState from './EmptyState.vue'
 import AppModal from './AppModal.vue'
@@ -77,6 +77,38 @@ describe('AsyncState', () => {
     const w = mount(AsyncState, { props: { empty: true }, ...mountOpts })
     expect(w.text()).toContain('暂无数据')
   })
+
+  it('overlay + loading 时 default 内容仍渲染，NSpin show=true', () => {
+    const w = mount(AsyncState, {
+      props: { loading: true, overlay: true },
+      slots,
+      ...mountOpts,
+    })
+    expect(w.find('.ok').exists()).toBe(true)
+    expect(w.find('.e').exists()).toBe(false)
+    expect(w.findComponent(NSpin).props('show')).toBe(true)
+  })
+
+  it('overlay=false 时 loading 仍替换内容（原行为不变）', () => {
+    const w = mount(AsyncState, {
+      props: { loading: true },
+      slots,
+      ...mountOpts,
+    })
+    expect(w.find('.ok').exists()).toBe(false)
+    expect(w.find('.async-state__loading').exists()).toBe(true)
+  })
+
+  it('overlay 下 error 仍优先于空态，且包在 NSpin 里', () => {
+    const w = mount(AsyncState, {
+      props: { loading: true, overlay: true, error: '加载失败', empty: true },
+      slots,
+      ...mountOpts,
+    })
+    expect(w.text()).toContain('加载失败')
+    expect(w.find('.e').exists()).toBe(false)
+    expect(w.findComponent(NSpin).props('show')).toBe(true)
+  })
 })
 
 describe('AppModal', () => {
@@ -127,6 +159,57 @@ describe('AppModal', () => {
       w.unmount()
     }
   })
+
+  it('closable=false 不渲染关闭按钮', () => {
+    const w = mount(AppModal, { ...base, props: { show: true, closable: false } })
+    expect(w.findComponent(NCard).find('.app-modal__close').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('closable 默认渲染关闭按钮', () => {
+    const w = mount(AppModal, base)
+    expect(w.findComponent(NCard).find('.app-modal__close').exists()).toBe(true)
+    w.unmount()
+  })
+
+  it('closeOnEsc 透传到 NModal', () => {
+    const on = mount(AppModal, { ...base, props: { show: true } })
+    expect(on.findComponent(NModal).props('closeOnEsc')).toBe(true)
+    on.unmount()
+
+    const off = mount(AppModal, { ...base, props: { show: true, closeOnEsc: false } })
+    expect(off.findComponent(NModal).props('closeOnEsc')).toBe(false)
+    off.unmount()
+  })
+
+  it('转发 after-enter / after-leave', async () => {
+    const w = mount(AppModal, base)
+    await w.findComponent(NModal).vm.$emit('after-enter')
+    await w.findComponent(NModal).vm.$emit('after-leave')
+    expect(w.emitted('after-enter')).toHaveLength(1)
+    expect(w.emitted('after-leave')).toHaveLength(1)
+    w.unmount()
+  })
+
+  it('#header 插槽由新容器接管且不受标题样式包裹', () => {
+    const w = mount(AppModal, {
+      ...base,
+      props: { show: true, title: '默认标题' },
+      slots: { header: '<span class="custom-head">自定义头</span>' },
+    })
+    const card = w.findComponent(NCard)
+    const slot = card.find('.app-modal__header-slot')
+    expect(slot.exists()).toBe(true)
+    expect(slot.find('.custom-head').exists()).toBe(true)
+    expect(card.find('.app-modal__title').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('无 #header 时照旧渲染 title', () => {
+    const w = mount(AppModal, { ...base, props: { show: true, title: '默认标题' } })
+    expect(w.findComponent(NCard).find('.app-modal__title').text()).toBe('默认标题')
+    w.unmount()
+  })
 })
 
 describe('Money', () => {
@@ -164,6 +247,21 @@ describe('PageShell', () => {
   it('help 传入时渲染 HelpBubble', () => {
     const w = mount(PageShell, { props: { title: 'T', help: 'events' }, ...pageShellOpts })
     expect(w.findComponent(HelpBubble).exists()).toBe(true)
+  })
+
+  it('help 气泡与 h1 同一行（title-row）', () => {
+    const w = mount(PageShell, {
+      props: { title: 'T', subtitle: 'S', help: 'events' },
+      slots: { actions: '<button class="act">操作</button>' },
+      ...pageShellOpts,
+    })
+    const row = w.find('.page-shell__title-row')
+    expect(row.find('h1').exists()).toBe(true)
+    expect(row.findComponent(HelpBubble).exists()).toBe(true)
+    // 副标题不在标题行内，actions 也不在
+    expect(row.find('.page-shell__subtitle').exists()).toBe(false)
+    expect(row.find('.act').exists()).toBe(false)
+    expect(w.find('.page-shell__actions .act').exists()).toBe(true)
   })
 
   it('width=wide 用 --page-wide', () => {

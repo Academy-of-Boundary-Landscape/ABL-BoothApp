@@ -57,7 +57,12 @@
       </n-checkbox>
     </div>
 
-    <AsyncState :loading="store.isLoading" :error="store.error" :empty="!filteredProducts.length">
+    <AsyncState
+      :loading="store.isLoading"
+      :error="store.error"
+      :empty="!filteredProducts.length"
+      overlay
+    >
       <div class="table-scroll">
         <table class="product-table">
           <thead>

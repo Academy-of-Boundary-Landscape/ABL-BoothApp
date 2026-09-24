@@ -242,19 +242,20 @@ async function changeStatus(orderId: number, newStatus: Schemas['OrderStatus']) 
     showReceiptModal.value = true
     return
   }
-  const confirmed = await fb.confirm({
+  await fb.confirm({
     title: '确认操作',
     content: `确定要将订单 #${orderId} 的状态修改为 "${statusText(newStatus)}" 吗？`,
     positiveText: '确认',
     negativeText: '取消',
+    onConfirm: async () => {
+      try {
+        await store.adminUpdateOrderStatus(props.id, orderId, newStatus)
+        fb.success('状态已更新')
+      } catch (error) {
+        fb.error(error, '更新失败')
+      }
+    },
   })
-  if (!confirmed) return
-  try {
-    await store.adminUpdateOrderStatus(props.id, orderId, newStatus)
-    fb.success('状态已更新')
-  } catch (error) {
-    fb.error(error, '更新失败')
-  }
 }
 
 function closeReceipt() {

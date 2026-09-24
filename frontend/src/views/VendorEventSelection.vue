@@ -29,7 +29,7 @@
         </div>
 
         <template #empty>
-          <EmptyState title="当前没有正在进行的展会。" />
+          <EmptyState icon="" title="当前没有正在进行的展会。" />
         </template>
       </AsyncState>
 

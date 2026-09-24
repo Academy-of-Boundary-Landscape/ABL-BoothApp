@@ -4,9 +4,6 @@
       <span class="help-wrap" @click.stop>
         <HelpBubble page="vision" />
       </span>
-      <n-button text class="toggle-btn" @click="isCollapsed = !isCollapsed">
-        {{ isCollapsed ? '展开' : '折叠' }}
-      </n-button>
     </template>
 
     <div class="vision-body">
@@ -551,9 +548,6 @@ onBeforeUnmount(() => {
 .help-wrap {
   display: inline-flex;
   align-items: center;
-}
-.toggle-btn {
-  color: var(--accent-color);
 }
 
 .vision-body {

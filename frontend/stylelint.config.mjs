@@ -19,6 +19,8 @@ export default {
     'declaration-property-value-allowed-list': {
       'font-size': [/^var\(--font-[a-z0-9]+\)$/, 'inherit'],
       'font-weight': [/^var\(--weight-[a-z]+\)$/, 'inherit'],
+      // 禁止 font 简写：它能把 font-size / font-weight 藏在里面绕过上面的限制。
+      font: ['inherit'],
       '/^border(-(top|bottom)-(left|right))?-radius$/': [radiusList],
       'box-shadow': [/^var\(--shadow-[a-z0-9]+\)$/, 'none'],
       '/^(row-|column-)?gap$/': [spaceList],

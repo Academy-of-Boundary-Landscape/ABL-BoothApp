@@ -2,16 +2,16 @@
   <div class="page-shell" :style="{ maxWidth }">
     <header class="page-shell__header">
       <div class="page-shell__heading">
-        <h1 class="page-shell__title">
-          <slot name="title">{{ title }}</slot>
-        </h1>
+        <div class="page-shell__title-row">
+          <h1 class="page-shell__title">
+            <slot name="title">{{ title }}</slot>
+          </h1>
+          <HelpBubble v-if="help" :page="help" />
+        </div>
         <p v-if="subtitle" class="page-shell__subtitle">{{ subtitle }}</p>
       </div>
-      <div v-if="help || $slots.actions" class="page-shell__meta">
-        <HelpBubble v-if="help" :page="help" />
-        <div v-if="$slots.actions" class="page-shell__actions">
-          <slot name="actions" />
-        </div>
+      <div v-if="$slots.actions" class="page-shell__actions">
+        <slot name="actions" />
       </div>
     </header>
     <div class="page-shell__body">
@@ -68,6 +68,12 @@ const maxWidth = computed(() => {
   margin-bottom: var(--space-xl);
 }
 
+.page-shell__title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
 .page-shell__title {
   margin: 0;
   font-size: var(--font-xl);
@@ -82,17 +88,11 @@ const maxWidth = computed(() => {
   color: var(--text-muted);
 }
 
-.page-shell__meta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  flex-shrink: 0;
-}
-
 .page-shell__actions {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
+  flex-shrink: 0;
 }
 
 @media (--phone) {

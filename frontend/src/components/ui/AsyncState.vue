@@ -8,6 +8,26 @@
       <slot name="loading" />
     </template>
 
+    <n-spin v-else-if="overlay" :show="loading">
+      <template v-if="state === 'error'">
+        <n-alert class="async-state__error" type="error" :title="error ?? undefined">
+          <div v-if="hasRetry" class="async-state__retry">
+            <n-button size="small" @click="emit('retry')">重试</n-button>
+          </div>
+        </n-alert>
+      </template>
+
+      <template v-else-if="state === 'empty'">
+        <slot name="empty">
+          <EmptyState compact title="暂无数据" />
+        </slot>
+      </template>
+
+      <template v-else>
+        <slot />
+      </template>
+    </n-spin>
+
     <template v-else-if="state === 'error'">
       <n-alert class="async-state__error" type="error" :title="error ?? undefined">
         <div v-if="hasRetry" class="async-state__retry">
@@ -39,12 +59,18 @@ const props = withDefaults(
     error?: string | null
     empty?: boolean
     loadingText?: string
+    /**
+     * 覆盖式加载：true 时 `loading` 不替换内容，而是用 n-spin 盖在
+     * error / empty / default 态上（旧数据仍可见）。默认 false 保持原行为。
+     */
+    overlay?: boolean
   }>(),
   {
     loading: false,
     error: null,
     empty: false,
     loadingText: '加载中…',
+    overlay: false,
   }
 )
 
@@ -56,8 +82,10 @@ const emit = defineEmits<{
 const instance = getCurrentInstance()
 const hasRetry = computed(() => Boolean(instance?.vnode.props?.onRetry))
 
+// overlay 模式下 loading 交给 n-spin 呈现，状态机只决定底层展示 error/empty/default；
+// 优先级 error > empty 不变。
 const state = computed(() => {
-  if (props.loading) return 'loading'
+  if (props.loading && !props.overlay) return 'loading'
   if (props.error) return 'error'
   if (props.empty) return 'empty'
   return 'default'

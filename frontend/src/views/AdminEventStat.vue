@@ -34,14 +34,21 @@
       </div>
     </template>
 
-    <AsyncState
-      :loading="statStore.isLoading"
-      :error="statStore.error"
-      loading-text="正在从数据库中提取统计信息..."
-      @retry="applyFilters"
-    >
-      <div v-if="statStore.stats" class="stats-content">
-        <SectionCard title="数据筛选" v-model:collapsed="isFilterCollapsed" class="filter-section">
+    <AsyncState :loading="statStore.isLoading" loading-text="正在从数据库中提取统计信息...">
+      <div v-if="statStore.error" class="error-state">
+        <n-alert type="error" title="后端数据库寄了！" :bordered="false">
+          {{ statStore.error }}
+        </n-alert>
+        <n-button @click="applyFilters" tertiary class="btn-secondary">重新建立连接</n-button>
+      </div>
+
+      <div v-else-if="statStore.stats" class="stats-content">
+        <SectionCard
+          title="数据筛选"
+          collapsible
+          v-model:collapsed="isFilterCollapsed"
+          class="filter-section"
+        >
           <StatFilters
             :product-options="productOptions"
             :selected-product="selectedProduct"
@@ -59,6 +66,7 @@
         <!-- 关键数据总览 -->
         <SectionCard
           title="关键数据总览"
+          collapsible
           v-model:collapsed="isSummaryCollapsed"
           class="summary-section"
         >
@@ -79,7 +87,12 @@
         </SectionCard>
 
         <!-- 销售趋势图 -->
-        <SectionCard title="销售额趋势" v-model:collapsed="isChartCollapsed" class="chart-section">
+        <SectionCard
+          title="销售额趋势"
+          collapsible
+          v-model:collapsed="isChartCollapsed"
+          class="chart-section"
+        >
           <div class="chart-info">
             <span v-if="statStore.stats.timeseries?.length" class="chart-subtitle">{{
               chartSubtitle
@@ -96,7 +109,12 @@
         </SectionCard>
 
         <!-- 销售详情表格 -->
-        <SectionCard title="销售数据表" v-model:collapsed="isTableCollapsed" class="table-section">
+        <SectionCard
+          title="销售数据表"
+          collapsible
+          v-model:collapsed="isTableCollapsed"
+          class="table-section"
+        >
           <EmptyState
             v-if="!statStore.stats.summary.length"
             compact
@@ -388,6 +406,24 @@ watch(
 
 <style scoped>
 /* 主题色通过 App.vue 动态注入 */
+
+.error-state {
+  text-align: center;
+  padding: var(--space-xl) var(--space-lg);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  background-color: var(--overlay-light);
+}
+
+.btn-secondary {
+  background-color: var(--card-bg-color);
+  color: var(--primary-text-color);
+  margin-top: var(--space-lg);
+}
+
+.btn-secondary:hover {
+  border-color: var(--primary-text-color);
+}
 
 .download-btn {
   font-size: var(--font-md);
