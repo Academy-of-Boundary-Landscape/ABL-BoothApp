@@ -10,26 +10,25 @@ use axum::{
     extract::State,
     http::StatusCode,
     response::{IntoResponse, Json, Response},
-    routing::get,
-    Router,
 };
 use rust_xlsxwriter::{Format, FormatAlign, FormatBorder, Workbook};
 use serde::Serialize;
 use sqlx::{FromRow, SqlitePool};
 use std::path::{Path, PathBuf};
+use utoipa::ToSchema;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
-use crate::{api::guard::AdminOnly, state::AppState};
+use crate::{
+    api::{guard::AdminOnly, openapi::ApiErrorBody},
+    error::ApiResult,
+    state::AppState,
+};
 
-/// ③b 过渡：本模块的路由还没标 utoipa 注解，整体包进 OpenApiRouter——路由照常工作，
-/// 只是文档里没有它的路径。阶段 2 迁移本模块时改为 `routes!(...)` 并删掉 `legacy_router`。
-pub fn router() -> utoipa_axum::router::OpenApiRouter<AppState> {
-    utoipa_axum::router::OpenApiRouter::from(legacy_router())
-}
-
-fn legacy_router() -> Router<AppState> {
-    Router::new()
-        .route("/status", get(get_legacy_status))
-        .route("/export.xlsx", get(export_legacy_xlsx))
+/// 本模块的路由：v1 备份状态查询与 xlsx 导出，全部挂在 `/api/legacy` 下。
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(get_legacy_status))
+        .routes(routes!(export_legacy_xlsx))
 }
 
 /// v1 备份文件的路径。
@@ -53,7 +52,7 @@ async fn open_v1_backup_readonly(path: &Path) -> Result<SqlitePool, sqlx::Error>
 }
 
 /// `/status` 的响应。计数是给前端「有没有值得打扰用户的历史数据」判断用的。
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct LegacyStatus {
     has_backup: bool,
     event_count: i64,
@@ -94,25 +93,40 @@ async fn count_v1_rows(pool: &SqlitePool) -> Option<(i64, i64, i64)> {
     Some((event_count, order_count, item_count))
 }
 
-async fn get_legacy_status(State(state): State<AppState>, _: AdminOnly) -> impl IntoResponse {
+/// v1 备份的状态与行数。需要管理员。
+#[utoipa::path(
+    get,
+    path = "/status",
+    tag = "legacy",
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = LegacyStatus, description = "备份是否存在，以及老库里的展会 / 订单 / 明细行数"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "需要管理员"),
+    ),
+)]
+async fn get_legacy_status(
+    State(state): State<AppState>,
+    _: AdminOnly,
+) -> ApiResult<Json<LegacyStatus>> {
     let path = v1_backup_path(&state.app_data_dir);
 
     let Ok(pool) = open_v1_backup_readonly(&path).await else {
-        return Json(LegacyStatus::none());
+        return Ok(Json(LegacyStatus::none()));
     };
 
     let counts = count_v1_rows(&pool).await;
     pool.close().await;
 
     match counts {
-        Some((event_count, order_count, item_count)) => Json(LegacyStatus {
+        Some((event_count, order_count, item_count)) => Ok(Json(LegacyStatus {
             has_backup: true,
             event_count,
             order_count,
             item_count,
-        }),
+        })),
         // 文件在但表/数据读不出来（损坏、不是 v1 库）：同样按「没有可用历史数据」处理。
-        None => Json(LegacyStatus::none()),
+        None => Ok(Json(LegacyStatus::none())),
     }
 }
 
@@ -225,10 +239,25 @@ fn write_headers(worksheet: &mut rust_xlsxwriter::Worksheet, headers: &[&str], f
     }
 }
 
-/// 把备份库里的展会 / 订单 / 明细导成三张 sheet 的 xlsx。
+/// 把备份库里的展会 / 订单 / 明细导成三张 sheet 的 xlsx。需要管理员。
 ///
 /// 金额**按老库的元原样写进单元格**，不换算成分——老库那一侧就是元，
 /// 中间多一次 ×100 / ÷100 只会引入浮点误差。
+///
+/// 错误体是原样的 `text/plain`（不是 `{"error": ...}`），保持既有形状不变。
+#[utoipa::path(
+    get,
+    path = "/export.xlsx",
+    tag = "legacy",
+    security(("bearer" = [])),
+    responses(
+        (status = 200, content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", body = Vec<u8>, description = "三张 sheet 的 xlsx 二进制流"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "需要管理员"),
+        (status = 404, content_type = "text/plain", body = String, description = "没有可导出的历史数据"),
+        (status = 500, content_type = "text/plain", body = String, description = "生成或读回 xlsx 失败"),
+    ),
+)]
 async fn export_legacy_xlsx(State(state): State<AppState>, _: AdminOnly) -> Response {
     let path = v1_backup_path(&state.app_data_dir);
 
@@ -404,7 +433,7 @@ mod tests {
     ///
     /// 用 `create_if_missing` 的写连接现建现写，模拟 Task 2 落下的那份备份；
     /// 建表语句抄的是 v1 的 `202601020001_init_schema.sql`（只留导出会读的列）。
-    async fn write_v1_backup(dir: &Path) -> PathBuf {
+    pub(super) async fn write_v1_backup(dir: &Path) -> PathBuf {
         let path = dir.join("sale_system.db.v1-backup");
         let opts = SqliteConnectOptions::from_str(&format!("sqlite://{}", path.display()))
             .unwrap()
@@ -583,6 +612,164 @@ mod tests {
             &bytes[0..2],
             &b"PK"[..],
             "xlsx 是 zip 格式，前两个字节应是 PK"
+        );
+    }
+}
+
+/// ③b 形状快照：钉住每个路由的 JSON / 二进制形状，类型化前后必须一行不改照样绿。
+#[cfg(test)]
+mod shape_tests {
+    use super::tests::write_v1_backup;
+    use crate::test_support::{
+        admin_token, json_request, read_json, shape_of, test_router_with, vendor_token,
+    };
+    use axum::http::StatusCode;
+    use axum::Router;
+    use serde_json::{json, Value};
+    use tower::ServiceExt;
+
+    /// 一份含展会 / 订单 / 明细的 v1 备份，让 status 的计数和 export 都有内容可读。
+    async fn seeded() -> (Router, tempfile::TempDir) {
+        let (router, dir, _pool) = test_router_with().await;
+        write_v1_backup(dir.path()).await;
+        (router, dir)
+    }
+
+    async fn call(
+        router: &Router,
+        method: &str,
+        uri: &str,
+        token: Option<&str>,
+        body: Value,
+    ) -> (StatusCode, Value) {
+        let res = router
+            .clone()
+            .oneshot(json_request(method, uri, token, body))
+            .await
+            .unwrap();
+        let status = res.status();
+        (status, read_json(res).await)
+    }
+
+    #[tokio::test]
+    async fn shape_get_legacy_status() {
+        let expected = json!({
+            "has_backup": "bool",
+            "event_count": "int",
+            "order_count": "int",
+            "item_count": "int",
+        });
+
+        // 没有备份：计数全 0，仍是 200 而不是 5xx。
+        let (router, _dir, _pool) = test_router_with().await;
+        let (s, body) = call(
+            &router,
+            "GET",
+            "/api/legacy/status",
+            Some(&admin_token()),
+            json!(null),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::OK, expected.clone()));
+
+        // 有备份：计数来自老库，形状一个键都不变。
+        let (router, _dir) = seeded().await;
+        let (s, body) = call(
+            &router,
+            "GET",
+            "/api/legacy/status",
+            Some(&admin_token()),
+            json!(null),
+        )
+        .await;
+        assert_eq!((s, shape_of(&body)), (StatusCode::OK, expected));
+
+        // AdminOnly：无令牌 401、非管理员 403，错误体都是 {"error": "..."}。
+        let (s, body) = call(&router, "GET", "/api/legacy/status", None, json!(null)).await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::UNAUTHORIZED, json!({"error": "string"}))
+        );
+        let (s, body) = call(
+            &router,
+            "GET",
+            "/api/legacy/status",
+            Some(&vendor_token(1)),
+            json!(null),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::FORBIDDEN, json!({"error": "string"}))
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_export_legacy_xlsx() {
+        // 有备份：200 + xlsx content-type，且是 zip（PK 头）。
+        let (router, _dir) = seeded().await;
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "GET",
+                "/api/legacy/export.xlsx",
+                Some(&admin_token()),
+                json!(null),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(
+            res.headers().get("content-type").unwrap(),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        );
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(
+            &bytes[0..2],
+            &b"PK"[..],
+            "xlsx 是 zip 格式，前两个字节应是 PK"
+        );
+
+        // 没有备份：404 + 原样的纯文本错误体（不是 {"error": ...} 形状）。
+        let (router, _dir, _pool) = test_router_with().await;
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "GET",
+                "/api/legacy/export.xlsx",
+                Some(&admin_token()),
+                json!(null),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(
+            String::from_utf8(bytes.to_vec()).unwrap(),
+            "没有可导出的历史数据"
+        );
+
+        // AdminOnly：无令牌 401、非管理员 403，错误体都是 {"error": "..."}。
+        let (s, body) = call(&router, "GET", "/api/legacy/export.xlsx", None, json!(null)).await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::UNAUTHORIZED, json!({"error": "string"}))
+        );
+        let (s, body) = call(
+            &router,
+            "GET",
+            "/api/legacy/export.xlsx",
+            Some(&vendor_token(1)),
+            json!(null),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::FORBIDDEN, json!({"error": "string"}))
         );
     }
 }
