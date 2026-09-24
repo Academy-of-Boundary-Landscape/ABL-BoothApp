@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import api from '@/services/api'
+import { api, unwrap, type Schemas } from '@/api/client'
 
 /**
  * 社团（货主单位）管理。
@@ -9,16 +9,16 @@ import api from '@/services/api'
  * 先把旧的改掉，直接 PUT `{is_home: true}` 后端会先把旧的降级，顺序由后端负责。
  */
 export const useSocietyStore = defineStore('society', () => {
-  const societies = ref([])
+  const societies = ref<Schemas['Society'][]>([])
   const isLoading = ref(false)
-  const error = ref(null)
+  const error = ref<string | null>(null)
 
   async function fetchSocieties() {
     isLoading.value = true
     error.value = null
     try {
-      const response = await api.get('/societies')
-      societies.value = Array.isArray(response.data) ? response.data : []
+      const response = await unwrap<Schemas['Society'][]>(api.GET('/societies'))
+      societies.value = Array.isArray(response) ? response : []
     } catch (err) {
       error.value = '无法加载社团列表。'
       console.error(err)
@@ -27,43 +27,45 @@ export const useSocietyStore = defineStore('society', () => {
     }
   }
 
-  async function createSociety(name) {
+  async function createSociety(name: string) {
     try {
-      const response = await api.post('/societies', { name })
-      societies.value.push(response.data)
-      return response.data
+      const response = await unwrap<Schemas['Society']>(api.POST('/societies', { body: { name } }))
+      societies.value.push(response)
+      return response
     } catch (err) {
       console.error(err)
-      throw new Error(err.response?.data?.error || '新建社团失败。')
+      throw err
     }
   }
 
-  async function updateSociety(id, payload) {
+  async function updateSociety(id: number, payload: Schemas['UpdateSocietyRequest']) {
     try {
-      const response = await api.put(`/societies/${id}`, payload)
+      const response = await unwrap<Schemas['Society']>(
+        api.PUT('/societies/{id}', { params: { path: { id } }, body: payload })
+      )
       const index = societies.value.findIndex((s) => s.id === id)
       if (index !== -1) {
-        societies.value[index] = response.data
+        societies.value[index] = response
       }
-      return response.data
+      return response
     } catch (err) {
       console.error(err)
-      throw new Error(err.response?.data?.error || '更新社团失败。')
+      throw err
     }
   }
 
-  async function deleteSociety(id) {
+  async function deleteSociety(id: number) {
     try {
-      await api.delete(`/societies/${id}`)
+      await unwrap(api.DELETE('/societies/{id}', { params: { path: { id } } }))
       societies.value = societies.value.filter((s) => s.id !== id)
     } catch (err) {
       console.error(err)
-      throw new Error(err.response?.data?.error || '删除社团失败。')
+      throw err
     }
   }
 
   // 设为「本社团」后重新拉取：后端会把旧的本社团降级，本地只改一条会不同步。
-  async function setHomeSociety(id) {
+  async function setHomeSociety(id: number) {
     await updateSociety(id, { is_home: true })
     await fetchSocieties()
   }
