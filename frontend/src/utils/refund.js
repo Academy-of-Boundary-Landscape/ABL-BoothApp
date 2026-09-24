@@ -1,11 +1,16 @@
 /**
- * 退款金额的摊分。**这一份只用于界面实时显示，权威计算在后端**
- * （`src-tauri/src/domain/allocation.rs` 的 `apportion`）。
+ * 把 `total` 按 `weights` 分成同长的一组数，和精确等于 `total`。
  *
- * 两边必须是同一套取整规则，否则摊主会看到「界面上写退 33，提交完变成 34」。
+ * `capped` 为 true 时以权重本身为上限（退款摊回各行时用），
+ * 为 false 时不设上限（把一行的金额按件数切成「退的」和「留的」时用——
+ * 那里的权重是件数，拿件数当分的上限会把结果截成件数那么小）。
+ *
+ * **这一份只用于界面实时显示，权威计算在后端**
+ * （`src-tauri/src/domain/allocation.rs` 的 `apportion`）。
+ * 规则必须完全一致，否则摊主会看到「界面上写退 33，提交完变成 34」。
  * 规则：各自向下取整，余数按「权重降序、下标升序」逐分派发，跳过已顶到上限的那一份。
  */
-export function splitRefund(total, weights) {
+export function splitRefund(total, weights, capped = true) {
   const n = weights.length
   const out = new Array(n).fill(0)
   if (n === 0 || total <= 0) return out
@@ -28,22 +33,29 @@ export function splitRefund(total, weights) {
     let moved = false
     for (const i of order) {
       if (rest === 0) break
-      if (out[i] < weights[i]) {
-        out[i] += 1
-        rest -= 1
-        moved = true
-      }
+      if (capped && out[i] >= weights[i]) continue
+      out[i] += 1
+      rest -= 1
+      moved = true
     }
-    if (!moved) break // 全部顶到上限，理论上不可达（total ≤ Σweights）
+    // capped 时全顶到上限会到此为止（理论上不可达，total ≤ Σweights）；
+    // 不设上限时这个分支永远走不到。
+    if (!moved) break
   }
   return out
 }
 
-/** 所选各行按件数等比切出的实付之和——「实际退款」输入框的默认值。 */
+/**
+ * 所选各行按件数等比切出的实付之和——「实际退款」输入框的默认值。
+ *
+ * 每一行的权重是件数而不是分，所以切一行的「退的/留的」必须用**不带 cap** 的
+ * `splitRefund`——拿件数当分的上限会把结果截成件数那么小。取整规则和后端
+ * `apportion(remaining_paid, &[qty, remaining_qty - qty], None)[0]` 逐分一致。
+ */
 export function defaultRefundTotal(lines, qtyByLine) {
   return lines.reduce((sum, l) => {
     const q = Number(qtyByLine[l.order_line_id] || 0)
     if (q <= 0 || l.remaining_qty <= 0) return sum
-    return sum + Math.floor((l.remaining_paid * q) / l.remaining_qty)
+    return sum + splitRefund(l.remaining_paid, [q, l.remaining_qty - q], false)[0]
   }, 0)
 }

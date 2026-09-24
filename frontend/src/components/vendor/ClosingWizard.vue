@@ -163,6 +163,7 @@ import {
   NSteps,
   NStep,
   useMessage,
+  useDialog,
 } from 'naive-ui'
 import ReceiptModal from '@/components/vendor/ReceiptModal.vue'
 import { useClosingStore } from '@/stores/closingStore'
@@ -180,12 +181,15 @@ const emit = defineEmits(['close', 'settled'])
 const store = useClosingStore()
 const orderStore = useOrderStore()
 const message = useMessage()
+const dialog = useDialog()
 
 const isBusy = ref(false)
 const counts = ref({})
 // 「跳过盘点」是唯一一处必要的本地状态：后端没有「跳过」这个事实，
 // 而这一步不落库。它只在「还有货、但摊主决定不盘点」时把界面推到带回屏；
 // 货一旦带回（onsite_remaining 为空），步骤就纯由后端状态决定，重进不会错位。
+// 每次打开都重置是有意的：跳过没有写任何后端事实，关掉再进来等于「什么都还没做」，
+// 再问一次合情合理；若把它持久化，摊主上次跳过、这次只想确认一下就再也回不到盘点屏。
 const skippedStocktake = ref(false)
 
 const showReceipt = ref(false)
@@ -244,13 +248,7 @@ function skipStocktake() {
   skippedStocktake.value = true
 }
 
-async function submitStocktake() {
-  const rows = store.state.onsite_remaining
-  // 收全量：每个商品都要报数，数过一致的也要报（后端漏一个就 400）。
-  const payload = rows.map((p) => ({
-    event_product_id: p.event_product_id,
-    counted_qty: Number(counts.value[p.event_product_id] ?? 0),
-  }))
+async function doSubmitStocktake(payload) {
   isBusy.value = true
   try {
     await store.stocktake(props.eventId, payload)
@@ -260,6 +258,39 @@ async function submitStocktake() {
   } finally {
     isBusy.value = false
   }
+}
+
+async function submitStocktake() {
+  const rows = store.state.onsite_remaining
+  // n-input-number 被清空时 model 是 null，`?? 0` 会把它当成「数出来 0 件」，
+  // 后端照写一条全量盘亏腿——该商品随即从 onsite_remaining 消失，界面再也纠正不了。
+  // 收全量：每个商品都要报数，数过一致的也要报（后端漏一个就 400）。
+  const blank = rows.filter((p) => !Number.isFinite(counts.value[p.event_product_id]))
+  if (blank.length) {
+    message.warning(`这些商品还没填实数：${blank.map((p) => p.name).join('、')}`)
+    return
+  }
+  const payload = rows.map((p) => ({
+    event_product_id: p.event_product_id,
+    counted_qty: counts.value[p.event_product_id],
+  }))
+
+  // 盘亏是不可逆的账（只能靠结算调整补救），差异提交前让摊主核对一遍。
+  const diffs = rows.filter((p) => counts.value[p.event_product_id] !== p.qty)
+  if (diffs.length) {
+    const detail = diffs
+      .map((p) => `${p.name}：账面 ${p.qty} → 实数 ${counts.value[p.event_product_id]}`)
+      .join('；')
+    dialog.warning({
+      title: '确认盘点差异',
+      content: `以下商品的实数与账面不一致：${detail}。盘点差异提交后不可直接撤销，确认无误再提交。`,
+      positiveText: '确认提交',
+      negativeText: '返回核对',
+      onPositiveClick: () => doSubmitStocktake(payload),
+    })
+    return
+  }
+  await doSubmitStocktake(payload)
 }
 
 async function doTakeback() {
@@ -306,21 +337,28 @@ async function cancelOne(order) {
 async function cancelAll() {
   const failed = []
   isBusy.value = true
-  for (const o of [...store.state.pending_orders]) {
-    try {
-      await api.put(`/events/${props.eventId}/orders/${o.id}/status`, {
-        status: 'cancelled',
-      })
-    } catch (err) {
-      failed.push({ id: o.id, msg: err.response?.data?.error || '取消失败' })
+  try {
+    for (const o of [...store.state.pending_orders]) {
+      try {
+        await api.put(`/events/${props.eventId}/orders/${o.id}/status`, {
+          status: 'cancelled',
+        })
+      } catch (err) {
+        failed.push({ id: o.id, msg: err.response?.data?.error || '取消失败' })
+      }
     }
-  }
-  await store.fetchState(props.eventId)
-  await orderStore.pollPendingOrders()
-  isBusy.value = false
-  // 失败的会留在重新拉回来的列表里，逐条把后端那句话显示出来。
-  for (const f of failed) {
-    message.error(`#${f.id}：${f.msg}`, { duration: 6000 })
+    await store.fetchState(props.eventId)
+    await orderStore.pollPendingOrders()
+  } catch (err) {
+    // 刷新失败不能把 isBusy 卡在 true，否则整个向导的按钮永久禁用。
+    message.error(err.message || '刷新收摊状态失败')
+  } finally {
+    isBusy.value = false
+    // 失败的会留在重新拉回来的列表里，逐条把后端那句话显示出来。
+    // 放在 finally 里：即使上面的刷新也失败，摊主仍要知道是哪几单没取消掉。
+    for (const f of failed) {
+      message.error(`#${f.id}：${f.msg}`, { duration: 6000 })
+    }
   }
 }
 

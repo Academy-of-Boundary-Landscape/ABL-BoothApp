@@ -44,4 +44,20 @@ describe('defaultRefundTotal', () => {
     const lines = [{ order_line_id: 1, remaining_qty: 2, remaining_paid: 1000 }]
     expect(defaultRefundTotal(lines, { 1: 0 })).toBe(0)
   })
+
+  it('和后端 apportion 一致：余数归要退的那份', () => {
+    // 后端：apportion(3333, [1, 1]) = [1667, 1666]，余数按「权重降序、下标升序」派给第一份。
+    // 只做向下取整会得到 1666，于是界面写 ¥16.66、后端实退 ¥16.67。
+    const lines = [{ order_line_id: 1, remaining_qty: 2, remaining_paid: 3333 }]
+    expect(defaultRefundTotal(lines, { 1: 1 })).toBe(1667)
+  })
+
+  it('多行各差一分时差额会累积', () => {
+    const lines = [
+      { order_line_id: 1, remaining_qty: 2, remaining_paid: 3333 },
+      { order_line_id: 2, remaining_qty: 2, remaining_paid: 3333 },
+      { order_line_id: 3, remaining_qty: 2, remaining_paid: 3334 },
+    ]
+    expect(defaultRefundTotal(lines, { 1: 1, 2: 1, 3: 1 })).toBe(5001)
+  })
 })

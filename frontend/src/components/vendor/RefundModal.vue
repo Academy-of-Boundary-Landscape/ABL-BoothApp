@@ -163,12 +163,14 @@ const defaultTotal = computed(() => defaultRefundTotal(lines.value, qtyByLine.va
 const refundCents = computed(() => toCents(amountYuan.value))
 const overLimit = computed(() => refundCents.value > defaultTotal.value)
 
-/** 和 `lines` 一一对应；只用于显示，权威值在后端。 */
+/** 和 `lines` 一一对应；只用于显示，权威值在后端。
+ *  和后端一样把「剩余实付」按件数切成本次退的那一份，权重是件数，
+ *  所以必须用不带 cap 的 `splitRefund`（拿件数当分的上限会截成几分钱）。 */
 const weights = computed(() =>
   lines.value.map((l) => {
     const q = Number(qtyByLine.value[l.order_line_id] || 0)
     if (q <= 0 || l.remaining_qty <= 0) return 0
-    return Math.floor((l.remaining_paid * q) / l.remaining_qty)
+    return splitRefund(l.remaining_paid, [q, l.remaining_qty - q], false)[0]
   })
 )
 const perLineRefund = computed(() => splitRefund(refundCents.value, weights.value))

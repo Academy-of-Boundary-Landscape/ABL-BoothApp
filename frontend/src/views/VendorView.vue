@@ -66,18 +66,13 @@
           </p>
           <div v-if="!store.completedOrders.length" class="no-orders-message">暂无已完成订单</div>
           <!-- OrderCard 本身不动（④ 要整体重做），只在外面补一个「退货」入口。
-               已全额退完的单按钮置灰；标志来自每单退货接口的 lines（没有批量端点）。 -->
+               不做「已退完」置灰预取：那要为每张已完成单各发一个请求，400 单的场次
+               会把 3 秒一次的待处理轮询挤在浏览器连接队列后面。退货弹窗里每行
+               本来就标了「已退完」；④ 重做列表时会从批量查询带回这个标记。 -->
           <div v-for="order in store.completedOrders" :key="order.id" class="completed-entry">
             <OrderCard :order="order" :is-completed="true" />
             <div class="completed-entry-actions">
-              <n-button
-                size="small"
-                secondary
-                :disabled="fullyRefundedOrders.has(order.id)"
-                @click="openRefund(order)"
-              >
-                {{ fullyRefundedOrders.has(order.id) ? '已退完' : '退货' }}
-              </n-button>
+              <n-button size="small" secondary @click="openRefund(order)">退货</n-button>
             </div>
           </div>
         </div>
@@ -116,8 +111,6 @@
       :event-id="props.id"
       :order="refundOrder"
       @close="closeRefund"
-      @loaded="onRefundFlag"
-      @refunded="onRefundFlag"
     />
 
     <!-- 收摊向导：第几步由后端状态推出来，详见组件注释 -->
@@ -144,7 +137,6 @@ import InventoryLogModal from '@/components/vendor/InventoryLogModal.vue'
 import RefundModal from '@/components/vendor/RefundModal.vue'
 import ClosingWizard from '@/components/vendor/ClosingWizard.vue'
 import { formatYuan } from '@/utils/money'
-import api from '@/services/api'
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -194,7 +186,6 @@ async function manualRefresh() {
       eventDetailStore.fetchProductsForEvent(props.id),
       store.fetchCompletedOrders(),
     ])
-    await refreshRefundFlags()
   } catch (err) {
     console.error('手动刷新失败:', err)
   } finally {
@@ -233,34 +224,6 @@ async function onInventoryLogged() {
 // ===== 退货 =====
 const showRefundModal = ref(false)
 const refundOrder = ref(null)
-// orderId -> 是否已全额退完。退货接口没有批量版，只能逐单拉 lines；
-// 拉过的结果缓存在这里，切 tab 回来不重复请求。
-const refundFlagCache = new Map()
-const fullyRefundedOrders = ref(new Set())
-
-async function refreshRefundFlags() {
-  const orders = store.completedOrders
-  if (!orders.length) {
-    fullyRefundedOrders.value = new Set()
-    return
-  }
-  const results = await Promise.allSettled(
-    orders.map((o) => {
-      if (refundFlagCache.has(o.id)) return Promise.resolve(refundFlagCache.get(o.id))
-      return api.get(`/events/${props.id}/orders/${o.id}/refunds`).then((r) => {
-        const lines = r.data?.lines || []
-        const flag = lines.length > 0 && lines.every((l) => l.remaining_qty === 0)
-        refundFlagCache.set(o.id, flag)
-        return flag
-      })
-    })
-  )
-  const next = new Set()
-  results.forEach((r, i) => {
-    if (r.status === 'fulfilled' && r.value) next.add(orders[i].id)
-  })
-  fullyRefundedOrders.value = next
-}
 
 function openRefund(order) {
   refundOrder.value = order
@@ -271,20 +234,6 @@ function closeRefund() {
   showRefundModal.value = false
   refundOrder.value = null
 }
-
-/** RefundModal 每次加载 / 退完货都会带上这张单的最新可退状态。 */
-function onRefundFlag({ orderId, fullyRefunded }) {
-  refundFlagCache.set(orderId, fullyRefunded)
-  if (!fullyRefunded) return
-  const next = new Set(fullyRefundedOrders.value)
-  next.add(orderId)
-  fullyRefundedOrders.value = next
-}
-
-// 切到已完成 tab 时补拉一次各单的可退状态（首次进入时 completedOrders 可能刚回来）。
-watch(currentTab, (tab) => {
-  if (tab === 'completed') refreshRefundFlags()
-})
 
 // ===== 收摊向导 =====
 const showClosingWizard = ref(false)
