@@ -8,7 +8,7 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    routing::{delete, get},
+    routing::{delete, get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -16,9 +16,16 @@ use serde::{Deserialize, Serialize};
 use crate::{
     api::guard::{check_read_permission, check_write_permission},
     domain::{
-        channel::PRESET_CHANNELS,
-        ledger::{post_journal, reverse_journal, Account, JournalKind, MoneyLeg},
+        channel::{normalize, PRESET_CHANNELS},
+        ledger::{
+            account_balance, home_society_id, post_journal, reverse_journal, Account, JournalKind,
+            MoneyLeg,
+        },
         money::Money,
+        settlement::{
+            build_report, ChannelCount, Entry, GoodsLine, SettlementInput, SettlementReport,
+            SocietyInput,
+        },
     },
     error::{ApiError, ApiResult},
     state::AppState,
@@ -41,6 +48,8 @@ pub fn router() -> Router<AppState> {
             "/events/:event_id/adjustments/:id",
             delete(delete_adjustment),
         )
+        .route("/events/:event_id/settlement", get(get_settlement))
+        .route("/events/:event_id/settlement/reconcile", post(reconcile))
 }
 
 /// 已用过的收款渠道，跨展会。
@@ -390,6 +399,466 @@ async fn delete_adjustment(
         JournalKind::Adjust,
     )
     .await
+}
+
+// ==========================================
+// 结算单与收摊清点（Task 8）
+// ==========================================
+
+#[derive(sqlx::FromRow)]
+struct GoodsRow {
+    owner_society_id: i64,
+    event_product_id: i64,
+    product_code: String,
+    name: String,
+    brought_in: i64,
+    taken_back: i64,
+    sold: i64,
+    gifted: i64,
+    scrapped: i64,
+    variance: i64,
+    on_site: i64,
+}
+
+/// 货的全部去向。每一项都从 `stock_movements` 按方向取，**没有任何缓存字段**。
+///
+/// 「带去」和「带回」是**方向和**而不是净额——结算单上这两个数是分开显示的。
+/// 其余四项是**位置净额**，所以退货到损耗会自动让「卖出」减一、「报废」加一，
+/// 不需要在这里为退货开分支。
+///
+/// ⚠️ `variance` **不要取反**：恒等式是
+/// `带去 − 带回 = 卖出 + 赠送 + 报废 + 差异 + 现场仓`，盘亏时货走
+/// `现场仓 → 差异`，差异位置净额为正、现场仓同时减少，两边同时变才平。
+const GOODS_SQL: &str = r#"
+SELECT ep.owner_society_id, ep.id AS event_product_id, ep.product_code, ep.name,
+  COALESCE(SUM(CASE WHEN sm.from_location='外部'   AND sm.to_location='现场仓' THEN sm.qty ELSE 0 END),0) AS brought_in,
+  COALESCE(SUM(CASE WHEN sm.from_location='现场仓' AND sm.to_location='外部'   THEN sm.qty ELSE 0 END),0) AS taken_back,
+  COALESCE(SUM(CASE WHEN sm.to_location='顾客仓' THEN sm.qty ELSE 0 END)
+         - SUM(CASE WHEN sm.from_location='顾客仓' THEN sm.qty ELSE 0 END),0) AS sold,
+  COALESCE(SUM(CASE WHEN sm.to_location='赠品'   THEN sm.qty ELSE 0 END)
+         - SUM(CASE WHEN sm.from_location='赠品'   THEN sm.qty ELSE 0 END),0) AS gifted,
+  COALESCE(SUM(CASE WHEN sm.to_location='损耗'   THEN sm.qty ELSE 0 END)
+         - SUM(CASE WHEN sm.from_location='损耗'   THEN sm.qty ELSE 0 END),0) AS scrapped,
+  COALESCE(SUM(CASE WHEN sm.to_location='差异'   THEN sm.qty ELSE 0 END)
+         - SUM(CASE WHEN sm.from_location='差异'   THEN sm.qty ELSE 0 END),0) AS variance,
+  COALESCE(SUM(CASE WHEN sm.to_location='现场仓' THEN sm.qty ELSE 0 END)
+         - SUM(CASE WHEN sm.from_location='现场仓' THEN sm.qty ELSE 0 END),0) AS on_site
+FROM event_products ep
+LEFT JOIN stock_movements sm ON sm.event_product_id = ep.id
+LEFT JOIN journals j ON j.id = sm.journal_id AND j.event_id = ep.event_id
+WHERE ep.event_id = ?
+GROUP BY ep.id
+ORDER BY ep.owner_society_id, ep.id
+"#;
+
+#[derive(sqlx::FromRow)]
+struct MoneyRow {
+    owner_society_id: i64,
+    gross: i64,
+    allocated_net: i64,
+    paid_net: i64,
+    refund_kept: i64,
+}
+
+/// 只算 `orders.status = 'completed'`。
+///
+/// **不要按「存在收款 journal」来判已收款订单**（②-1 交接段第 1 条）：
+/// 全赠品单和被抹成 0 元的单都会让 journal 缺席或为空。按 orders.status 判。
+///
+/// 这个 `status = 'completed'` 还挡住了「已取消订单的退货被重复计入」：
+/// 取消一张完成单时退货 journal 被冲正、`refunds` 行却还在，而 cancelled 的行
+/// 整条不出现（连带它的 refunds 子查询），所以不会扣第二遍。
+const MONEY_SQL: &str = r#"
+SELECT ep.owner_society_id,
+  COALESCE(SUM(ol.unit_price * (ol.qty - COALESCE(r.done_qty, 0))), 0)        AS gross,
+  COALESCE(SUM(ol.allocated_amount - COALESCE(r.done_alloc, 0)), 0)           AS allocated_net,
+  COALESCE(SUM(ol.paid_amount      - COALESCE(r.done_paid, 0)), 0)            AS paid_net,
+  COALESCE(SUM(COALESCE(r.done_paid, 0) - COALESCE(r.done_refund, 0)), 0)     AS refund_kept
+FROM order_lines ol
+JOIN orders o          ON o.id = ol.order_id AND o.status = 'completed'
+JOIN event_products ep ON ep.id = ol.event_product_id
+LEFT JOIN (
+  SELECT order_line_id,
+         SUM(qty)               AS done_qty,
+         SUM(allocated_amount)  AS done_alloc,
+         SUM(paid_amount)       AS done_paid,
+         SUM(refund_amount)     AS done_refund
+  FROM refunds GROUP BY order_line_id
+) r ON r.order_line_id = ol.id
+WHERE o.event_id = ?
+GROUP BY ep.owner_society_id
+"#;
+
+/// 摊主自掏赠品：kind = `赠送` 的 journal 里 `社团往来:X ↔ 摊主自有` 的净额。
+/// 冲正条目的 kind 也是 `赠送`（`api/inventory.rs` 原样传回去），方向相反，
+/// 所以净额天然把撤销掉的那些抵消了。
+///
+/// 注意两个 `?` 要**绑两次同一个账户名**——sqlx 的 SQLite 驱动按位置取参，
+/// 没有重复编号参数。
+const GIFT_SELF_PAID_SQL: &str = r#"
+SELECT COALESCE(SUM(CASE WHEN mm.to_account   = '摊主自有' THEN mm.amount ELSE 0 END)
+              - SUM(CASE WHEN mm.from_account = '摊主自有' THEN mm.amount ELSE 0 END), 0)
+FROM money_movements mm
+JOIN journals j ON j.id = mm.journal_id
+WHERE j.event_id = ? AND j.kind = '赠送'
+  AND (mm.from_account = ? OR mm.to_account = ?)
+"#;
+
+/// 对账差异对某个渠道的影响。清点写的是 `实收-<渠道> ↔ 对账差异`，
+/// 所以「账面应有」= 当前余额 − 这个差额。
+const RECON_DIFF_SQL: &str = r#"
+SELECT COALESCE(SUM(CASE WHEN mm.to_account   = ? THEN mm.amount ELSE 0 END)
+              - SUM(CASE WHEN mm.from_account = ? THEN mm.amount ELSE 0 END), 0)
+FROM money_movements mm
+JOIN journals j ON j.id = mm.journal_id
+WHERE j.event_id = ?
+  AND (mm.from_account = '对账差异' OR mm.to_account = '对账差异')
+"#;
+
+#[derive(sqlx::FromRow)]
+struct AdvanceRow {
+    owner_society_id: i64,
+    label: String,
+    amount: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct AdjustmentRow {
+    owner_society_id: i64,
+    label: String,
+    amount: i64,
+    created_at: String,
+}
+
+/// 把各张表查出来，组装成 `build_report` 要的输入。
+///
+/// 页面 JSON 和 `settlement.xlsx` 都走这里——「页面显示 1,170、导出写 1,150」
+/// 在结构上不可能发生。
+async fn load_input(state: &AppState, event_id: i64) -> ApiResult<SettlementInput> {
+    let event: Option<(String, String, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT name, event_date, stocktaken_at, reconciled_at FROM events WHERE id = ?",
+    )
+    .bind(event_id)
+    .fetch_optional(&state.db)
+    .await?;
+    let (event_name, event_date, stocktaken_at, reconciled_at) =
+        event.ok_or_else(|| ApiError::NotFound("展会不存在".into()))?;
+
+    // 本社团：手工折让整笔落在它头上，`is_home` 也靠它判定。
+    let home_id = {
+        let mut conn = state.db.acquire().await?;
+        home_society_id(&mut conn).await?
+    };
+
+    let goods_rows: Vec<GoodsRow> = sqlx::query_as(GOODS_SQL)
+        .bind(event_id)
+        .fetch_all(&state.db)
+        .await?;
+
+    let money_rows: Vec<MoneyRow> = sqlx::query_as(MONEY_SQL)
+        .bind(event_id)
+        .fetch_all(&state.db)
+        .await?;
+
+    // 手工折让 = solved − final，摊进各行之后就是 Σallocated − Σpaid。
+    // 母 spec 4.4 定了它由本社团**全额**承担，所以整个数落在本社团头上，
+    // 不按货主分。代卖货主身上出现非零手工折让，domain/settlement.rs 会报警。
+    let manual_discount_net: i64 = money_rows
+        .iter()
+        .map(|m| m.allocated_net - m.paid_net)
+        .sum();
+
+    let advance_rows: Vec<AdvanceRow> = sqlx::query_as(
+        "SELECT owner_society_id, label, amount FROM advances WHERE event_id = ? ORDER BY id",
+    )
+    .bind(event_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    let adjustment_rows: Vec<AdjustmentRow> = sqlx::query_as(
+        "SELECT owner_society_id, label, amount, created_at
+         FROM settlement_adjustments WHERE event_id = ? ORDER BY id",
+    )
+    .bind(event_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    // 没有任何交易的社团也要出现（有垫付但一件货没卖是合法的）。本社团也永远
+    // 出现：手工折让和调整都可能落在它头上，哪怕它一件货都没带。
+    let society_rows: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT DISTINCT s.id, s.name
+         FROM societies s
+         WHERE s.id = ?
+            OR s.id IN (SELECT owner_society_id FROM event_products WHERE event_id = ?)
+            OR s.id IN (SELECT owner_society_id FROM advances        WHERE event_id = ?)
+            OR s.id IN (SELECT owner_society_id FROM settlement_adjustments WHERE event_id = ?)
+         ORDER BY s.id",
+    )
+    .bind(home_id)
+    .bind(event_id)
+    .bind(event_id)
+    .bind(event_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    let mut societies = Vec::with_capacity(society_rows.len());
+    for (society_id, name) in society_rows {
+        let is_home = society_id == home_id;
+
+        let goods: Vec<GoodsLine> = goods_rows
+            .iter()
+            .filter(|g| g.owner_society_id == society_id)
+            .map(|g| GoodsLine {
+                event_product_id: g.event_product_id,
+                product_code: g.product_code.clone(),
+                name: g.name.clone(),
+                brought_in: g.brought_in,
+                sold: g.sold,
+                gifted: g.gifted,
+                scrapped: g.scrapped,
+                variance: g.variance,
+                taken_back: g.taken_back,
+                on_site: g.on_site,
+            })
+            .collect();
+
+        let money = money_rows.iter().find(|m| m.owner_society_id == society_id);
+        let account = Account::SocietyDue(society_id);
+
+        // 账户名一律用 Account 生成，不手工拼「社团往来:」——前缀常量在 ledger.rs。
+        let account_name = account.to_string();
+        let gift_self_paid: i64 = sqlx::query_scalar(GIFT_SELF_PAID_SQL)
+            .bind(event_id)
+            .bind(&account_name)
+            .bind(&account_name)
+            .fetch_one(&state.db)
+            .await?;
+
+        let advances = advance_rows
+            .iter()
+            .filter(|a| a.owner_society_id == society_id)
+            .map(|a| Entry {
+                label: a.label.clone(),
+                // advances.amount 存正数（对往来余额 +amount）。对「我应转给」的
+                // 影响是 −amount，而 SocietyBlock 里 advances_total 本来就是减项，
+                // 所以 Entry 存正数即可。
+                amount: Money::from_cents(a.amount),
+                // advances 表没有 created_at，迁移已冻结。
+                at: None,
+            })
+            .collect();
+
+        let adjustments = adjustment_rows
+            .iter()
+            .filter(|a| a.owner_society_id == society_id)
+            .map(|a| Entry {
+                label: a.label.clone(),
+                // DB 存的是对往来余额的影响（负 = 我要多给他们），对
+                // 「我应转给」的影响正好相反，所以取负。
+                amount: Money::from_cents(-a.amount),
+                at: Some(a.created_at.clone()),
+            })
+            .collect();
+
+        let due_balance = account_balance(&state.db, event_id, &account).await?;
+
+        societies.push(SocietyInput {
+            society_id,
+            name,
+            is_home,
+            goods,
+            gross: Money::from_cents(money.map(|m| m.gross).unwrap_or(0)),
+            allocated_net: Money::from_cents(money.map(|m| m.allocated_net).unwrap_or(0)),
+            manual_discount_net: Money::from_cents(if is_home { manual_discount_net } else { 0 }),
+            refund_kept: Money::from_cents(money.map(|m| m.refund_kept).unwrap_or(0)),
+            gift_self_paid: Money::from_cents(gift_self_paid),
+            advances,
+            adjustments,
+            due_balance,
+        });
+    }
+
+    // 渠道清单 = 本展会实际用过的（orders ∪ refunds），按展会过滤，
+    // 不是跨展会的 `GET /channels`。
+    let channel_names: Vec<String> = sqlx::query_scalar(
+        "SELECT channel FROM (
+            SELECT channel FROM orders
+             WHERE event_id = ? AND channel IS NOT NULL AND channel <> ''
+            UNION
+            SELECT r.channel AS channel FROM refunds r
+              JOIN order_lines ol ON ol.id = r.order_line_id
+              JOIN orders o ON o.id = ol.order_id
+             WHERE o.event_id = ? AND r.channel <> ''
+         ) ORDER BY 1",
+    )
+    .bind(event_id)
+    .bind(event_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    let mut channels = Vec::with_capacity(channel_names.len());
+    for channel in channel_names {
+        let account = Account::Received(channel.clone());
+        let account_name = account.to_string();
+        let current = account_balance(&state.db, event_id, &account).await?;
+        let recon_diff: i64 = sqlx::query_scalar(RECON_DIFF_SQL)
+            .bind(&account_name)
+            .bind(&account_name)
+            .bind(event_id)
+            .fetch_one(&state.db)
+            .await?;
+        let book = current - Money::from_cents(recon_diff);
+        // 清点只记「数过了」这一个全局事实（events.reconciled_at）；数是现场
+        // 的，存在账本差额里，所以已清点渠道的 actual 就是当前余额。
+        let actual = if reconciled_at.is_some() {
+            Some(current)
+        } else {
+            None
+        };
+        channels.push(ChannelCount {
+            channel,
+            book,
+            actual,
+        });
+    }
+
+    let last_changed_at: Option<String> =
+        sqlx::query_scalar("SELECT MAX(occurred_at) FROM journals WHERE event_id = ?")
+            .bind(event_id)
+            .fetch_one(&state.db)
+            .await?;
+
+    Ok(SettlementInput {
+        event_name,
+        event_date,
+        generated_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        last_changed_at,
+        stocktaken_at,
+        societies,
+        channels,
+    })
+}
+
+async fn get_settlement(
+    State(state): State<AppState>,
+    claims: Claims,
+    Path(event_id): Path<i64>,
+) -> ApiResult<Json<SettlementReport>> {
+    // 不需要展会守卫：只读
+    check_read_permission(&claims, event_id)?;
+    let input = load_input(&state, event_id).await?;
+    Ok(Json(build_report(&input)))
+}
+
+#[derive(Deserialize)]
+pub struct ReconcileRequest {
+    counts: Vec<ChannelActual>,
+}
+
+#[derive(Deserialize)]
+pub struct ChannelActual {
+    channel: String,
+    /// 摊主数出来的实际到手（分）。
+    actual: i64,
+}
+
+#[derive(Serialize)]
+pub struct ReconcileResponse {
+    /// 分文不差时为 `None`——没有腿可记，「数过了」靠 `events.reconciled_at`。
+    journal_id: Option<i64>,
+}
+
+/// 事务内版的账户余额。签名和 `ledger::account_balance` 一致，只是换了 executor。
+/// 清点必须「读到的余额就是待会儿要写差额的那个余额」。
+///
+/// （`ledger::account_balance` 那条 SQL 用的是 `?1`/`?2` 编号参数，照抄即可——
+/// 它已经在生产里跑了两轮，不要顺手改写。）
+async fn account_balance_tx(
+    conn: &mut sqlx::SqliteConnection,
+    event_id: i64,
+    account: &Account,
+) -> ApiResult<Money> {
+    let name = account.to_string();
+    let cents: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(
+                  SUM(CASE WHEN mm.to_account   = ?1 THEN mm.amount ELSE 0 END)
+                - SUM(CASE WHEN mm.from_account = ?1 THEN mm.amount ELSE 0 END), 0)
+         FROM money_movements mm
+         JOIN journals j ON j.id = mm.journal_id
+         WHERE j.event_id = ?2",
+    )
+    .bind(&name)
+    .bind(event_id)
+    .fetch_one(&mut *conn)
+    .await?;
+    Ok(Money::from_cents(cents))
+}
+
+async fn reconcile(
+    State(state): State<AppState>,
+    claims: Claims,
+    Path(event_id): Path<i64>,
+    Json(payload): Json<ReconcileRequest>,
+) -> ApiResult<Json<ReconcileResponse>> {
+    // 不需要展会守卫：spec 偏离 3——回家才有空数现金盒、对微信账单是常态。
+    // 对账差异默认由摊主自吞，不进任何货主的结算，只影响「摊主留存」那一个数。
+    check_write_permission(&claims, event_id)?;
+
+    let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
+    // 补齐「展会不存在」的 404：跳过 require_event_open 不等于允许对着空气记账。
+    ensure_event_exists(&mut tx, event_id).await?;
+
+    let mut money = Vec::new();
+    for c in &payload.counts {
+        let channel = normalize(&c.channel)?;
+        if c.actual < 0 {
+            return Err(ApiError::BadRequest("实际到手不能为负".into()));
+        }
+        let account = Account::Received(channel);
+        let current = account_balance_tx(&mut tx, event_id, &account).await?;
+        let diff = Money::from_cents(c.actual) - current;
+        if diff.is_zero() {
+            continue; // 分文不差——没有腿可记，靠 reconciled_at 记「数过了」
+        }
+        // 账面多于实际 ⇒ 钱少了 ⇒ 实收流向对账差异；反之亦然。
+        let (from, to) = if diff.is_negative() {
+            (account.clone(), Account::ReconDiff)
+        } else {
+            (Account::ReconDiff, account.clone())
+        };
+        money.push(MoneyLeg {
+            from,
+            to,
+            amount: diff.abs(),
+        });
+    }
+
+    // 全都对得上就没有腿，post_journal 会拒绝空 journal，所以判空跳过。
+    let journal_id = if money.is_empty() {
+        None
+    } else {
+        Some(
+            post_journal(
+                &mut tx,
+                event_id,
+                JournalKind::Adjust,
+                None,
+                None,
+                Some("收摊清点"),
+                &[],
+                &money,
+            )
+            .await?,
+        )
+    };
+
+    sqlx::query("UPDATE events SET reconciled_at = CURRENT_TIMESTAMP WHERE id = ?")
+        .bind(event_id)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+    Ok(Json(ReconcileResponse { journal_id }))
 }
 
 #[cfg(test)]
@@ -922,5 +1391,535 @@ mod tests {
                 .unwrap();
         assert_eq!(adjust_journals, 2, "账本留下「一条调整 + 一条冲正」");
         let _ = adv_id;
+    }
+
+    /// 端到端：下单 → 完成（带手工折让）→ 退一部分 → 垫付 → 调整 → 带回 → 结算单。
+    /// 断言只有一条：**warnings 为空**。
+    ///
+    /// 这比逐个字段对数字有力得多——warnings 里那两条恒等式分别从业务表和账本
+    /// 两条独立的路算出来，只要有一条腿方向写错或漏记，它们就撞不上。
+    #[tokio::test]
+    async fn a_full_event_produces_a_self_consistent_settlement() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, ep_b) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+
+        // 卖一单：A×1（本社团）+ B×2（黄昏堂），原价 7000，实收改成 6500（手工折让 500）
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None,
+                json!({"items": [{"product_id": ep_a, "quantity": 1},
+                                 {"product_id": ep_b, "quantity": 2}]}),
+            ))
+            .await
+            .unwrap();
+        let order_id = read_json(res).await["id"].as_i64().unwrap();
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "微信", "final_amount": 6500}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        // 退 B 的一件，只退 800（顾客没拿回的部分归黄昏堂）
+        let line_b: i64 = sqlx::query_scalar(
+            "SELECT id FROM order_lines WHERE order_id = ? AND event_product_id = ? LIMIT 1",
+        )
+        .bind(order_id)
+        .bind(ep_b)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders/{order_id}/refunds"),
+                Some(&token),
+                json!({"channel": "现金", "refund_amount": 800,
+                       "lines": [{"order_line_id": line_b, "qty": 1, "destination": "现场仓"}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+
+        // 送一件 A（默认口径）、摊主自掏送一件 B、报废一件 A
+        for body in [
+            json!({"event_product_id": ep_a, "qty": 1}),
+            json!({"event_product_id": ep_b, "qty": 1, "vendor_pays": true}),
+        ] {
+            let res = router
+                .clone()
+                .oneshot(json_request(
+                    "POST",
+                    &format!("/api/events/{event_id}/gifts"),
+                    Some(&token),
+                    body,
+                ))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::CREATED);
+        }
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/scraps"),
+                Some(&token),
+                json!({"event_product_id": ep_a, "qty": 1, "note": "压坏了"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+
+        // 垫付 + 调整
+        router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/advances"),
+                Some(&token),
+                json!({"society_id": 2, "label": "摊位费", "amount": 40000}),
+            ))
+            .await
+            .unwrap();
+        router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/adjustments"),
+                Some(&token),
+                json!({"society_id": 2, "label": "赔一本", "direction": "to_them", "amount": 2000}),
+            ))
+            .await
+            .unwrap();
+
+        // 盘点 + 带回 + 结算
+        let remaining = router
+            .clone()
+            .oneshot(json_request(
+                "GET",
+                &format!("/api/events/{event_id}/closing"),
+                Some(&token),
+                json!(null),
+            ))
+            .await
+            .unwrap();
+        let counts: Vec<serde_json::Value> = read_json(remaining).await["onsite_remaining"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| json!({"event_product_id": r["event_product_id"], "counted_qty": r["qty"]}))
+            .collect();
+        router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/closing/stocktake"),
+                Some(&token),
+                json!({"counts": counts}),
+            ))
+            .await
+            .unwrap();
+        router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/closing/takeback"),
+                Some(&token),
+                json!(null),
+            ))
+            .await
+            .unwrap();
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/closing/settle"),
+                Some(&token),
+                json!(null),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        // ---- 结算单 ----
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "GET",
+                &format!("/api/events/{event_id}/settlement"),
+                Some(&token),
+                json!(null),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let report = read_json(res).await;
+        assert_eq!(
+            report["warnings"].as_array().unwrap().len(),
+            0,
+            "结算单自相矛盾：{}",
+            report["warnings"]
+        );
+        assert!(report["stocktaken"].as_bool().unwrap());
+
+        // 摊主留存 + Σ我应转给 == 实际到手
+        let retained = report["vendor_retained"].as_i64().unwrap();
+        let transfer_total = report["transfer_total"].as_i64().unwrap();
+        let actual_total = report["actual_total"].as_i64().unwrap();
+        assert_eq!(retained + transfer_total, actual_total);
+    }
+
+    #[tokio::test]
+    async fn reconciling_records_the_shortfall_against_the_vendor_not_the_owners() {
+        // 母 spec 第 5 节：对账差异默认由摊主自吞，不进任何货主的结算。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None,
+                json!({"items": [{"product_id": ep_a, "quantity": 1}]}),
+            ))
+            .await
+            .unwrap();
+        let order_id = read_json(res).await["id"].as_i64().unwrap();
+        router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "现金"}),
+            ))
+            .await
+            .unwrap();
+
+        let before = read_json(
+            router
+                .clone()
+                .oneshot(json_request(
+                    "GET",
+                    &format!("/api/events/{event_id}/settlement"),
+                    Some(&token),
+                    json!(null),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        let transfer_before = before["societies"][0]["transfer"].as_i64().unwrap();
+
+        // 现金盒里少了 5 块
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/settlement/reconcile"),
+                Some(&token),
+                json!({"counts": [{"channel": "现金", "actual": 2500}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let after = read_json(
+            router
+                .clone()
+                .oneshot(json_request(
+                    "GET",
+                    &format!("/api/events/{event_id}/settlement"),
+                    Some(&token),
+                    json!(null),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert!(
+            after["warnings"].as_array().unwrap().is_empty(),
+            "{}",
+            after["warnings"]
+        );
+        assert_eq!(
+            after["societies"][0]["transfer"].as_i64().unwrap(),
+            transfer_before,
+            "货主该拿多少和摊主数出来多少钱无关"
+        );
+        assert_eq!(after["channels"][0]["book"], 3000);
+        assert_eq!(after["channels"][0]["actual"], 2500);
+        assert_eq!(after["channels"][0]["diff"], -500);
+        assert_eq!(after["channels"][0]["counted"], true);
+        assert_eq!(
+            after["vendor_retained"].as_i64().unwrap(),
+            2500 - transfer_before,
+            "短的 5 块由摊主自吞"
+        );
+    }
+
+    #[tokio::test]
+    async fn counting_an_exact_match_still_marks_it_counted() {
+        // 分文不差时写不出 journal（零金额腿被 post_journal 滤掉，
+        // 只剩空 journal 会被拒），所以「数过了」靠 events.reconciled_at 记。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None,
+                json!({"items": [{"product_id": ep_a, "quantity": 1}]}),
+            ))
+            .await
+            .unwrap();
+        let order_id = read_json(res).await["id"].as_i64().unwrap();
+        router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "现金"}),
+            ))
+            .await
+            .unwrap();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/settlement/reconcile"),
+                Some(&token),
+                json!({"counts": [{"channel": "现金", "actual": 3000}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert!(read_json(res).await["journal_id"].is_null());
+
+        let report = read_json(
+            router
+                .clone()
+                .oneshot(json_request(
+                    "GET",
+                    &format!("/api/events/{event_id}/settlement"),
+                    Some(&token),
+                    json!(null),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(report["channels"][0]["counted"], true);
+        assert_eq!(report["channels"][0]["diff"], 0);
+    }
+
+    #[tokio::test]
+    async fn reconciling_twice_writes_only_the_new_delta() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None,
+                json!({"items": [{"product_id": ep_a, "quantity": 1}]}),
+            ))
+            .await
+            .unwrap();
+        let order_id = read_json(res).await["id"].as_i64().unwrap();
+        router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "现金"}),
+            ))
+            .await
+            .unwrap();
+
+        for actual in [2500, 2800] {
+            let res = router
+                .clone()
+                .oneshot(json_request(
+                    "POST",
+                    &format!("/api/events/{event_id}/settlement/reconcile"),
+                    Some(&token),
+                    json!({"counts": [{"channel": "现金", "actual": actual}]}),
+                ))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::OK);
+        }
+
+        let report = read_json(
+            router
+                .clone()
+                .oneshot(json_request(
+                    "GET",
+                    &format!("/api/events/{event_id}/settlement"),
+                    Some(&token),
+                    json!(null),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(report["channels"][0]["actual"], 2800, "第二次数出来是 28");
+        assert_eq!(report["channels"][0]["book"], 3000, "账面应有始终是 30");
+    }
+
+    #[tokio::test]
+    async fn reconciling_works_after_the_event_is_settled() {
+        // spec 偏离 3：回家才有空数现金盒、对微信账单是常态。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _, _) = seed_event_and_product(&pool).await;
+        sqlx::query("UPDATE events SET status = '已结算' WHERE id = ?")
+            .bind(event_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/settlement/reconcile"),
+                Some(&admin_token()),
+                json!({"counts": []}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    /// 已取消订单的退货不能被重复计入（batch-4 dispatch 第 1 条）。
+    ///
+    /// 取消一张已完成订单时，`reverse_order_journals` 会把它名下**包括退货**
+    /// 在内的所有未冲正 journal 都冲掉，但 `refunds` 表的行还在。`MONEY_SQL`
+    /// 用 `JOIN orders ... AND o.status = 'completed'` 过滤，整张取消单（连同
+    /// 它的 refunds 子查询）都不出现，所以不会把退货金额算第二遍。
+    ///
+    /// 把那个 status 条件去掉，refunds 行就会继续扣减 allocated/paid，而账本
+    /// 早已被取消冲回 0——货主净额变成负数、warnings 里出现「结算对不上账本」。
+    #[tokio::test]
+    async fn a_cancelled_order_with_a_partial_refund_is_not_counted_twice() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _ep_a, ep_b) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+
+        // 卖两件 B（黄昏堂），现金收 4000
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders"),
+                None,
+                json!({"items": [{"product_id": ep_b, "quantity": 2}]}),
+            ))
+            .await
+            .unwrap();
+        let order_id = read_json(res).await["id"].as_i64().unwrap();
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "现金"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        // 退一件，只退 800
+        let line_b: i64 = sqlx::query_scalar(
+            "SELECT id FROM order_lines WHERE order_id = ? AND event_product_id = ? LIMIT 1",
+        )
+        .bind(order_id)
+        .bind(ep_b)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders/{order_id}/refunds"),
+                Some(&token),
+                json!({"channel": "现金", "refund_amount": 800,
+                       "lines": [{"order_line_id": line_b, "qty": 1, "destination": "现场仓"}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+
+        // 整单取消：退货 journal 被冲正了，但 refunds 行还在
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "cancelled"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let refunds_left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM refunds")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(refunds_left, 1, "refunds 行必须还在——这正是需要防的陷阱");
+
+        let report = read_json(
+            router
+                .clone()
+                .oneshot(json_request(
+                    "GET",
+                    &format!("/api/events/{event_id}/settlement"),
+                    Some(&token),
+                    json!(null),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+
+        assert!(
+            report["warnings"].as_array().unwrap().is_empty(),
+            "取消单的退货被重复计入了：{}",
+            report["warnings"]
+        );
+
+        let other = report["societies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["name"] == "黄昏堂")
+            .expect("黄昏堂应在结算单里");
+        assert_eq!(other["gross"], 0, "整单取消，原价不该出现");
+        assert_eq!(other["net"], 0, "净额必须回到 0");
+        assert_eq!(other["refund_kept"], 0);
+        assert_eq!(other["transfer"], 0, "账本也已冲平");
     }
 }

@@ -14,10 +14,6 @@
 //!
 //! 第二条的左边从业务表加出来、右边从账本聚合出来，两条独立的路必须撞上。
 
-// 消费方在 Task 8 的 api 层（结算单端点 + xlsx 导出）。在那之前本模块的类型只被
-// 测试构造，`cargo clippy -- -D warnings` 下整块都是 dead_code。接上之后删掉这行。
-#![allow(dead_code)]
-
 use serde::Serialize;
 
 use crate::domain::money::Money;
