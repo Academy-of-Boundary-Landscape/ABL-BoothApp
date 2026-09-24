@@ -155,41 +155,33 @@
     <!-- ========== 搜索结果：摄像头模式用居中悬浮弹窗，普通模式用内联列表 ========== -->
 
     <!-- 摄像头模式：悬浮弹窗 -->
-    <Transition name="result-pop">
-      <div
-        v-if="results && results.length && cameraMode && isCameraActive"
-        class="vision-popup-backdrop"
-        @click.self="results = []"
-      >
-        <div class="vision-popup">
-          <div class="vision-popup__header">
-            <span>匹配结果</span>
-            <n-tag v-if="isUncertain" size="small" type="warning">置信度较低</n-tag>
+    <AppModal :show="showCameraResults" size="sm" @update:show="onCameraResultsShow">
+      <template #header>
+        <span>匹配结果</span>
+        <n-tag v-if="isUncertain" size="small" type="warning">置信度较低</n-tag>
+      </template>
+      <div class="vision-popup__list">
+        <div
+          v-for="item in results"
+          :key="item.master_product_id"
+          class="vision-result-item"
+          @click="selectResultAndClose(item)"
+        >
+          <div class="vision-result-item__thumb">
+            <img v-if="item.thumb_url" :src="resolveThumb(item.thumb_url)" alt="" />
+            <div v-else class="vision-result-item__no-thumb">?</div>
           </div>
-          <div class="vision-popup__list">
-            <div
-              v-for="item in results"
-              :key="item.master_product_id"
-              class="vision-result-item"
-              @click="selectResultAndClose(item)"
-            >
-              <div class="vision-result-item__thumb">
-                <img v-if="item.thumb_url" :src="resolveThumb(item.thumb_url)" alt="" />
-                <div v-else class="vision-result-item__no-thumb">?</div>
-              </div>
-              <div class="vision-result-item__info">
-                <div class="vision-result-item__name">{{ item.name }}</div>
-                <div class="vision-result-item__code">{{ item.product_code }}</div>
-              </div>
-              <div class="vision-result-item__score">{{ (item.score * 100).toFixed(1) }}%</div>
-            </div>
+          <div class="vision-result-item__info">
+            <div class="vision-result-item__name">{{ item.name }}</div>
+            <div class="vision-result-item__code">{{ item.product_code }}</div>
           </div>
-          <div class="vision-popup__footer">
-            <n-button size="small" tertiary @click="results = []">关闭</n-button>
-          </div>
+          <div class="vision-result-item__score">{{ (item.score * 100).toFixed(1) }}%</div>
         </div>
       </div>
-    </Transition>
+      <template #footer>
+        <n-button size="small" tertiary @click="results = []">关闭</n-button>
+      </template>
+    </AppModal>
 
     <!-- 普通模式：内联列表 -->
     <div v-if="results && results.length && !(cameraMode && isCameraActive)" class="vision-results">
@@ -222,6 +214,7 @@
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { NButton, NTag } from 'naive-ui'
 
+import { AppModal } from '@/components/ui'
 import { searchByImage } from '@/services/vision'
 import { getImageUrl } from '@/services/url'
 import { useFeedback } from '@/composables/useFeedback'
@@ -255,6 +248,8 @@ const emit = defineEmits<{
   (e: 'search-done', resp: Schemas['VisionSearchResponse']): void
   (e: 'search-error', msg: string): void
 }>()
+
+const fb = useFeedback()
 
 // ===================== 图片输入（文件模式）=====================
 const fileInputRef = ref<HTMLInputElement | null>(null)
@@ -466,6 +461,14 @@ const isUncertain = ref(false)
 const errorMsg = ref('')
 const selectedIds = ref(new Set<number>())
 
+const showCameraResults = computed(() =>
+  Boolean(results.value.length && props.cameraMode && isCameraActive.value)
+)
+
+function onCameraResultsShow(v: boolean) {
+  if (!v) results.value = []
+}
+
 const VISION_ERROR_MAP: Record<string, string> = {
   VISION_NOT_READY: 'AI 视觉识别尚未就绪，请先在管理后台安装模型并构建索引',
   VISION_REBUILDING: 'AI 索引正在构建中，请稍后再试',
@@ -506,7 +509,7 @@ async function doSearch() {
     const isTimeout = err instanceof ApiRequestError && err.message === '请求超时'
     const msg = translateVisionError(raw) || (isTimeout ? '搜索超时，请重试' : '搜索失败')
     errorMsg.value = msg
-    useFeedback().alert({ title: '错误', content: msg, type: 'error' })
+    fb.alert({ title: '错误', content: msg, type: 'error' })
     emit('search-error', msg)
   } finally {
     isSearching.value = false
@@ -576,7 +579,7 @@ onBeforeUnmount(() => {
 .vision-search {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-md);
   height: 100%;
   min-height: 0;
   position: relative;
@@ -586,7 +589,7 @@ onBeforeUnmount(() => {
 .vision-camera {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-md);
   height: 100%;
   min-height: 0;
 }
@@ -595,7 +598,7 @@ onBeforeUnmount(() => {
   position: relative;
   border-radius: var(--radius-md);
   overflow: hidden;
-  background: #000;
+  background: var(--overlay-color);
   flex: 1;
   min-height: 0;
 }
@@ -622,15 +625,16 @@ onBeforeUnmount(() => {
 /* 取景框：box-shadow 实现框外暗化 */
 .vision-camera__frame {
   position: relative;
-  border-radius: 12px;
-  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+  border-radius: var(--radius-lg);
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- 摄像头取景框：用超大 spread 阴影实现框外遮罩，非通用阴影 */
+  box-shadow: 0 0 0 9999px var(--overlay-color);
 }
 
 /* 拍照闪光 */
 .vision-camera__flash {
   position: absolute;
   inset: 0;
-  background: white;
+  background: var(--text-white);
   z-index: 20;
   animation: flash-fade 0.2s ease-out forwards;
   pointer-events: none;
@@ -653,15 +657,15 @@ onBeforeUnmount(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  background: rgba(0, 0, 0, 0.4);
+  gap: var(--space-md);
+  background: var(--overlay-color);
   pointer-events: none;
 }
 .loading-spinner {
   width: 40px;
   height: 40px;
-  border: 3px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
+  border: 3px solid color-mix(in srgb, var(--text-white) 30%, transparent);
+  border-top-color: var(--text-white);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -671,17 +675,17 @@ onBeforeUnmount(() => {
   }
 }
 .loading-text {
-  color: white;
+  color: var(--text-white);
   font-size: var(--font-md);
-  font-weight: 600;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  font-weight: var(--weight-bold);
+  text-shadow: 0 1px 3px var(--overlay-color);
 }
 
 .frame-corner {
   position: absolute;
   width: 28px;
   height: 28px;
-  border-color: #fff;
+  border-color: var(--text-white);
   border-style: solid;
 }
 
@@ -689,36 +693,36 @@ onBeforeUnmount(() => {
   top: -2px;
   left: -2px;
   border-width: 4px 0 0 4px;
-  border-radius: 8px 0 0 0;
+  border-radius: var(--radius-md) 0 0 0;
 }
 
 .frame-corner--tr {
   top: -2px;
   right: -2px;
   border-width: 4px 4px 0 0;
-  border-radius: 0 8px 0 0;
+  border-radius: 0 var(--radius-md) 0 0;
 }
 
 .frame-corner--bl {
   bottom: -2px;
   left: -2px;
   border-width: 0 0 4px 4px;
-  border-radius: 0 0 0 8px;
+  border-radius: 0 0 0 var(--radius-md);
 }
 
 .frame-corner--br {
   bottom: -2px;
   right: -2px;
   border-width: 0 4px 4px 0;
-  border-radius: 0 0 8px 0;
+  border-radius: 0 0 var(--radius-md) 0;
 }
 
 .vision-camera__hint {
-  margin-top: 16px;
-  color: rgba(255, 255, 255, 0.85);
+  margin-top: var(--space-lg);
+  color: color-mix(in srgb, var(--text-white) 85%, transparent);
   font-size: var(--font-md);
-  font-weight: 600;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  font-weight: var(--weight-bold);
+  text-shadow: 0 1px 4px var(--overlay-color);
   letter-spacing: 0.05em;
 }
 
@@ -727,7 +731,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px;
+  padding: 0 var(--space-md);
 }
 
 .vision-camera__shutter {
@@ -801,7 +805,7 @@ onBeforeUnmount(() => {
 
 .vision-dropzone--has-image {
   border-style: solid;
-  padding: 4px;
+  padding: var(--space-xs);
 }
 
 .vision-dropzone__preview {
@@ -815,7 +819,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-sm);
   color: var(--text-disabled);
 }
 
@@ -830,15 +834,15 @@ onBeforeUnmount(() => {
 
 .vision-input-actions {
   display: flex;
-  gap: 8px;
-  margin-top: 8px;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
 }
 
 /* ===================== 错误 ===================== */
 .vision-error {
   color: var(--error-color);
   font-size: var(--font-base);
-  padding: 6px 0;
+  padding: var(--space-sm) 0;
 }
 
 /* ===================== 结果列表 ===================== */
@@ -846,17 +850,17 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   font-size: var(--font-base);
   color: var(--primary-text-color);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-xs);
 }
 
 .vision-result-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: background-color 0.15s;
@@ -916,78 +920,17 @@ onBeforeUnmount(() => {
 .vision-result-item__score {
   flex-shrink: 0;
   font-size: var(--font-base);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   color: var(--accent-color);
   min-width: 50px;
   text-align: right;
 }
 
-/* 摄像头模式：居中悬浮弹窗 */
-.vision-popup-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 5000;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-}
-
-.vision-popup {
-  background: var(--card-bg-color);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-xl);
-  width: 100%;
-  max-width: 420px;
-  max-height: 70vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.vision-popup__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  font-weight: 700;
-  font-size: var(--font-md);
-  border-bottom: 1px solid var(--border-color);
-  flex-shrink: 0;
-}
-
+/* 摄像头模式：结果列表（弹窗外壳由 AppModal 提供） */
 .vision-popup__list {
-  flex: 1;
+  max-height: 70vh;
   overflow-y: auto;
-  padding: 4px 8px;
-}
-
-.vision-popup__footer {
-  padding: 10px 16px;
-  border-top: 1px solid var(--border-color);
-  text-align: center;
-  flex-shrink: 0;
-}
-
-/* 弹窗动画 */
-.result-pop-enter-active {
-  transition:
-    opacity 0.2s,
-    transform 0.2s;
-}
-.result-pop-leave-active {
-  transition:
-    opacity 0.15s,
-    transform 0.15s;
-}
-.result-pop-enter-from {
-  opacity: 0;
-  transform: scale(0.95);
-}
-.result-pop-leave-to {
-  opacity: 0;
-  transform: scale(0.95);
+  padding: var(--space-xs) var(--space-sm);
 }
 
 /* ========== 相机模式未激活时的 CTA 过渡页 ========== */
@@ -995,21 +938,22 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 12px;
-  padding: 32px 20px;
+  gap: var(--space-md);
+  padding: var(--space-2xl) var(--space-lg);
   text-align: center;
   background: var(--card-bg-color);
   border: 1.5px solid var(--border-color);
   border-radius: var(--radius-md);
 }
 .vision-camera-cta__icon {
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- 装饰性 emoji 图标：降到 --font-2xl 会明显变小影响观感 */
   font-size: 3rem;
   line-height: 1;
-  margin-bottom: 4px;
+  margin-bottom: var(--space-xs);
 }
 .vision-camera-cta__title {
   font-size: var(--font-lg);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   color: var(--primary-text-color);
 }
 .vision-camera-cta__hint {
@@ -1017,27 +961,27 @@ onBeforeUnmount(() => {
   color: var(--text-muted);
   line-height: 1.5;
   max-width: 320px;
-  margin: 0 auto 8px;
+  margin: 0 auto var(--space-sm);
 }
 .vision-camera-cta__error {
   font-size: var(--font-sm);
-  color: var(--error-color, #d03050);
+  color: var(--error-color);
   line-height: 1.5;
-  padding: 8px 12px;
-  background: rgba(208, 48, 80, 0.08);
+  padding: var(--space-sm) var(--space-md);
+  background: color-mix(in srgb, var(--error-color) 8%, transparent);
   border-radius: var(--radius-sm);
-  margin: 0 auto 8px;
+  margin: 0 auto var(--space-sm);
   max-width: 360px;
 }
 .vision-camera-cta__primary :deep(.n-button__content) {
   font-size: var(--font-md);
 }
 .vision-camera-cta__fallback {
-  margin-top: -4px;
+  margin-top: calc(-1 * var(--space-xs));
 }
 .vision-camera-cta__preview {
-  margin-top: 12px;
-  padding-top: 16px;
+  margin-top: var(--space-md);
+  padding-top: var(--space-lg);
   border-top: 1px dashed var(--border-color);
 }
 .vision-camera-cta__preview-img {
@@ -1046,25 +990,26 @@ onBeforeUnmount(() => {
   object-fit: contain;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-color);
-  margin: 0 auto 12px;
+  margin: 0 auto var(--space-md);
   display: block;
 }
 .vision-camera-cta__preview-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-sm);
   justify-content: center;
 }
 
 /* 超窄屏（iPhone SE 等 ≤400px）：取景框四角和快门按钮略缩小 */
-@media (max-width: 400px) {
+@media (--phone) {
   .frame-corner {
     width: 20px;
     height: 20px;
   }
   .vision-camera-cta {
-    padding: 24px 16px;
+    padding: var(--space-xl) var(--space-lg);
   }
   .vision-camera-cta__icon {
+    /* stylelint-disable-next-line declaration-property-value-allowed-list -- 装饰性 emoji 图标：保留窄屏缩小档位 */
     font-size: 2.5rem;
   }
 }

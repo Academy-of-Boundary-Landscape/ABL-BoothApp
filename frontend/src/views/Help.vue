@@ -12,7 +12,7 @@
 
       <!-- 2. 主体教程轮播图 -->
       <section class="section">
-        <div class="section-header">
+        <div class="section-heading">
           <n-icon size="24" color="var(--accent-color)"><PlayCircleOutline /></n-icon>
           <h2>核心流程演示</h2>
         </div>
@@ -33,7 +33,7 @@
 
       <!-- 3. 快速上手 Grid -->
       <section class="section">
-        <div class="section-header">
+        <div class="section-heading">
           <n-icon size="24" color="var(--success-color)"><RocketOutline /></n-icon>
           <h2>快速上手步骤</h2>
         </div>
@@ -56,7 +56,7 @@
 
       <!-- 4. 离散 QA (带搜索) -->
       <section class="section qa-section">
-        <div class="section-header qa-header-flex">
+        <div class="section-heading qa-header-flex">
           <div class="flex-center">
             <n-icon size="24" color="var(--warning-color)"><HelpCircleOutline /></n-icon>
             <h2>常见问题解答</h2>
@@ -172,9 +172,9 @@ import {
   NEmpty,
   NPopover,
   NBadge,
-  useMessage,
 } from 'naive-ui'
 import { copyLink as copyLinkUtil } from '@/services/clipboard'
+import { useFeedback } from '@/composables/useFeedback'
 import {
   BookOutline,
   PlayCircleOutline,
@@ -193,7 +193,7 @@ import {
   LogoGithub,
 } from '@vicons/ionicons5'
 
-const message = useMessage()
+const fb = useFeedback()
 
 // QA 分类展开状态
 const expandedCategories = ref<string[]>([])
@@ -481,22 +481,22 @@ const toggleAllCategories = (expand: boolean) => {
 const copyLink = async (url: string, label: string) => {
   try {
     await copyLinkUtil(url)
-    message.success(`已复制${label}`)
+    fb.success(`已复制${label}`)
   } catch (err) {
     console.error('复制失败:', err)
-    message.error(`复制${label}失败，请检查权限`)
+    fb.error(err, `复制${label}失败，请检查权限`)
   }
 }
 </script>
 
 <style scoped>
 .tutorial-container {
-  max-width: 800px;
+  max-width: var(--page-content);
   margin: 0 auto;
-  padding: 24px 16px;
+  padding: var(--space-xl) var(--space-lg);
   --text-primary: var(--primary-text-color);
   --text-secondary: var(--secondary-text-color);
-  --bg-subtle: rgba(128, 128, 128, 0.08);
+  --bg-subtle: color-mix(in srgb, var(--text-muted) 8%, transparent);
 }
 
 /* 通用排版工具类 */
@@ -508,48 +508,48 @@ const copyLink = async (url: string, label: string) => {
   font-size: var(--font-sm);
 }
 .mb-2 {
-  margin-bottom: 8px;
+  margin-bottom: var(--space-sm);
 }
 .mt-2 {
-  margin-top: 16px;
+  margin-top: var(--space-lg);
 }
 .mt-4 {
-  margin-top: 32px;
+  margin-top: var(--space-2xl);
 }
 
 /* Header */
 .header-section {
   text-align: center;
-  padding: 20px 0;
+  padding: var(--space-lg) 0;
 }
 .page-title {
-  margin: 8px 0 4px;
+  margin: var(--space-sm) 0 var(--space-xs);
   font-size: var(--font-2xl);
-  font-weight: 800;
+  font-weight: var(--weight-bold);
   letter-spacing: -0.5px;
   color: var(--primary-text-color);
 }
 .page-subtitle {
   font-size: var(--font-lg);
   color: var(--secondary-text-color);
-  margin-bottom: 20px;
+  margin-bottom: var(--space-lg);
   line-height: 1.6;
 }
 
 /* Section General */
 .section {
-  margin-bottom: 40px;
+  margin-bottom: var(--space-2xl);
 }
-.section-header {
+.section-heading {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 20px;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
 }
-.section-header h2 {
+.section-heading h2 {
   margin: 0;
   font-size: var(--font-lg);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   color: var(--primary-text-color);
 }
 
@@ -588,46 +588,46 @@ const copyLink = async (url: string, label: string) => {
   left: 12px;
   background: var(--accent-color);
   color: var(--text-white);
-  padding: 4px 12px;
+  padding: var(--space-xs) var(--space-md);
   border-radius: var(--radius-xl);
-  font-weight: bold;
+  font-weight: var(--weight-bold);
   font-size: var(--font-sm);
 }
 
 .step-content {
-  padding: 20px;
+  padding: var(--space-lg);
   text-align: center;
   overflow-y: auto;
   max-height: 150px;
 }
 
 .step-content h3 {
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-sm);
   font-size: var(--font-lg);
   color: var(--primary-text-color);
 }
 
 /* 修复轮播图按钮在浅色主题下的可见性 */
 :deep(.n-carousel__arrow) {
-  background-color: rgba(0, 0, 0, 0.3) !important;
+  background-color: color-mix(in srgb, var(--overlay-color) 75%, transparent) !important;
   color: var(--primary-text-color) !important;
   border-radius: var(--radius-sm);
 }
 
 :deep(.n-carousel__arrow:hover) {
-  background-color: rgba(0, 0, 0, 0.5) !important;
+  background-color: var(--overlay-color) !important;
 }
 
 :deep(.n-carousel__dots) {
-  background: rgba(0, 0, 0, 0.05);
-  padding: 8px;
+  background: color-mix(in srgb, var(--overlay-color) 12%, transparent);
+  padding: var(--space-sm);
   border-radius: var(--radius-md);
 }
 
 /* Quick Steps Card */
 .quick-step-card {
   background: var(--bg-subtle);
-  padding: 16px;
+  padding: var(--space-lg);
   border-radius: var(--radius-lg);
   text-align: center;
   transition: all 0.3s;
@@ -639,20 +639,20 @@ const copyLink = async (url: string, label: string) => {
 }
 
 .quick-step-card:hover {
-  background: rgba(128, 128, 128, 0.12);
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
   transform: translateY(-2px);
 }
 
 .step-number-avatar {
   background-color: var(--bg-subtle) !important;
   color: var(--accent-color) !important;
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   font-size: var(--font-xl);
   box-shadow: var(--shadow-md);
 }
 
 .quick-step-text {
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   font-size: var(--font-base);
   color: var(--primary-text-color);
 }
@@ -661,13 +661,13 @@ const copyLink = async (url: string, label: string) => {
 .qa-header-flex {
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: var(--space-lg);
 }
 
 .flex-center {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-sm);
 }
 
 .qa-search {
@@ -675,44 +675,16 @@ const copyLink = async (url: string, label: string) => {
 }
 
 /* QA 分类样式 */
-.qa-category {
-  margin-bottom: 32px;
-}
-
-.category-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 2px solid var(--accent-color);
-}
-
-.category-title {
-  margin: 0;
-  font-size: var(--font-lg);
-  font-weight: 700;
-  color: var(--primary-text-color);
-}
-
-.category-count {
-  font-size: var(--font-sm);
-  color: var(--text-muted);
-  background: var(--bg-subtle);
-  padding: 4px 12px;
-  border-radius: var(--radius-lg);
-}
-
 .qa-answer {
   line-height: 1.6;
-  padding: 4px 0;
+  padding: var(--space-xs) 0;
   color: var(--text-muted);
 }
 
 /* Footer */
 .footer-section {
   text-align: center;
-  padding-bottom: 20px;
+  padding-bottom: var(--space-lg);
 }
 
 .copyright {
@@ -722,15 +694,15 @@ const copyLink = async (url: string, label: string) => {
 }
 
 /* Responsive */
-@media (max-width: 600px) {
+@media (--phone) {
   .qa-search {
     width: 100%;
   }
   .page-title {
-    font-size: 1.6rem;
+    font-size: var(--font-xl);
   }
-  .section-header h2 {
-    font-size: 1.1rem;
+  .section-heading h2 {
+    font-size: var(--font-md);
   }
   .qa-header-flex {
     flex-direction: column;

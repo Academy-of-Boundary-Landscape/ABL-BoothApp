@@ -44,8 +44,8 @@ function renderTip(raw: string) {
   border: 1.5px solid var(--border-color);
   background: var(--card-bg-color);
   color: var(--text-muted);
-  font-size: 14px;
-  font-weight: 700;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-bold);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -59,51 +59,51 @@ function renderTip(raw: string) {
 }
 
 .help-content {
-  padding: 4px 0;
+  padding: var(--space-xs) 0;
 }
 
 .help-title {
-  font-size: var(--font-md, 14px);
-  font-weight: 700;
+  font-size: var(--font-md);
+  font-weight: var(--weight-bold);
   color: var(--primary-text-color);
-  margin-bottom: 10px;
+  margin-bottom: var(--space-sm);
 }
 
 .help-tips {
   list-style: none;
   padding: 0;
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-md);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 
 .help-tips li {
-  font-size: var(--font-sm, 13px);
-  color: var(--text-color);
+  font-size: var(--font-sm);
+  color: var(--primary-text-color);
   line-height: 1.5;
-  padding-left: 16px;
+  padding-left: var(--space-lg);
   position: relative;
 }
 .help-tips li::before {
   content: '·';
   position: absolute;
-  left: 4px;
+  left: var(--space-xs);
   color: var(--accent-color);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
 }
 .help-tips li :deep(strong) {
   color: var(--primary-text-color);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
 }
 
 .help-more {
   display: block;
-  font-size: var(--font-sm, 13px);
+  font-size: var(--font-sm);
   color: var(--accent-color);
   text-decoration: none;
-  font-weight: 600;
-  padding-top: 8px;
+  font-weight: var(--weight-bold);
+  padding-top: var(--space-sm);
   border-top: 1px solid var(--border-color);
 }
 .help-more:hover {

@@ -99,16 +99,9 @@
 
       <router-view />
 
-      <n-modal
-        v-model:show="showThemeModal"
-        preset="card"
-        title="主题设置"
-        :mask-closable="false"
-        style="max-width: 960px"
-        class="theme-modal"
-      >
+      <AppModal v-model:show="showThemeModal" title="主题设置" size="lg" :mask-closable="false">
         <ThemeSetting />
-      </n-modal>
+      </AppModal>
 
       <UpdateModal :show="showUpdateModal" @update:show="showUpdateModal = $event" />
 
@@ -122,7 +115,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted, h } from 'vue'
+import { computed, ref, onMounted, watch, h } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import {
   NLayout,
@@ -133,10 +126,11 @@ import {
   NDivider,
   NSpace,
   NIcon,
-  NModal,
   type MenuOption,
 } from 'naive-ui'
 import { useEventStore } from '@/stores/eventStore'
+import { AppModal } from '@/components/ui'
+import { useViewport } from '@/composables/useViewport'
 import ThemeSetting from '@/views/ThemeSetting.vue'
 import UpdateModal from '@/components/shared/UpdateModal.vue'
 
@@ -144,9 +138,17 @@ const route = useRoute()
 const eventStore = useEventStore()
 
 const isSidebarCollapsed = ref(false)
-const isMobile = ref(window.innerWidth < 992)
+const { isTablet: isMobile } = useViewport()
 const showThemeModal = ref(false)
 const showUpdateModal = ref(false)
+
+watch(
+  isMobile,
+  (v) => {
+    isSidebarCollapsed.value = v
+  },
+  { immediate: true }
+)
 
 const activeKey = computed(() => route.path)
 
@@ -283,22 +285,10 @@ function closeSidebar() {
   if (isMobile.value) isSidebarCollapsed.value = true
 }
 
-const handleResize = () => {
-  isMobile.value = window.innerWidth < 992
-  isSidebarCollapsed.value = isMobile.value ? true : false
-}
-
 onMounted(() => {
-  window.addEventListener('resize', handleResize)
-  handleResize()
-
   if (!Array.isArray(eventStore.events) || eventStore.events.length === 0) {
     eventStore.fetchEvents?.()
   }
-})
-
-onUnmounted(() => {
-  window.removeEventListener('resize', handleResize)
 })
 </script>
 
@@ -328,8 +318,8 @@ onUnmounted(() => {
 
 .logo-text {
   margin: 0;
-  font-size: 1.25rem;
-  color: var(--n-text-color);
+  font-size: var(--font-lg);
+  color: var(--primary-text-color);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -342,12 +332,12 @@ onUnmounted(() => {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding-bottom: 8px; /* 给滚动底部一点呼吸 */
+  padding-bottom: var(--space-sm); /* 给滚动底部一点呼吸 */
 }
 
 .sidebar-footer {
   flex: 0 0 auto;
-  padding: 0 1rem 0.75rem 1rem;
+  padding: 0 var(--space-lg) var(--space-md) var(--space-lg);
 }
 
 /* ✅ 安全区/低高度兜底 */
@@ -357,16 +347,16 @@ onUnmounted(() => {
 
 /* 标题 */
 .section-title {
-  font-size: 0.75rem;
+  font-size: var(--font-xs);
   color: var(--text-muted);
-  margin-bottom: 0.75rem;
-  padding-left: 4px;
+  margin-bottom: var(--space-md);
+  padding-left: var(--space-xs);
 }
 
 /* ongoing */
 .ongoing-events-section {
-  padding: 0 1rem;
-  margin-top: 0.75rem;
+  padding: 0 var(--space-lg);
+  margin-top: var(--space-md);
 }
 
 .ongoing-event-btn {
@@ -374,15 +364,15 @@ onUnmounted(() => {
   justify-content: flex-start;
   height: auto;
   min-height: 36px;
-  padding: 8px 12px;
+  padding: var(--space-sm) var(--space-md);
   width: 100%;
   overflow: hidden;
 }
 
 .event-status-dot {
-  color: var(--status-warning);
-  font-size: 12px;
-  margin-right: 4px;
+  color: var(--warning-color);
+  font-size: var(--font-xs);
+  margin-right: var(--space-xs);
   flex-shrink: 0;
 }
 
@@ -408,14 +398,14 @@ onUnmounted(() => {
   text-overflow: ellipsis !important;
   white-space: nowrap !important;
   max-width: 100% !important;
-  padding-right: 8px !important;
+  padding-right: var(--space-sm) !important;
 }
 
 /* 移动端汉堡按钮 */
 .mobile-fab {
   position: fixed;
-  bottom: calc(24px + env(safe-area-inset-bottom, 0));
-  right: 24px;
+  bottom: calc(var(--space-xl) + env(safe-area-inset-bottom, 0));
+  right: var(--space-xl);
   z-index: 1001;
   box-shadow: var(--shadow-md);
 }
@@ -433,11 +423,12 @@ onUnmounted(() => {
   min-height: 100dvh;
   box-sizing: border-box;
   overflow: auto;
-  padding-bottom: calc(40px + env(safe-area-inset-bottom, 0));
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- env() 安全区适配，无对应空间 token */
+  padding-bottom: calc(var(--space-2xl) + env(safe-area-inset-bottom, 0));
 }
 
 /* 移动端 sider 悬浮 */
-@media (max-width: 992px) {
+@media (--tablet) {
   :deep(.n-layout-sider) {
     position: fixed !important;
     height: 100vh !important;
@@ -447,11 +438,8 @@ onUnmounted(() => {
 
   /* 移动端侧边栏底部按钮区域：额外留 50px，避免被系统操作栏遮挡 */
   .sidebar-footer {
-    padding-bottom: calc(0.75rem + 50px + env(safe-area-inset-bottom, 0));
+    /* stylelint-disable-next-line declaration-property-value-allowed-list -- env() 安全区适配，无对应空间 token */
+    padding-bottom: calc(var(--space-md) + var(--space-2xl) + env(safe-area-inset-bottom, 0));
   }
-}
-
-.theme-modal :deep(.n-card__content) {
-  padding-top: 0;
 }
 </style>

@@ -46,7 +46,7 @@
 
       <!-- 2. 项目背景 -->
       <section class="section">
-        <div class="section-header">
+        <div class="section-heading">
           <n-icon size="24" color="#18a058"><BookOutline /></n-icon>
           <h2>项目时间线</h2>
         </div>
@@ -83,13 +83,18 @@
 
       <!-- 3. 核心功能 (使用 Grid 组件处理响应式) -->
       <section class="section">
-        <div class="section-header">
+        <div class="section-heading">
           <n-icon size="24" color="#2080f0"><HardwareChipOutline /></n-icon>
           <h2>核心特征</h2>
         </div>
         <n-grid x-gap="16" y-gap="16" cols="1 s:1 m:3" responsive="screen">
           <n-grid-item v-for="feature in features" :key="feature.title">
-            <n-card class="feature-card" content-style="padding: 16px;" hoverable embedded>
+            <n-card
+              class="feature-card"
+              content-style="padding: var(--space-lg);"
+              hoverable
+              embedded
+            >
               <n-flex align="center" :wrap="false" class="feature-header">
                 <n-icon size="26" :color="feature.color">
                   <component :is="feature.icon" />
@@ -104,7 +109,7 @@
 
       <!-- 4. 技术栈 -->
       <section class="section">
-        <div class="section-header">
+        <div class="section-heading">
           <n-icon size="24" color="#8a2be2"><CodeSlashOutline /></n-icon>
           <h2>技术架构</h2>
         </div>
@@ -121,7 +126,7 @@
 
       <!-- 5. 致谢 (使用 Grid 简化布局) -->
       <section class="section">
-        <div class="section-header">
+        <div class="section-heading">
           <n-icon size="24" color="#d03050"><HeartOutline /></n-icon>
           <h2>致谢</h2>
         </div>
@@ -139,7 +144,7 @@
 
       <!-- 6. 使用指南与声明 -->
       <section class="section">
-        <div class="section-header">
+        <div class="section-heading">
           <n-icon size="24" color="#555"><DocumentTextOutline /></n-icon>
           <h2>指南 & 声明</h2>
         </div>
@@ -149,7 +154,9 @@
             <template #header>
               <n-flex align="center" size="small">
                 <n-icon color="#d03050"><GiftOutline /></n-icon>
-                <span style="font-weight: 700; color: var(--n-text-color)">永久免费声明</span>
+                <span style="font-weight: var(--weight-bold); color: var(--primary-text-color)"
+                  >永久免费声明</span
+                >
               </n-flex>
             </template>
             <div class="collapse-inner">
@@ -209,7 +216,7 @@
 
       <!-- 故障排查：日志文件位置（只在桌面 / 手机应用里有） -->
       <section v-if="logDir" class="section">
-        <div class="section-header">
+        <div class="section-heading">
           <n-icon size="24" color="#555"><DocumentTextOutline /></n-icon>
           <h2>故障排查</h2>
         </div>
@@ -326,13 +333,12 @@ import {
   NCollapse,
   NCollapseItem,
   NAlert,
-  useMessage,
-  useDialog,
   NBlockquote,
 } from 'naive-ui'
-import { api, unwrap, errorMessage } from '@/api/client'
+import { api, unwrap } from '@/api/client'
 import { copyLink as copyLinkUtil } from '@/services/clipboard'
 import { onMounted, ref } from 'vue'
+import { useFeedback } from '@/composables/useFeedback'
 
 // ---- 故障排查：日志目录 ----
 const logDir = ref('')
@@ -348,9 +354,9 @@ onMounted(async () => {
 async function copyLogDir() {
   try {
     await copyLinkUtil(logDir.value)
-    message.success('已复制日志文件夹路径')
+    fb.success('已复制日志文件夹路径')
   } catch {
-    message.info(logDir.value)
+    fb.info(logDir.value)
   }
 }
 import {
@@ -375,8 +381,7 @@ import {
   ChatbubblesOutline,
 } from '@vicons/ionicons5'
 
-const message = useMessage()
-const dialog = useDialog()
+const fb = useFeedback()
 
 // 数据定义：将原来硬编码在模板里的内容提取出来，使模板更干净
 const features = [
@@ -411,47 +416,47 @@ const credits = [
 const copyLink = async (url: string, label: string) => {
   try {
     await copyLinkUtil(url)
-    message.success(`已复制${label}链接`)
+    fb.success(`已复制${label}链接`)
   } catch (err) {
     console.error('复制失败:', err)
-    message.error(`复制${label}失败，请检查权限`)
+    fb.error(err, `复制${label}失败，请检查权限`)
   }
 }
 
-const resetDatabase = () => {
-  dialog.error({
-    title: '⚠️ 危险操作',
-    content: '此操作将不可逆地删除所有展会、商品、订单数据及图片文件。\n确定要完全重置系统吗？',
-    positiveText: '确认重置',
-    negativeText: '取消',
-    onPositiveClick: async () => {
-      const load = message.loading('正在重置...')
-      try {
-        const res = await unwrap(api.PUT('/admin/reset-database'))
-        load.destroy()
-        message.success(res.message || '重置成功')
-        setTimeout(() => {
-          sessionStorage.clear()
-          window.location.href = '/admin'
-        }, 1500)
-      } catch (err) {
-        load.destroy()
-        message.error(errorMessage(err, '重置失败'))
-      }
-    },
-  })
+const resetDatabase = async () => {
+  if (
+    await fb.confirm({
+      title: '⚠️ 危险操作',
+      content: '此操作将不可逆地删除所有展会、商品、订单数据及图片文件。\n确定要完全重置系统吗？',
+      positiveText: '确认重置',
+      negativeText: '取消',
+      danger: true,
+    })
+  ) {
+    fb.info('正在重置...')
+    try {
+      const res = await unwrap(api.PUT('/admin/reset-database'))
+      fb.success(res.message || '重置成功')
+      setTimeout(() => {
+        sessionStorage.clear()
+        window.location.href = '/admin'
+      }, 1500)
+    } catch (err) {
+      fb.error(err, '重置失败')
+    }
+  }
 }
 </script>
 
 <style scoped>
 /* 定义局部变量 */
 .about-container {
-  max-width: 800px;
+  max-width: var(--page-content);
   margin: 0 auto;
-  padding: 24px 16px;
+  padding: var(--space-xl) var(--space-lg);
   --text-primary: var(--primary-text-color);
   --text-secondary: var(--text-muted);
-  --bg-subtle: rgba(128, 128, 128, 0.08);
+  --bg-subtle: color-mix(in srgb, var(--text-muted) 8%, transparent);
 }
 
 /* 通用排版 */
@@ -463,47 +468,47 @@ const resetDatabase = () => {
   font-size: var(--font-sm);
 }
 .mb-2 {
-  margin-bottom: 8px;
+  margin-bottom: var(--space-sm);
 }
 .mt-4 {
-  margin-top: 32px;
+  margin-top: var(--space-2xl);
 }
 
 /* 头部 Header */
 .header-section {
   text-align: center;
-  padding: 20px 0;
+  padding: var(--space-lg) 0;
 }
 .logo {
-  margin-bottom: 16px;
+  margin-bottom: var(--space-lg);
   box-shadow: var(--shadow-md);
 }
 .app-title {
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-sm);
   font-size: var(--font-2xl);
-  font-weight: 800;
+  font-weight: var(--weight-bold);
   letter-spacing: -0.5px;
 }
 .app-subtitle {
   font-size: var(--font-lg);
   color: var(--text-secondary);
-  margin: 0 0 24px;
+  margin: 0 0 var(--space-xl);
 }
 
 /* 章节通用 */
 .section {
-  margin-bottom: 40px;
+  margin-bottom: var(--space-2xl);
 }
-.section-header {
+.section-heading {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 16px;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
 }
-.section-header h2 {
+.section-heading h2 {
   margin: 0;
   font-size: var(--font-lg);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
 }
 
 /* 核心功能卡片 */
@@ -516,12 +521,12 @@ const resetDatabase = () => {
   transform: translateY(-3px);
 }
 .feature-header {
-  margin-bottom: 12px;
+  margin-bottom: var(--space-md);
 }
 .feature-title {
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   font-size: var(--font-md);
-  margin-left: 8px;
+  margin-left: var(--space-sm);
 }
 .feature-desc {
   color: var(--text-secondary);
@@ -533,14 +538,14 @@ const resetDatabase = () => {
 /* 致谢模块 */
 .credit-item {
   background: var(--bg-subtle);
-  padding: 12px 16px;
+  padding: var(--space-md) var(--space-lg);
   border-radius: var(--radius-md);
   height: 100%;
 }
 .credit-title {
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   font-size: var(--font-base);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-xs);
 }
 .credit-desc {
   font-size: var(--font-base);
@@ -549,46 +554,46 @@ const resetDatabase = () => {
 
 /* 折叠面板内容 */
 .collapse-inner {
-  padding: 12px 4px;
+  padding: var(--space-md) var(--space-xs);
   font-size: var(--font-base);
 }
 .qa-q {
-  font-weight: 600;
-  margin-bottom: 8px;
+  font-weight: var(--weight-bold);
+  margin-bottom: var(--space-sm);
 }
 .qa-list {
   margin: 0;
-  padding-left: 20px;
+  padding-left: var(--space-lg);
   color: var(--text-secondary);
 }
 .qa-list li {
-  margin-bottom: 6px;
+  margin-bottom: var(--space-sm);
 }
 .highlight-item {
   color: var(--accent-color);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 /* 底部区域 */
 .footer-section {
-  margin-top: 48px;
+  margin-top: var(--space-2xl);
   text-align: center;
 }
 .dev-info {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
+  gap: var(--space-md);
+  margin-bottom: var(--space-sm);
 }
 .author-avatar {
   width: 56px;
   height: 56px;
   border-radius: 50%;
   object-fit: cover;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-md);
 }
 .author-name {
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   font-size: var(--font-lg);
 }
 .author-title {
@@ -606,33 +611,33 @@ const resetDatabase = () => {
   border: 1px dashed var(--error-color);
   background: var(--accent-color-light);
   border-radius: var(--radius-md);
-  padding: 16px;
+  padding: var(--space-lg);
   width: 100%;
-  max-width: 400px;
+  max-width: 25rem;
   margin: 0 auto;
 }
 .danger-header {
   color: var(--error-color);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  margin-bottom: 4px;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-xs);
 }
 .danger-desc {
   font-size: var(--font-sm);
   color: var(--text-secondary);
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-md);
 }
 
 /* 移动端微调：利用 CSS 变量微调间距，而非重写整个布局 */
-@media (max-width: 600px) {
+@media (--phone) {
   .about-container {
-    padding: 12px;
+    padding: var(--space-md);
   }
   .app-title {
-    font-size: 1.6rem;
+    font-size: var(--font-xl);
   }
   .logo {
     width: 80px !important;
@@ -641,12 +646,12 @@ const resetDatabase = () => {
 }
 .log-desc {
   color: var(--text-muted);
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-md);
 }
 .log-path {
   word-break: break-all;
-  padding: 4px 8px;
-  border-radius: 4px;
-  background: var(--bg-muted, rgba(127, 127, 127, 0.12));
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
 }
 </style>

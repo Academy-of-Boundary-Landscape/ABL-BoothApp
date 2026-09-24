@@ -6,7 +6,7 @@
           <RouterLink to="/">
             <n-button type="primary">返回首页</n-button>
           </RouterLink>
-          <RouterLink to="/login/admin" style="margin-left: 8px">
+          <RouterLink to="/login/admin" style="margin-left: var(--space-sm)">
             <n-button tertiary>管理员入口</n-button>
           </RouterLink>
         </template>
@@ -26,6 +26,6 @@ import { RouterLink } from 'vue-router'
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 2rem;
+  padding: var(--space-2xl);
 }
 </style>
