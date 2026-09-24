@@ -240,7 +240,7 @@ svg {
   transform: translate(-50%, -120%);
   background: var(--tooltip-bg);
   color: var(--text-white);
-  padding: 0.5rem 0.75rem;
+  padding: var(--space-sm) var(--space-md);
   border-radius: var(--radius-md);
   border: 1px solid var(--border-color-light);
   pointer-events: none;
@@ -249,12 +249,12 @@ svg {
 }
 .tooltip-date {
   font-size: var(--font-sm);
-  margin-bottom: 0.2rem;
+  margin-bottom: var(--space-xs);
   color: var(--secondary-text-color);
 }
 .tooltip-value {
   font-size: var(--font-base);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   color: var(--primary-text-color);
 }
 </style>

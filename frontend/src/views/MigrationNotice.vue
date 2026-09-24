@@ -1,26 +1,25 @@
 <template>
-  <Transition name="migration-fade">
-    <div v-if="visible" class="migration-overlay">
-      <div class="migration-box">
-        <h3>v1.2 更新了账本模型</h3>
-        <p>
-          旧版的展会和订单记录没有迁移到新模型——新模型要记录每一件货的来源和去向，
-          旧数据补不出这些信息。
-        </p>
-        <p>
-          你的旧数据<strong>完整保留</strong>在
-          <code>sale_system.db.v1-backup</code>，随时可以导出。
-          商品库（含图片和识别数据）已经自动带过来了。
-        </p>
-        <div class="migration-actions">
-          <button class="export-btn" :disabled="exporting" @click="exportLegacy">
-            {{ exporting ? '导出中…' : '导出旧数据为 Excel' }}
-          </button>
-          <button class="ok-btn" @click="dismiss">知道了</button>
-        </div>
-      </div>
+  <AppModal v-model:show="visible" title="v1.2 更新了账本模型" size="sm" :mask-closable="false">
+    <div class="migration-box">
+      <p>
+        旧版的展会和订单记录没有迁移到新模型——新模型要记录每一件货的来源和去向，
+        旧数据补不出这些信息。
+      </p>
+      <p>
+        你的旧数据<strong>完整保留</strong>在
+        <code>sale_system.db.v1-backup</code>，随时可以导出。
+        商品库（含图片和识别数据）已经自动带过来了。
+      </p>
     </div>
-  </Transition>
+    <template #footer>
+      <div class="migration-actions">
+        <button class="export-btn" :disabled="exporting" @click="exportLegacy">
+          {{ exporting ? '导出中…' : '导出旧数据为 Excel' }}
+        </button>
+        <button class="ok-btn" @click="dismiss">知道了</button>
+      </div>
+    </template>
+  </AppModal>
 </template>
 
 <script setup lang="ts">
@@ -29,10 +28,13 @@ import { useAuthStore } from '@/stores/authStore'
 import { api, unwrap } from '@/api/client'
 import { MIGRATION_NOTICE_SEEN_KEY, shouldShowMigrationNotice } from '@/utils/migrationNotice'
 import { exportLegacyXlsx } from '@/utils/legacyExport'
+import { AppModal } from '@/components/ui'
+import { useFeedback } from '@/composables/useFeedback'
 
 const authStore = useAuthStore()
 const visible = ref(false)
 const exporting = ref(false)
+const fb = useFeedback()
 
 /**
  * 探测有没有 v1 历史数据。
@@ -80,10 +82,10 @@ async function exportLegacy() {
   exporting.value = true
   try {
     const ok = await exportLegacyXlsx()
-    if (ok) alert('导出成功')
+    if (ok) fb.success('导出成功')
   } catch (e) {
     console.error('下载旧数据失败:', e)
-    alert((e instanceof Error && e.message) || '下载失败')
+    fb.error(e, '下载失败')
   } finally {
     exporting.value = false
   }
@@ -91,61 +93,35 @@ async function exportLegacy() {
 </script>
 
 <style scoped>
-.migration-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: var(--overlay-color);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 999998;
-}
-
 .migration-box {
-  background-color: var(--alert-bg);
   color: var(--primary-text-color);
-  border-radius: var(--radius-md);
-  width: 90%;
-  max-width: 460px;
-  padding: 1.5rem;
-  box-shadow: var(--shadow-xl);
-  border-top: 4px solid var(--info-color);
-}
-
-.migration-box h3 {
-  margin: 0 0 1rem;
-  font-size: var(--font-lg);
-  font-weight: 600;
 }
 
 .migration-box p {
-  margin: 0 0 1rem;
+  margin: 0 0 var(--space-lg);
   font-size: var(--font-md);
   line-height: 1.7;
 }
 
 .migration-box code {
   background-color: var(--bg-elevated);
-  padding: 0.1rem 0.3rem;
+  padding: var(--space-xs);
   border-radius: var(--radius-sm);
 }
 
 .migration-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 0.75rem;
-  margin-top: 1.25rem;
+  gap: var(--space-md);
+  margin-top: var(--space-lg);
 }
 
 .export-btn,
 .ok-btn {
   border: none;
-  padding: 0.65rem 1.25rem;
+  padding: var(--space-sm) var(--space-lg);
   border-radius: var(--radius-sm);
-  font-weight: bold;
+  font-weight: var(--weight-bold);
   cursor: pointer;
   transition: background-color 0.2s;
 }
@@ -155,7 +131,7 @@ async function exportLegacy() {
   color: var(--text-white);
 }
 .export-btn:hover:not(:disabled) {
-  background-color: var(--info-color-hover);
+  background-color: var(--info-color);
 }
 .export-btn:disabled {
   opacity: 0.6;
@@ -168,14 +144,5 @@ async function exportLegacy() {
 }
 .ok-btn:hover {
   background-color: var(--border-color-light);
-}
-
-.migration-fade-enter-active,
-.migration-fade-leave-active {
-  transition: opacity 0.3s ease;
-}
-.migration-fade-enter-from,
-.migration-fade-leave-to {
-  opacity: 0;
 }
 </style>
