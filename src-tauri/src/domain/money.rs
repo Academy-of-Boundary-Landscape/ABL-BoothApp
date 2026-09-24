@@ -109,6 +109,19 @@ impl fmt::Display for Money {
     }
 }
 
+/// OpenAPI：金额在 JSON 里是裸整数分。`format: cents` 是给前端生成器的记号，
+/// `frontend/scripts/gen-api.mjs` 把它映射成 branded `Cents` 类型。
+impl utoipa::PartialSchema for Money {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        utoipa::openapi::ObjectBuilder::new()
+            .schema_type(utoipa::openapi::schema::Type::Integer)
+            .format(Some(utoipa::openapi::SchemaFormat::Custom("cents".into())))
+            .description(Some("金额，单位：分"))
+            .into()
+    }
+}
+impl utoipa::ToSchema for Money {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,5 +160,13 @@ mod tests {
             Some(Money::from_cents(6000))
         );
         assert_eq!(Money::from_cents(i64::MAX).checked_mul_qty(2), None);
+    }
+
+    #[test]
+    fn money_schema_is_integer_cents() {
+        use utoipa::PartialSchema;
+        let v = serde_json::to_value(Money::schema()).unwrap();
+        assert_eq!(v["type"], "integer");
+        assert_eq!(v["format"], "cents");
     }
 }

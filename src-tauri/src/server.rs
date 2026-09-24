@@ -26,7 +26,7 @@ pub async fn start_server(state: AppState, http_port: u16, https_port: u16, app_
     //println!("[Server Debug] Upload Root Path: {:?}", upload_dir);
 
     let app = Router::new()
-        .nest("/api", api::router()) // API 路由
+        .nest("/api", api::router().split_for_parts().0) // API 路由
         .fallback(move |req: Request| {
             let uri = req.uri().clone();
             let upload_dir = upload_dir.clone(); // 再次 clone 进入 async 块

@@ -22,7 +22,13 @@ use crate::{
 
 const PRODUCT_UPLOAD_LIMIT_BYTES: usize = 10 * 1024 * 1024;
 
-pub fn router() -> Router<AppState> {
+/// ③b 过渡：本模块的路由还没标 utoipa 注解，整体包进 OpenApiRouter——路由照常工作，
+/// 只是文档里没有它的路径。阶段 2 迁移本模块时改为 `routes!(...)` 并删掉 `legacy_router`。
+pub fn router() -> utoipa_axum::router::OpenApiRouter<AppState> {
+    utoipa_axum::router::OpenApiRouter::from(legacy_router())
+}
+
+fn legacy_router() -> Router<AppState> {
     let router = Router::new()
         .route("/", get(list_products))
         .route("/", post(create_product))

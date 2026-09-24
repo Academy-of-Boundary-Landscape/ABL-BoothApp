@@ -1,5 +1,6 @@
 use crate::state::AppState;
-use axum::Router;
+use utoipa::OpenApi;
+use utoipa_axum::router::OpenApiRouter;
 
 mod admin;
 mod auth;
@@ -11,6 +12,7 @@ mod inventory;
 mod legacy;
 mod lot;
 mod master_product;
+pub mod openapi;
 mod order;
 mod product;
 mod refund;
@@ -21,8 +23,12 @@ mod sync;
 #[cfg(feature = "vision")]
 mod vision;
 
-pub fn router() -> Router<AppState> {
-    let router = Router::new()
+/// 全部 API 路由，连同它们的 OpenAPI 文档。
+///
+/// 调用方用 `.split_for_parts().0`（或 `Router::from`）取 axum 的 `Router`；
+/// 文档只在契约快照测试里用（`api/openapi.rs`），运行时不对外暴露。
+pub fn router() -> OpenApiRouter<AppState> {
+    let router = OpenApiRouter::with_openapi(openapi::ApiDoc::openapi())
         .nest("/auth", auth::router())
         .nest("/events", event::router())
         .nest("/events", stats::router())

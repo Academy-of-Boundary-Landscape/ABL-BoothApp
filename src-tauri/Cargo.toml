@@ -31,6 +31,8 @@ serde_json = "1"
 # Web 服务器 & 异步运行时
 tokio = { version = "1", features = ["full"] }
 axum = { version = "0.8", features = ["multipart"] }
+utoipa = { version = "6", features = ["axum_extras", "chrono", "uuid"] }
+utoipa-axum = "0.3"
 axum-server = { version = "0.7", features = ["tls-rustls"] } # LAN HTTPS 监听
 rustls = { version = "0.23", default-features = false, features = ["ring"] } # rustls 0.23 要求显式选 crypto provider
 tower = { version = "0.5", features = ["full"] } # Middleware support

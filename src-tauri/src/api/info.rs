@@ -4,7 +4,13 @@ use crate::{server::HTTPS_PORT, state::AppState, utils::ip::get_lan_ip};
 use axum::{routing::get, Json, Router};
 use serde_json::{json, Value};
 
-pub fn router() -> Router<AppState> {
+/// ③b 过渡：本模块的路由还没标 utoipa 注解，整体包进 OpenApiRouter——路由照常工作，
+/// 只是文档里没有它的路径。阶段 2 迁移本模块时改为 `routes!(...)` 并删掉 `legacy_router`。
+pub fn router() -> utoipa_axum::router::OpenApiRouter<AppState> {
+    utoipa_axum::router::OpenApiRouter::from(legacy_router())
+}
+
+fn legacy_router() -> Router<AppState> {
     Router::new().route("/server-info", get(server_info_handler))
 }
 

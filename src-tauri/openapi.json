@@ -1,0 +1,38 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "摊盒 Booth-Kernel API",
+    "description": "摊盒 - 漫展摊位管理工具",
+    "contact": {
+      "name": "Renko_6626"
+    },
+    "license": {
+      "name": ""
+    },
+    "version": "1"
+  },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "ApiErrorBody": {
+        "type": "object",
+        "description": "所有错误响应的形状。为什么必须是这个形状，见 `crate::error` 的模块注释。",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}

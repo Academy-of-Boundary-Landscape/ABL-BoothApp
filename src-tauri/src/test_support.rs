@@ -73,7 +73,7 @@ pub async fn test_state() -> (AppState, TempDir) {
 pub async fn test_router() -> (Router, TempDir) {
     let (state, dir) = test_state().await;
     let router = Router::new()
-        .nest("/api", crate::api::router())
+        .nest("/api", crate::api::router().split_for_parts().0)
         .with_state(state);
     (router, dir)
 }
@@ -154,7 +154,7 @@ pub async fn test_router_with() -> (Router, TempDir, SqlitePool) {
     let (state, dir) = test_state().await;
     let pool = state.db.clone();
     let router = Router::new()
-        .nest("/api", crate::api::router())
+        .nest("/api", crate::api::router().split_for_parts().0)
         .with_state(state);
     (router, dir, pool)
 }
