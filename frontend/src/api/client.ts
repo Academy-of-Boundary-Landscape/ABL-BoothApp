@@ -30,7 +30,8 @@ import type { components } from './schema'
 export { ApiRequestError, errorMessage, unwrap, type ApiClient } from './core'
 export type Schemas = components['schemas']
 
-const isTauri = window.__TAURI_INTERNALS__ !== undefined
+/** 是否运行在 Tauri 壳里（桌面 / Android）；LAN 顾客端浏览器里为 false。 */
+export const isTauri = window.__TAURI_INTERNALS__ !== undefined
 const API_PORT = 5140
 const baseUrl = isTauri ? `http://127.0.0.1:${API_PORT}/api` : '/api'
 
@@ -59,7 +60,9 @@ async function transportFetch(req: Request, signal: AbortSignal): Promise<Respon
 export const api = createApiClient({
   baseUrl,
   fetch: transportFetch,
-  timeoutMs: 30_000,
+  // 旧版在 Tauri 里挂的是自定义 axios adapter，而 axios 的 timeout 只在它内置的 adapter 里实现——
+  // 所以桌面 / Android 以前请求从不超时（大号 .boothpack 导入、导出要跑很久）。只在 LAN 浏览器里保留 30 秒。
+  timeoutMs: isTauri ? null : 30_000,
   getToken: () => sessionStorage.getItem('access_token'),
   currentPath: () => router.currentRoute.value.path,
   onUnauthorized: () => {

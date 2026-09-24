@@ -1,4 +1,4 @@
-import { api, unwrap, type Schemas } from '@/api/client'
+import { api, isTauri, unwrap, type Schemas } from '@/api/client'
 
 /**
  * 查询 Vision 运行时状态
@@ -39,8 +39,9 @@ export function searchByImage(
 
   return unwrap(
     api.POST('/vision/search', {
-      // 旧 axios 的 per-request timeout: 15000——用调用方 signal 保留，与全局 30s 取先到者。
-      signal: AbortSignal.timeout(15_000),
+      // 旧 axios 的 per-request timeout: 15000 只在 LAN 浏览器里生效（Tauri 里是自定义 adapter，
+      // axios 不管超时）。照旧：浏览器里 15 秒，Tauri 里不设——冷启动首次识图要加载模型，可能超过 15 秒。
+      signal: isTauri ? undefined : AbortSignal.timeout(15_000),
       body: fd as never, // multipart
     })
   )

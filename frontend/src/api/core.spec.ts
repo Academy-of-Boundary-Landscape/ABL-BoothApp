@@ -150,6 +150,25 @@ describe('api core', () => {
     expect(onUploadError).not.toHaveBeenCalled()
   })
 
+  it('timeoutMs 为 null 时不设全局超时（Tauri 内沿用旧 adapter 的「永不超时」）', async () => {
+    const hang: Handler = (_req, signal) =>
+      new Promise((resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason))
+        setTimeout(() => resolve(json(200, ['ok'])), 80)
+      })
+    const api = createApiClient({
+      baseUrl: 'http://127.0.0.1:5140/api',
+      fetch: async (req, signal) => hang(req, signal),
+      timeoutMs: null,
+      getToken: () => null,
+      currentPath: () => '/admin',
+      onUnauthorized: () => {},
+      onUploadError: () => {},
+    })
+    // 慢请求照样拿到结果，而不是被一个隐含的超时砍掉
+    await expect(unwrap(api.GET('/channels'))).resolves.toEqual(['ok'])
+  })
+
   it('caller signal and global timeout both abort', async () => {
     // 模拟真实 fetch：signal 已经 abort 就立刻拒绝，否则等它 abort
     const hang: Handler = (_req, signal) =>

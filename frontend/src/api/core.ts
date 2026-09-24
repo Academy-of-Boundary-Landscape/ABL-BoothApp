@@ -73,7 +73,8 @@ export interface ApiClientOptions {
    * Request 的信号是「跟随」来的，部分运行时（Node/undici）里跟随的信号不派发 abort 事件。
    */
   fetch: (req: Request, signal: AbortSignal) => Promise<Response>
-  timeoutMs: number
+  /** 全局超时（毫秒）；null = 不设（只有调用方自己的 signal 能中止）。 */
+  timeoutMs: number | null
   getToken: () => string | null
   currentPath: () => string
   onUnauthorized: () => void
@@ -90,7 +91,7 @@ export function createApiClient(o: ApiClientOptions) {
   // 每个请求的控制信号与超时定时器，以 Request 对象为键；响应回来就清掉定时器。
   const controls = new WeakMap<
     Request,
-    { signal: AbortSignal; timer: ReturnType<typeof setTimeout> }
+    { signal: AbortSignal; timer: ReturnType<typeof setTimeout> | undefined }
   >()
 
   const client = createClient<paths>({
@@ -112,10 +113,10 @@ export function createApiClient(o: ApiClientOptions) {
       const caller = request.signal
       if (caller.aborted) ctl.abort(caller.reason)
       else caller.addEventListener('abort', () => ctl.abort(caller.reason), { once: true })
-      const timer = setTimeout(
-        () => ctl.abort(new DOMException('请求超时', 'TimeoutError')),
-        o.timeoutMs
-      )
+      const timer =
+        o.timeoutMs === null
+          ? undefined
+          : setTimeout(() => ctl.abort(new DOMException('请求超时', 'TimeoutError')), o.timeoutMs)
       controls.set(request, { signal: ctl.signal, timer })
     },
     onError({ request }) {
