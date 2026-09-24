@@ -47,7 +47,7 @@ pub struct CreateMasterProductDTO {
 // ==========================================
 // 2. Event (漫展场次)
 // ==========================================
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct Event {
     pub id: i64,
     pub name: String,

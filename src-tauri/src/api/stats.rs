@@ -2,38 +2,37 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Json, Response},
-    routing::get,
-    Router,
 };
 use chrono::{NaiveDateTime, Timelike};
 
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use std::collections::HashMap;
+use utoipa::{IntoParams, ToSchema};
+use utoipa_axum::{router::OpenApiRouter, routes};
 
-use crate::{db::models::Event, state::AppState, utils::security::Claims};
+use crate::{
+    api::openapi::ApiErrorBody, db::models::Event, domain::money::Money, state::AppState,
+    utils::security::Claims,
+};
 
 use chrono::Local;
 use rust_xlsxwriter::{Color, Format, FormatAlign, FormatBorder, Workbook}; // 用于在Excel中显示生成时间（可选）
 use sqlx::AssertSqlSafe;
 
-/// ③b 过渡：本模块的路由还没标 utoipa 注解，整体包进 OpenApiRouter——路由照常工作，
-/// 只是文档里没有它的路径。阶段 2 迁移本模块时改为 `routes!(...)` 并删掉 `legacy_router`。
-pub fn router() -> utoipa_axum::router::OpenApiRouter<AppState> {
-    utoipa_axum::router::OpenApiRouter::from(legacy_router())
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(get_event_stats))
+        .routes(routes!(get_sales_summary))
+        .routes(routes!(download_sales_summary))
 }
 
-fn legacy_router() -> Router<AppState> {
-    Router::new()
-        .route("/{event_id}/stats", get(get_event_stats))
-        .route("/{event_id}/sales_summary", get(get_sales_summary))
-        .route(
-            "/{event_id}/sales_summary/download",
-            get(download_sales_summary),
-        )
-}
+/// 本模块的错误体是历史遗留的纯文本（`Access denied` / `Event not found` /
+/// `Failed to generate excel`，见 REPORT 的「形状清理」），所以三个 handler 都
+/// 原样返回 `Response`；成功体已经收成具名 `#[derive(ToSchema)]` 结构体。
+/// `ApiError` 会把错误体变成 `{"error": ...}`，不能用。
 
-#[derive(Deserialize)]
+#[derive(Deserialize, IntoParams)]
 #[allow(dead_code)]
 struct SummaryQuery {
     product_code: Option<String>,
@@ -42,29 +41,90 @@ struct SummaryQuery {
     interval_minutes: Option<i64>,
 }
 
-#[derive(Serialize, FromRow)]
+#[derive(Serialize, FromRow, ToSchema)]
+#[schema(as = StatsProductSalesItem)]
 struct ProductSalesItem {
     product_id: i64,
     product_code: String,
     product_name: String,
     /// 单位：分。
+    #[schema(value_type = Money)]
     unit_price: i64,
     /// 「累计进货」= 从外部进到现场仓的总件数（不是当前余额）。
     initial_stock: i64,
     total_quantity: i64,
     /// 单位：分。**顾客实付合计**（`Σ paid_amount`），不是原价合计——
     /// Lot 分摊与手工折让都已经摊进去了。
+    #[schema(value_type = Money)]
     total_revenue_per_item: i64,
+}
+
+/// 仪表盘汇总。金额单位：分。
+#[derive(Serialize, FromRow, ToSchema)]
+#[schema(as = StatsSummary)]
+struct SummaryStats {
+    /// 单位：分。
+    #[schema(value_type = Money)]
+    total_revenue: i64,
+    completed_orders_count: i64,
+    total_items_sold: i64,
+}
+
+/// 仪表盘响应：展会信息 + 汇总 + 按商品明细。
+#[derive(Serialize, ToSchema)]
+#[schema(as = StatsResponse)]
+struct StatsResponse {
+    event_info: Event,
+    summary: SummaryStats,
+    product_details: Vec<ProductSalesItem>,
+}
+
+/// 趋势图上的一个时间桶。金额单位：分。
+#[derive(Serialize, ToSchema)]
+#[schema(as = StatsTimeseriesItem)]
+struct TimeseriesItem {
+    date: String,
+    /// 单位：分。
+    #[schema(value_type = Money)]
+    revenue: i64,
+}
+
+/// 销售趋势响应。金额单位：分。
+#[derive(Serialize, ToSchema)]
+#[schema(as = StatsSalesResponse)]
+struct SalesResponse {
+    event_name: String,
+    /// 单位：分。
+    #[schema(value_type = Money)]
+    total_revenue: i64,
+    summary: Vec<ProductSalesItem>,
+    timeseries: Vec<TimeseriesItem>,
 }
 
 // ==========================================
 // 1. 获取仪表盘统计 (Dashboard Stats)
 // ==========================================
+/// 展会仪表盘：总额、订单数、售出件数以及按商品汇总。
+///
+/// 需要管理员，或本场摊主。
+#[utoipa::path(
+    get,
+    path = "/{event_id}/stats",
+    tag = "stats",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = StatsResponse, description = "仪表盘统计"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "展会不存在"),
+    ),
+)]
 async fn get_event_stats(
     State(state): State<AppState>,
     claims: Claims,
     Path(event_id): Path<i64>,
-) -> impl IntoResponse {
+) -> Response {
     if let Err(e) = check_read_permission(&claims, event_id) {
         return e.into_response();
     }
@@ -78,14 +138,6 @@ async fn get_event_stats(
         Some(e) => e,
         None => return (StatusCode::NOT_FOUND, "Event not found").into_response(),
     };
-
-    #[derive(Serialize, FromRow)]
-    struct SummaryStats {
-        /// 单位：分。
-        total_revenue: i64,
-        completed_orders_count: i64,
-        total_items_sold: i64,
-    }
 
     let summary: SummaryStats = sqlx::query_as(
         r#"
@@ -143,13 +195,6 @@ async fn get_event_stats(
     .await
     .unwrap_or_default();
 
-    #[derive(Serialize)]
-    struct StatsResponse {
-        event_info: Event,
-        summary: SummaryStats,
-        product_details: Vec<ProductSalesItem>,
-    }
-
     Json(StatsResponse {
         event_info: event,
         summary,
@@ -161,12 +206,32 @@ async fn get_event_stats(
 // ==========================================
 // 2. 获取销售趋势图数据 (Sales Summary Chart)
 // ==========================================
+/// 销售趋势图数据：按商品汇总 + 可填充空白时段的时间序列。
+/// 支持按商品编号、开始/结束日期筛选，时间粒度 30 或 60 分钟。
+///
+/// 需要管理员，或本场摊主。
+#[utoipa::path(
+    get,
+    path = "/{event_id}/sales_summary",
+    tag = "stats",
+    params(
+        ("event_id" = i64, Path, description = "展会 id"),
+        SummaryQuery,
+    ),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = SalesResponse, description = "销售趋势"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "展会不存在"),
+    ),
+)]
 async fn get_sales_summary(
     State(state): State<AppState>,
     claims: Claims,
     Path(event_id): Path<i64>,
     Query(params): Query<SummaryQuery>,
-) -> impl IntoResponse {
+) -> Response {
     if let Err(e) = check_read_permission(&claims, event_id) {
         return e.into_response();
     }
@@ -326,13 +391,6 @@ async fn get_sales_summary(
     }
 
     // 5. 填充空白时间桶（让图表显示连续的时间轴，无销售的时段为 0）
-    #[derive(Serialize)]
-    struct TimeseriesItem {
-        date: String,
-        /// 单位：分。
-        revenue: i64,
-    }
-
     let mut timeseries: Vec<TimeseriesItem> = Vec::new();
 
     if time_points.len() >= 2 {
@@ -361,15 +419,6 @@ async fn get_sales_summary(
         timeseries.sort_by(|a, b| a.date.cmp(&b.date));
     }
 
-    #[derive(Serialize)]
-    struct SalesResponse {
-        event_name: String,
-        /// 单位：分。
-        total_revenue: i64,
-        summary: Vec<ProductSalesItem>,
-        timeseries: Vec<TimeseriesItem>,
-    }
-
     Json(SalesResponse {
         event_name: event.name,
         total_revenue: total_revenue.0,
@@ -381,6 +430,23 @@ async fn get_sales_summary(
 // ==========================================
 // 3. 导出 Excel (Excel Download) - 美化版
 // ==========================================
+/// 导出本场销售记录为 xlsx 文件。展会不存在时不返回 404，文件名回落到
+/// `Event {id}` 后照常出表（现状如此，见 REPORT 的「形状清理」）。
+///
+/// 需要管理员，或本场摊主。
+#[utoipa::path(
+    get,
+    path = "/{event_id}/sales_summary/download",
+    tag = "stats",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", body = Vec<u8>, description = "销售记录 xlsx"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 500, body = ApiErrorBody, description = "生成或读取 Excel 失败"),
+    ),
+)]
 async fn download_sales_summary(
     State(state): State<AppState>,
     claims: Claims,
@@ -999,5 +1065,253 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(sum_paid, sum_final);
+    }
+}
+
+/// ③b 形状快照：钉住每个路由的 JSON 形状（键 + 类型），类型化前后必须一行不改照样绿。
+#[cfg(test)]
+mod shape_tests {
+    use crate::test_support::{
+        admin_token, json_request, read_json, seed_event_and_product, shape_of, test_router_with,
+        vendor_token,
+    };
+    use axum::http::StatusCode;
+    use axum::Router;
+    use serde_json::{json, Value};
+    use sqlx::SqlitePool;
+    use tower::ServiceExt;
+
+    /// 一场有成交的展会：让 event_info 的可选字段、product_details / timeseries 数组都非空。
+    async fn seeded() -> (Router, tempfile::TempDir, SqlitePool, i64) {
+        let (router, dir, pool) = test_router_with().await;
+        let (event_id, ep_a, ep_b) = seed_event_and_product(&pool).await;
+        // 夹具的 events 行 location / payment_qr_code_path 是 NULL；这里补上，
+        // 否则 event_info 的形状里两个可选字段全钉成 "null"。
+        sqlx::query("UPDATE events SET location = ?, payment_qr_code_path = ? WHERE id = ?")
+            .bind("B1 馆")
+            .bind("events/qr.png")
+            .bind(event_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/orders"),
+            None,
+            json!({"items": [
+                {"product_id": ep_a, "quantity": 2},
+                {"product_id": ep_b, "quantity": 1}
+            ]}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::CREATED);
+        let order_id = body["id"].as_i64().unwrap();
+        let (s, _) = call(
+            &router,
+            "PUT",
+            &format!("/api/events/{event_id}/orders/{order_id}/status"),
+            Some(&admin_token()),
+            json!({"status": "completed", "channel": "微信"}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+
+        (router, dir, pool, event_id)
+    }
+
+    async fn call(
+        router: &Router,
+        method: &str,
+        uri: &str,
+        token: Option<&str>,
+        body: Value,
+    ) -> (StatusCode, Value) {
+        let res = router
+            .clone()
+            .oneshot(json_request(method, uri, token, body))
+            .await
+            .unwrap();
+        let status = res.status();
+        (status, read_json(res).await)
+    }
+
+    /// 错误体是历史遗留的纯文本，`read_json` 会 panic，所以单独读原始字节。
+    async fn call_text(
+        router: &Router,
+        method: &str,
+        uri: &str,
+        token: Option<&str>,
+        body: Value,
+    ) -> (StatusCode, String) {
+        let res = router
+            .clone()
+            .oneshot(json_request(method, uri, token, body))
+            .await
+            .unwrap();
+        let status = res.status();
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (status, String::from_utf8_lossy(&bytes).into_owned())
+    }
+
+    fn product_item() -> Value {
+        json!({
+            "initial_stock": "int",
+            "product_code": "string",
+            "product_id": "int",
+            "product_name": "string",
+            "total_quantity": "int",
+            "total_revenue_per_item": "int",
+            "unit_price": "int",
+        })
+    }
+
+    #[tokio::test]
+    async fn shape_get_event_stats() {
+        let (router, _dir, _pool, event_id) = seeded().await;
+        let t = admin_token();
+
+        let (s, body) = call(
+            &router,
+            "GET",
+            &format!("/api/events/{event_id}/stats"),
+            Some(&t),
+            json!(null),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(
+            shape_of(&body),
+            json!({
+                "event_info": {
+                    "date": "string",
+                    "id": "int",
+                    "location": "string",
+                    "name": "string",
+                    "payment_qr_code_path": "string",
+                    "status": "string",
+                },
+                "product_details": [product_item()],
+                "summary": {
+                    "completed_orders_count": "int",
+                    "total_items_sold": "int",
+                    "total_revenue": "int",
+                },
+            })
+        );
+
+        // 权限不足：历史遗留的纯文本 403（形状清理清单里有记录）。
+        let (s, body) = call_text(
+            &router,
+            "GET",
+            &format!("/api/events/{event_id}/stats"),
+            Some(&vendor_token(999)),
+            json!(null),
+        )
+        .await;
+        assert_eq!((s, body.as_str()), (StatusCode::FORBIDDEN, "Access denied"));
+
+        // 展会不存在：纯文本 404。
+        let (s, body) = call_text(
+            &router,
+            "GET",
+            "/api/events/99999/stats",
+            Some(&t),
+            json!(null),
+        )
+        .await;
+        assert_eq!(
+            (s, body.as_str()),
+            (StatusCode::NOT_FOUND, "Event not found")
+        );
+
+        // 未登录：Claims 提取器的标准 {"error": ...}。
+        let (s, body) = call(
+            &router,
+            "GET",
+            &format!("/api/events/{event_id}/stats"),
+            None,
+            json!(null),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::UNAUTHORIZED, json!({"error": "string"}))
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_get_sales_summary() {
+        let (router, _dir, _pool, event_id) = seeded().await;
+        let t = admin_token();
+
+        let (s, body) = call(
+            &router,
+            "GET",
+            &format!("/api/events/{event_id}/sales_summary"),
+            Some(&t),
+            json!(null),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(
+            shape_of(&body),
+            json!({
+                "event_name": "string",
+                "summary": [product_item()],
+                "timeseries": [{"date": "string", "revenue": "int"}],
+                "total_revenue": "int",
+            })
+        );
+
+        let (s, body) = call_text(
+            &router,
+            "GET",
+            "/api/events/99999/sales_summary",
+            Some(&t),
+            json!(null),
+        )
+        .await;
+        assert_eq!(
+            (s, body.as_str()),
+            (StatusCode::NOT_FOUND, "Event not found")
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_download_sales_summary() {
+        let (router, _dir, _pool, event_id) = seeded().await;
+        let t = admin_token();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "GET",
+                &format!("/api/events/{event_id}/sales_summary/download"),
+                Some(&t),
+                json!(null),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(
+            res.headers().get("content-type").unwrap(),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        );
+
+        // 权限不足走纯文本 403；展会不存在**不是** 404（文件名回落到
+        // "Event {id}" 后照样出表），这里钉住现状免得类型化时被顺手改成 404。
+        let (s, body) = call_text(
+            &router,
+            "GET",
+            &format!("/api/events/{event_id}/sales_summary/download"),
+            Some(&vendor_token(999)),
+            json!(null),
+        )
+        .await;
+        assert_eq!((s, body.as_str()), (StatusCode::FORBIDDEN, "Access denied"));
     }
 }
