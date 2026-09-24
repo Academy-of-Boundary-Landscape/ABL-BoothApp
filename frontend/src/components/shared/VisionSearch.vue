@@ -218,7 +218,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { NButton, NTag } from 'naive-ui'
 
@@ -226,38 +226,54 @@ import { searchByImage } from '@/services/vision'
 import { getImageUrl } from '@/services/url'
 import { useAlert } from '@/services/useAlert'
 import { resizeImageFile } from '@/utils/upload'
+import { ApiRequestError, errorMessage, type Schemas } from '@/api/client'
 
-const props = defineProps({
-  mode: { type: String, default: null },
-  eventId: { type: Number, default: null },
-  masterProductIds: { type: Array, default: () => [] },
-  topK: { type: Number, default: 5 },
-  multiSelect: { type: Boolean, default: false },
+interface Props {
+  mode?: string | null
+  eventId?: number | null
+  masterProductIds?: number[]
+  topK?: number
+  multiSelect?: boolean
   /** 启用摄像头取景模式 */
-  cameraMode: { type: Boolean, default: false },
+  cameraMode?: boolean
   /** 默认摄像头方向: "user"(前置) | "environment"(后置) */
-  facingMode: { type: String, default: 'user' },
+  facingMode?: string
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  mode: null,
+  eventId: null,
+  masterProductIds: () => [],
+  topK: 5,
+  multiSelect: false,
+  cameraMode: false,
+  facingMode: 'user',
 })
 
-const emit = defineEmits(['select', 'search-done', 'search-error'])
+const emit = defineEmits<{
+  (e: 'select', item: Schemas['VisionSearchResult']): void
+  (e: 'search-done', resp: Schemas['VisionSearchResponse']): void
+  (e: 'search-error', msg: string): void
+}>()
 
 // ===================== 图片输入（文件模式）=====================
-const fileInputRef = ref(null)
-const selectedFile = ref(null)
-const previewUrl = ref(null)
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const selectedFile = ref<File | Blob | null>(null)
+const previewUrl = ref<string | null>(null)
 const isDragging = ref(false)
 
 function triggerFileInput() {
   fileInputRef.value?.click()
 }
 
-function onFileSelected(e) {
-  const file = e.target.files?.[0]
+function onFileSelected(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
   if (file) setImage(file)
-  e.target.value = ''
+  input.value = ''
 }
 
-function onDrop(e) {
+function onDrop(e: DragEvent) {
   isDragging.value = false
   const file = e.dataTransfer?.files?.[0]
   if (file && file.type.startsWith('image/')) setImage(file)
@@ -265,7 +281,7 @@ function onDrop(e) {
 
 const MAX_VISION_SIZE = 512
 
-async function setImage(file) {
+async function setImage(file: File | Blob) {
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
   const compressed = await resizeImageFile(file, MAX_VISION_SIZE)
   selectedFile.value = compressed
@@ -281,11 +297,11 @@ function clearImage() {
 }
 
 // ===================== 摄像头模式 =====================
-const videoRef = ref(null)
-const viewportRef = ref(null)
-const canvasRef = ref(null)
+const videoRef = ref<HTMLVideoElement | null>(null)
+const viewportRef = ref<HTMLDivElement | null>(null)
+const canvasRef = ref<HTMLCanvasElement | null>(null)
 const isCameraActive = ref(false)
-const currentStream = ref(null)
+const currentStream = ref<MediaStream | null>(null)
 const currentFacing = ref(props.facingMode)
 
 // 取景框：占 viewport 短边的 65%，正方形，居中
@@ -342,7 +358,8 @@ async function startCamera() {
     }
     updateVpSize()
   } catch (err) {
-    errorMsg.value = '无法访问摄像头: ' + (err.message || err.name)
+    const e = err as { message?: string; name?: string }
+    errorMsg.value = '无法访问摄像头: ' + (e.message || e.name)
   }
 }
 
@@ -360,7 +377,7 @@ async function switchCamera() {
   await startCamera()
 }
 
-function captureFrame() {
+function captureFrame(): Promise<Blob | null> | null {
   const video = videoRef.value
   const viewport = viewportRef.value
   const canvas = canvasRef.value
@@ -411,7 +428,8 @@ function captureFrame() {
   canvas.width = outSize
   canvas.height = outSize
   const ctx = canvas.getContext('2d')
-  ctx.drawImage(video, finalX, frameY, frameW, frameH, 0, 0, outSize, outSize)
+  // canvas 一定支持 2d context；这里沿用旧行为（null 时抛错），不做静默降级。
+  ctx!.drawImage(video, finalX, frameY, frameW, frameH, 0, 0, outSize, outSize)
 
   return new Promise((resolve) => {
     canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.92)
@@ -443,24 +461,25 @@ async function captureAndSearch() {
 
 // ===================== 搜索 =====================
 const isSearching = ref(false)
-const results = ref([])
+const results = ref<Schemas['VisionSearchResult'][]>([])
 const isUncertain = ref(false)
 const errorMsg = ref('')
-const selectedIds = ref(new Set())
+const selectedIds = ref(new Set<number>())
 
-const VISION_ERROR_MAP = {
+const VISION_ERROR_MAP: Record<string, string> = {
   VISION_NOT_READY: 'AI 视觉识别尚未就绪，请先在管理后台安装模型并构建索引',
   VISION_REBUILDING: 'AI 索引正在构建中，请稍后再试',
   VISION_BUSY: '识别请求过多，请稍后再试',
   VISION_TIMEOUT: '识别超时，请重试',
 }
 
-function translateVisionError(code) {
+function translateVisionError(code: string) {
   return VISION_ERROR_MAP[code] || null
 }
 
 async function doSearch() {
-  if (!selectedFile.value) return
+  const file = selectedFile.value
+  if (!file) return
 
   isSearching.value = true
   errorMsg.value = ''
@@ -471,20 +490,21 @@ async function doSearch() {
   await nextTick()
 
   try {
-    const resp = await searchByImage(selectedFile.value, {
+    const resp = await searchByImage(file, {
       topK: props.topK,
-      mode: props.mode,
-      eventId: props.eventId,
+      mode: props.mode ?? undefined,
+      eventId: props.eventId ?? undefined,
       masterProductIds: props.masterProductIds.length ? props.masterProductIds : undefined,
     })
     results.value = resp.results || []
     isUncertain.value = resp.is_uncertain ?? false
     emit('search-done', resp)
   } catch (err) {
-    const raw = err.response?.data?.error || err.response?.data || ''
-    const msg =
-      translateVisionError(typeof raw === 'string' ? raw : '') ||
-      (err.code === 'ECONNABORTED' ? '搜索超时，请重试' : '搜索失败')
+    // 新 client 把后端 {"error": "..."} 收进 ApiRequestError.serverMessage；超时/网络错误
+    // 由 unwrap 统一包装成 status 0（旧 axios 的 ECONNABORTED 不再存在）。
+    const raw = errorMessage(err, '')
+    const isTimeout = err instanceof ApiRequestError && err.message === '请求超时'
+    const msg = translateVisionError(raw) || (isTimeout ? '搜索超时，请重试' : '搜索失败')
     errorMsg.value = msg
     const { showError } = useAlert()
     showError(msg)
@@ -495,11 +515,11 @@ async function doSearch() {
 }
 
 // ===================== 结果交互 =====================
-function isItemSelected(item) {
+function isItemSelected(item: Schemas['VisionSearchResult']) {
   return selectedIds.value.has(item.master_product_id)
 }
 
-function onResultClick(item) {
+function onResultClick(item: Schemas['VisionSearchResult']) {
   if (props.multiSelect) {
     const ids = selectedIds.value
     if (ids.has(item.master_product_id)) ids.delete(item.master_product_id)
@@ -514,17 +534,17 @@ function onResultClick(item) {
 // 原来是内联在模板里的 `onResultClick(item); results = []`，但 prettier
 // 用 semi:false 重排多语句内联处理器时会吞掉分号，导致 Vue 编译器解析
 // 报错（构建直接失败），所以拆成命名函数，行为不变。
-function selectResultAndClose(item) {
+function selectResultAndClose(item: Schemas['VisionSearchResult']) {
   onResultClick(item)
   results.value = []
 }
 
-function resolveThumb(url) {
+function resolveThumb(url: string) {
   return getImageUrl(url)
 }
 
 // ===================== 生命周期 =====================
-let resizeObs = null
+let resizeObs: ResizeObserver | null = null
 
 onMounted(() => {
   if (props.cameraMode) startCamera()

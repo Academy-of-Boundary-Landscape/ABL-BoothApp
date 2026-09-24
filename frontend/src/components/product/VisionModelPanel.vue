@@ -225,10 +225,10 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { useRouter } from 'vue-router'
-import { NButton, NTag, NAlert, NProgress, NSelect, NTooltip } from 'naive-ui'
+import { useRouter, type RouteLocationRaw } from 'vue-router'
+import { NButton, NTag, NAlert, NProgress, NSelect, NTooltip, type SelectOption } from 'naive-ui'
 import {
   getVisionStatus,
   listModels,
@@ -237,12 +237,12 @@ import {
   getInstallTask,
   activateModel,
 } from '@/services/vision'
-import apiClient from '@/services/api'
+import { api, unwrap, errorMessage, type Schemas } from '@/api/client'
 import HelpBubble from '@/components/shared/HelpBubble.vue'
 
 const router = useRouter()
 
-function goToLink(to) {
+function goToLink(to: RouteLocationRaw) {
   router.push(to)
 }
 
@@ -250,17 +250,17 @@ const isCollapsed = ref(false)
 
 // ===== EP 设备选择 =====
 const epConfigured = ref('auto')
-const epOptions = ref([
+const epOptions = ref<SelectOption[]>([
   { label: '自动 (GPU 优先)', value: 'auto' },
   { label: '仅 CPU', value: 'cpu' },
 ])
 
 async function loadEpSetting() {
   try {
-    const { data } = await apiClient.get('/vision/settings/ep')
+    const data = await unwrap(api.GET('/vision/settings/ep'))
     epConfigured.value = data.configured || 'auto'
 
-    const opts = [
+    const opts: SelectOption[] = [
       { label: '自动（最佳加速）', value: 'auto' },
       { label: '仅 CPU', value: 'cpu' },
     ]
@@ -288,25 +288,25 @@ async function loadEpSetting() {
   }
 }
 
-async function handleEpChange(val) {
+async function handleEpChange(val: string) {
   try {
-    const { data } = await apiClient.put('/vision/settings/ep', { execution_provider: val })
+    const data = await unwrap(api.PUT('/vision/settings/ep', { body: { execution_provider: val } }))
     epConfigured.value = val
     actionMsg.value = data.message || '推理设备已切换'
     actionMsgType.value = 'success'
     // 刷新状态以反映新的 EP
     await refreshStatus()
   } catch (err) {
-    actionMsg.value = err.response?.data?.error || '切换失败'
+    actionMsg.value = errorMessage(err, '切换失败')
     actionMsgType.value = 'error'
   }
 }
 
 // ===== 状态 =====
-const status = ref({})
-const models = ref([])
+const status = ref<Partial<Schemas['VisionStatusResponse']>>({})
+const models = ref<Schemas['VisionModelItem'][]>([])
 const actionMsg = ref('')
-const actionMsgType = ref('success')
+const actionMsgType = ref<'success' | 'error' | 'info'>('success')
 const modelsLoading = ref(true)
 const loadError = ref('')
 
@@ -322,8 +322,15 @@ const statusText = computed(() => {
   return '未就绪'
 })
 
+interface NextAction {
+  type: 'info' | 'warning'
+  text: string
+  link?: RouteLocationRaw
+  linkLabel?: string
+}
+
 // 基于当前状态给出"下一步该做什么"的行动提示
-const nextAction = computed(() => {
+const nextAction = computed<NextAction | null>(() => {
   if (loadError.value) return null
   if (status.value.is_rebuilding) return null
   if (status.value.is_ready) return null
@@ -356,13 +363,13 @@ const nextAction = computed(() => {
   return null
 })
 
-const statusTagType = computed(() => {
+const statusTagType = computed<'warning' | 'success' | 'error'>(() => {
   if (status.value.is_rebuilding) return 'warning'
   if (status.value.is_ready) return 'success'
   return 'error'
 })
 
-function formatSize(mb) {
+function formatSize(mb: number | null | undefined) {
   if (mb == null) return ''
   return mb < 10 ? `${mb.toFixed(1)} MB` : `${Math.round(mb)} MB`
 }
@@ -380,7 +387,7 @@ async function refreshStatus() {
     models.value = resp.models || []
   } catch (err) {
     models.value = []
-    loadError.value = err?.response?.data?.error || '加载模型列表失败，请检查后端服务后重试'
+    loadError.value = errorMessage(err, '加载模型列表失败，请检查后端服务后重试')
   } finally {
     modelsLoading.value = false
   }
@@ -394,9 +401,9 @@ const rebuildPercentage = computed(() => {
   if (rebuildTotal.value <= 0) return 0
   return Math.round((rebuildProcessed.value / rebuildTotal.value) * 100)
 })
-let rebuildPollTimer = null
+let rebuildPollTimer: ReturnType<typeof setInterval> | null = null
 
-async function handleRebuild(forceFull) {
+async function handleRebuild(forceFull: boolean) {
   isRebuilding.value = true
   rebuildProcessed.value = 0
   rebuildTotal.value = 0
@@ -407,7 +414,7 @@ async function handleRebuild(forceFull) {
     actionMsgType.value = 'info'
     startRebuildPoll()
   } catch (err) {
-    actionMsg.value = err.response?.data?.error || '重建失败'
+    actionMsg.value = errorMessage(err, '重建失败')
     actionMsgType.value = 'error'
     isRebuilding.value = false
   }
@@ -438,11 +445,11 @@ function stopRebuildPoll() {
 }
 
 // ===== 模型安装 =====
-const installingId = ref(null)
-const installTask = ref(null)
-let installPollTimer = null
+const installingId = ref<string | null>(null)
+const installTask = ref<Schemas['VisionInstallTaskResponse'] | null>(null)
+let installPollTimer: ReturnType<typeof setInterval> | null = null
 
-async function handleInstall(modelId) {
+async function handleInstall(modelId: string) {
   installingId.value = modelId
   actionMsg.value = ''
   try {
@@ -456,13 +463,13 @@ async function handleInstall(modelId) {
     }
     startInstallPoll(resp.task_id)
   } catch (err) {
-    actionMsg.value = err.response?.data?.error || '安装失败'
+    actionMsg.value = errorMessage(err, '安装失败')
     actionMsgType.value = 'error'
     installingId.value = null
   }
 }
 
-function startInstallPoll(taskId) {
+function startInstallPoll(taskId: string) {
   stopInstallPoll()
   installPollTimer = setInterval(async () => {
     try {
@@ -492,9 +499,9 @@ function stopInstallPoll() {
 }
 
 // ===== 模型激活 =====
-const activatingId = ref(null)
+const activatingId = ref<string | null>(null)
 
-async function handleActivate(modelId) {
+async function handleActivate(modelId: string) {
   activatingId.value = modelId
   actionMsg.value = ''
   try {
@@ -505,7 +512,7 @@ async function handleActivate(modelId) {
     startRebuildPoll()
     await refreshStatus()
   } catch (err) {
-    actionMsg.value = err.response?.data?.error || '激活失败'
+    actionMsg.value = errorMessage(err, '激活失败')
     actionMsgType.value = 'error'
   } finally {
     activatingId.value = null
@@ -513,16 +520,18 @@ async function handleActivate(modelId) {
 }
 
 // ===== 模型删除 =====
-async function handleDelete(modelId) {
+async function handleDelete(modelId: string) {
   if (!confirm(`确认删除模型 ${modelId}？`)) return
   actionMsg.value = ''
   try {
-    await apiClient.delete(`/vision/models/${modelId}`)
+    await unwrap(
+      api.DELETE('/vision/models/{model_id}', { params: { path: { model_id: modelId } } })
+    )
     actionMsg.value = `已删除 ${modelId}`
     actionMsgType.value = 'success'
     await refreshStatus()
   } catch (err) {
-    actionMsg.value = err.response?.data?.error || '删除失败'
+    actionMsg.value = errorMessage(err, '删除失败')
     actionMsgType.value = 'error'
   }
 }

@@ -91,18 +91,29 @@
   </n-modal>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { NButton, NModal, NSpin } from 'naive-ui'
 
-const props = defineProps({
-  show: { type: Boolean, default: false },
-  file: { type: File, default: null },
-  defaultAspect: { type: String, default: 'free' }, // 'free' | '1:1' | '3:4'
-  batchLabel: { type: String, default: '' }, // e.g. "2 / 5" for multi-file batch
+interface Props {
+  show?: boolean
+  file?: File | null
+  defaultAspect?: string // 'free' | '1:1' | '3:4'
+  batchLabel?: string // e.g. "2 / 5" for multi-file batch
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  show: false,
+  file: null,
+  defaultAspect: 'free',
+  batchLabel: '',
 })
 
-const emit = defineEmits(['confirm', 'skip', 'close'])
+const emit = defineEmits<{
+  (e: 'confirm', file: File): void
+  (e: 'skip', file: File | null): void
+  (e: 'close'): void
+}>()
 
 const ratios = [
   { key: 'free', label: '自由', ratio: null },
@@ -115,19 +126,26 @@ const loaded = ref(false)
 const confirming = ref(false)
 const aspect = ref(props.defaultAspect)
 
-const stageRef = ref(null)
-const imgRef = ref(null)
+const stageRef = ref<HTMLDivElement | null>(null)
+const imgRef = ref<HTMLImageElement | null>(null)
+
+interface Box {
+  x: number
+  y: number
+  w: number
+  h: number
+}
 
 // 裁剪框用百分比表示（相对于图片自然尺寸），[0,1]
 // x, y = 左上角；w, h = 宽高
-const cropPct = ref({ x: 0.1, y: 0.1, w: 0.8, h: 0.8 })
+const cropPct = ref<Box>({ x: 0.1, y: 0.1, w: 0.8, h: 0.8 })
 
 // 图片自然尺寸和渲染尺寸（随容器变化）
 const imgNatural = ref({ w: 0, h: 0 })
 const imgRendered = ref({ w: 0, h: 0 })
 
 // ===== 监听 props.file 变化 → 加载 URL =====
-let currentObjectUrl = null
+let currentObjectUrl: string | null = null
 watch(
   () => props.file,
   (newFile) => {
@@ -168,7 +186,7 @@ onBeforeUnmount(() => {
 })
 
 // ===== 图片加载完 =====
-let resizeObserver = null
+let resizeObserver: ResizeObserver | null = null
 
 function onImageLoad() {
   const img = imgRef.value
@@ -199,15 +217,15 @@ function initCropBox() {
   if (aspect.value === 'free') {
     cropPct.value = { x: 0.1, y: 0.1, w: 0.8, h: 0.8 }
   } else {
-    const ratioMap = { '1:1': 1, '3:4': 3 / 4 }
+    const ratioMap: Record<string, number> = { '1:1': 1, '3:4': 3 / 4 }
     fitBoxToAspect(ratioMap[aspect.value])
   }
 }
 
-function fitBoxToAspect(targetRatio) {
+function fitBoxToAspect(targetRatio: number) {
   // 以当前图片宽高比为参考，使裁剪框居中且最大化
   const imgRatio = imgNatural.value.w / imgNatural.value.h
-  let w, h
+  let w: number, h: number
   if (targetRatio >= imgRatio) {
     // 目标比图片宽 → 以宽为限
     w = 0.9
@@ -259,9 +277,24 @@ const maskRightStyle = computed(() => ({
 }))
 
 // ===== 拖拽逻辑 =====
-let dragState = null
+type DragState =
+  | {
+      type: 'move'
+      startClient: { x: number; y: number }
+      startBox: Box
+      pointerId: number
+    }
+  | {
+      type: 'resize'
+      corner: string
+      startClient: { x: number; y: number }
+      startBox: Box
+      pointerId: number
+    }
 
-function startMove(e) {
+let dragState: DragState | null = null
+
+function startMove(e: PointerEvent) {
   if (!loaded.value) return
   e.preventDefault()
   dragState = {
@@ -273,7 +306,7 @@ function startMove(e) {
   startPointerListeners()
 }
 
-function startResize(corner, e) {
+function startResize(corner: string, e: PointerEvent) {
   if (!loaded.value) return
   e.preventDefault()
   dragState = {
@@ -286,7 +319,7 @@ function startResize(corner, e) {
   startPointerListeners()
 }
 
-function onPointerMove(e) {
+function onPointerMove(e: PointerEvent) {
   if (!dragState) return
   if (e.pointerId !== dragState.pointerId) return
 
@@ -306,7 +339,7 @@ function onPointerMove(e) {
   }
 }
 
-function onPointerUp(e) {
+function onPointerUp(e: PointerEvent) {
   if (dragState && dragState.pointerId === e.pointerId) {
     dragState = null
     stopPointerListeners()
@@ -326,9 +359,9 @@ function stopPointerListeners() {
 
 // 角点拖拽：根据 corner 计算新的裁剪框
 // dx/dy 是百分比增量（基于渲染尺寸）
-function resizeBox(start, corner, dx, dy) {
+function resizeBox(start: Box, corner: string, dx: number, dy: number) {
   const imgRatio = imgNatural.value.w / imgNatural.value.h
-  const ratioMap = { '1:1': 1, '3:4': 3 / 4 }
+  const ratioMap: Record<string, number> = { '1:1': 1, '3:4': 3 / 4 }
   const lockRatio = aspect.value === 'free' ? null : ratioMap[aspect.value]
 
   // 起始边界
@@ -400,15 +433,15 @@ function resizeBox(start, corner, dx, dy) {
   return { x: newX, y: newY, w, h }
 }
 
-function clamp(v, min, max) {
+function clamp(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, v))
 }
 
 // ===== 比例切换 =====
-function setAspect(key) {
+function setAspect(key: string) {
   aspect.value = key
   if (key === 'free') return
-  const ratioMap = { '1:1': 1, '3:4': 3 / 4 }
+  const ratioMap: Record<string, number> = { '1:1': 1, '3:4': 3 / 4 }
   fitBoxToAspect(ratioMap[key])
 }
 
@@ -419,7 +452,9 @@ function resetBox() {
 
 // ===== 确认裁剪 =====
 async function confirmCrop() {
-  if (!props.file || !imgRef.value || confirming.value) return
+  const img = imgRef.value
+  const file = props.file
+  if (!file || !img || confirming.value) return
   confirming.value = true
   try {
     const naturalW = imgNatural.value.w
@@ -433,16 +468,16 @@ async function confirmCrop() {
     canvas.width = sw
     canvas.height = sh
     const ctx = canvas.getContext('2d')
-    ctx.drawImage(imgRef.value, sx, sy, sw, sh, 0, 0, sw, sh)
+    ctx!.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh)
 
     // 输出类型和原文件一致；JPEG 默认 0.92 质量
-    const mime = props.file.type || 'image/jpeg'
+    const mime = file.type || 'image/jpeg'
     const quality = mime.includes('png') ? undefined : 0.92
 
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, mime, quality))
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, mime, quality))
     if (!blob) throw new Error('toBlob returned null')
 
-    const croppedFile = new File([blob], props.file.name, {
+    const croppedFile = new File([blob], file.name, {
       type: mime,
       lastModified: Date.now(),
     })
