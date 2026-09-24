@@ -11,38 +11,59 @@
 
     <main class="page-body">
       <CollapsibleSection title="新建套装" v-model:collapsed="isFormCollapsed" class="form-section">
+        <!-- 每个框都带标签，不靠 placeholder：**编辑时所有框都是填好的，
+             placeholder 根本不会显示**，只靠占位提示等于没有提示。 -->
         <div class="form-grid">
-          <n-input v-model:value="form.name" placeholder="套装名称，如「本子任选3本100」" />
-          <n-input-number
-            v-model:value="form.pickCount"
-            :min="1"
-            :precision="0"
-            placeholder="要选几件"
-          />
-          <n-input-number
-            v-model:value="form.priceYuan"
-            :min="0"
-            :precision="2"
-            placeholder="总价（元）"
-          />
-          <n-select
-            v-model:value="form.candidateIds"
-            multiple
-            filterable
-            :options="candidateOptions"
-            placeholder="候选商品"
-            class="candidates"
-          />
-          <n-radio-group v-model:value="form.allowRepeat" class="mode">
-            <n-space>
-              <n-radio :value="false">这几样各 1 件凑齐</n-radio>
-              <n-radio :value="true">从这几样里任选 N 件，可以拿同款</n-radio>
-            </n-space>
-          </n-radio-group>
-          <n-button type="primary" :disabled="isBusy" @click="handleSubmit">
-            {{ editingId ? '保存修改' : '新建' }}
-          </n-button>
-          <n-button v-if="editingId" quaternary @click="resetForm">取消编辑</n-button>
+          <label class="field field-wide">
+            <span class="field-label">套装名称</span>
+            <n-input v-model:value="form.name" placeholder="如「本子任选3本100」" />
+          </label>
+
+          <label class="field">
+            <span class="field-label">要选几件</span>
+            <n-input-number v-model:value="form.pickCount" :min="1" :precision="0" />
+          </label>
+
+          <label class="field">
+            <span class="field-label">总价（元）</span>
+            <n-input-number v-model:value="form.priceYuan" :min="0" :precision="2" />
+          </label>
+
+          <!-- select 和单选组用 div 不用 label：naive-ui 这两个控件不一定渲染出
+               可关联的原生 input，套 label 会做出一个点了没反应的假热区。 -->
+          <div class="field field-wide">
+            <span class="field-label">候选商品</span>
+            <n-select
+              v-model:value="form.candidateIds"
+              multiple
+              filterable
+              :options="candidateOptions"
+              placeholder="可多选。必须属于同一个货主"
+            />
+          </div>
+
+          <div class="field field-wide">
+            <span class="field-label">怎么算「凑满」</span>
+            <n-radio-group v-model:value="form.allowRepeat">
+              <n-space vertical :size="10">
+                <n-radio :value="false">
+                  这几样各 1 件凑齐
+                  <span class="mode-hint">固定组合。「甲 + 乙 一起 50」是这一类</span>
+                </n-radio>
+                <n-radio :value="true">
+                  任选 N 件，可以拿同款
+                  <span class="mode-hint">「同一本买 3 本 80」「本子任选 3 本 100」是这一类</span>
+                </n-radio>
+              </n-space>
+            </n-radio-group>
+          </div>
+
+          <div class="field-wide actions">
+            <n-button type="primary" :disabled="isBusy" @click="handleSubmit">
+              {{ editingId ? '保存修改' : '新建' }}
+            </n-button>
+            <n-button v-if="editingId" quaternary @click="resetForm">取消编辑</n-button>
+          </div>
         </div>
 
         <!-- 配置的后果本来是黑箱：摊主配完只能等顾客来薅。把「顾客最多 / 最少能怎么拿」
@@ -347,21 +368,47 @@ onUnmounted(() => {
 .form-section {
   margin-bottom: 1.5rem;
 }
+/* 两列栅格，需要整行的字段跨两列。原来是一行 flex-wrap、每个控件抢 160px，
+   七个控件挤在一起，标签无处安放。 */
 .form-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  align-items: center;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem 1rem;
+  align-items: end;
 }
-.form-grid > * {
-  flex: 1 1 160px;
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
   min-width: 0;
 }
-.candidates {
-  flex: 2 1 320px;
+.field-wide {
+  grid-column: 1 / -1;
 }
-.mode {
-  flex: 1 1 100%;
+.field-label {
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+}
+/* 控件铺满自己那一格：n-input-number 默认按内容宽，不铺的话两列会长短不齐。 */
+.field > *:not(.field-label) {
+  width: 100%;
+}
+.mode-hint {
+  display: block;
+  font-size: var(--font-sm);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+}
+/* 手机/窄窗口下单列。摊主在现场用平板配套装是真实场景。 */
+@media (max-width: 640px) {
+  .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .preview {
