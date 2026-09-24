@@ -16,6 +16,8 @@
 - 组件里直接调 API 的（`import api from '@/services/api'`），改用新 client：
   `import { api, unwrap, errorMessage } from '@/api/client'`；`x = await unwrap(api.GET('/path/{id}', { params: { path: { id } } }))`
   （路径不带 `/api`；FormData 作 body 时允许 `body: fd as never` 并注释「multipart」；二进制下载加 `parseAs: 'blob'`）。
+- **不要给 `unwrap` 写显式泛型**（`unwrap<Schemas['X']>(…)` 会报错）：它会从路径自动推断出 schema 类型，金额字段就是 `Cents`。
+  state 需要类型时写在 `ref<Schemas['X'] | null>(null)` 上。
 - 错误信息：`err.response?.data?.error || '文案'` → `errorMessage(err, '文案')`，**文案一字不改**。
 - 金额：类型是 `Cents`（`@/utils/money`）；显示走 `formatYuan` / `formatCents`；用户输入的元 → `toCents()`；
   对 Cents 做运算（合计、差额）后用 `cents(n)` 标回。不要自己写 `as Cents`。
