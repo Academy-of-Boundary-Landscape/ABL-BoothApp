@@ -1,100 +1,97 @@
 <template>
-  <div class="page">
-    <header class="page-header">
-      <h1>套装与优惠</h1>
-      <p>
-        套装 = 从一组候选商品里按一个总价卖。选「这几样各 1 件凑齐」就是甲+乙合购； 选「任选 N
-        件、可以拿同款」就是同一本也能买 3 本。
-        <strong>候选商品必须属于同一个货主</strong>——替别的社团让价不是摊主能单方面决定的。
-      </p>
-    </header>
+  <PageShell
+    title="套装与优惠"
+    subtitle="套装 = 从一组候选商品里按一个总价卖。选「这几样各 1 件凑齐」就是甲+乙合购； 选「任选 N 件、可以拿同款」就是同一本也能买 3 本。 候选商品必须属于同一个货主——替别的社团让价不是摊主能单方面决定的。"
+    width="content"
+  >
+    <SectionCard
+      title="新建套装"
+      collapsible
+      v-model:collapsed="isFormCollapsed"
+      class="form-section"
+    >
+      <!-- 每个框都带标签，不靠 placeholder：**编辑时所有框都是填好的，
+           placeholder 根本不会显示**，只靠占位提示等于没有提示。 -->
+      <div class="form-grid">
+        <label class="field field-wide">
+          <span class="field-label">套装名称</span>
+          <n-input v-model:value="form.name" placeholder="如「本子任选3本100」" />
+        </label>
 
-    <main class="page-body">
-      <CollapsibleSection title="新建套装" v-model:collapsed="isFormCollapsed" class="form-section">
-        <!-- 每个框都带标签，不靠 placeholder：**编辑时所有框都是填好的，
-             placeholder 根本不会显示**，只靠占位提示等于没有提示。 -->
-        <div class="form-grid">
-          <label class="field field-wide">
-            <span class="field-label">套装名称</span>
-            <n-input v-model:value="form.name" placeholder="如「本子任选3本100」" />
-          </label>
+        <label class="field">
+          <span class="field-label">要选几件</span>
+          <n-input-number v-model:value="form.pickCount" :min="1" :precision="0" />
+        </label>
 
-          <label class="field">
-            <span class="field-label">要选几件</span>
-            <n-input-number v-model:value="form.pickCount" :min="1" :precision="0" />
-          </label>
+        <label class="field">
+          <span class="field-label">总价（元）</span>
+          <n-input-number v-model:value="form.priceYuan" :min="0" :precision="2" />
+        </label>
 
-          <label class="field">
-            <span class="field-label">总价（元）</span>
-            <n-input-number v-model:value="form.priceYuan" :min="0" :precision="2" />
-          </label>
-
-          <!-- select 和单选组用 div 不用 label：naive-ui 这两个控件不一定渲染出
-               可关联的原生 input，套 label 会做出一个点了没反应的假热区。 -->
-          <div class="field field-wide">
-            <span class="field-label">候选商品</span>
-            <n-select
-              v-model:value="form.candidateIds"
-              multiple
-              filterable
-              :options="candidateOptions"
-              placeholder="可多选。必须属于同一个货主"
-            />
-          </div>
-
-          <div class="field field-wide">
-            <span class="field-label">怎么算「凑满」</span>
-            <n-radio-group v-model:value="form.allowRepeat">
-              <n-space vertical :size="10">
-                <n-radio :value="false">
-                  这几样各 1 件凑齐
-                  <span class="mode-hint">固定组合。「甲 + 乙 一起 50」是这一类</span>
-                </n-radio>
-                <n-radio :value="true">
-                  任选 N 件，可以拿同款
-                  <span class="mode-hint">「同一本买 3 本 80」「本子任选 3 本 100」是这一类</span>
-                </n-radio>
-              </n-space>
-            </n-radio-group>
-          </div>
-
-          <div class="field-wide actions">
-            <n-button type="primary" :disabled="isBusy" @click="handleSubmit">
-              {{ editingId ? '保存修改' : '新建' }}
-            </n-button>
-            <n-button v-if="editingId" quaternary @click="resetForm">取消编辑</n-button>
-          </div>
+        <!-- select 和单选组用 div 不用 label：naive-ui 这两个控件不一定渲染出
+             可关联的原生 input，套 label 会做出一个点了没反应的假热区。 -->
+        <div class="field field-wide">
+          <span class="field-label">候选商品</span>
+          <n-select
+            v-model:value="form.candidateIds"
+            multiple
+            filterable
+            :options="candidateOptions"
+            placeholder="可多选。必须属于同一个货主"
+          />
         </div>
 
-        <!-- 配置的后果本来是黑箱：摊主配完只能等顾客来薅。把「顾客最多 / 最少能怎么拿」
-             摆在表单正下方，**切换上面那个模式时这几个数字当场变**——语义靠看见后果
-             理解，不靠读文字解释「重复」是什么意思。 -->
-        <div v-if="previewError" class="preview preview-problem">{{ previewError }}</div>
-        <div v-else-if="preview" class="preview">
-          <p class="preview-line muted">
-            候选：{{
-              preview.candidates.map((c) => `${c.name} ${formatYuan(c.unit_price)}`).join(' · ')
-            }}
-          </p>
-          <p v-for="s in scenarioLines" :key="s.kind" class="preview-line">
-            {{ s.label }}：<strong>{{ describeMembers(s.members) }}</strong> 原价
-            {{ formatYuan(s.original_amount) }} → 付 {{ formatYuan(s.lot_price) }}
-            <span v-if="s.discount > 0" class="gave">你让 {{ formatYuan(s.discount) }}</span>
-            <span v-else class="not-applied">这种组合不会套用（比原价贵）</span>
-          </p>
-          <p v-for="w in preview.warnings" :key="w.code" class="preview-warn">⚠ {{ w.message }}</p>
+        <div class="field field-wide">
+          <span class="field-label">怎么算「凑满」</span>
+          <n-radio-group v-model:value="form.allowRepeat">
+            <n-space vertical :size="10">
+              <n-radio :value="false">
+                这几样各 1 件凑齐
+                <span class="mode-hint">固定组合。「甲 + 乙 一起 50」是这一类</span>
+              </n-radio>
+              <n-radio :value="true">
+                任选 N 件，可以拿同款
+                <span class="mode-hint">「同一本买 3 本 80」「本子任选 3 本 100」是这一类</span>
+              </n-radio>
+            </n-space>
+          </n-radio-group>
         </div>
-      </CollapsibleSection>
 
-      <div v-if="store.isLoading" class="loading-message">正在加载套装列表...</div>
-      <div v-else-if="store.error" class="error-message">{{ store.error }}</div>
-      <EmptyGuide
-        v-else-if="!store.lots.length"
-        title="还没有套装"
-        hint="配一个套装，顾客的购物车就会自动套用最省的那一种。"
-      />
+        <div class="field-wide actions">
+          <n-button type="primary" :disabled="isBusy" @click="handleSubmit">
+            {{ editingId ? '保存修改' : '新建' }}
+          </n-button>
+          <n-button v-if="editingId" quaternary @click="resetForm">取消编辑</n-button>
+        </div>
+      </div>
 
-      <div v-else class="table-wrapper">
+      <!-- 配置的后果本来是黑箱：摊主配完只能等顾客来薅。把「顾客最多 / 最少能怎么拿」
+           摆在表单正下方，**切换上面那个模式时这几个数字当场变**——语义靠看见后果
+           理解，不靠读文字解释「重复」是什么意思。 -->
+      <div v-if="previewError" class="preview preview-problem">{{ previewError }}</div>
+      <div v-else-if="preview" class="preview">
+        <p class="preview-line muted">
+          候选：{{
+            preview.candidates.map((c) => `${c.name} ${formatYuan(c.unit_price)}`).join(' · ')
+          }}
+        </p>
+        <p v-for="s in scenarioLines" :key="s.kind" class="preview-line">
+          {{ s.label }}：<strong>{{ describeMembers(s.members) }}</strong> 原价
+          {{ formatYuan(s.original_amount) }} → 付 {{ formatYuan(s.lot_price) }}
+          <span v-if="s.discount > 0" class="gave">你让 {{ formatYuan(s.discount) }}</span>
+          <span v-else class="not-applied">这种组合不会套用（比原价贵）</span>
+        </p>
+        <p v-for="w in preview.warnings" :key="w.code" class="preview-warn">⚠ {{ w.message }}</p>
+      </div>
+    </SectionCard>
+
+    <AsyncState
+      :loading="store.isLoading"
+      :error="store.error"
+      :empty="!store.lots.length"
+      loading-text="正在加载套装列表..."
+    >
+      <div class="table-scroll">
         <table class="lot-table">
           <thead>
             <tr>
@@ -133,25 +130,19 @@
           </tbody>
         </table>
       </div>
-    </main>
-  </div>
+
+      <template #empty>
+        <EmptyState title="还没有套装" hint="配一个套装，顾客的购物车就会自动套用最省的那一种。" />
+      </template>
+    </AsyncState>
+  </PageShell>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import {
-  NInput,
-  NInputNumber,
-  NSelect,
-  NButton,
-  NSpace,
-  NRadioGroup,
-  NRadio,
-  useDialog,
-  useMessage,
-} from 'naive-ui'
-import CollapsibleSection from '@/components/shared/CollapsibleSection.vue'
-import EmptyGuide from '@/components/shared/EmptyGuide.vue'
+import { NInput, NInputNumber, NSelect, NButton, NSpace, NRadioGroup, NRadio } from 'naive-ui'
+import { PageShell, SectionCard, AsyncState, EmptyState } from '@/components/ui'
+import { useFeedback } from '@/composables/useFeedback'
 import { useLotStore } from '@/stores/lotStore'
 import { useEventDetailStore } from '@/stores/eventDetailStore'
 import type { Schemas } from '@/api/client'
@@ -169,8 +160,7 @@ const props = defineProps<{ id: number }>()
 
 const store = useLotStore()
 const eventDetailStore = useEventDetailStore()
-const dialog = useDialog()
-const message = useMessage()
+const fb = useFeedback()
 
 const isFormCollapsed = ref(false)
 const isBusy = ref(false)
@@ -303,13 +293,13 @@ function startEdit(lot: Schemas['LotResponse']) {
 
 async function handleSubmit() {
   const name = form.value.name.trim()
-  if (!name) return message.warning('请填写套装名称')
+  if (!name) return fb.warning('请填写套装名称')
   const pickCount = form.value.pickCount
   if (typeof pickCount !== 'number' || !Number.isFinite(pickCount) || pickCount < 1)
-    return message.warning('「要选几件」至少是 1')
-  if (!form.value.candidateIds.length) return message.warning('请至少选一个候选商品')
+    return fb.warning('「要选几件」至少是 1')
+  if (!form.value.candidateIds.length) return fb.warning('请至少选一个候选商品')
   const priceYuan = form.value.priceYuan
-  if (priceYuan === null) return message.warning('请填写总价')
+  if (priceYuan === null) return fb.warning('请填写总价')
 
   const payload: Schemas['LotPayload'] = {
     name,
@@ -322,38 +312,38 @@ async function handleSubmit() {
   try {
     if (editingId.value) {
       await store.updateLot(props.id, editingId.value, payload)
-      message.success('套装已更新')
+      fb.success('套装已更新')
     } else {
       await store.createLot(props.id, payload)
-      message.success('套装已新建')
+      fb.success('套装已新建')
     }
     resetForm()
   } catch (error) {
-    message.error((error instanceof Error ? error.message : String(error)) || '操作失败')
+    fb.error(error, '操作失败')
   } finally {
     isBusy.value = false
   }
 }
 
-function handleDelete(lot: Schemas['LotResponse']) {
-  dialog.warning({
+async function handleDelete(lot: Schemas['LotResponse']) {
+  const confirmed = await fb.confirm({
     title: '确认删除',
     // 快照的存在是这句话成立的理由，不是安慰剧。
     content: `删除套装「${lot.name}」？已经下过的订单不受影响——它们存的是名字和价格的快照。`,
     positiveText: '确认删除',
     negativeText: '取消',
-    async onPositiveClick() {
-      isBusy.value = true
-      try {
-        await store.deleteLot(props.id, lot.id)
-        message.success('套装已删除')
-      } catch (error) {
-        message.error((error instanceof Error ? error.message : String(error)) || '删除失败')
-      } finally {
-        isBusy.value = false
-      }
-    },
+    danger: true,
   })
+  if (!confirmed) return
+  isBusy.value = true
+  try {
+    await store.deleteLot(props.id, lot.id)
+    fb.success('套装已删除')
+  } catch (error) {
+    fb.error(error, '删除失败')
+  } finally {
+    isBusy.value = false
+  }
 }
 
 onMounted(async () => {
@@ -369,39 +359,21 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.page {
-  max-width: 960px;
-}
-.page-header {
-  margin-bottom: 1.5rem;
-}
-.page-header h1 {
-  margin: 0 0 0.25rem;
-  font-size: var(--font-xl);
-  color: var(--accent-color);
-}
-.page-header p {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: var(--font-base);
-  line-height: 1.6;
-}
-
 .form-section {
-  margin-bottom: 1.5rem;
+  margin-bottom: var(--space-xl);
 }
 /* 两列栅格，需要整行的字段跨两列。原来是一行 flex-wrap、每个控件抢 160px，
    七个控件挤在一起，标签无处安放。 */
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.9rem 1rem;
+  gap: var(--space-lg) var(--space-lg);
   align-items: end;
 }
 .field {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: var(--space-xs);
   min-width: 0;
 }
 .field-wide {
@@ -423,19 +395,19 @@ onUnmounted(() => {
 }
 .actions {
   display: flex;
-  gap: 0.75rem;
-  margin-top: 0.25rem;
+  gap: var(--space-md);
+  margin-top: var(--space-xs);
 }
 /* 手机/窄窗口下单列。摊主在现场用平板配套装是真实场景。 */
-@media (max-width: 640px) {
+@media (--phone) {
   .form-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
 .preview {
-  margin-top: 0.75rem;
-  padding: 0.75rem 1rem;
+  margin-top: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
   border: 1px solid var(--border-color);
   border-left: 3px solid var(--accent-color);
   border-radius: var(--radius-sm);
@@ -446,7 +418,7 @@ onUnmounted(() => {
   color: var(--error-color);
 }
 .preview-line {
-  margin: 0 0 0.25rem;
+  margin: 0 0 var(--space-xs);
   font-size: var(--font-sm);
   line-height: 1.6;
 }
@@ -463,18 +435,12 @@ onUnmounted(() => {
   color: var(--text-disabled);
 }
 .preview-warn {
-  margin: 0.5rem 0 0;
+  margin: var(--space-sm) 0 0;
   font-size: var(--font-sm);
   line-height: 1.5;
   color: var(--warning-color);
 }
 
-.table-wrapper {
-  width: 100%;
-  overflow-x: auto;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-}
 .lot-table {
   width: 100%;
   border-collapse: collapse;
@@ -482,15 +448,15 @@ onUnmounted(() => {
   font-size: var(--font-base);
 }
 .lot-table th {
-  padding: 12px 16px;
+  padding: var(--space-md) var(--space-lg);
   background-color: var(--card-bg-color);
   color: var(--primary-text-color);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   border-bottom: 2px solid var(--accent-color);
   white-space: nowrap;
 }
 .lot-table td {
-  padding: 12px 16px;
+  padding: var(--space-md) var(--space-lg);
   border-bottom: 1px solid var(--border-color);
   color: var(--text-placeholder);
   vertical-align: middle;
@@ -501,14 +467,5 @@ onUnmounted(() => {
 }
 .candidates-cell {
   max-width: 320px;
-}
-
-.loading-message,
-.error-message {
-  padding: 1rem;
-  text-align: center;
-}
-.error-message {
-  color: var(--error-color);
 }
 </style>

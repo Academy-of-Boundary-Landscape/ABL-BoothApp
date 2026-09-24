@@ -1,45 +1,44 @@
 <template>
-  <div class="page">
-    <header class="page-header">
-      <div class="header-content">
-        <div class="header-title-row">
-          <h1>商品管理</h1>
-          <HelpBubble page="event-products" />
-        </div>
-        <p>为当前展会添加、修改和移除上架商品。</p>
+  <PageShell
+    title="商品管理"
+    subtitle="为当前展会添加、修改和移除上架商品。"
+    help="event-products"
+    width="content"
+  >
+    <!-- 上架新商品区块 -->
+    <SectionCard
+      title="上架新商品"
+      collapsible
+      v-model:collapsed="isFormCollapsed"
+      class="form-section"
+    >
+      <div class="search-filters">
+        <n-input
+          v-model:value="searchQuery"
+          placeholder="搜索名称或编号..."
+          clearable
+          size="large"
+          round
+          class="search-input"
+        />
+        <n-select
+          v-model:value="selectedCategory"
+          :options="categoryOptionsForSelect"
+          class="category-select"
+          clearable
+          size="small"
+          placeholder="全部分类"
+        />
       </div>
-    </header>
 
-    <main class="page-body">
-      <!-- 上架新商品区块 -->
-      <CollapsibleSection
-        title="上架新商品"
-        v-model:collapsed="isFormCollapsed"
-        class="form-section"
-      >
-        <div class="search-filters">
-          <n-input
-            v-model:value="searchQuery"
-            placeholder="搜索名称或编号..."
-            clearable
-            size="large"
-            round
-            class="search-input"
-          />
-          <n-select
-            v-model:value="selectedCategory"
-            :options="categoryOptionsForSelect"
-            class="category-select"
-            clearable
-            size="small"
-            placeholder="全部分类"
-          />
-        </div>
-
-        <div class="product-preview-container">
-          <div v-if="productStore.isLoading" class="loading-message">加载制品列表中...</div>
-          <div v-else-if="productStore.error" class="error-message">{{ productStore.error }}</div>
-          <ul v-else-if="filteredProducts.length" class="product-preview-list">
+      <div class="product-preview-container">
+        <AsyncState
+          :loading="productStore.isLoading"
+          :error="productStore.error"
+          :empty="!filteredProducts.length"
+          loading-text="加载制品列表中..."
+        >
+          <ul class="product-preview-list">
             <li
               v-for="product in filteredProducts"
               :key="product.id"
@@ -71,46 +70,55 @@
               </div>
             </li>
           </ul>
-          <p v-else class="no-results-message">未找到匹配的制品。</p>
-        </div>
 
-        <form @submit.prevent="handleAddProduct" class="add-product-form">
-          <n-input
-            v-model:value="addProductData.product_code"
-            placeholder="商品编号 (可点击上方预览填充)"
-            clearable
-            required
-          />
-          <n-input-number
-            v-model:value="addProductData.initial_stock"
-            placeholder="初始库存"
-            :min="0"
-            :precision="0"
-            :show-button="true"
-            required
-            ref="stockInputRef"
-          />
-          <n-input-number
-            v-model:value="addProductData.price"
-            placeholder="展会售价 (可选)"
-            :precision="2"
-            :step="0.01"
-          />
-          <n-button type="primary" attr-type="submit" :disabled="isAdding">
-            {{ isAdding ? '上架中...' : '上架' }}
-          </n-button>
-        </form>
-        <p v-if="addError" class="error-message">{{ addError }}</p>
-      </CollapsibleSection>
+          <template #empty>
+            <p class="no-results-message">未找到匹配的制品。</p>
+          </template>
+        </AsyncState>
+      </div>
 
-      <!-- 商品列表区块 -->
-      <CollapsibleSection
-        title="已上架商品"
-        v-model:collapsed="isListCollapsed"
-        class="list-section"
+      <form @submit.prevent="handleAddProduct" class="add-product-form">
+        <n-input
+          v-model:value="addProductData.product_code"
+          placeholder="商品编号 (可点击上方预览填充)"
+          clearable
+          required
+        />
+        <n-input-number
+          v-model:value="addProductData.initial_stock"
+          placeholder="初始库存"
+          :min="0"
+          :precision="0"
+          :show-button="true"
+          required
+          ref="stockInputRef"
+        />
+        <n-input-number
+          v-model:value="addProductData.price"
+          placeholder="展会售价 (可选)"
+          :precision="2"
+          :step="0.01"
+        />
+        <n-button type="primary" attr-type="submit" :disabled="isAdding">
+          {{ isAdding ? '上架中...' : '上架' }}
+        </n-button>
+      </form>
+      <p v-if="addError" class="form-error">{{ addError }}</p>
+    </SectionCard>
+
+    <!-- 商品列表区块 -->
+    <SectionCard
+      title="已上架商品"
+      collapsible
+      v-model:collapsed="isListCollapsed"
+      class="list-section"
+    >
+      <AsyncState
+        :loading="eventDetailStore.isLoading"
+        :empty="!eventDetailStore.products.length"
+        loading-text="正在加载商品列表..."
       >
-        <div v-if="eventDetailStore.isLoading" class="loading-message">正在加载商品列表...</div>
-        <div v-else-if="eventDetailStore.products.length" class="table-wrapper">
+        <div class="table-scroll">
           <table class="product-table">
             <thead>
               <tr>
@@ -157,60 +165,59 @@
             </tbody>
           </table>
         </div>
-        <EmptyGuide
-          v-else
-          icon="📦"
-          title="还没有上架商品"
-          desc="从全局商品库中选择商品添加到本场展会，设置库存数量和展会特价。"
-          hint="在上方「上架新商品」区域选择商品并设置库存"
-        />
-      </CollapsibleSection>
-    </main>
 
-    <AppModal :show="isEditModalVisible" @close="closeEditModal">
-      <template #header><h3>编辑上架商品</h3></template>
-      <template #body>
-        <form v-if="editableProduct" class="edit-form" @submit.prevent="handleUpdate">
-          <div class="form-group">
-            <label>展会售价 (¥):</label>
+        <template #empty>
+          <EmptyState
+            icon="📦"
+            title="还没有上架商品"
+            desc="从全局商品库中选择商品添加到本场展会，设置库存数量和展会特价。"
+            hint="在上方「上架新商品」区域选择商品并设置库存"
+          />
+        </template>
+      </AsyncState>
+    </SectionCard>
+
+    <AppModal v-model:show="isEditModalVisible" title="编辑上架商品" size="sm">
+      <form v-if="editableProduct" class="edit-form" @submit.prevent="handleUpdate">
+        <div class="form-group">
+          <label>展会售价 (¥):</label>
+          <n-input-number
+            v-model:value="editableProduct.price"
+            :precision="2"
+            :step="0.01"
+            :show-button="true"
+            required
+          />
+        </div>
+        <div class="form-group">
+          <!-- 新模型下库存是账本聚合，不能直接改数字（Task 5 拿掉了这个入口）。 -->
+          <label>库存:</label>
+          <div class="stock-readonly">
+            <span
+              >累计进货 <strong>{{ editableProduct.stocked_qty }}</strong></span
+            >
+            <span
+              >当前库存 <strong>{{ editableProduct.onsite_qty }}</strong></span
+            >
+          </div>
+        </div>
+        <div class="form-group">
+          <label>补货数量:</label>
+          <div class="restock-row">
             <n-input-number
-              v-model:value="editableProduct.price"
-              :precision="2"
-              :step="0.01"
+              v-model:value="restockQty"
+              :min="1"
+              :precision="0"
               :show-button="true"
-              required
+              placeholder="进货数量"
             />
+            <n-button @click="handleRestock" :disabled="isRestocking">
+              {{ isRestocking ? '补货中...' : '补货' }}
+            </n-button>
           </div>
-          <div class="form-group">
-            <!-- 新模型下库存是账本聚合，不能直接改数字（Task 5 拿掉了这个入口）。 -->
-            <label>库存:</label>
-            <div class="stock-readonly">
-              <span
-                >累计进货 <strong>{{ editableProduct.stocked_qty }}</strong></span
-              >
-              <span
-                >当前库存 <strong>{{ editableProduct.onsite_qty }}</strong></span
-              >
-            </div>
-          </div>
-          <div class="form-group">
-            <label>补货数量:</label>
-            <div class="restock-row">
-              <n-input-number
-                v-model:value="restockQty"
-                :min="1"
-                :precision="0"
-                :show-button="true"
-                placeholder="进货数量"
-              />
-              <n-button @click="handleRestock" :disabled="isRestocking">
-                {{ isRestocking ? '补货中...' : '补货' }}
-              </n-button>
-            </div>
-          </div>
-          <p v-if="editError" class="error-message">{{ editError }}</p>
-        </form>
-      </template>
+        </div>
+        <p v-if="editError" class="form-error">{{ editError }}</p>
+      </form>
       <template #footer>
         <n-space>
           <n-button @click="closeEditModal">取消</n-button>
@@ -220,7 +227,7 @@
         </n-space>
       </template>
     </AppModal>
-  </div>
+  </PageShell>
 </template>
 
 <script setup lang="ts">
@@ -228,10 +235,8 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useEventDetailStore } from '@/stores/eventDetailStore'
 import { useProductStore } from '@/stores/productStore'
 import { useSocietyStore } from '@/stores/societyStore'
-import AppModal from '@/components/shared/AppModal.vue'
-import HelpBubble from '@/components/shared/HelpBubble.vue'
-import EmptyGuide from '@/components/shared/EmptyGuide.vue'
-import CollapsibleSection from '@/components/shared/CollapsibleSection.vue'
+import { PageShell, SectionCard, AsyncState, EmptyState, AppModal } from '@/components/ui'
+import { useFeedback } from '@/composables/useFeedback'
 import {
   NInput,
   NSelect,
@@ -239,7 +244,6 @@ import {
   NInputNumber,
   NButton,
   NSpace,
-  useDialog,
   type InputNumberInst,
 } from 'naive-ui'
 import type { Schemas } from '@/api/client'
@@ -259,7 +263,7 @@ const props = defineProps<{ id: number }>()
 const eventDetailStore = useEventDetailStore()
 const productStore = useProductStore()
 const societyStore = useSocietyStore()
-const dialog = useDialog()
+const fb = useFeedback()
 
 const searchQuery = ref('')
 const stockInputRef = ref<InputNumberInst | null>(null)
@@ -435,25 +439,25 @@ async function handleRestock() {
 }
 
 async function handleDelete(product: Schemas['ProductEventProduct']) {
-  dialog.warning({
+  const confirmed = await fb.confirm({
     title: '确认下架',
     content: `确定要从该展会下架 "${product.name}" 吗？此操作不可恢复。`,
     positiveText: '确认下架',
     negativeText: '取消',
-    async onPositiveClick() {
-      try {
-        await eventDetailStore.deleteEventProduct(product.id)
-        await eventDetailStore.fetchProductsForEvent(props.id)
-      } catch (error) {
-        dialog.error({
-          title: '删除失败',
-          content:
-            (error instanceof Error ? error.message : String(error)) || '无法下架商品，请稍后重试',
-          positiveText: '知道了',
-        })
-      }
-    },
+    danger: true,
   })
+  if (!confirmed) return
+  try {
+    await eventDetailStore.deleteEventProduct(product.id)
+    await eventDetailStore.fetchProductsForEvent(props.id)
+  } catch (error) {
+    await fb.alert({
+      title: '删除失败',
+      content:
+        (error instanceof Error ? error.message : String(error)) || '无法下架商品，请稍后重试',
+      type: 'error',
+    })
+  }
 }
 
 onMounted(() => {
@@ -475,55 +479,20 @@ function getProductLabel(name: string | null | undefined) {
 </script>
 
 <style scoped>
-.page {
-  max-width: 960px;
-}
-.page-header {
-  margin-bottom: 1.5rem;
-}
-.page-header h1 {
-  margin: 0 0 0.25rem;
-  font-size: var(--font-xl);
-  color: var(--accent-color);
-}
-.page-header p {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: var(--font-base);
-}
-.header-title-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.btn-back {
-  position: absolute;
-  top: 0;
-  right: 0;
-}
-
 /* 通用区块样式 */
 .form-section,
 .list-section {
-  margin-bottom: 2rem;
+  margin-bottom: var(--space-2xl);
 }
 
-/* section 外壳样式由 CollapsibleSection 统一提供 */
-
-.table-wrapper {
-  width: 100%;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-}
+/* section 外壳样式由 SectionCard 统一提供 */
 
 .add-product-form {
   display: flex;
-  gap: 1rem;
+  gap: var(--space-lg);
   align-items: center;
   flex-wrap: wrap;
-  margin-top: 1rem;
+  margin-top: var(--space-lg);
 }
 
 /* --- 表格样式 --- */
@@ -538,16 +507,16 @@ function getProductLabel(name: string | null | undefined) {
 }
 
 .product-table th {
-  padding: 12px 16px;
+  padding: var(--space-md) var(--space-lg);
   background-color: var(--card-bg-color);
   color: var(--primary-text-color);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   border-bottom: 2px solid var(--accent-color);
   white-space: nowrap;
 }
 
 .product-table td {
-  padding: 12px 16px;
+  padding: var(--space-md) var(--space-lg);
   border-bottom: 1px solid var(--border-color);
   color: var(--text-placeholder);
   vertical-align: middle;
@@ -612,45 +581,29 @@ function getProductLabel(name: string | null | undefined) {
   border: 1px solid var(--border-color);
   color: var(--text-white);
   font-size: var(--font-xs);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   text-align: center;
   overflow: hidden;
 }
-.no-img {
-  display: inline-block;
-  width: 50px;
-  height: 50px;
-  line-height: 50px;
-  text-align: center;
-  font-size: var(--font-sm);
-  color: var(--text-disabled);
-  background-color: var(--bg-color);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  vertical-align: middle;
-}
 
-.loading-message,
-.error-message {
-  padding: 1rem;
+.form-error {
+  padding: var(--space-lg);
   text-align: center;
-}
-.error-message {
   color: var(--error-color);
 }
 
 .edit-form .form-group {
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-lg);
 }
 .edit-form label {
   display: block;
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--space-sm);
 }
 
 /* 库存只读展示：新模型下不能直接改数字 */
 .stock-readonly {
   display: flex;
-  gap: 1rem;
+  gap: var(--space-lg);
   color: var(--text-muted);
   font-size: var(--font-base);
 }
@@ -661,36 +614,14 @@ function getProductLabel(name: string | null | undefined) {
 
 .restock-row {
   display: flex;
-  gap: 0.75rem;
+  gap: var(--space-md);
   align-items: center;
-}
-
-.action-btn {
-  background: none;
-  border: 1px solid transparent;
-  color: var(--primary-text-color);
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-size: var(--font-base);
-  transition:
-    background-color 0.2s,
-    color 0.2s,
-    border-color 0.2s;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  white-space: nowrap;
-}
-
-.product-search-container {
-  margin-bottom: 0.5rem;
 }
 
 .search-filters {
   display: flex;
-  gap: 1rem;
-  margin-bottom: 1rem;
+  gap: var(--space-lg);
+  margin-bottom: var(--space-lg);
 }
 
 .search-input {
@@ -702,12 +633,12 @@ function getProductLabel(name: string | null | undefined) {
   overflow-y: auto;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
-  padding: 0.5rem;
+  padding: var(--space-sm);
   background-color: var(--bg-color);
 }
 .no-results-message {
   color: var(--text-disabled);
-  padding: 1rem;
+  padding: var(--space-lg);
   text-align: center;
 }
 
@@ -717,7 +648,7 @@ function getProductLabel(name: string | null | undefined) {
   margin: 0;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 0.5rem;
+  gap: var(--space-sm);
 }
 
 .preview-item {
@@ -725,7 +656,7 @@ function getProductLabel(name: string | null | undefined) {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: 0.4rem;
+  padding: var(--space-sm);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -739,7 +670,7 @@ function getProductLabel(name: string | null | undefined) {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--space-sm);
 }
 
 .preview-item-img-placeholder {
@@ -757,7 +688,7 @@ function getProductLabel(name: string | null | undefined) {
   border: 1px solid var(--border-color);
   color: var(--text-white);
   font-size: var(--font-sm);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   text-align: center;
 }
 .preview-item:hover {
@@ -774,7 +705,7 @@ function getProductLabel(name: string | null | undefined) {
   height: 64px;
   object-fit: cover;
   border-radius: var(--radius-sm);
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--space-sm);
 }
 .preview-item-img :deep(img) {
   width: 100%;
@@ -789,7 +720,7 @@ function getProductLabel(name: string | null | undefined) {
 
 .preview-item-name {
   font-size: var(--font-sm);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   color: var(--primary-text-color);
   white-space: nowrap;
   overflow: hidden;
@@ -819,43 +750,16 @@ function getProductLabel(name: string | null | undefined) {
   border-width: 2px;
 }
 .search-input :deep(.n-input:not(.n-input--disabled):focus-within) {
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- 焦点环 0 0 0 2px 是 outline 语义，不属阴影 token */
   box-shadow: 0 0 0 2px var(--accent-color-light);
   border-color: var(--accent-color);
 }
 
-/* 表格缩略图的适配，避免超出 */
-.preview-img {
-  width: 50px;
-  height: 50px;
-}
-.preview-img :deep(img) {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
 /* 响应式布局 */
-@media (max-width: 768px) {
-  main {
-    padding: 0;
-  }
-
-  .page-header {
-    margin-bottom: 1.5rem;
-    padding-bottom: 0.75rem;
-  }
-
-  .page-header h1 {
-    font-size: 1.3rem;
-  }
-
-  .page-header p {
-    font-size: 0.9rem;
-  }
-
+@media (--phone) {
   .search-filters {
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-md);
   }
 
   .search-input,
@@ -870,7 +774,7 @@ function getProductLabel(name: string | null | undefined) {
 
   .product-preview-list {
     grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-    gap: 0.4rem;
+    gap: var(--space-sm);
   }
 
   .preview-item-img {
@@ -881,26 +785,26 @@ function getProductLabel(name: string | null | undefined) {
   .preview-item-img-placeholder {
     width: 50px;
     height: 50px;
-    font-size: 0.75rem;
+    font-size: var(--font-xs);
   }
 
   .preview-item {
-    padding: 0.3rem;
+    padding: var(--space-xs);
   }
 
   .preview-item-name {
-    font-size: 0.8rem;
+    font-size: var(--font-sm);
     width: 90px;
   }
 
   .preview-item-code,
   .preview-item-price {
-    font-size: 0.7rem;
+    font-size: var(--font-xs);
   }
 
   .add-product-form {
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-md);
   }
 
   .add-product-form > * {
@@ -908,13 +812,13 @@ function getProductLabel(name: string | null | undefined) {
   }
 
   .product-table {
-    font-size: 0.85rem;
+    font-size: var(--font-sm);
     min-width: 650px;
   }
 
   .product-table th,
   .product-table td {
-    padding: 10px 12px;
+    padding: var(--space-sm) var(--space-md);
   }
 
   .column-preview {
@@ -928,36 +832,23 @@ function getProductLabel(name: string | null | undefined) {
   }
 }
 
-@media (max-width: 480px) {
-  .page-header {
-    margin-bottom: 1rem;
-    padding-bottom: 0.5rem;
-  }
-
-  .page-header h1 {
-    font-size: 1.1rem;
-  }
-
-  .page-header p {
-    font-size: 0.8rem;
-  }
-
+@media (--phone) {
   .search-filters {
-    gap: 0.5rem;
+    gap: var(--space-sm);
   }
 
   .product-preview-container {
     max-height: 200px;
-    padding: 0.4rem;
+    padding: var(--space-sm);
   }
 
   .product-preview-list {
     grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-    gap: 0.3rem;
+    gap: var(--space-xs);
   }
 
   .preview-item {
-    padding: 0.25rem;
+    padding: var(--space-xs);
   }
 
   .preview-item-img {
@@ -968,36 +859,36 @@ function getProductLabel(name: string | null | undefined) {
   .preview-item-img-placeholder {
     width: 40px;
     height: 40px;
-    font-size: 0.7rem;
+    font-size: var(--font-xs);
   }
 
   .preview-item-name {
-    font-size: 0.75rem;
+    font-size: var(--font-xs);
     width: 70px;
   }
 
   .preview-item-code,
   .preview-item-price {
-    font-size: 0.65rem;
+    font-size: var(--font-xs);
   }
 
   .add-product-form {
-    gap: 0.5rem;
-    margin-top: 0.75rem;
+    gap: var(--space-sm);
+    margin-top: var(--space-md);
   }
 
   .product-table {
-    font-size: 0.75rem;
+    font-size: var(--font-xs);
     min-width: 600px;
   }
 
   .product-table th,
   .product-table td {
-    padding: 8px 10px;
+    padding: var(--space-sm) var(--space-sm);
   }
 
   .product-table th {
-    font-size: 0.7rem;
+    font-size: var(--font-xs);
   }
 
   .column-preview {
@@ -1008,11 +899,11 @@ function getProductLabel(name: string | null | undefined) {
   .preview-img-placeholder {
     width: 35px;
     height: 35px;
-    font-size: 0.65rem;
+    font-size: var(--font-xs);
   }
 
   .edit-form .form-group {
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--space-md);
   }
 }
 </style>
