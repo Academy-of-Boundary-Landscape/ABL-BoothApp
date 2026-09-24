@@ -9,42 +9,45 @@
 
 use axum::{
     extract::{Path, State},
-    routing::{get, post},
-    Json, Router,
+    Json,
 };
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::{
     api::guard::{check_read_permission, check_write_permission, require_event_open},
-    domain::ledger::{post_journal, JournalKind, Location, StockLeg},
+    api::openapi::ApiErrorBody,
+    domain::{
+        ledger::{post_journal, JournalKind, Location, StockLeg},
+        money::Money,
+    },
     error::{ApiError, ApiResult},
     state::AppState,
     utils::security::Claims,
 };
 
-/// ③b 过渡：本模块的路由还没标 utoipa 注解，整体包进 OpenApiRouter——路由照常工作，
-/// 只是文档里没有它的路径。阶段 2 迁移本模块时改为 `routes!(...)` 并删掉 `legacy_router`。
-pub fn router() -> utoipa_axum::router::OpenApiRouter<AppState> {
-    utoipa_axum::router::OpenApiRouter::from(legacy_router())
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(get_closing))
+        .routes(routes!(stocktake))
+        .routes(routes!(takeback))
+        .routes(routes!(settle))
 }
 
-fn legacy_router() -> Router<AppState> {
-    Router::new()
-        .route("/events/{event_id}/closing", get(get_closing))
-        .route("/events/{event_id}/closing/stocktake", post(stocktake))
-        .route("/events/{event_id}/closing/takeback", post(takeback))
-        .route("/events/{event_id}/closing/settle", post(settle))
-}
-
-#[derive(Serialize, sqlx::FromRow)]
+#[derive(Serialize, sqlx::FromRow, ToSchema)]
+#[schema(as = ClosingPendingOrderRow)]
 pub struct PendingOrderRow {
     id: i64,
     created_at: String,
+    /// 分。与前端 `formatYuan` 的约定一致。
+    #[schema(value_type = Money)]
     final_amount: i64,
     item_count: i64,
 }
 
-#[derive(Serialize, sqlx::FromRow)]
+#[derive(Serialize, sqlx::FromRow, ToSchema)]
+#[schema(as = ClosingOnSiteRow)]
 pub struct OnSiteRow {
     event_product_id: i64,
     product_code: String,
@@ -54,7 +57,7 @@ pub struct OnSiteRow {
     qty: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct ClosingState {
     status: String,
     pending_orders: Vec<PendingOrderRow>,
@@ -63,6 +66,22 @@ pub struct ClosingState {
     blockers: Vec<String>,
 }
 
+/// 收摊向导的当前状态：待处理订单、现场仓余量、盘点时间与推进阻断项。
+///
+/// **能不能进下一步由后端说了算**——`blockers` 非空就挡住。
+#[utoipa::path(
+    get,
+    path = "/events/{event_id}/closing",
+    tag = "closing",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = ClosingState),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "展会不存在"),
+    ),
+)]
 async fn get_closing(
     State(state): State<AppState>,
     claims: Claims,
@@ -159,18 +178,19 @@ async fn book_balances(
     Ok(rows.into_iter().collect())
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct StocktakeRequest {
     counts: Vec<CountRow>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
+#[schema(as = ClosingCountRow)]
 pub struct CountRow {
     event_product_id: i64,
     counted_qty: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct StocktakeResponse {
     /// 零差异时为 `None`——`post_journal` 拒绝空 journal，而
     /// 「盘了全对」这个事实靠 `events.stocktaken_at` 记，不靠 journal 存在性。
@@ -178,7 +198,8 @@ pub struct StocktakeResponse {
     diffs: Vec<DiffRow>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
+#[schema(as = ClosingDiffRow)]
 pub struct DiffRow {
     event_product_id: i64,
     name: String,
@@ -186,6 +207,25 @@ pub struct DiffRow {
     counted_qty: i64,
 }
 
+/// 提交盘点实数。**收全量**：现场仓余额非 0 的商品必须全部出现，数过一致的也要报。
+///
+/// 盘亏/盘盈写差异腿，只动货不动钱。零差异时不写 journal，但仍落 `stocktaken_at`。
+#[utoipa::path(
+    post,
+    path = "/events/{event_id}/closing/stocktake",
+    tag = "closing",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    request_body = StocktakeRequest,
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = StocktakeResponse),
+        (status = 400, body = ApiErrorBody, description = "重复报数、实数为负、漏报现场仓商品或商品不在这场展会"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "展会不存在"),
+        (status = 409, body = ApiErrorBody, description = "还有待处理订单，或展会已结算"),
+    ),
+)]
 async fn stocktake(
     State(state): State<AppState>,
     claims: Claims,
@@ -323,12 +363,27 @@ async fn stocktake(
     Ok(Json(StocktakeResponse { journal_id, diffs }))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct TakebackResponse {
     journal_id: Option<i64>,
     moved: i64,
 }
 
+/// 把现场仓余货全部带回（现场仓 → 外部）。全卖光时是空操作，不写 journal。
+#[utoipa::path(
+    post,
+    path = "/events/{event_id}/closing/takeback",
+    tag = "closing",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = TakebackResponse),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "展会不存在"),
+        (status = 409, body = ApiErrorBody, description = "还有待处理订单、展会已结算或账本不自洽"),
+    ),
+)]
 async fn takeback(
     State(state): State<AppState>,
     claims: Claims,
@@ -394,11 +449,28 @@ async fn takeback(
     Ok(Json(TakebackResponse { journal_id, moved }))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct SettleResponse {
     status: String,
 }
 
+/// 结束展会：把状态置为「已结算」，账本从此冻结。
+///
+/// 盘点可跳过；结算单靠 `stocktaken_at` 是否为 null 区分「没盘点」。
+#[utoipa::path(
+    post,
+    path = "/events/{event_id}/closing/settle",
+    tag = "closing",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = SettleResponse),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "展会不存在"),
+        (status = 409, body = ApiErrorBody, description = "还有待处理订单、现场仓还有货，或展会已结算"),
+    ),
+)]
 async fn settle(
     State(state): State<AppState>,
     claims: Claims,
@@ -787,5 +859,321 @@ mod tests {
                 .await
                 .unwrap();
         assert!(at.is_none(), "失败的盘点不该留下「盘过了」的痕迹");
+    }
+}
+
+#[cfg(test)]
+mod shape_tests {
+    use crate::test_support::{
+        admin_token, json_request, place, read_json, seed_event_and_product, shape_of,
+        test_router_with,
+    };
+    use axum::http::StatusCode;
+    use axum::Router;
+    use serde_json::{json, Value};
+    use tower::ServiceExt;
+
+    /// 一场进行中的展会 + 两个商品（A 本社团 10 件、B 代卖社团 5 件）。
+    ///
+    /// 各测试自己用 API 把可选字段喂成非空：pending 单让 `pending_orders` 非空，
+    /// 无差异盘点让 `stocktaken_at` 非空，现场仓仍在让 `onsite_remaining` / `blockers` 非空。
+    async fn seeded() -> (Router, tempfile::TempDir, i64, i64, i64) {
+        let (router, dir, pool) = test_router_with().await;
+        let (event_id, ep_a, ep_b) = seed_event_and_product(&pool).await;
+        (router, dir, event_id, ep_a, ep_b)
+    }
+
+    async fn call(
+        router: &Router,
+        method: &str,
+        uri: &str,
+        token: Option<&str>,
+        body: Value,
+    ) -> (StatusCode, Value) {
+        let res = router
+            .clone()
+            .oneshot(json_request(method, uri, token, body))
+            .await
+            .unwrap();
+        let status = res.status();
+        (status, read_json(res).await)
+    }
+
+    fn print_shape(label: &str, body: &Value) {
+        println!(
+            "{label}: {}",
+            serde_json::to_string(&shape_of(body)).unwrap()
+        );
+    }
+
+    fn pending_order_row() -> Value {
+        json!({"id": "int", "created_at": "string", "final_amount": "int", "item_count": "int"})
+    }
+
+    fn onsite_row() -> Value {
+        json!({
+            "event_product_id": "int", "product_code": "string", "name": "string",
+            "owner_society_id": "int", "owner_name": "string", "qty": "int",
+        })
+    }
+
+    /// `GET /events/{id}/closing`：盘点过（`stocktaken_at` 非空）且还有 pending 单、
+    /// 现场仓还有货、`blockers` 非空——每个可选字段都取到非空值。
+    #[tokio::test]
+    async fn shape_get_closing() {
+        let (router, _dir, event_id, ep_a, ep_b) = seeded().await;
+        // 全对盘点：落 stocktaken_at，现场仓仍在。
+        let (s, _) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/closing/stocktake"),
+            Some(&admin_token()),
+            json!({"counts": [{"event_product_id": ep_a, "counted_qty": 10},
+                              {"event_product_id": ep_b, "counted_qty": 5}]}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        // 下一张 pending 单：pending_orders 非空。
+        place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_a, "quantity": 1}]),
+        )
+        .await;
+
+        let (s, body) = call(
+            &router,
+            "GET",
+            &format!("/api/events/{event_id}/closing"),
+            Some(&admin_token()),
+            json!(null),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        print_shape("get_closing", &body);
+        assert_eq!(
+            shape_of(&body),
+            json!({
+                "status": "string",
+                "pending_orders": [pending_order_row()],
+                "onsite_remaining": [onsite_row()],
+                "stocktaken_at": "string",
+                "blockers": ["string"],
+            })
+        );
+
+        // 没盘点过时 stocktaken_at 是 null——Option 不能悄悄变成必填。
+        let (router, _dir, event_id, _ep_a, _ep_b) = seeded().await;
+        let (s, body) = call(
+            &router,
+            "GET",
+            &format!("/api/events/{event_id}/closing"),
+            Some(&admin_token()),
+            json!(null),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        print_shape("get_closing (未盘点)", &body);
+        assert_eq!(
+            shape_of(&body),
+            json!({
+                "status": "string",
+                "pending_orders": ["empty"],
+                "onsite_remaining": [onsite_row()],
+                "stocktaken_at": "null",
+                "blockers": ["string"],
+            })
+        );
+
+        // 展会不存在
+        let (s, body) = call(
+            &router,
+            "GET",
+            "/api/events/999/closing",
+            Some(&admin_token()),
+            json!(null),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::NOT_FOUND, json!({"error": "string"}))
+        );
+    }
+
+    /// `POST /events/{id}/closing/stocktake`：有差异时 journal_id 非空、diffs 非空。
+    #[tokio::test]
+    async fn shape_stocktake() {
+        let (router, _dir, event_id, ep_a, ep_b) = seeded().await;
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/closing/stocktake"),
+            Some(&admin_token()),
+            json!({"counts": [{"event_product_id": ep_a, "counted_qty": 8},
+                              {"event_product_id": ep_b, "counted_qty": 7}]}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        print_shape("stocktake", &body);
+        assert_eq!(
+            shape_of(&body),
+            json!({
+                "journal_id": "int",
+                "diffs": [{
+                    "event_product_id": "int", "name": "string",
+                    "book_qty": "int", "counted_qty": "int",
+                }],
+            })
+        );
+
+        // 无差异时 journal_id 是 null。
+        let (router, _dir, event_id, ep_a, ep_b) = seeded().await;
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/closing/stocktake"),
+            Some(&admin_token()),
+            json!({"counts": [{"event_product_id": ep_a, "counted_qty": 10},
+                              {"event_product_id": ep_b, "counted_qty": 5}]}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        print_shape("stocktake (无差异)", &body);
+        assert_eq!(
+            (s, shape_of(&body)),
+            (
+                StatusCode::OK,
+                json!({"journal_id": "null", "diffs": ["empty"]})
+            )
+        );
+
+        // 同商品报两次：400
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/closing/stocktake"),
+            Some(&admin_token()),
+            json!({"counts": [{"event_product_id": ep_a, "counted_qty": 8},
+                              {"event_product_id": ep_a, "counted_qty": 8},
+                              {"event_product_id": ep_b, "counted_qty": 5}]}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::BAD_REQUEST, json!({"error": "string"}))
+        );
+
+        // 展会不存在：404
+        let (s, body) = call(
+            &router,
+            "POST",
+            "/api/events/999/closing/stocktake",
+            Some(&admin_token()),
+            json!({"counts": [{"event_product_id": ep_a, "counted_qty": 0}]}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::NOT_FOUND, json!({"error": "string"}))
+        );
+    }
+
+    /// `POST /events/{id}/closing/takeback`：有货时 journal_id 非空、moved 非空；
+    /// 空摊是 no-op（journal_id 变 null，moved = 0）。
+    #[tokio::test]
+    async fn shape_takeback() {
+        let (router, _dir, event_id, _ep_a, _ep_b) = seeded().await;
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/closing/takeback"),
+            Some(&admin_token()),
+            json!(null),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        print_shape("takeback", &body);
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::OK, json!({"journal_id": "int", "moved": "int"}))
+        );
+
+        // 已经带回了：空操作，journal_id 为 null。
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/closing/takeback"),
+            Some(&admin_token()),
+            json!(null),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        print_shape("takeback (空摊)", &body);
+        assert_eq!(
+            (s, shape_of(&body)),
+            (
+                StatusCode::OK,
+                json!({"journal_id": "null", "moved": "int"})
+            )
+        );
+
+        // 展会不存在：404
+        let (s, body) = call(
+            &router,
+            "POST",
+            "/api/events/999/closing/takeback",
+            Some(&admin_token()),
+            json!(null),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::NOT_FOUND, json!({"error": "string"}))
+        );
+    }
+
+    /// `POST /events/{id}/closing/settle`：带回之后才能结算，成功只回一个 status。
+    #[tokio::test]
+    async fn shape_settle() {
+        let (router, _dir, event_id, _ep_a, _ep_b) = seeded().await;
+        let (s, _) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/closing/takeback"),
+            Some(&admin_token()),
+            json!(null),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/closing/settle"),
+            Some(&admin_token()),
+            json!(null),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        print_shape("settle", &body);
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::OK, json!({"status": "string"}))
+        );
+
+        // 现场仓还有货：409
+        let (router, _dir, event_id, _ep_a, _ep_b) = seeded().await;
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/closing/settle"),
+            Some(&admin_token()),
+            json!(null),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::CONFLICT, json!({"error": "string"}))
+        );
     }
 }
