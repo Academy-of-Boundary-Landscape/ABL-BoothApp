@@ -3,7 +3,8 @@
     <header class="page-header">
       <h1>套装与优惠</h1>
       <p>
-        套装 = 从一组候选商品里任选 N 件，按一个总价卖。「全套 5 本 100」是候选集正好 5 件的特例。
+        套装 = 从一组候选商品里按一个总价卖。选「这几样各 1 件凑齐」就是甲+乙合购； 选「任选 N
+        件、可以拿同款」就是同一本也能买 3 本。
         <strong>候选商品必须属于同一个货主</strong>——替别的社团让价不是摊主能单方面决定的。
       </p>
     </header>
@@ -32,6 +33,12 @@
             placeholder="候选商品"
             class="candidates"
           />
+          <n-radio-group v-model:value="form.allowRepeat" class="mode">
+            <n-space>
+              <n-radio :value="false">这几样各 1 件凑齐</n-radio>
+              <n-radio :value="true">从这几样里任选 N 件，可以拿同款</n-radio>
+            </n-space>
+          </n-radio-group>
           <n-button type="primary" :disabled="isBusy" @click="handleSubmit">
             {{ editingId ? '保存修改' : '新建' }}
           </n-button>
@@ -53,6 +60,7 @@
             <tr>
               <th>名称</th>
               <th>任选</th>
+              <th>模式</th>
               <th>总价</th>
               <th>货主</th>
               <th>候选商品</th>
@@ -63,6 +71,7 @@
             <tr v-for="lot in store.lots" :key="lot.id">
               <td>{{ lot.name }}</td>
               <td>{{ lot.pick_count }} 件</td>
+              <td>{{ lot.allow_repeat ? '可同款' : '各 1 件' }}</td>
               <td>{{ formatYuan(lot.total_price) }}</td>
               <td>{{ lot.owner_society_name }}</td>
               <td class="candidates-cell">{{ candidateNames(lot) }}</td>
@@ -90,7 +99,17 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { NInput, NInputNumber, NSelect, NButton, NSpace, useDialog, useMessage } from 'naive-ui'
+import {
+  NInput,
+  NInputNumber,
+  NSelect,
+  NButton,
+  NSpace,
+  NRadioGroup,
+  NRadio,
+  useDialog,
+  useMessage,
+} from 'naive-ui'
 import CollapsibleSection from '@/components/shared/CollapsibleSection.vue'
 import EmptyGuide from '@/components/shared/EmptyGuide.vue'
 import { useLotStore } from '@/stores/lotStore'
@@ -107,7 +126,7 @@ const message = useMessage()
 const isFormCollapsed = ref(false)
 const isBusy = ref(false)
 const editingId = ref(null)
-const form = ref({ name: '', pickCount: 1, priceYuan: null, candidateIds: [] })
+const form = ref({ name: '', pickCount: 1, priceYuan: null, candidateIds: [], allowRepeat: false })
 
 // 选项标签带上货主名：候选集必须同一货主是后端硬校验，把货主写在标签上
 // 能让摊主在点选时就看出来，而不是提交后才吃一个 400。
@@ -126,7 +145,8 @@ function candidateNames(lot) {
 
 function resetForm() {
   editingId.value = null
-  form.value = { name: '', pickCount: 1, priceYuan: null, candidateIds: [] }
+  // 默认「各 1 件凑齐」：猜错成可同款会让摊主静默少收钱，代价不对称。
+  form.value = { name: '', pickCount: 1, priceYuan: null, candidateIds: [], allowRepeat: false }
 }
 
 function startEdit(lot) {
@@ -136,6 +156,7 @@ function startEdit(lot) {
     pickCount: lot.pick_count,
     priceYuan: fromCents(lot.total_price),
     candidateIds: [...lot.candidate_ids],
+    allowRepeat: lot.allow_repeat,
   }
   isFormCollapsed.value = false
 }
@@ -153,6 +174,7 @@ async function handleSubmit() {
     pick_count: form.value.pickCount,
     total_price: toCents(form.value.priceYuan),
     candidate_ids: form.value.candidateIds,
+    allow_repeat: form.value.allowRepeat,
   }
   isBusy.value = true
   try {
@@ -235,6 +257,9 @@ onUnmounted(() => store.resetStore())
 }
 .candidates {
   flex: 2 1 320px;
+}
+.mode {
+  flex: 1 1 100%;
 }
 
 .table-wrapper {
