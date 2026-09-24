@@ -241,8 +241,8 @@
                   {{ legacyExporting ? '导出中…' : '导出旧数据为 Excel' }}
                 </n-button>
                 <span class="hint">
-                  备份中含 {{ legacyStatus.event_count }} 个展会 /
-                  {{ legacyStatus.order_count }} 张订单
+                  备份中含 {{ legacyStatus?.event_count }} 个展会 /
+                  {{ legacyStatus?.order_count }} 张订单
                 </span>
               </n-space>
             </div>
@@ -280,11 +280,11 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { NSpace, NButton, NAlert, NForm, NFormItem, NInput, useMessage } from 'naive-ui'
 import QrcodeVue from 'qrcode.vue'
-import api from '@/services/api'
+import { api, unwrap, errorMessage, type Schemas } from '@/api/client'
 import { copyLink } from '@/services/clipboard'
 import { useAuthStore } from '@/stores/authStore'
 import VisionModelPanel from '@/components/product/VisionModelPanel.vue'
@@ -383,20 +383,24 @@ function dismissGuide() {
 async function checkSetupStatus() {
   try {
     const [eventsRes, productsRes, visionRes] = await Promise.allSettled([
-      api.get('/events'),
-      api.get('/master-products'),
-      api.get('/vision/status'),
+      unwrap(api.GET('/events')),
+      unwrap(api.GET('/master-products')),
+      unwrap(api.GET('/vision/status')),
     ])
 
     if (eventsRes.status === 'fulfilled') {
-      const events = eventsRes.value.data || []
+      const events = eventsRes.value || []
       hasEvents.value = events.length > 0
       hasOngoingEvent.value = events.some((e) => e.status === '进行中')
       // 检查是否有展会已上架商品：取第一个展会的商品列表
       if (events.length > 0) {
         try {
-          const { data } = await api.get(`/events/${events[0].id}/products`)
-          hasEventProducts.value = (data || []).length > 0
+          const eventProducts = await unwrap(
+            api.GET('/events/{event_id}/products', {
+              params: { path: { event_id: events[0].id } },
+            })
+          )
+          hasEventProducts.value = (eventProducts || []).length > 0
         } catch {
           /* ignore */
         }
@@ -404,11 +408,11 @@ async function checkSetupStatus() {
     }
 
     if (productsRes.status === 'fulfilled') {
-      hasProducts.value = (productsRes.value.data || []).length > 0
+      hasProducts.value = (productsRes.value || []).length > 0
     }
 
     if (visionRes.status === 'fulfilled') {
-      visionReady.value = visionRes.value.data?.is_ready === true
+      visionReady.value = visionRes.value?.is_ready === true
     }
   } catch {
     /* ignore */
@@ -423,7 +427,7 @@ onMounted(() => {
 // ===================== v1 历史数据 =====================
 // 首启弹窗（MigrationNotice）只弹一次且立刻标记已读；若它不常驻，用户点完
 // 「知道了」这台设备就再也导不出 v1 数据。这里是有备份时的常驻出口。
-const legacyStatus = ref(null)
+const legacyStatus = ref<Schemas['LegacyStatus'] | null>(null)
 const legacyExporting = ref(false)
 const legacyCollapsed = ref(false)
 
@@ -431,8 +435,7 @@ const legacyHasBackup = computed(() => legacyStatus.value?.has_backup === true)
 
 async function loadLegacyStatus() {
   try {
-    const { data } = await api.get('/legacy/status')
-    legacyStatus.value = data
+    legacyStatus.value = await unwrap(api.GET('/legacy/status'))
   } catch (e) {
     // 读不到状态只是不显示这个 section，绝不能影响控制台主流程
     console.warn('[AdminControlPanel] 读取历史数据状态失败', e)
@@ -446,7 +449,7 @@ async function handleLegacyExport() {
     if (ok) message.success('导出成功')
   } catch (e) {
     console.error('下载旧数据失败:', e)
-    message.error(e?.message || '下载失败')
+    message.error(e instanceof Error && e.message ? e.message : '下载失败')
   } finally {
     legacyExporting.value = false
   }
@@ -455,7 +458,7 @@ async function handleLegacyExport() {
 // ===================== 局域网 =====================
 const isFetching = ref(false)
 const fetchError = ref('')
-const serverInfo = ref(null)
+const serverInfo = ref<Schemas['ServerInfo'] | null>(null)
 const qrCollapsed = ref(false)
 
 const qrEntries = computed(() => {
@@ -471,16 +474,15 @@ async function fetchServerInfo() {
   isFetching.value = true
   fetchError.value = ''
   try {
-    const { data } = await api.get('/server-info')
-    serverInfo.value = data
+    serverInfo.value = await unwrap(api.GET('/server-info'))
   } catch (e) {
-    fetchError.value = e.response?.data?.error || '获取失败，请检查网络'
+    fetchError.value = errorMessage(e, '获取失败，请检查网络')
   } finally {
     isFetching.value = false
   }
 }
 
-async function handleCopy(url, label) {
+async function handleCopy(url: string, label: string) {
   try {
     await copyLink(url)
     message.success(`${label}链接已复制`)
@@ -495,8 +497,8 @@ const adminForm = ref({ oldPassword: '', newPassword: '' })
 const vendorForm = ref({ newPassword: '' })
 const adminSaving = ref(false)
 const vendorSaving = ref(false)
-const adminMessage = ref(null)
-const vendorMessage = ref(null)
+const adminMessage = ref<{ type: 'success' | 'error'; text: string } | null>(null)
+const vendorMessage = ref<{ type: 'success' | 'error'; text: string } | null>(null)
 
 const authStore = useAuthStore()
 
@@ -513,10 +515,14 @@ async function updateAdminPassword() {
   adminSaving.value = true
   adminMessage.value = null
   try {
-    await api.put('/admin/password', {
-      oldPassword: adminForm.value.oldPassword,
-      newPassword,
-    })
+    await unwrap(
+      api.PUT('/admin/password', {
+        body: {
+          oldPassword: adminForm.value.oldPassword,
+          newPassword,
+        },
+      })
+    )
     adminMessage.value = { type: 'success', text: '管理员密码已更新' }
     adminForm.value = { oldPassword: '', newPassword: '' }
     // 密码改了需要重新登录
@@ -524,7 +530,7 @@ async function updateAdminPassword() {
   } catch (e) {
     adminMessage.value = {
       type: 'error',
-      text: e.response?.data?.error || '修改失败',
+      text: errorMessage(e, '修改失败'),
     }
   } finally {
     adminSaving.value = false
@@ -539,15 +545,17 @@ async function updateVendorPassword() {
   vendorSaving.value = true
   vendorMessage.value = null
   try {
-    await api.put('/admin/vendor-default-password', {
-      newPassword: vendorForm.value.newPassword,
-    })
+    await unwrap(
+      api.PUT('/admin/vendor-default-password', {
+        body: { newPassword: vendorForm.value.newPassword },
+      })
+    )
     vendorMessage.value = { type: 'success', text: '默认摊主密码已更新' }
     vendorForm.value = { newPassword: '' }
   } catch (e) {
     vendorMessage.value = {
       type: 'error',
-      text: e.response?.data?.error || '修改失败',
+      text: errorMessage(e, '修改失败'),
     }
   } finally {
     vendorSaving.value = false

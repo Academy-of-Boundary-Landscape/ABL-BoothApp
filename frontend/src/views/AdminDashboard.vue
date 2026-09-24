@@ -19,7 +19,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { NSpace } from 'naive-ui'
 import CreateEventForm from '@/components/event/CreateEventForm.vue'
 import EventList from '@/components/event/EventList.vue'

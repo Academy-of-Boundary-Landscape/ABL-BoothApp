@@ -65,10 +65,11 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { NInput, NButton, NSpace, NTag, useDialog, useMessage } from 'naive-ui'
 import { useSocietyStore } from '@/stores/societyStore'
+import type { Schemas } from '@/api/client'
 
 const store = useSocietyStore()
 const dialog = useDialog()
@@ -90,25 +91,25 @@ async function handleCreate() {
     newName.value = ''
     message.success('社团已新建')
   } catch (error) {
-    message.error(error.message || '新建失败')
+    message.error(error instanceof Error && error.message ? error.message : '新建失败')
   } finally {
     isCreating.value = false
   }
 }
 
-async function handleSetHome(society) {
+async function handleSetHome(society: Schemas['Society']) {
   isBusy.value = true
   try {
     await store.setHomeSociety(society.id)
     message.success(`「${society.name}」已设为本社团`)
   } catch (error) {
-    message.error(error.message || '操作失败')
+    message.error(error instanceof Error && error.message ? error.message : '操作失败')
   } finally {
     isBusy.value = false
   }
 }
 
-function handleDelete(society) {
+function handleDelete(society: Schemas['Society']) {
   dialog.warning({
     title: '确认删除',
     content: `确定要删除社团「${society.name}」吗？还有商品归属它时不能删除。`,
@@ -120,7 +121,7 @@ function handleDelete(society) {
         await store.deleteSociety(society.id)
         message.success('社团已删除')
       } catch (error) {
-        message.error(error.message || '删除失败')
+        message.error(error instanceof Error && error.message ? error.message : '删除失败')
       } finally {
         isBusy.value = false
       }

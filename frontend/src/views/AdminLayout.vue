@@ -121,7 +121,7 @@
   </n-layout>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted, h } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import {
@@ -134,6 +134,7 @@ import {
   NSpace,
   NIcon,
   NModal,
+  type MenuOption,
 } from 'naive-ui'
 import { useEventStore } from '@/stores/eventStore'
 import ThemeSetting from '@/views/ThemeSetting.vue'
@@ -170,7 +171,7 @@ const event = computed(() => {
   const eventId = route.params.id
   if (!eventId) return null
   return (
-    eventStore.events.find((e) => e.id === parseInt(eventId, 10)) || {
+    eventStore.events.find((e) => e.id === parseInt(String(eventId), 10)) || {
       name: '加载中...',
       id: eventId,
     }
@@ -182,8 +183,8 @@ const ongoingEvents = computed(() => {
   return events.filter((e) => e.status === '进行中').slice(0, 3)
 })
 
-const menuOptions = computed(() => {
-  const baseOptions = [
+const menuOptions = computed<MenuOption[]>(() => {
+  const baseOptions: MenuOption[] = [
     { label: () => h(RouterLink, { to: '/admin' }, { default: () => '控制台' }), key: '/admin' },
     {
       label: () => h(RouterLink, { to: '/admin/events' }, { default: () => '展会管理' }),
@@ -212,12 +213,13 @@ const menuOptions = computed(() => {
     },
   ]
 
-  if (event.value) {
+  const currentEvent = event.value
+  if (currentEvent) {
     baseOptions.push(
       { type: 'divider', key: 'd1' },
       {
         label: () =>
-          h('div', { class: 'menu-event-name', title: event.value.name }, event.value.name),
+          h('div', { class: 'menu-event-name', title: currentEvent.name }, currentEvent.name),
         key: 'event-group',
         type: 'group',
         children: [
@@ -225,46 +227,46 @@ const menuOptions = computed(() => {
             label: () =>
               h(
                 RouterLink,
-                { to: `/admin/events/${event.value.id}/products` },
+                { to: `/admin/events/${currentEvent.id}/products` },
                 { default: () => '商品管理' }
               ),
-            key: `/admin/events/${event.value.id}/products`,
+            key: `/admin/events/${currentEvent.id}/products`,
           },
           {
             label: () =>
               h(
                 RouterLink,
-                { to: `/admin/events/${event.value.id}/lots` },
+                { to: `/admin/events/${currentEvent.id}/lots` },
                 { default: () => '套装与优惠' }
               ),
-            key: `/admin/events/${event.value.id}/lots`,
+            key: `/admin/events/${currentEvent.id}/lots`,
           },
           {
             label: () =>
               h(
                 RouterLink,
-                { to: `/admin/events/${event.value.id}/orders` },
+                { to: `/admin/events/${currentEvent.id}/orders` },
                 { default: () => '订单管理' }
               ),
-            key: `/admin/events/${event.value.id}/orders`,
+            key: `/admin/events/${currentEvent.id}/orders`,
           },
           {
             label: () =>
               h(
                 RouterLink,
-                { to: `/admin/events/${event.value.id}/stats` },
+                { to: `/admin/events/${currentEvent.id}/stats` },
                 { default: () => '销售统计' }
               ),
-            key: `/admin/events/${event.value.id}/stats`,
+            key: `/admin/events/${currentEvent.id}/stats`,
           },
           {
             label: () =>
               h(
                 RouterLink,
-                { to: `/admin/events/${event.value.id}/settlement` },
+                { to: `/admin/events/${currentEvent.id}/settlement` },
                 { default: () => '结算' }
               ),
-            key: `/admin/events/${event.value.id}/settlement`,
+            key: `/admin/events/${currentEvent.id}/settlement`,
           },
         ],
       }

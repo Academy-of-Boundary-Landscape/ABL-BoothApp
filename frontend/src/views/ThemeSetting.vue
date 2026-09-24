@@ -139,7 +139,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import {
   NCard,
   NSpace,
@@ -170,7 +170,7 @@ const presetColors = [
   { color: '#660874', label: '清华紫' },
 ]
 
-const isDefaultColor = (swatch) => {
+const isDefaultColor = (swatch: { color: string; label: string }) => {
   return swatch.color === themeStore.currentBaseTheme.primary.base
 }
 </script>
