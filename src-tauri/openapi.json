@@ -6338,7 +6338,7 @@
       },
       "EventStatus": {
         "type": "string",
-        "description": "`info.version` 故意固定为 \"1\" 而不是 App 版本号：否则每次 `set-version.sh`\n都会让契约快照变红，而契约本身并没有变。\n展会状态。",
+        "description": "展会状态。",
         "enum": [
           "筹备",
           "进行中",

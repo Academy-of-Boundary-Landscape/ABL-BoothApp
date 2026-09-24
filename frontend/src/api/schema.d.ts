@@ -1325,9 +1325,7 @@ export interface components {
             status: components["schemas"]["EventStatus"];
         };
         /**
-         * @description `info.version` 故意固定为 "1" 而不是 App 版本号：否则每次 `set-version.sh`
-         *     都会让契约快照变红，而契约本身并没有变。
-         *     展会状态。
+         * @description 展会状态。
          * @enum {string}
          */
         EventStatus: "筹备" | "进行中" | "已结算";

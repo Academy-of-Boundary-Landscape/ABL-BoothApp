@@ -17,8 +17,6 @@ pub struct ApiErrorBody {
     pub error: String,
 }
 
-/// `info.version` 故意固定为 "1" 而不是 App 版本号：否则每次 `set-version.sh`
-/// 都会让契约快照变红，而契约本身并没有变。
 // ---- 值域固定的字符串：只用于文档 ----
 //
 // 这些字段在 Rust 里仍是 `String`（改成真枚举会动到 SQL 读写与校验逻辑，③b 不做），
@@ -68,6 +66,8 @@ pub enum AdjustmentDirection {
     ToMe,
 }
 
+/// `info.version` 故意固定为 "1" 而不是 App 版本号：否则每次 `set-version.sh`
+/// 都会让契约快照变红，而契约本身并没有变。
 #[derive(OpenApi)]
 #[openapi(
     info(title = "摊盒 Booth-Kernel API", version = "1"),
