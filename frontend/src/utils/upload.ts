@@ -1,11 +1,9 @@
 import { ApiRequestError } from '@/api/core'
-import { createDiscreteApi } from 'naive-ui'
+import { useFeedback } from '@/composables/useFeedback'
 
 export const IMAGE_UPLOAD_LIMIT_MB = 10
 export const IMAGE_WARN_THRESHOLD_MB = 3
 export const SYNC_IMPORT_LIMIT_MB = 1000
-
-const { dialog } = createDiscreteApi(['dialog'])
 
 /** `validateFileSize` 的结果。通过时不带 message。 */
 export interface FileSizeValidation {
@@ -30,27 +28,18 @@ export function validateFileSize(
 }
 
 export function showUploadDialog(title: string, content: string): void {
-  dialog.warning({
-    title,
-    content,
-    positiveText: '知道了',
-  })
+  void useFeedback().alert({ title, content, type: 'warning', positiveText: '知道了' })
 }
 
 /**
  * 大文件确认对话框，返回 Promise<boolean>
  */
 export function confirmLargeFile(fileSizeMb: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    dialog.warning({
-      title: '图片文件较大',
-      content: `当前文件大小为 ${fileSizeMb.toFixed(1)}MB，上传较大图片可能影响加载速度。建议压缩到 ${IMAGE_WARN_THRESHOLD_MB}MB 以内。是否继续上传？`,
-      positiveText: '继续上传',
-      negativeText: '取消',
-      onPositiveClick: () => resolve(true),
-      onNegativeClick: () => resolve(false),
-      onClose: () => resolve(false),
-    })
+  return useFeedback().confirm({
+    title: '图片文件较大',
+    content: `当前文件大小为 ${fileSizeMb.toFixed(1)}MB，上传较大图片可能影响加载速度。建议压缩到 ${IMAGE_WARN_THRESHOLD_MB}MB 以内。是否继续上传？`,
+    positiveText: '继续上传',
+    negativeText: '取消',
   })
 }
 

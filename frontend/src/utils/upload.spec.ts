@@ -1,12 +1,43 @@
 import { describe, it, expect, vi } from 'vitest'
 
-vi.mock('naive-ui', () => ({
-  createDiscreteApi: () => ({ dialog: { warning: vi.fn() } }),
+const fb = vi.hoisted(() => ({
+  alert: vi.fn(() => Promise.resolve()),
+  confirm: vi.fn(() => Promise.resolve(true)),
 }))
+vi.mock('@/composables/useFeedback', () => ({ useFeedback: () => fb }))
 
-const { bytesFromMb, validateFileSize, normalizeUploadError, IMAGE_UPLOAD_LIMIT_MB } = await import(
-  './upload'
-)
+const {
+  bytesFromMb,
+  validateFileSize,
+  normalizeUploadError,
+  showUploadDialog,
+  confirmLargeFile,
+  IMAGE_UPLOAD_LIMIT_MB,
+} = await import('./upload')
+
+describe('上传提示走 useFeedback（跟随主题的唯一反馈入口）', () => {
+  it('showUploadDialog → 模态 warning，按钮「知道了」', () => {
+    showUploadDialog('上传文件过大', '不超过 10MB')
+    expect(fb.alert).toHaveBeenCalledWith({
+      title: '上传文件过大',
+      content: '不超过 10MB',
+      type: 'warning',
+      positiveText: '知道了',
+    })
+  })
+
+  it('confirmLargeFile → confirm 的结果原样返回', async () => {
+    fb.confirm.mockResolvedValueOnce(false)
+    await expect(confirmLargeFile(4.2)).resolves.toBe(false)
+    expect(fb.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: '图片文件较大',
+        positiveText: '继续上传',
+        negativeText: '取消',
+      })
+    )
+  })
+})
 
 describe('bytesFromMb', () => {
   it('按 1024 换算', () => {
