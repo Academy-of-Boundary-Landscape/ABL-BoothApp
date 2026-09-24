@@ -1,42 +1,34 @@
 // src/api/admin.rs
 
 use crate::{
-    api::guard::AdminOnly,
+    api::{guard::AdminOnly, openapi::ApiErrorBody},
+    error::ApiError,
     state::AppState,
     utils::security::{hash_password, verify_password},
 };
 use axum::{
     extract::State,
     http::StatusCode,
-    response::{IntoResponse, Json},
-    routing::put,
-    Router,
+    response::{IntoResponse, Json, Response},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::AssertSqlSafe;
 use tokio::fs;
+use utoipa::ToSchema;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
-/// ③b 过渡：本模块的路由还没标 utoipa 注解，整体包进 OpenApiRouter——路由照常工作，
-/// 只是文档里没有它的路径。阶段 2 迁移本模块时改为 `routes!(...)` 并删掉 `legacy_router`。
-pub fn router() -> utoipa_axum::router::OpenApiRouter<AppState> {
-    utoipa_axum::router::OpenApiRouter::from(legacy_router())
-}
-
-fn legacy_router() -> Router<AppState> {
-    Router::new()
-        .route("/password", put(update_admin_password))
-        .route(
-            "/vendor-default-password",
-            put(update_vendor_default_password),
-        )
-        .route("/reset-database", put(reset_database_handler))
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(update_admin_password))
+        .routes(routes!(update_vendor_default_password))
+        .routes(routes!(reset_database_handler))
 }
 
 // ==========================================
 // 1. 更新管理员密码
 // ==========================================
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct UpdateAdminPasswordRequest {
     #[serde(rename = "oldPassword")]
     old_password: String,
@@ -44,18 +36,39 @@ struct UpdateAdminPasswordRequest {
     new_password: String,
 }
 
+/// 管理员密码 / 默认摊主密码更新成功的响应。
+///
+/// 两个接口共用；`#[schema(as = ...)]` 加模块前缀，避免和别的模块的同名 schema 在
+/// openapi.json 里互相覆盖。
+#[derive(Serialize, ToSchema)]
+#[schema(as = AdminMessageResponse)]
+struct MessageResponse {
+    message: String,
+}
+
+/// 修改管理员登录密码。需要管理员。
+#[utoipa::path(
+    put,
+    path = "/password",
+    tag = "admin",
+    request_body = UpdateAdminPasswordRequest,
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = MessageResponse, description = "管理员密码已更新"),
+        (status = 400, body = ApiErrorBody, description = "新密码少于 4 位"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "需要管理员"),
+        (status = 500, body = ApiErrorBody, description = "settings 缺行或数据库写入失败（部分分支为纯文本）"),
+    ),
+)]
 async fn update_admin_password(
     State(state): State<AppState>,
     _: AdminOnly,
     Json(payload): Json<UpdateAdminPasswordRequest>,
-) -> impl IntoResponse {
+) -> Response {
     // 不需要展会守卫：管理员密码存在全局 settings 表，不属于任何展会
     if payload.new_password.chars().count() < 4 {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "新密码至少 4 位"})),
-        )
-            .into_response();
+        return ApiError::BadRequest("新密码至少 4 位".into()).into_response();
     }
 
     // 1. 获取当前密码 Hash
@@ -100,7 +113,13 @@ async fn update_admin_password(
     match result {
         Ok(_) => {
             //eprintln!("[DEBUG] Admin password updated successfully");
-            (StatusCode::OK, Json(json!({"message": "管理员密码已更新"}))).into_response()
+            (
+                StatusCode::OK,
+                Json(MessageResponse {
+                    message: "管理员密码已更新".to_string(),
+                }),
+            )
+                .into_response()
         }
         Err(_e) => {
             //eprintln!("[DEBUG] Failed to update admin password: {:?}", e);
@@ -112,24 +131,35 @@ async fn update_admin_password(
 // ==========================================
 // 2. 更新默认摊主密码
 // ==========================================
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct UpdateVendorPasswordRequest {
     #[serde(rename = "newPassword")]
     new_password: String,
 }
 
+/// 修改全局默认摊主密码。需要管理员。
+#[utoipa::path(
+    put,
+    path = "/vendor-default-password",
+    tag = "admin",
+    request_body = UpdateVendorPasswordRequest,
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = MessageResponse, description = "默认摊主密码已更新"),
+        (status = 400, body = ApiErrorBody, description = "新密码少于 4 位"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "需要管理员"),
+        (status = 500, body = ApiErrorBody, description = "数据库写入失败（返回纯文本，非 error 形状）"),
+    ),
+)]
 async fn update_vendor_default_password(
     State(state): State<AppState>,
     _: AdminOnly,
     Json(payload): Json<UpdateVendorPasswordRequest>,
-) -> impl IntoResponse {
+) -> Response {
     // 不需要展会守卫：摊主默认密码存在全局 settings 表，不属于任何展会
     if payload.new_password.chars().count() < 4 {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "新密码至少 4 位"})),
-        )
-            .into_response();
+        return ApiError::BadRequest("新密码至少 4 位".into()).into_response();
     }
 
     let new_hash = hash_password(&payload.new_password);
@@ -150,7 +180,9 @@ async fn update_vendor_default_password(
             //eprintln!("[DEBUG] Global vendor password updated successfully");
             (
                 StatusCode::OK,
-                Json(json!({"message": "默认摊主密码已更新"})),
+                Json(MessageResponse {
+                    message: "默认摊主密码已更新".to_string(),
+                }),
             )
                 .into_response()
         }
@@ -164,7 +196,29 @@ async fn update_vendor_default_password(
 // ==========================================
 // 3. 重置数据库（危险操作）
 // ==========================================
-async fn reset_database_handler(State(state): State<AppState>, _: AdminOnly) -> impl IntoResponse {
+
+/// 数据库重置成功的响应。`warning` 给前端弹窗展示「数据已清空」。
+#[derive(Serialize, ToSchema)]
+#[schema(as = AdminResetDatabaseResponse)]
+struct ResetDatabaseResponse {
+    message: String,
+    warning: String,
+}
+
+/// 清空全部业务数据、删除上传的图片并把密码恢复为默认值（危险操作）。需要管理员。
+#[utoipa::path(
+    put,
+    path = "/reset-database",
+    tag = "admin",
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = ResetDatabaseResponse, description = "数据库已完全重置"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "需要管理员"),
+        (status = 500, body = ApiErrorBody, description = "清理上传目录或数据库事务失败（部分分支为纯文本）"),
+    ),
+)]
+async fn reset_database_handler(State(state): State<AppState>, _: AdminOnly) -> Response {
     // 不需要展会守卫：管理员全局重置，不属于任何展会，且本来就要清空全部展会
     //eprintln!("[WARNING] Database reset requested by admin");
 
@@ -301,11 +355,13 @@ async fn reset_database_handler(State(state): State<AppState>, _: AdminOnly) -> 
 
             (
                 StatusCode::OK,
-                Json(json!({
-                    "message": "数据库已完全重置，所有图片已删除，密码已恢复为 admin123 / vendor123",
-                    "warning": "所有数据和文件已被清空，请重新登录"
-                })),
-            ).into_response()
+                Json(ResetDatabaseResponse {
+                    message: "数据库已完全重置，所有图片已删除，密码已恢复为 admin123 / vendor123"
+                        .to_string(),
+                    warning: "所有数据和文件已被清空，请重新登录".to_string(),
+                }),
+            )
+                .into_response()
         }
         Err(_e) => {
             //eprintln!("[ERROR] Failed to commit transaction: {:?}", e);
@@ -315,5 +371,198 @@ async fn reset_database_handler(State(state): State<AppState>, _: AdminOnly) -> 
             )
                 .into_response()
         }
+    }
+}
+
+/// ③b 形状快照：钉住每个路由的 JSON 形状（键 + 类型），类型化前后必须一行不改照样绿。
+#[cfg(test)]
+mod shape_tests {
+    use crate::test_support::{
+        admin_token, json_request, read_json, seed_event_and_product, shape_of, test_router_with,
+        vendor_token,
+    };
+    use axum::http::StatusCode;
+    use axum::Router;
+    use serde_json::{json, Value};
+    use tower::ServiceExt;
+
+    /// 一场有商品、有展会的库，让管理接口跑在真实迁移后的 schema 上。
+    async fn seeded() -> (Router, tempfile::TempDir) {
+        let (router, dir, pool) = test_router_with().await;
+        let _ = seed_event_and_product(&pool).await;
+        (router, dir)
+    }
+
+    async fn call(
+        router: &Router,
+        method: &str,
+        uri: &str,
+        token: Option<&str>,
+        body: Value,
+    ) -> (StatusCode, Value) {
+        let res = router
+            .clone()
+            .oneshot(json_request(method, uri, token, body))
+            .await
+            .unwrap();
+        let status = res.status();
+        (status, read_json(res).await)
+    }
+
+    #[tokio::test]
+    async fn shape_update_admin_password() {
+        let (router, _dir) = seeded().await;
+        let t = admin_token();
+
+        let (s, body) = call(
+            &router,
+            "PUT",
+            "/api/admin/password",
+            Some(&t),
+            json!({"oldPassword": "admin123", "newPassword": "newpass"}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(shape_of(&body), json!({"message": "string"}));
+
+        let (s, body) = call(
+            &router,
+            "PUT",
+            "/api/admin/password",
+            Some(&t),
+            json!({"oldPassword": "admin123", "newPassword": "x"}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::BAD_REQUEST, json!({"error": "string"}))
+        );
+
+        let (s, body) = call(
+            &router,
+            "PUT",
+            "/api/admin/password",
+            None,
+            json!({"oldPassword": "admin123", "newPassword": "newpass"}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::UNAUTHORIZED, json!({"error": "string"}))
+        );
+
+        let (s, body) = call(
+            &router,
+            "PUT",
+            "/api/admin/password",
+            Some(&vendor_token(1)),
+            json!({"oldPassword": "admin123", "newPassword": "newpass"}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::FORBIDDEN, json!({"error": "string"}))
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_update_vendor_default_password() {
+        let (router, _dir) = seeded().await;
+        let t = admin_token();
+
+        let (s, body) = call(
+            &router,
+            "PUT",
+            "/api/admin/vendor-default-password",
+            Some(&t),
+            json!({"newPassword": "newvendor"}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(shape_of(&body), json!({"message": "string"}));
+
+        let (s, body) = call(
+            &router,
+            "PUT",
+            "/api/admin/vendor-default-password",
+            Some(&t),
+            json!({"newPassword": "x"}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::BAD_REQUEST, json!({"error": "string"}))
+        );
+
+        let (s, body) = call(
+            &router,
+            "PUT",
+            "/api/admin/vendor-default-password",
+            None,
+            json!({"newPassword": "newvendor"}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::UNAUTHORIZED, json!({"error": "string"}))
+        );
+
+        let (s, body) = call(
+            &router,
+            "PUT",
+            "/api/admin/vendor-default-password",
+            Some(&vendor_token(1)),
+            json!({"newPassword": "newvendor"}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::FORBIDDEN, json!({"error": "string"}))
+        );
+    }
+
+    #[tokio::test]
+    async fn shape_reset_database_handler() {
+        let (router, _dir) = seeded().await;
+
+        let (s, body) = call(
+            &router,
+            "PUT",
+            "/api/admin/reset-database",
+            Some(&admin_token()),
+            json!(null),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(
+            shape_of(&body),
+            json!({"message": "string", "warning": "string"})
+        );
+
+        let (s, body) = call(
+            &router,
+            "PUT",
+            "/api/admin/reset-database",
+            None,
+            json!(null),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::UNAUTHORIZED, json!({"error": "string"}))
+        );
+
+        let (s, body) = call(
+            &router,
+            "PUT",
+            "/api/admin/reset-database",
+            Some(&vendor_token(1)),
+            json!(null),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::FORBIDDEN, json!({"error": "string"}))
+        );
     }
 }
