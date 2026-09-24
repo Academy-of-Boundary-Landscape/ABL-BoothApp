@@ -458,6 +458,23 @@ pub async fn account_balance(
     Ok(Money::from_cents(cents))
 }
 
+/// 本社团的 id。手工折让和退货的第二条腿都要拿它当对手账户。
+///
+/// **Review Focus #5**：`societies` 表理论上保证有且只有一个 `is_home = 1`
+/// （迁移里建了偏索引），但用户删得掉社团，手工改过的库也进得来。
+/// 没有就 panic 会把整个 handler 打成 500，摊主看到「服务器错误」无从下手；
+/// 这里给一句能照着做的话。
+pub async fn home_society_id(conn: &mut sqlx::SqliteConnection) -> ApiResult<i64> {
+    sqlx::query_scalar("SELECT id FROM societies WHERE is_home = 1")
+        .fetch_optional(&mut *conn)
+        .await?
+        .ok_or_else(|| {
+            ApiError::Conflict(
+                "还没有设置本社团，无法记账——请先到「社团管理」把自己的社团标成本社团".into(),
+            )
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

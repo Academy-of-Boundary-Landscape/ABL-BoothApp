@@ -23,8 +23,8 @@ use crate::{
     domain::{
         allocation::apply_manual_adjustment,
         ledger::{
-            onsite_balance, post_journal, reverse_order_journals, Account, JournalKind, Location,
-            MoneyLeg, StockLeg,
+            home_society_id, onsite_balance, post_journal, reverse_order_journals, Account,
+            JournalKind, Location, MoneyLeg, StockLeg,
         },
         money::Money,
         pricing::{
@@ -669,9 +669,8 @@ async fn update_order_status(
             if diff != 0 {
                 // 「本社团」有且只有一个，由 idx_societies_home 这个偏唯一索引保证，
                 // 且 api/society.rs 不允许把它降级成「没有本社团」。
-                let home: i64 = query_scalar("SELECT id FROM societies WHERE is_home = 1")
-                    .fetch_one(&mut *tx)
-                    .await?;
+                // 没有时给一句能照着做的话，而不是 panic 成 500。
+                let home = home_society_id(&mut tx).await?;
                 // ⚠️ 金额恒取绝对值，方向由 from/to 表达（spec 4.4 末句）。
                 // 照「金额 = solved − final」直接传，加价时它是负数，而 post_journal
                 // 对非正金额直接返回「资金移动的金额必须为正」——每一张加价订单的

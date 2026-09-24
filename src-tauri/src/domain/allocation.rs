@@ -32,7 +32,10 @@ use crate::error::{ApiError, ApiResult};
 /// 但余数最大可达「行数 − 1」。逐分派发永远派得完：总余量 = `final + 余数` ≥ 余数。
 ///
 /// 顺序固定 ⇒ 同输入必然同输出，这是 spec 4.5 明文要求的。
-fn apportion(total: i64, weights: &[i64], caps: Option<&[i64]>) -> ApiResult<Vec<i64>> {
+/// **退货也用它**（②-3）：把一行的剩余金额按件数切成「这次退的」和「还留着的」，
+/// 以及把实退总额按各行实付摊回去。取整规则和 Lot 分摊是同一套，
+/// 所以「退一半再退一半」和「一次退完」的总额必然一致。
+pub fn apportion(total: i64, weights: &[i64], caps: Option<&[i64]>) -> ApiResult<Vec<i64>> {
     let n = weights.len();
     let mut out = vec![0i64; n];
     if total == 0 {

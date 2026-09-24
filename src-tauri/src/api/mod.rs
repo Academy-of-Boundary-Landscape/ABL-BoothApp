@@ -12,6 +12,7 @@ mod lot;
 mod master_product;
 mod order;
 mod product;
+mod refund;
 mod settlement;
 mod society;
 mod stats;
@@ -32,6 +33,7 @@ pub fn router() -> Router<AppState> {
         .merge(product::router())
         .merge(lot::router())
         .merge(order::router())
+        .merge(refund::router())
         .merge(settlement::router())
         .merge(inventory::router())
         .nest("/legacy", legacy::router());
