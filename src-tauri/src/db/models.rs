@@ -74,15 +74,18 @@ pub struct Society {
 // ==========================================
 // 订单
 // ==========================================
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct OrderRow {
     pub id: i64,
     pub event_id: i64,
     pub status: String,
     pub channel: Option<String>,
     /// 以下三个单位都是分。②-1 里恒相等；②-2 引入 Lot 和手工覆盖后才会分开。
+    #[schema(value_type = crate::domain::money::Money)]
     pub gross_amount: i64,
+    #[schema(value_type = crate::domain::money::Money)]
     pub solved_amount: i64,
+    #[schema(value_type = crate::domain::money::Money)]
     pub final_amount: i64,
     /// 前端读的是 `timestamp` —— 这个 rename 是个隐形契约，
     /// `frontend/src/components/order/OrderCard.vue:55` 和
