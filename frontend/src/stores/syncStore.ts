@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import api from '@/services/api'
+import { api, unwrap, ApiRequestError, type Schemas } from '@/api/client'
 import { ref } from 'vue'
 
 function detectEnv() {
@@ -15,7 +15,7 @@ function detectEnv() {
 }
 
 // 解析 Content-Disposition 的 filename / filename*
-function parseFilenameFromDisposition(disposition, fallback = 'booth_catalog.boothpack') {
+function parseFilenameFromDisposition(disposition: string, fallback = 'booth_catalog.boothpack') {
   const d = String(disposition || '')
 
   // filename*=UTF-8''xxx
@@ -34,7 +34,7 @@ function parseFilenameFromDisposition(disposition, fallback = 'booth_catalog.boo
   return fallback
 }
 
-function toBlob(data, mime = 'application/zip') {
+function toBlob(data: Blob | ArrayBuffer | Uint8Array, mime = 'application/zip'): Blob {
   if (data instanceof Blob) return data
   if (data instanceof ArrayBuffer) return new Blob([new Uint8Array(data)], { type: mime })
   // axios 在某些环境可能给 Uint8Array
@@ -42,7 +42,7 @@ function toBlob(data, mime = 'application/zip') {
   return new Blob([data], { type: mime })
 }
 
-function triggerBrowserDownload(blob, filename) {
+function triggerBrowserDownload(blob: Blob, filename: string) {
   const url = window.URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
@@ -53,24 +53,31 @@ function triggerBrowserDownload(blob, filename) {
   window.URL.revokeObjectURL(url)
 }
 
+/** 从错误对象上取一句话，等价于旧写法 `err?.message || err`。 */
+function errText(err: unknown): string {
+  return err instanceof Error && err.message ? err.message : String(err)
+}
+
 export const useSyncStore = defineStore('sync', () => {
   const isExporting = ref(false)
   const isImporting = ref(false)
-  const lastError = ref(null)
+  const lastError = ref<unknown>(null)
 
   const env = detectEnv()
 
-  async function exportProducts() {
+  async function exportProducts(): Promise<{ filename: string | null; cancelled?: boolean }> {
     isExporting.value = true
     lastError.value = null
 
     try {
-      // 统一用 arraybuffer 更省心（blob/arraybuffer 在不同端差异多）
-      const response = await api.get('/sync/export-products', { responseType: 'arraybuffer' })
-      const disposition =
-        response.headers?.['content-disposition'] || response.headers?.['Content-Disposition'] || ''
+      // 二进制下载：parseAs blob，数据即以 Blob 返回。
+      const result = await api.GET('/sync/export-products', { parseAs: 'blob' })
+      if (!result.response.ok || result.data === undefined) {
+        throw new ApiRequestError(result.response.status, result.error)
+      }
+      const disposition = result.response.headers.get('content-disposition') ?? ''
       const filename = parseFilenameFromDisposition(disposition, 'booth_catalog.boothpack')
-      const blob = toBlob(response.data, 'application/zip')
+      const blob = toBlob(result.data, 'application/zip')
 
       // ✅ Tauri Desktop：保存对话框 + 写文件
       if (env.isTauriDesktop) {
@@ -89,11 +96,8 @@ export const useSyncStore = defineStore('sync', () => {
           return { filename: null, cancelled: true }
         }
 
-        // 把 arraybuffer 写入
-        const bytes =
-          response.data instanceof ArrayBuffer
-            ? new Uint8Array(response.data)
-            : new Uint8Array(await blob.arrayBuffer())
+        // 把字节写入（parseAs blob 后 data 恒是 Blob）
+        const bytes = new Uint8Array(await blob.arrayBuffer())
         await fsModule.writeFile(filePath, bytes)
         return { filename: filePath }
       }
@@ -111,10 +115,7 @@ export const useSyncStore = defineStore('sync', () => {
             filters: [{ name: 'Booth Pack', extensions: ['boothpack', 'zip'] }],
           })
           if (filePath) {
-            const bytes =
-              response.data instanceof ArrayBuffer
-                ? new Uint8Array(response.data)
-                : new Uint8Array(await blob.arrayBuffer())
+            const bytes = new Uint8Array(await blob.arrayBuffer())
             await fsModule.writeFile(filePath, bytes)
             return { filename: filePath }
           }
@@ -163,9 +164,8 @@ export const useSyncStore = defineStore('sync', () => {
       console.error(err)
       lastError.value = err
 
-      // 尽量保留真实错误
-      const msg = err?.message || '导出失败，请稍后重试'
-      throw new Error(msg)
+      // 原样抛给组件：组件读 ApiRequestError.response / message 自行兜底。
+      throw err
     } finally {
       isExporting.value = false
     }
@@ -175,28 +175,30 @@ export const useSyncStore = defineStore('sync', () => {
   //
   // 注意：旧的 multipart endpoint /sync/import-products 仍然保留在后端，
   // 用于 LAN 浏览器或任何不走 Tauri webview 的客户端，向后兼容。
-  function extractImportError(err, fallback = '导入失败') {
-    return err?.response?.data?.error || err?.response?.data?.message || err?.message || fallback
-  }
-
+  //
   // [sync-fe] 前端时序日志，对应后端的 [sync] 标签。
   // 用 performance.now() 拿毫秒时间戳，分阶段打印帮排查"卡 30 秒"问题。
   // 总是打印（不分 dev/release），原因和后端一样：用户是在 release 里遇到 bug。
-  function feLog(msg) {
+  function feLog(msg: string) {
     console.log(`[sync-fe] ${msg}`)
   }
 
-  async function postRawZip(uint8) {
+  async function postRawZip(uint8: Uint8Array): Promise<Schemas['SyncImportResponse']> {
     const t0 = performance.now()
     feLog(`postRawZip: about to api.post (${uint8.byteLength} bytes)`)
-    const response = await api.post('/sync/import-products-raw', uint8, {
-      headers: { 'Content-Type': 'application/zip' },
-    })
+    const response = await unwrap<Schemas['SyncImportResponse']>(
+      api.POST('/sync/import-products-raw', {
+        // 原始字节：契约把 application/octet-stream 生成为 number[]，
+        // 但只有原样发 Uint8Array 才会走 client 的 raw bodySerializer。
+        body: uint8 as never,
+        headers: { 'Content-Type': 'application/zip' },
+      })
+    )
     feLog(`postRawZip: api.post returned in ${(performance.now() - t0).toFixed(0)}ms`)
-    return response.data
+    return response
   }
 
-  async function importProducts(file) {
+  async function importProducts(file: File) {
     if (!file) throw new Error('请选择要导入的文件')
 
     isImporting.value = true
@@ -215,18 +217,18 @@ export const useSyncStore = defineStore('sync', () => {
       return result
     } catch (err) {
       feLog(
-        `importProducts: error after ${(performance.now() - t0).toFixed(0)}ms — ${err?.message || err}`
+        `importProducts: error after ${(performance.now() - t0).toFixed(0)}ms — ${errText(err)}`
       )
       console.error(err)
       lastError.value = err
-      throw new Error(extractImportError(err, '导入失败，请检查文件格式或稍后重试'))
+      throw err
     } finally {
       isImporting.value = false
     }
   }
 
   // ✅ 修复：不再调用 importProducts() 以免 isImporting 双重管理
-  async function importProductsFromPath(filePath) {
+  async function importProductsFromPath(filePath: string) {
     if (!filePath) throw new Error('未提供文件路径')
     if (!env.isTauri) throw new Error('仅在 Tauri 环境可用')
 
@@ -251,11 +253,11 @@ export const useSyncStore = defineStore('sync', () => {
       return result
     } catch (err) {
       feLog(
-        `importProductsFromPath: error after ${(performance.now() - t0).toFixed(0)}ms — ${err?.message || err}`
+        `importProductsFromPath: error after ${(performance.now() - t0).toFixed(0)}ms — ${errText(err)}`
       )
       console.error('[Tauri] importProductsFromPath error:', err)
       lastError.value = err
-      throw new Error(extractImportError(err, '导入失败'))
+      throw err
     } finally {
       isImporting.value = false
     }
