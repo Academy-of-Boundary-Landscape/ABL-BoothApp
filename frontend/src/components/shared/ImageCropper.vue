@@ -1,4 +1,5 @@
 <template>
+  <!-- ui-boundary-ignore: 全屏裁剪交互依赖 esc/transform-origin 与自定义遮罩，AppModal 无法承载 -->
   <n-modal
     :show="show"
     :mask-closable="false"
@@ -92,6 +93,7 @@
 </template>
 
 <script setup lang="ts">
+// ui-boundary-ignore: 全屏裁剪交互保留裸 n-modal，理由见模板注释
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { NButton, NModal, NSpin } from 'naive-ui'
 
@@ -500,12 +502,11 @@ function handleClose() {
 
 <style scoped>
 .cropper-root {
-  width: 92vw;
-  max-width: 900px;
+  width: min(92vw, 900px);
   height: 90vh;
   max-height: 900px;
   background: var(--card-bg-color);
-  border-radius: var(--radius-lg, 12px);
+  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -516,23 +517,23 @@ function handleClose() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 20px;
+  padding: var(--space-md) var(--space-lg);
   border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
 }
 .cropper-title {
-  font-size: var(--font-md, 15px);
-  font-weight: 700;
+  font-size: var(--font-md);
+  font-weight: var(--weight-bold);
   color: var(--primary-text-color);
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-sm);
 }
 .cropper-batch-label {
-  font-size: var(--font-sm, 13px);
-  font-weight: 500;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
   color: var(--text-muted);
-  padding: 2px 8px;
+  padding: var(--space-xs) var(--space-sm);
   background: var(--bg-secondary);
   border-radius: var(--radius-pill);
 }
@@ -543,7 +544,7 @@ function handleClose() {
   border: none;
   background: transparent;
   color: var(--text-muted);
-  font-size: 24px;
+  font-size: var(--font-xl);
   line-height: 1;
   cursor: pointer;
   border-radius: 50%;
@@ -558,6 +559,7 @@ function handleClose() {
 .cropper-stage {
   flex: 1;
   min-height: 0;
+  /* stylelint-disable-next-line color-no-hex -- 裁剪舞台需纯黑背景衬托图片与遮罩边界，色板无纯黑 token */
   background: #000;
   position: relative;
   display: flex;
@@ -567,10 +569,10 @@ function handleClose() {
   user-select: none;
 }
 .cropper-loading {
-  color: white;
+  color: var(--text-white);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-sm);
   font-size: var(--font-sm);
 }
 .cropper-canvas-wrap {
@@ -593,18 +595,19 @@ function handleClose() {
 /* 遮罩 */
 .mask {
   position: absolute;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--overlay-color);
   pointer-events: none;
 }
 
 /* 裁剪框 */
 .crop-box {
   position: absolute;
-  border: 2px solid white;
+  border: 2px solid var(--text-white);
   box-sizing: border-box;
   cursor: move;
   touch-action: none;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3);
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- 裁剪框 1px 硬描边贴合图片边缘，软阴影无法替代 */
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--overlay-color) 75%, transparent);
 }
 
 /* 3x3 辅助网格 */
@@ -615,7 +618,7 @@ function handleClose() {
 }
 .grid-line {
   position: absolute;
-  background: rgba(255, 255, 255, 0.4);
+  background: color-mix(in srgb, var(--text-white) 40%, transparent);
 }
 .grid-line.v1,
 .grid-line.v2 {
@@ -647,9 +650,9 @@ function handleClose() {
   position: absolute;
   width: 16px;
   height: 16px;
-  background: white;
-  border: 2px solid var(--accent-color, #4f46e5);
-  border-radius: 3px;
+  background: var(--text-white);
+  border: 2px solid var(--accent-color);
+  border-radius: var(--radius-sm);
   touch-action: none;
 }
 /* 触控目标扩大区（不可见） */
@@ -682,20 +685,20 @@ function handleClose() {
 /* 比例切换 */
 .cropper-ratios {
   display: flex;
-  gap: 8px;
-  padding: 10px 16px;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-lg);
   border-top: 1px solid var(--border-color);
   justify-content: center;
   flex-wrap: wrap;
   flex-shrink: 0;
 }
 .ratio-btn {
-  padding: 6px 16px;
+  padding: var(--space-sm) var(--space-lg);
   background: var(--card-bg-color);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-pill, 999px);
+  border-radius: var(--radius-pill);
   color: var(--text-muted);
-  font-size: var(--font-sm, 13px);
+  font-size: var(--font-sm);
   cursor: pointer;
   transition: all 0.15s;
   user-select: none;
@@ -707,22 +710,22 @@ function handleClose() {
 .ratio-btn.active {
   background: var(--accent-color);
   border-color: var(--accent-color);
-  color: white;
-  font-weight: 600;
+  color: var(--text-white);
+  font-weight: var(--weight-bold);
 }
 
 /* 底部按钮 */
 .cropper-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
-  padding: 12px 20px;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-lg);
   border-top: 1px solid var(--border-color);
   flex-shrink: 0;
 }
 
 /* 移动端适配 */
-@media (max-width: 640px) {
+@media (--phone) {
   .cropper-root {
     width: 100vw;
     height: 100vh;
@@ -731,19 +734,19 @@ function handleClose() {
     border-radius: 0;
   }
   .cropper-header {
-    padding: 10px 14px;
+    padding: var(--space-sm) var(--space-md);
   }
   .cropper-ratios {
-    padding: 8px 10px;
-    gap: 6px;
+    padding: var(--space-sm);
+    gap: var(--space-sm);
   }
   .ratio-btn {
-    padding: 5px 12px;
-    font-size: 12px;
+    padding: var(--space-xs) var(--space-md);
+    font-size: var(--font-xs);
   }
   .cropper-footer {
-    padding: 10px 14px;
-    gap: 8px;
+    padding: var(--space-sm) var(--space-md);
+    gap: var(--space-sm);
   }
   .cropper-footer :deep(.n-button) {
     flex: 1;

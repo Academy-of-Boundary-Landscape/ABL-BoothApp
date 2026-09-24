@@ -1,116 +1,115 @@
 <template>
-  <div class="form-section">
-    <div class="section-header" @click="isFormExpanded = !isFormExpanded">
-      <h2>添加新商品到仓库</h2>
-      <n-button text class="toggle-btn">
+  <SectionCard
+    class="form-section"
+    title="添加新商品到仓库"
+    collapsible
+    v-model:collapsed="isFormExpanded"
+  >
+    <template #extra>
+      <n-button text class="toggle-btn" @click="isFormExpanded = !isFormExpanded">
         {{ isFormExpanded ? '折叠' : '展开' }}
       </n-button>
-    </div>
+    </template>
 
-    <transition name="expand">
-      <div v-show="isFormExpanded" class="form-wrapper">
-        <n-card class="form-container" size="small">
-          <form @submit.prevent="handleCreate">
-            <div class="form-layout">
-              <div class="form-fields">
-                <div class="form-grid">
-                  <div class="form-group">
-                    <label for="create-code">商品编号:</label>
-                    <n-input
-                      id="create-code"
-                      v-model:value="createFormData.product_code"
-                      placeholder="A01"
-                      clearable
-                      required
-                    />
-                  </div>
-
-                  <div class="form-group">
-                    <label for="create-name">商品名称:</label>
-                    <n-input
-                      id="create-name"
-                      v-model:value="createFormData.name"
-                      placeholder="灵梦亚克力立牌"
-                      clearable
-                      required
-                    />
-                  </div>
-
-                  <div class="form-group">
-                    <label for="create-price">默认价格（元）:</label>
-                    <n-input-number
-                      id="create-price"
-                      v-model:value="createFormData.default_price"
-                      :step="0.01"
-                      :show-button="false"
-                      placeholder="45.00"
-                      required
-                    />
-                  </div>
-
-                  <div class="form-group">
-                    <label for="create-category">商品分类:</label>
-                    <n-select
-                      id="create-category"
-                      v-model:value="createFormData.category"
-                      :options="store.categoryOptions"
-                      filterable
-                      tag
-                      clearable
-                      placeholder="可选择已有分类，或直接输入新分类"
-                    />
-                  </div>
-
-                  <div class="form-group">
-                    <label>所属社团:</label>
-                    <SocietySelect
-                      v-model="createFormData.owner_society_id"
-                      placeholder="不选则归本社团"
-                    />
-                  </div>
-
-                  <div class="form-group" style="grid-column: 1 / -1">
-                    <label for="create-tags">标签:</label>
-                    <n-select
-                      id="create-tags"
-                      v-model:value="createFormData.tags"
-                      :options="store.tagOptions"
-                      placeholder="选择或输入标签（如角色名、系列）"
-                      filterable
-                      tag
-                      multiple
-                      clearable
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div class="form-media">
-                <ImageUploader
-                  label="商品预览图"
-                  v-model="createFormFile"
-                  crop-enabled
-                  :crop-default-aspect="themeStore.productImageAspect"
-                  @invalid-file="handleInvalidFile"
-                />
-              </div>
+    <form @submit.prevent="handleCreate">
+      <div class="form-layout">
+        <div class="form-fields">
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="create-code">商品编号:</label>
+              <n-input
+                id="create-code"
+                v-model:value="createFormData.product_code"
+                placeholder="A01"
+                clearable
+                required
+              />
             </div>
 
-            <n-button type="primary" attr-type="submit" :disabled="isCreating">
-              {{ isCreating ? '添加中...' : '添加到仓库' }}
-            </n-button>
+            <div class="form-group">
+              <label for="create-name">商品名称:</label>
+              <n-input
+                id="create-name"
+                v-model:value="createFormData.name"
+                placeholder="灵梦亚克力立牌"
+                clearable
+                required
+              />
+            </div>
 
-            <p v-if="createError" class="error-message">{{ createError }}</p>
-          </form>
-        </n-card>
+            <div class="form-group">
+              <label for="create-price">默认价格（元）:</label>
+              <n-input-number
+                id="create-price"
+                v-model:value="createFormData.default_price"
+                :step="0.01"
+                :show-button="false"
+                placeholder="45.00"
+                required
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="create-category">商品分类:</label>
+              <n-select
+                id="create-category"
+                v-model:value="createFormData.category"
+                :options="store.categoryOptions"
+                filterable
+                tag
+                clearable
+                placeholder="可选择已有分类，或直接输入新分类"
+              />
+            </div>
+
+            <div class="form-group">
+              <label>所属社团:</label>
+              <SocietySelect
+                v-model="createFormData.owner_society_id"
+                placeholder="不选则归本社团"
+              />
+            </div>
+
+            <div class="form-group" style="grid-column: 1 / -1">
+              <label for="create-tags">标签:</label>
+              <n-select
+                id="create-tags"
+                v-model:value="createFormData.tags"
+                :options="store.tagOptions"
+                placeholder="选择或输入标签（如角色名、系列）"
+                filterable
+                tag
+                multiple
+                clearable
+              />
+            </div>
+          </div>
+        </div>
+
+        <div class="form-media">
+          <ImageUploader
+            label="商品预览图"
+            v-model="createFormFile"
+            crop-enabled
+            :crop-default-aspect="themeStore.productImageAspect"
+            @invalid-file="handleInvalidFile"
+          />
+        </div>
       </div>
-    </transition>
-  </div>
+
+      <n-button type="primary" attr-type="submit" :disabled="isCreating">
+        {{ isCreating ? '添加中...' : '添加到仓库' }}
+      </n-button>
+
+      <p v-if="createError" class="form-error">{{ createError }}</p>
+    </form>
+  </SectionCard>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { NButton, NCard, NInput, NInputNumber, NSelect } from 'naive-ui'
+import { NButton, NInput, NInputNumber, NSelect } from 'naive-ui'
+import { SectionCard } from '@/components/ui'
 
 import ImageUploader from '@/components/shared/ImageUploader.vue'
 import SocietySelect from '@/components/shared/SocietySelect.vue'
@@ -203,86 +202,28 @@ async function handleCreate() {
 
 <style scoped>
 .form-section {
-  margin-bottom: 2rem;
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  cursor: pointer;
-  user-select: none;
-  padding: 0.75rem 1rem;
-  background: var(--card-bg-color);
-  border: 2px solid var(--border-color);
-  border-radius: var(--radius-md);
-  transition: all 0.2s ease;
-  margin-bottom: 0.5rem;
-}
-
-.section-header:hover {
-  background: var(--hover-bg-color, var(--card-bg-color));
-  border-color: var(--accent-color);
-}
-
-.section-header h2 {
-  margin: 0;
-  font-size: var(--font-lg);
-  color: var(--accent-color);
-  font-weight: 600;
+  margin-bottom: var(--space-2xl);
 }
 
 .toggle-btn {
   font-size: var(--font-base);
-  padding: 0.25rem 0.75rem;
+  padding: var(--space-xs) var(--space-md);
   min-width: auto;
   color: var(--accent-color);
-}
-
-.expand-enter-active,
-.expand-leave-active {
-  transition: all 0.3s ease;
-  overflow: hidden;
-}
-
-.expand-enter-from,
-.expand-leave-to {
-  opacity: 0;
-  max-height: 0;
-}
-
-.expand-enter-to,
-.expand-leave-from {
-  opacity: 1;
-  max-height: 2000px;
-}
-
-.form-wrapper {
-  background: var(--card-bg-color);
-  border: 2px solid var(--border-color);
-  border-radius: var(--radius-md);
-  padding: 1.5rem;
-}
-
-.form-container {
-  background-color: transparent;
-  border: none;
-  padding: 0;
-  border-radius: 0;
 }
 
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
+  gap: var(--space-lg);
 }
 
 .form-layout {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(260px, 320px);
-  gap: 1.25rem;
+  gap: var(--space-lg);
   align-items: start;
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-lg);
 }
 
 .form-fields,
@@ -296,26 +237,26 @@ async function handleCreate() {
 }
 
 label {
-  margin-bottom: 0.35rem;
-  font-weight: 500;
+  margin-bottom: var(--space-sm);
+  font-weight: var(--weight-medium);
 }
 
-.error-message {
+.form-error {
   color: var(--error-color);
-  margin-top: 0.75rem;
+  margin-top: var(--space-md);
 }
 
 .form-group :deep(.n-input-number) {
   width: 100%;
 }
 
-@media (max-width: 900px) {
+@media (--tablet) {
   .form-layout {
     grid-template-columns: 1fr;
   }
 }
 
-@media (max-width: 640px) {
+@media (--phone) {
   .form-grid {
     grid-template-columns: 1fr;
   }

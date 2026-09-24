@@ -1,95 +1,92 @@
 <template>
-  <div class="sync-container">
-    <div class="section-header" @click="isCollapsed = !isCollapsed">
-      <h2>商品数据包（.boothpack）</h2>
-      <n-button text class="toggle-btn">
+  <SectionCard title="商品数据包（.boothpack）" collapsible v-model:collapsed="isCollapsed">
+    <template #extra>
+      <n-button text class="toggle-btn" @click="isCollapsed = !isCollapsed">
         {{ isCollapsed ? '展开' : '折叠' }}
       </n-button>
+    </template>
+
+    <n-alert type="info" :bordered="false" class="info-alert">
+      <div class="info-text">
+        你可以导出当前商品库为 <code>.boothpack</code> 备份，也可以在其他设备导入。
+        <br />
+        <strong>注意：</strong>导入会覆盖同编号商品，建议先导出当前数据做备份。
+      </div>
+    </n-alert>
+
+    <n-alert
+      v-if="syncMessage"
+      type="success"
+      :bordered="false"
+      class="sync-alert"
+      closable
+      @close="syncMessage = ''"
+    >
+      {{ syncMessage }}
+    </n-alert>
+
+    <n-alert
+      v-if="syncError"
+      type="error"
+      :bordered="false"
+      class="sync-alert"
+      closable
+      @close="syncError = ''"
+    >
+      {{ syncError }}
+    </n-alert>
+
+    <div class="sync-controls">
+      <n-button size="large" type="success" :loading="isExporting" @click="handleExport">
+        导出 .boothpack
+      </n-button>
+
+      <n-button size="large" type="info" :loading="isImporting" @click="triggerImport">
+        导入 .boothpack
+      </n-button>
+
+      <input
+        ref="importFileInputRef"
+        type="file"
+        class="hidden-input"
+        accept=".boothpack,.zip,application/zip,application/octet-stream,application/x-zip-compressed"
+        @change="handleImportFile"
+      />
     </div>
 
-    <transition name="expand">
-      <div v-show="!isCollapsed" class="section-body">
-        <n-alert type="info" :bordered="false" class="info-alert">
-          <div class="info-text">
-            你可以导出当前商品库为 <code>.boothpack</code> 备份，也可以在其他设备导入。
-            <br />
-            <strong>注意：</strong>导入会覆盖同编号商品，建议先导出当前数据做备份。
-          </div>
-        </n-alert>
+    <div v-if="isImporting" class="import-progress">
+      <div class="import-progress-status">{{ importStatus }}</div>
+      <n-progress
+        type="line"
+        :percentage="importProgress"
+        :show-indicator="true"
+        :status="importProgress >= 100 ? 'success' : 'default'"
+        :height="20"
+        :border-radius="8"
+      />
+    </div>
 
-        <n-alert
-          v-if="syncMessage"
-          type="success"
-          :bordered="false"
-          class="sync-alert"
-          closable
-          @close="syncMessage = ''"
-        >
-          {{ syncMessage }}
-        </n-alert>
-
-        <n-alert
-          v-if="syncError"
-          type="error"
-          :bordered="false"
-          class="sync-alert"
-          closable
-          @close="syncError = ''"
-        >
-          {{ syncError }}
-        </n-alert>
-
-        <div class="sync-controls">
-          <n-button size="large" type="success" :loading="isExporting" @click="handleExport">
-            导出 .boothpack
-          </n-button>
-
-          <n-button size="large" type="info" :loading="isImporting" @click="triggerImport">
-            导入 .boothpack
-          </n-button>
-
-          <input
-            ref="importFileInputRef"
-            type="file"
-            class="hidden-input"
-            accept=".boothpack,.zip,application/zip,application/octet-stream,application/x-zip-compressed"
-            @change="handleImportFile"
-          />
-        </div>
-
-        <div v-if="isImporting" class="import-progress">
-          <div class="import-progress-status">{{ importStatus }}</div>
-          <n-progress
-            type="line"
-            :percentage="importProgress"
-            :show-indicator="true"
-            :status="importProgress >= 100 ? 'success' : 'default'"
-            :height="20"
-            :border-radius="8"
-          />
-        </div>
-
-        <div
-          class="drop-zone"
-          :class="{ 'is-dragging': isDragging }"
-          @dragenter.prevent="onDragEnter"
-          @dragover.prevent="onDragOver"
-          @dragleave.prevent="onDragLeave"
-          @drop.prevent="onDrop"
-        >
-          <div class="drop-zone-content">
-            <span class="drop-zone-icon">拖</span>
-            <span class="drop-zone-text">把 .boothpack 或 .zip 文件拖到这里导入</span>
-          </div>
-        </div>
+    <div
+      class="drop-zone"
+      :class="{ 'is-dragging': isDragging }"
+      @dragenter.prevent="onDragEnter"
+      @dragover.prevent="onDragOver"
+      @dragleave.prevent="onDragLeave"
+      @drop.prevent="onDrop"
+    >
+      <div class="drop-zone-content">
+        <span class="drop-zone-icon">拖</span>
+        <span class="drop-zone-text">把 .boothpack 或 .zip 文件拖到这里导入</span>
       </div>
-    </transition>
-  </div>
+    </div>
+  </SectionCard>
 </template>
 
 <script setup lang="ts">
-import { computed, h, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { NAlert, NButton, NProgress, useDialog, useMessage } from 'naive-ui'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { NAlert, NButton, NProgress } from 'naive-ui'
+import { SectionCard } from '@/components/ui'
+import { useFeedback } from '@/composables/useFeedback'
 
 import { useSyncStore } from '@/stores/syncStore'
 import {
@@ -102,8 +99,7 @@ import {
 const emit = defineEmits<{ (e: 'imported'): void }>()
 
 const syncStore = useSyncStore()
-const dialog = useDialog()
-const message = useMessage()
+const fb = useFeedback()
 
 const isCollapsed = ref(false)
 const importFileInputRef = ref<HTMLInputElement | null>(null)
@@ -214,12 +210,12 @@ async function handleExport() {
     const { filename } = await syncStore.exportProducts()
     syncMessage.value = filename ? `已导出：${filename}` : '已取消导出'
     if (filename) {
-      message.success(`已成功导出商品包：${filename}`, { duration: 5000, closable: true })
+      fb.success(`已成功导出商品包：${filename}`)
     }
   } catch (error) {
     const msg = error instanceof Error && error.message ? error.message : '导出失败'
     syncError.value = msg
-    message.error(`导出失败：${msg}`, { duration: 5000, closable: true })
+    fb.error(`导出失败：${msg}`)
   }
 }
 
@@ -239,44 +235,34 @@ async function confirmAndImport(target: ImportTarget) {
     (target.kind === 'path' ? String(target.path).split(/[/\\]/).pop() : target.file?.name) ||
     'unknown'
 
-  dialog.warning({
+  const confirmed = await fb.confirm({
     title: target.kind === 'path' ? '检测到文件拖入' : '确认导入',
-    content: () =>
-      h('div', { style: 'white-space: pre-line;' }, [
-        `文件名：${name}`,
-        '\n\n',
-        '确认要导入吗？这会覆盖或更新现有商品数据。',
-        '\n',
-        '建议先导出当前数据作为备份。',
-      ]),
+    content: `文件名：${name}\n\n确认要导入吗？这会覆盖或更新现有商品数据。\n建议先导出当前数据作为备份。`,
     positiveText: '确认导入',
     negativeText: '取消',
-    onPositiveClick: async () => {
-      if (isImporting.value) {
-        message.info('正在导入中，请稍候', { duration: 2000, closable: true })
-        return false
-      }
-
-      clearSyncHints()
-      startImportProgress()
-      try {
-        const result = await runImport(target)
-
-        stopImportProgress(true)
-        const pCount = result?.products_count ?? 0
-        const iCount = result?.images_count ?? 0
-        syncMessage.value = `导入成功，更新了 ${pCount} 条商品、${iCount} 张图片。`
-        message.success(`导入成功，已更新 ${pCount} 条商品、${iCount} 张图片`, {
-          duration: 5000,
-          closable: true,
-        })
-        emit('imported')
-      } catch (error) {
-        stopImportProgress(false)
-        syncError.value = normalizeUploadError(error, SYNC_IMPORT_LIMIT_MB)
-      }
-    },
   })
+  if (!confirmed) return
+
+  if (isImporting.value) {
+    fb.info('正在导入中，请稍候')
+    return
+  }
+
+  clearSyncHints()
+  startImportProgress()
+  try {
+    const result = await runImport(target)
+
+    stopImportProgress(true)
+    const pCount = result?.products_count ?? 0
+    const iCount = result?.images_count ?? 0
+    syncMessage.value = `导入成功，更新了 ${pCount} 条商品、${iCount} 张图片。`
+    fb.success(`导入成功，已更新 ${pCount} 条商品、${iCount} 张图片`)
+    emit('imported')
+  } catch (error) {
+    stopImportProgress(false)
+    syncError.value = normalizeUploadError(error, SYNC_IMPORT_LIMIT_MB)
+  }
 }
 
 function onDragEnter(event: DragEvent) {
@@ -351,41 +337,14 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.sync-container {
-  background: var(--card-bg-color);
-  border: 2px solid var(--border-color);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  cursor: pointer;
-  user-select: none;
-  padding: 0.75rem 1rem;
-}
-
-.section-header h2 {
-  margin: 0;
-  color: var(--accent-color);
-  font-size: var(--font-lg);
-}
-
 .toggle-btn {
   color: var(--accent-color);
 }
 
-.section-body {
-  padding: 1rem;
-  border-top: 2px solid var(--border-color);
-}
-
 .sync-controls {
   display: flex;
-  gap: 12px;
-  margin: 1rem 0;
+  gap: var(--space-md);
+  margin: var(--space-lg) 0;
 }
 
 .hidden-input {
@@ -395,7 +354,7 @@ onBeforeUnmount(() => {
 .drop-zone {
   border: 2px dashed var(--border-color);
   border-radius: var(--radius-md);
-  padding: 1.25rem;
+  padding: var(--space-lg);
   transition:
     border-color 0.2s ease,
     background-color 0.2s ease;
@@ -410,7 +369,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-sm);
   color: var(--text-muted);
 }
 
@@ -419,37 +378,19 @@ onBeforeUnmount(() => {
 }
 
 .import-progress {
-  margin: 1rem 0;
-  padding: 0.75rem 1rem;
+  margin: var(--space-lg) 0;
+  padding: var(--space-sm) var(--space-lg);
   background: var(--hover-bg-color);
   border-radius: var(--radius-md);
 }
 
 .import-progress-status {
-  font-size: var(--font-sm, 13px);
+  font-size: var(--font-sm);
   color: var(--text-muted);
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--space-sm);
 }
 
 .sync-alert {
-  margin-top: 0.75rem;
-}
-
-.expand-enter-active,
-.expand-leave-active {
-  transition: all 0.3s ease;
-  overflow: hidden;
-}
-
-.expand-enter-from,
-.expand-leave-to {
-  max-height: 0;
-  opacity: 0;
-}
-
-.expand-enter-to,
-.expand-leave-from {
-  max-height: 1000px;
-  opacity: 1;
+  margin-top: var(--space-md);
 }
 </style>

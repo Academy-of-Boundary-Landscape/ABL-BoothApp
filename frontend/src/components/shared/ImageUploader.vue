@@ -207,23 +207,23 @@ function resetState() {
 
 <style scoped>
 .image-uploader-container {
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-lg);
 }
 
 .form-label {
   display: block;
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--space-sm);
 }
 
 .image-preview-wrapper {
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-lg);
 }
 
 .image-preview-box {
   position: relative;
   display: inline-block;
   border: 1px solid var(--border-color);
-  padding: 5px;
+  padding: var(--space-xs);
   border-radius: var(--radius-sm);
   background-color: var(--bg-color);
 }
@@ -246,14 +246,14 @@ function resetState() {
   left: 5px;
   background-color: var(--overlay-color);
   color: var(--text-white);
-  padding: 2px 6px;
+  padding: var(--space-xs) var(--space-sm);
   font-size: var(--font-sm);
   border-radius: var(--radius-sm);
 }
 
 .no-image-placeholder {
   display: inline-block;
-  padding: 2rem 3rem;
+  padding: var(--space-2xl);
   border: 2px dashed var(--border-color);
   border-radius: var(--radius-sm);
   color: var(--text-disabled);
@@ -261,17 +261,17 @@ function resetState() {
 
 .image-actions {
   display: flex;
-  gap: 1rem;
+  gap: var(--space-lg);
 }
 
 .upload-hint {
-  margin-top: 0.5rem;
+  margin-top: var(--space-sm);
   color: var(--text-disabled);
   font-size: var(--font-base);
 }
 
 .upload-error {
-  margin-top: 0.25rem;
+  margin-top: var(--space-xs);
   color: var(--error-color);
   font-size: var(--font-base);
 }
