@@ -14,7 +14,9 @@
     "test:watch": "vitest",
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write src/",
-    "format:check": "prettier --check src/"
+    "format:check": "prettier --check src/",
+    "gen:api": "node scripts/gen-api.mjs",
+    "typecheck": "vue-tsc --build --force"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
@@ -30,6 +32,7 @@
     "axios": "^1.11.0",
     "colord": "^2.9.3",
     "naive-ui": "^2.43.2",
+    "openapi-fetch": "^0.17.0",
     "pinia": "^2.1.7",
     "qrcode.vue": "^3.6.0",
     "socket.io-client": "^4.8.1",
@@ -53,8 +56,10 @@
     "jiti": "^2.4.2",
     "jsdom": "^29.1.1",
     "npm-run-all2": "^8.0.4",
+    "openapi-typescript": "^7.13.0",
     "prettier": "3.6.2",
     "typescript": "~5.8.0",
+    "typescript-eslint": "^8.70.1",
     "vfonts": "^0.0.3",
     "vite": "^7.0.6",
     "vite-plugin-vue-devtools": "^8.0.0",

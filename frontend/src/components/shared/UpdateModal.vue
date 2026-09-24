@@ -129,9 +129,7 @@ import {
 const props = defineProps<{ show: boolean }>()
 const emit = defineEmits(['update:show'])
 
-const isTauriEnv = ref(
-  typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined
-)
+const isTauriEnv = ref(typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined)
 const dialog = useDialog()
 
 const showModal = computed({

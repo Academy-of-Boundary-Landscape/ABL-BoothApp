@@ -397,9 +397,11 @@ const resetDatabase = () => {
           sessionStorage.clear()
           window.location.href = '/admin'
         }, 1500)
-      } catch (err: any) {
+      } catch (err) {
         load.destroy()
-        message.error(err.response?.data?.error || '重置失败')
+        // ③b Task 11 迁到新 client 后改成 errorMessage(err, '重置失败')
+        const e = err as { response?: { data?: { error?: string } } }
+        message.error(e.response?.data?.error || '重置失败')
       }
     },
   })

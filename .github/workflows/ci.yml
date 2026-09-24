@@ -93,6 +93,14 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --prefix frontend
 
+      # 契约漂移：schema.d.ts 必须是由当前 src-tauri/openapi.json 生成的。
+      # openapi.json 本身由 rust job 的 openapi_snapshot 测试守着，两道合起来
+      # 保证「后端改了契约 → 前端类型必然跟着变 → diff 里看得见」。
+      - name: Contract drift (schema.d.ts must match openapi.json)
+        run: |
+          npm run gen:api --prefix frontend
+          git diff --exit-code frontend/src/api/schema.d.ts
+
       - name: Lint
         run: npm run lint --prefix frontend
 
@@ -101,6 +109,10 @@ jobs:
 
       - name: Unit tests
         run: npm run test:unit --prefix frontend
+
+      - name: Typecheck (non-blocking until ③b Task 12)
+        run: npm run typecheck --prefix frontend
+        continue-on-error: true
 
       - name: Build
         run: npm run build --prefix frontend
