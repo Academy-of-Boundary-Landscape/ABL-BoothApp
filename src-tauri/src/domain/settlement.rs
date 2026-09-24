@@ -198,6 +198,19 @@ pub fn build_report(input: &SettlementInput) -> SettlementReport {
         }
 
         let lot_discount = s.gross - s.allocated_net;
+
+        // 两段各自维护的 SQL 算同一批钱，只是 GROUP BY 不同（按社团 vs 按商品）。
+        // 它们今天必然相等——同一批整数列的 SUM，整数求和没有取整分歧——
+        // 所以不等只可能是有人改了一段没改另一段。这是本文件第三次用这个惯用法。
+        let goods_gross: Money = s.goods.iter().map(|g| g.gross).sum();
+        let goods_allocated: Money = s.goods.iter().map(|g| g.allocated).sum();
+        if goods_gross != s.gross || goods_allocated != s.allocated_net {
+            warnings.push(format!(
+                "{} 的货主明细金额对不上按社团汇总的金额：商品原价合计 {} vs {}，净额合计 {} vs {}",
+                s.name, goods_gross, s.gross, goods_allocated, s.allocated_net
+            ));
+        }
+
         let net = s.allocated_net - s.manual_discount_net;
         let advances_total: Money = s.advances.iter().map(|e| e.amount).sum();
         let adjustments_total: Money = s.adjustments.iter().map(|e| e.amount).sum();
@@ -302,6 +315,18 @@ mod tests {
         }
     }
 
+    /// 给一行货配上金额，并保持 `lot_discount = gross − allocated`。
+    ///
+    /// `goods()` 默认把三个金额字段留成 0，纯数量断言用得上；但 `build_report`
+    /// 现在会交叉核对「按商品加总 == 按社团加总」，凡是要喂 `gross` /
+    /// `allocated_net` 的测试都得让明细跟着对上。
+    fn priced(mut g: GoodsLine, gross: i64, allocated: i64) -> GoodsLine {
+        g.gross = Money::from_cents(gross);
+        g.allocated = Money::from_cents(allocated);
+        g.lot_discount = g.gross - g.allocated;
+        g
+    }
+
     fn society(id: i64, is_home: bool) -> SocietyInput {
         SocietyInput {
             society_id: id,
@@ -341,7 +366,7 @@ mod tests {
         // 摊主留存 = 2005 − 1170 − 380 = 455
         let mut home = society(1, true);
         home.name = "星见社".into();
-        home.goods = vec![goods("A", 90, 61, 4, 1, 0, 24, 0)];
+        home.goods = vec![priced(goods("A", 90, 61, 4, 1, 0, 24, 0), 183000, 171000)];
         home.gross = Money::from_cents(183000);
         home.allocated_net = Money::from_cents(171000);
         home.manual_discount_net = Money::from_cents(6000);
@@ -361,7 +386,7 @@ mod tests {
 
         let mut other = society(2, false);
         other.name = "黄昏堂".into();
-        other.goods = vec![goods("B", 30, 12, 0, 0, 0, 18, 0)];
+        other.goods = vec![priced(goods("B", 30, 12, 0, 0, 0, 18, 0), 36000, 36000)];
         other.gross = Money::from_cents(36000);
         other.allocated_net = Money::from_cents(36000);
         other.adjustments = vec![Entry {
@@ -427,6 +452,8 @@ mod tests {
         // 这条是整套设计里最强的一个断言：业务表加出来的数和账本聚合出来的数
         // 必须撞上。撞不上说明某条腿方向写错了或者漏记了。
         let mut s = society(2, false);
+        s.goods = vec![priced(goods("B", 30, 12, 0, 0, 0, 18, 0), 36000, 36000)];
+        s.gross = Money::from_cents(36000);
         s.allocated_net = Money::from_cents(36000);
         s.due_balance = Money::from_cents(-30000); // 账本说只欠 300
         let report = build_report(&input(vec![s], vec![]));
@@ -439,10 +466,32 @@ mod tests {
     }
 
     #[test]
+    fn goods_money_that_disagrees_with_the_society_total_becomes_a_warning() {
+        // 第三次用这个惯用法：按商品分组的 SQL 与按社团分组的 SQL 算同一批钱，
+        // 今天必然相等（同一批整数列的 SUM）。不等只可能是有人改了一段没改另一段。
+        let mut s = society(2, false);
+        s.goods = vec![priced(goods("B", 10, 5, 0, 0, 0, 5, 0), 100, 100)];
+        s.gross = Money::from_cents(200); // 故意比明细之和多 1 元
+        s.allocated_net = Money::from_cents(100);
+        s.due_balance = Money::from_cents(-100); // 账本那头是对的，只留交叉断言这一条告警
+        let report = build_report(&input(vec![s], vec![]));
+        assert_eq!(
+            report.warnings,
+            vec![
+                "社团2 的货主明细金额对不上按社团汇总的金额：商品原价合计 ¥1.00 vs ¥2.00，净额合计 ¥1.00 vs ¥1.00"
+                    .to_string()
+            ],
+            "要断言完整片段，而不是会被别的数字满足的子串"
+        );
+    }
+
+    #[test]
     fn refund_coverage_and_self_paid_gifts_land_in_the_transfer() {
         // 退货第 ③ 条腿（顾客没拿回的部分归货主）和摊主自掏赠品，
         // 两者都不经过「净额」那一栏，但都影响「我应转给」。
         let mut s = society(2, false);
+        s.goods = vec![priced(goods("B", 10, 5, 0, 0, 0, 5, 0), 10000, 10000)];
+        s.gross = Money::from_cents(10000);
         s.allocated_net = Money::from_cents(10000);
         s.refund_kept = Money::from_cents(1500);
         s.gift_self_paid = Money::from_cents(2000);

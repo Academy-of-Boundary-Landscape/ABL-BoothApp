@@ -175,10 +175,6 @@ const weights = computed(() =>
 )
 const perLineRefund = computed(() => splitRefund(refundCents.value, weights.value))
 
-const isFullyRefunded = computed(
-  () => lines.value.length > 0 && lines.value.every((l) => l.remaining_qty === 0)
-)
-
 async function load() {
   if (!props.order) return
   isLoading.value = true
@@ -200,8 +196,7 @@ async function load() {
     channel.value = props.order.channel || '微信'
     amountTouched.value = false
     amountYuan.value = fromCents(defaultRefundTotal(lines.value, qty))
-    // 只有真正拿到了 lines 才回报状态；请求失败时保持父组件原有的灰置判断。
-    emit('loaded', { orderId: props.order.id, fullyRefunded: isFullyRefunded.value })
+    emit('loaded', { orderId: props.order.id })
   } catch (err) {
     message.error(err.response?.data?.error || '无法加载退货信息。')
   } finally {
@@ -248,10 +243,7 @@ async function submit() {
     )
     message.success(`已退货，退款 ${formatYuan(data.refund_amount)}`)
     await load()
-    emit('refunded', {
-      orderId: props.order.id,
-      fullyRefunded: isFullyRefunded.value,
-    })
+    emit('refunded', { orderId: props.order.id })
   } catch (err) {
     message.error(err.response?.data?.error || '退货失败。')
   } finally {

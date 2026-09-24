@@ -573,6 +573,53 @@ struct AdjustmentRow {
     created_at: String,
 }
 
+/// 本场展会「用过」的全部渠道。**报表的 `channels[]` 和 `reconcile` 的校验
+/// （白名单 + 收全量）用的是同一条查询**，由构造保证同步。
+///
+/// 以前 `reconcile` 只查 `orders ∪ refunds`，于是理论上存在一个渠道报表列得出来、
+/// 清点却拒收：管理端会照着 `channels[]` 要摊主填这一格，提交时后端 400。
+/// 两处各写一份清单迟早分歧，所以抽成这一条。
+///
+/// 还要并上本展会 `money_movements` 里出现过的所有 `实收-` 账户：报表的
+/// actual_total / vendor_retained 只对这份清单求和，如果哪个别的路径往一个
+/// 出人意料的实收账户写了腿而这里没列出，那笔钱就会在结算单上彻底隐形。
+/// `substr(..., 4)` 从第 4 个字符起，正好剥掉 3 个字符的前缀 `实收-`。
+const EVENT_CHANNELS_SQL: &str = r#"
+SELECT channel FROM (
+    SELECT channel FROM orders
+     WHERE event_id = ? AND channel IS NOT NULL AND channel <> ''
+    UNION
+    SELECT r.channel AS channel FROM refunds r
+      JOIN order_lines ol ON ol.id = r.order_line_id
+      JOIN orders o ON o.id = ol.order_id
+     WHERE o.event_id = ? AND r.channel <> ''
+    UNION
+    SELECT substr(mm.to_account, 4) AS channel
+      FROM money_movements mm JOIN journals j ON j.id = mm.journal_id
+     WHERE j.event_id = ? AND mm.to_account LIKE '实收-%'
+    UNION
+    SELECT substr(mm.from_account, 4) AS channel
+      FROM money_movements mm JOIN journals j ON j.id = mm.journal_id
+     WHERE j.event_id = ? AND mm.from_account LIKE '实收-%'
+ ) WHERE channel <> '' ORDER BY 1
+"#;
+
+/// 跑 `EVENT_CHANNELS_SQL`。泛型到 executor，好让 `load_input`（池）和
+/// `reconcile`（事务）都用同一条 SQL、同一段代码。
+async fn event_channels<'e, E>(executor: E, event_id: i64) -> ApiResult<Vec<String>>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
+{
+    let names = sqlx::query_scalar(EVENT_CHANNELS_SQL)
+        .bind(event_id)
+        .bind(event_id)
+        .bind(event_id)
+        .bind(event_id)
+        .fetch_all(executor)
+        .await?;
+    Ok(names)
+}
+
 /// 把各张表查出来，组装成 `build_report` 要的输入。
 ///
 /// 页面 JSON 和 `settlement.xlsx` 都走这里——「页面显示 1,170、导出写 1,150」
@@ -739,38 +786,10 @@ pub(crate) async fn load_input(state: &AppState, event_id: i64) -> ApiResult<Set
         });
     }
 
-    // 渠道清单 = 本展会实际用过的（orders ∪ refunds），按展会过滤，
-    // 不是跨展会的 `GET /channels`。
-    //
-    // 还要并上本展会 `money_movements` 里出现过的所有 `实收-` 账户：报表的
-    // actual_total / vendor_retained 只对这份清单求和，如果哪个别的路径往一个
-    // 出人意料的实收账户写了腿而这里没列出，那笔钱就会在结算单上彻底隐形。
-    // `substr(..., 4)` 从第 4 个字符起，正好剥掉 3 个字符的前缀 `实收-`。
-    let channel_names: Vec<String> = sqlx::query_scalar(
-        "SELECT channel FROM (
-            SELECT channel FROM orders
-             WHERE event_id = ? AND channel IS NOT NULL AND channel <> ''
-            UNION
-            SELECT r.channel AS channel FROM refunds r
-              JOIN order_lines ol ON ol.id = r.order_line_id
-              JOIN orders o ON o.id = ol.order_id
-             WHERE o.event_id = ? AND r.channel <> ''
-            UNION
-            SELECT substr(mm.to_account, 4) AS channel
-              FROM money_movements mm JOIN journals j ON j.id = mm.journal_id
-             WHERE j.event_id = ? AND mm.to_account LIKE '实收-%'
-            UNION
-            SELECT substr(mm.from_account, 4) AS channel
-              FROM money_movements mm JOIN journals j ON j.id = mm.journal_id
-             WHERE j.event_id = ? AND mm.from_account LIKE '实收-%'
-         ) WHERE channel <> '' ORDER BY 1",
-    )
-    .bind(event_id)
-    .bind(event_id)
-    .bind(event_id)
-    .bind(event_id)
-    .fetch_all(&state.db)
-    .await?;
+    // 渠道清单 = 本展会实际用过的（orders ∪ refunds ∪ 本场 `实收-` 账户），
+    // 按展会过滤，不是跨展会的 `GET /channels`。与 `reconcile` 的校验共用
+    // `event_channels`，两处由构造保证同步。
+    let channel_names = event_channels(&state.db, event_id).await?;
 
     let mut channels = Vec::with_capacity(channel_names.len());
     for channel in channel_names {
@@ -897,21 +916,10 @@ async fn reconcile(
         }
     }
 
-    // 本场用过的渠道。清点一个本场没出现过的渠道，钱会写进账本却不出现在报表里
-    //（报表的渠道清单来自 orders.channel ∪ refunds.channel），彻底隐形。
-    let used: Vec<String> = sqlx::query_scalar(
-        "SELECT DISTINCT channel FROM orders  WHERE event_id = ? AND channel IS NOT NULL AND channel <> ''
-         UNION
-         SELECT DISTINCT r.channel FROM refunds r
-           JOIN order_lines ol ON ol.id = r.order_line_id
-           JOIN orders o       ON o.id = ol.order_id
-         WHERE o.event_id = ? AND r.channel <> ''
-         ORDER BY 1",
-    )
-    .bind(event_id)
-    .bind(event_id)
-    .fetch_all(&mut *tx)
-    .await?;
+    // 本场用过的渠道。清点一个本场没出现过的渠道，钱会写进账本却不出现在报表里。
+    // **和报表的 `channels[]` 共用同一条 `EVENT_CHANNELS_SQL`**——两处各写一份
+    // 迟早分歧，那时管理端会照着报表要摊主填一个清点拒收的渠道。
+    let used = event_channels(&mut *tx, event_id).await?;
 
     let mut unknown: Vec<&String> = seen.iter().filter(|c| !used.contains(*c)).collect();
     unknown.sort();
@@ -2557,16 +2565,13 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn a_stray_received_account_the_event_never_used_still_shows_in_the_report() {
-        // 报表的渠道清单若只来自 orders ∪ refunds，一条别的路径写进本场没用过的
-        // 实收账户的腿就会既不在清单里、也不被 actual_total / vendor_retained 计入，
-        // 钱静默消失。并上 money_movements 里的 `实收-` 账户后它必须成为一行。
-        let (router, _dir, pool) = test_router_with().await;
-        let (event_id, _, _) = seed_event_and_product(&pool).await;
-        let token = admin_token();
-
-        // 绕过 API 直接写一条腿，模拟「别的路径」。
+    /// 绕过 API 直接写一条本展会没用过的 `实收-<渠道>` 腿，模拟「别的路径」。
+    async fn post_stray_received(
+        pool: &sqlx::SqlitePool,
+        event_id: i64,
+        channel: &str,
+        cents: i64,
+    ) {
         let mut tx = pool.begin().await.unwrap();
         crate::domain::ledger::post_journal(
             &mut tx,
@@ -2578,13 +2583,26 @@ mod tests {
             &[],
             &[crate::domain::ledger::MoneyLeg {
                 from: Account::VendorOwn,
-                to: Account::Received("微信支付".into()),
-                amount: Money::from_cents(10000),
+                to: Account::Received(channel.into()),
+                amount: Money::from_cents(cents),
             }],
         )
         .await
         .unwrap();
         tx.commit().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_stray_received_account_the_event_never_used_still_shows_in_the_report() {
+        // 报表的渠道清单若只来自 orders ∪ refunds，一条别的路径写进本场没用过的
+        // 实收账户的腿就会既不在清单里、也不被 actual_total / vendor_retained 计入，
+        // 钱静默消失。并上 money_movements 里的 `实收-` 账户后它必须成为一行。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _, _) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+
+        // 绕过 API 直接写一条腿，模拟「别的路径」。
+        post_stray_received(&pool, event_id, "微信支付", 10000).await;
 
         let report = read_json(
             router
@@ -2609,6 +2627,35 @@ mod tests {
         assert_eq!(
             report["actual_total"], 10000,
             "actual_total 要把它算进去，否则摊主留存少一截"
+        );
+    }
+
+    #[tokio::test]
+    async fn reconciling_accepts_a_channel_the_report_lists_from_a_stray_movement() {
+        // `reconcile` 的白名单必须和报表的 `channels[]` 完全一致。一条本展会的
+        // `实收-微信支付` 腿会让报表列出这个渠道；以前 `reconcile` 只认
+        // orders ∪ refunds，于是管理端照着报表要摊主填这一格、提交却 400。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _, _) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+        post_stray_received(&pool, event_id, "微信支付", 10000).await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/settlement/reconcile"),
+                Some(&token),
+                json!({"counts": [{"channel": "微信支付", "actual": 10000}]}),
+            ))
+            .await
+            .unwrap();
+        let status = res.status();
+        let body = read_json(res).await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "报表列得出来的渠道，清点就必须收：{body}"
         );
     }
 
