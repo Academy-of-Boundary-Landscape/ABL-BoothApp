@@ -407,42 +407,59 @@ async fn update_status(
     }
 
     // 冻结语义的第二道：已结算的展会不能静默解冻。
-    let current: Option<String> = match query_scalar("SELECT status FROM events WHERE id = ?")
-        .bind(id)
-        .fetch_optional(&state.db)
-        .await
-    {
-        Ok(row) => row,
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Database Error").into_response(),
-    };
-    if current.as_deref() == Some("已结算") {
-        return (
-            StatusCode::CONFLICT,
-            Json(json!({"error": "已结算的展会不能解冻"})),
-        )
-            .into_response();
-    }
-
-    // 使用 RETURNING 子句原子地更新并获取完整数据
-    let result = query_as::<_, Event>(
+    //
+    // 检查折进写入本身，不留「读完到写」之间的窗口——否则一个
+    // POST /closing/settle 可以在两步之间提交，把刚结算完的展会重新打开，
+    // 而这正是这道守卫存在的理由。
+    let updated: Option<Event> = match query_as(
         r#"
-        UPDATE events 
-        SET status = ? 
-        WHERE id = ?
+        UPDATE events
+        SET status = ?
+        WHERE id = ? AND status <> '已结算'
         RETURNING *
         "#,
     )
     .bind(&payload.status)
     .bind(id)
-    .fetch_one(&state.db)
-    .await;
+    .fetch_optional(&state.db)
+    .await
+    {
+        Ok(row) => row,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Database Error").into_response(),
+    };
 
-    match result {
-        Ok(event) => {
+    match updated {
+        Some(event) => {
             let response = EventResponse::from_model(event);
             (StatusCode::OK, Json(response)).into_response()
         }
-        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Database Error").into_response(),
+        // 没更新到行：要么展会不存在（404），要么它已经是已结算（409）。
+        // 便宜的存在性探测把这两种情况分开。
+        None => {
+            let exists: Option<i64> = match query_scalar("SELECT id FROM events WHERE id = ?")
+                .bind(id)
+                .fetch_optional(&state.db)
+                .await
+            {
+                Ok(row) => row,
+                Err(_) => {
+                    return (StatusCode::INTERNAL_SERVER_ERROR, "Database Error").into_response()
+                }
+            };
+            if exists.is_some() {
+                (
+                    StatusCode::CONFLICT,
+                    Json(json!({"error": "已结算的展会不能解冻"})),
+                )
+                    .into_response()
+            } else {
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(json!({"error": "Event not found"})),
+                )
+                    .into_response()
+            }
+        }
     }
 }
 
@@ -618,5 +635,22 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn updating_status_of_a_missing_event_is_404() {
+        // 以前拿不到行会一路走到 fetch_one 然后报 500「Database Error」。
+        let (router, _dir, _pool) = test_router_with().await;
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                "/api/events/9999/status",
+                Some(&admin_token()),
+                json!({"status": "进行中"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
     }
 }

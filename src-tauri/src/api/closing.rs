@@ -204,22 +204,42 @@ async fn stocktake(
 
     let book = book_balances(&mut tx, event_id).await?;
 
-    // 收全量：现场仓余额非 0 的商品必须全部出现在请求里。
-    // 「我数了，一致」和「我没数这个」是两件事。
-    let mut missing: Vec<String> = Vec::new();
-    for (ep_id, qty) in book.iter() {
-        if *qty != 0 && !payload.counts.iter().any(|c| c.event_product_id == *ep_id) {
-            let name: String = sqlx::query_scalar("SELECT name FROM event_products WHERE id = ?")
-                .bind(ep_id)
-                .fetch_one(&mut *tx)
-                .await?;
-            missing.push(name);
+    // 每条 counts 都和同一个 book_qty 做差，互不知情——重复一次就把差异写两遍。
+    let mut seen = std::collections::HashSet::new();
+    for c in &payload.counts {
+        if !seen.insert(c.event_product_id) {
+            return Err(ApiError::BadRequest(
+                "同一个商品在一次盘点里只能报一次数".into(),
+            ));
         }
     }
-    if !missing.is_empty() {
+
+    // 收全量：现场仓余额非 0 的商品必须全部出现在请求里。
+    // 「我数了，一致」和「我没数这个」是两件事。
+    let mut missing_ids: Vec<i64> = Vec::new();
+    for (ep_id, qty) in book.iter() {
+        if *qty != 0 && !seen.contains(ep_id) {
+            missing_ids.push(*ep_id);
+        }
+    }
+    if !missing_ids.is_empty() {
+        // 一条查询、按 id 排序——按 HashMap 顺序逐个 SELECT 名字会让每次调用
+        // 报错里商品的顺序都不一样，而且漏报三个就是三次查询。
+        let placeholders = missing_ids
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql =
+            format!("SELECT name FROM event_products WHERE id IN ({placeholders}) ORDER BY id");
+        let mut q = sqlx::query_scalar::<_, String>(sqlx::AssertSqlSafe(sql));
+        for id in &missing_ids {
+            q = q.bind(id);
+        }
+        let names: Vec<String> = q.fetch_all(&mut *tx).await?;
         return Err(ApiError::BadRequest(format!(
             "这些商品还在现场仓但没报数：{}。数过一致的也要报，否则分不出「数了一致」和「没数」",
-            missing.join("、")
+            names.join("、")
         )));
     }
 
@@ -728,5 +748,38 @@ mod tests {
             .sum();
         assert_eq!(remaining, 14, "9 + 5，盘点的结果留下来了");
         let _ = pool;
+    }
+
+    #[tokio::test]
+    async fn a_duplicated_product_in_one_stocktake_is_refused() {
+        // 两条都和同一个账面数做差 ⇒ 差异写两遍 ⇒ 盘完的余额不等于摊主数出来的数。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, ep_b) = seed_event_and_product(&pool).await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/closing/stocktake"),
+                Some(&admin_token()),
+                json!({"counts": [{"event_product_id": ep_a, "counted_qty": 8},
+                              {"event_product_id": ep_a, "counted_qty": 8},
+                              {"event_product_id": ep_b, "counted_qty": 5}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            onsite_balance(&pool, ep_a).await.unwrap(),
+            10,
+            "一件都不该动"
+        );
+        let at: Option<String> =
+            sqlx::query_scalar("SELECT stocktaken_at FROM events WHERE id = ?")
+                .bind(event_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(at.is_none(), "失败的盘点不该留下「盘过了」的痕迹");
     }
 }

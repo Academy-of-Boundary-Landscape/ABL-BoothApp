@@ -88,6 +88,18 @@ async fn create_refund(
         return Err(ApiError::BadRequest("至少要退一行".into()));
     }
 
+    // 同一个 order_line_id 出现两次时，两条都会读到同一个 left_qty 并各自通过
+    // 「只剩 N 件可退」那道检查——检查是按行做的，而消耗是累加的。
+    // 合并比去重更安全：去重会静默丢掉用户的一条意图（两条的 destination 可能不同）。
+    let mut seen = std::collections::HashSet::new();
+    for l in &payload.lines {
+        if !seen.insert(l.order_line_id) {
+            return Err(ApiError::BadRequest(
+                "同一个订单行在一次退货里只能出现一次——要分不同去向请分两次退".into(),
+            ));
+        }
+    }
+
     let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
     require_event_open(&mut tx, event_id).await?;
 
@@ -338,12 +350,14 @@ async fn list_refunds(
                 r.refund_amount, r.channel, r.destination, j.occurred_at
          FROM refunds r
          JOIN order_lines ol    ON ol.id = r.order_line_id
+         JOIN orders o          ON o.id = ol.order_id
          JOIN event_products ep ON ep.id = ol.event_product_id
          JOIN journals j        ON j.id = r.journal_id
-         WHERE ol.order_id = ?
+         WHERE ol.order_id = ? AND o.event_id = ?
          ORDER BY r.id DESC",
     )
     .bind(order_id)
+    .bind(event_id)
     .fetch_all(&state.db)
     .await?;
 
@@ -359,6 +373,7 @@ async fn list_refunds(
                 ol.allocated_amount - COALESCE(r.done_alloc, 0) AS remaining_allocated,
                 ol.paid_amount      - COALESCE(r.done_paid, 0)  AS remaining_paid
          FROM order_lines ol
+         JOIN orders o          ON o.id = ol.order_id
          JOIN event_products ep ON ep.id = ol.event_product_id
          LEFT JOIN order_lots olot ON olot.id = ol.order_lot_id
          LEFT JOIN (
@@ -368,12 +383,19 @@ async fn list_refunds(
                    SUM(paid_amount) AS done_paid
             FROM refunds GROUP BY order_line_id
          ) r ON r.order_line_id = ol.id
-         WHERE ol.order_id = ?
+         WHERE ol.order_id = ? AND o.event_id = ?
          ORDER BY ol.id",
     )
     .bind(order_id)
+    .bind(event_id)
     .fetch_all(&state.db)
     .await?;
+
+    // 写路径查的是 (id, event_id)，读路径也必须同样按展会隔离。订单不属于这场
+    // 展会时返回 404 而不是空结果——空结果会让前端显示一张空白的退货弹窗。
+    if lines.is_empty() {
+        return Err(ApiError::NotFound("订单不存在".into()));
+    }
 
     Ok(Json(RefundListResponse { history, lines }))
 }
@@ -383,7 +405,8 @@ mod tests {
     use crate::domain::ledger::{account_balance, onsite_balance, Account};
     use crate::domain::money::Money;
     use crate::test_support::{
-        admin_token, json_request, read_json, seed_event_and_product, seed_lot, test_router_with,
+        admin_token, json_request, read_json, seed_event_and_product, seed_lot, seed_lot_repeat,
+        test_router_with,
     };
     use axum::http::StatusCode;
     use serde_json::{json, Value};
@@ -1054,5 +1077,129 @@ mod tests {
             body["error"].as_str().unwrap().contains("本社团"),
             "错误信息要说清楚缺的是什么：{body}"
         );
+    }
+
+    #[tokio::test]
+    async fn a_duplicated_order_line_in_one_request_is_refused() {
+        // 两条都会读到同一个 left_qty 然后各自通过「只剩 N 件可退」，
+        // 结果是凭空多退一份货：现场仓 +4、顾客仓 −2、货主被记两次。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _, ep_b) = seed_event_and_product(&pool).await;
+        let (order_id, lines) = place_and_complete(
+            &router,
+            &pool,
+            event_id,
+            json!([{"product_id": ep_b, "quantity": 2}]),
+            "现金",
+            None,
+            None,
+        )
+        .await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders/{order_id}/refunds"),
+                Some(&admin_token()),
+                json!({"channel": "现金", "lines": [
+                    {"order_line_id": lines[0], "qty": 2, "destination": "现场仓"},
+                    {"order_line_id": lines[0], "qty": 2, "destination": "现场仓"}
+                ]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+        assert_eq!(
+            onsite_balance(&pool, ep_b).await.unwrap(),
+            3,
+            "一件都不该动"
+        );
+        let refunds: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM refunds")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(refunds, 0);
+    }
+
+    #[tokio::test]
+    async fn the_refund_list_does_not_leak_across_events() {
+        // 写路径查的是 (id, event_id)，读路径只查 id——两半自相矛盾。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _, ep_b) = seed_event_and_product(&pool).await;
+        let (order_id, _) = place_and_complete(
+            &router,
+            &pool,
+            event_id,
+            json!([{"product_id": ep_b, "quantity": 1}]),
+            "现金",
+            None,
+            None,
+        )
+        .await;
+
+        sqlx::query(
+            "INSERT INTO events (id, name, event_date, status)
+                     VALUES (2, '另一场', '2026-11-01', '进行中')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "GET",
+                &format!("/api/events/2/orders/{order_id}/refunds"),
+                Some(&admin_token()),
+                json!(null),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            res.status(),
+            StatusCode::NOT_FOUND,
+            "别的展会的订单不该读得到"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_refundable_list_decodes_a_non_null_lot_name() {
+        // 无套装的单子只证明 `LEFT JOIN order_lots` 能被 SQL 解析，证明不了
+        // lot_name 被解码。同一个商品因为套装归属拆成多行，正是这个端点返回
+        //「行」而不是「商品」的理由，所以这里必须让 lot_name 非空一次。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        seed_lot_repeat(&pool, event_id, "任选2件50", 2, 5000, &[ep_a]).await;
+        let (order_id, _) = place_and_complete(
+            &router,
+            &pool,
+            event_id,
+            json!([{"product_id": ep_a, "quantity": 3}]),
+            "现金",
+            None,
+            None,
+        )
+        .await;
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "GET",
+                &format!("/api/events/{event_id}/orders/{order_id}/refunds"),
+                Some(&admin_token()),
+                json!(null),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = read_json(res).await;
+        let lines = body["lines"].as_array().unwrap();
+        assert_eq!(lines.len(), 2, "同一个商品拆成套装内/散买两行");
+        assert_eq!(lines[0]["event_product_id"], lines[1]["event_product_id"]);
+        let with_lot = lines.iter().filter(|l| !l["lot_name"].is_null()).count();
+        let without_lot = lines.iter().filter(|l| l["lot_name"].is_null()).count();
+        assert_eq!((with_lot, without_lot), (1, 1), "一行有套装名、一行没有");
     }
 }
