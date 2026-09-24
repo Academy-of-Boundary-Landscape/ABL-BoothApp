@@ -1,7 +1,8 @@
 # 任务：把 `src-tauri/src/api/{{MODULE}}.rs` 迁移到 utoipa（③b 阶段 2）
 
 你在一个独立的 git worktree 里工作：当前目录就是仓库根，分支 `3b/{{NAME}}`。
-只改下面「允许改的文件」。完成后把报告写到 `.3b/REPORT.md`，然后提交（不要 push、不要切分支）。
+只改下面「允许改的文件」。完成后把报告写到 `.3b/REPORT.md`。
+**不要 `git commit`**（沙箱写不了 worktree 的 git 元数据，试了会报 Read-only file system）——改动留在工作树里，审查者会代为提交。
 
 ## 背景
 后端是跑在 Tauri 进程里的 axum 0.8 HTTP server。我们用 utoipa 6 + utoipa-axum 0.3 给每个路由生成
@@ -11,13 +12,13 @@ OpenAPI 文档，前端再从文档生成 TS 类型。**`src-tauri/src/api/settl
 ## 允许改的文件
 - `src-tauri/src/api/{{MODULE}}.rs`
 - `src-tauri/src/domain/`、`src-tauri/src/db/` 下被本模块响应/请求用到的类型：**只许加 derive 和 `#[schema(...)]` 属性**，不改字段、不改逻辑
-- `docs/superpowers/specs/2026-09-24-shape-cleanups.md`（只追加表格行）
 - **不许改**：`api/mod.rs`、`api/openapi.rs`、`test_support.rs`、`src-tauri/openapi.json`、`Cargo.toml`、迁移文件、任何前端文件
 
 ## 硬约束
 1. **JSON 形状一个字节都不许变**：字段名、字段有无、null 还是缺省、数字还是字符串、HTTP 状态码、错误体。
-   想改的写进 `shape-cleanups.md`（列：模块 | 路由 | 现状 | 建议 | 理由 | 前端消费方），**不动手**。
-2. **原来吞错误的继续吞**（`.unwrap_or_default()`、`.unwrap_or(None)`、`let _ =` 等），同样记进清单。
+   想改的写进 `.3b/REPORT.md` 的「形状清理」一节（表格列：模块 | 路由 | 现状 | 建议 | 理由 | 前端消费方），**不动手**。
+   （不要直接改 `docs/…/shape-cleanups.md`：几个 worker 同时追加同一个文件，合并时必冲突。）
+2. **原来吞错误的继续吞**（`.unwrap_or_default()`、`.unwrap_or(None)`、`let _ =` 等），同样记进「形状清理」一节。
 3. 错误响应一律是 `{"error": "..."}`。手拼的 `(StatusCode::X, Json(json!({"error": msg})))`，**只有**状态码与文字
    完全一致时才可以换成对应的 `ApiError` 变体（400 `BadRequest` / 404 `NotFound` / 409 `Conflict`；
    `ApiError::Forbidden` 的文字固定是「权限不足」，`ApiError::Db` 固定是 500「数据库错误」）；否则保留原样的手拼响应。
@@ -26,7 +27,7 @@ OpenAPI 文档，前端再从文档生成 TS 类型。**`src-tauri/src/api/settl
 
 ## 步骤
 
-### 1. 先写形状快照测试，先绿，单独提交
+### 1. 先写形状快照测试，先绿
 在本模块文件末尾新建 `#[cfg(test)] mod shape_tests`，照 settlement.rs 的写法：一个 `seeded()` 造数据，一个 `call()` 发请求，
 然后**每个路由×方法至少一条** `shape_<handler 名>` 测试，断言 `(状态码, shape_of(&body))`。
 
@@ -49,7 +50,7 @@ OpenAPI 文档，前端再从文档生成 TS 类型。**`src-tauri/src/api/settl
   ```
 - **自检这些测试有牙**：临时给某个响应字段加 `#[serde(rename = "xxx")]`，确认对应测试变红，再改回来。
 
-跑绿后单独提交：`✅ test: {{MODULE}} 形状快照`。
+跑绿后再进入第 2 步（不要提交）。
 
 ### 2. 类型化
 - `-> impl IntoResponse` 的 handler 改成 `ApiResult<Json<T>>` / `ApiResult<(StatusCode, Json<T>)>` / `ApiResult<StatusCode>`。
@@ -59,7 +60,7 @@ OpenAPI 文档，前端再从文档生成 TS 类型。**`src-tauri/src/api/settl
   原来输出 `null` 的 `Option` 字段保持输出 `null`，不要加 `skip_serializing_if`；原来缺省的，保留缺省（用 `skip_serializing_if`）。
 - 请求体类型加 `ToSchema`，查询参数类型加 `IntoParams`（`#[derive(Deserialize, IntoParams)]`，注解里写 `params(QueryType)`）。
 - **金额**：已经是 `crate::domain::money::Money` 的不动。还是 `i64`/`f64` 的金额字段**不改类型**，
-  加 `#[schema(value_type = Money)]`（i64 分）——`f64` 元的**不要**标 Money，记进清单（它是元不是分）。
+  加 `#[schema(value_type = Money)]`（i64 分；`Option<i64>` 用 `value_type = Option<Money>`）——`f64` 元的**不要**标 Money，记进「形状清理」（它是元不是分）。
 - **schema 名全局唯一**：`Entry`、`Row`、`Item`、`Request`、`Response` 这类通用名，用 `#[schema(as = {{PREFIX}}Entry)]` 加模块前缀。
   不同模块的同名类型会在 openapi.json 里互相覆盖，而且不报错。
 - 一个 multipart 请求体，写一个只用于文档的结构体描述它的字段：
@@ -99,7 +100,7 @@ pub fn router() -> OpenApiRouter<AppState> {
 ```
 原来 router 上的 `.layer(...)`（如 `DefaultBodyLimit::max(...)`）原样挂到 `OpenApiRouter` 上。删掉不再用的 import。
 
-### 5. 验证（全部通过才提交）
+### 5. 验证（全部通过才算完成）
 ```bash
 cd src-tauri
 tauri-env linux cargo fmt
@@ -115,9 +116,8 @@ git checkout openapi.json                        # 不提交 openapi.json
 
 第一次 `cargo test` 要编译 1～3 分钟，属正常。
 
-### 6. 提交
-`✨ feat: {{MODULE}} 模块 OpenAPI 化`，提交信息末尾一行：
-`Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`
+### 6. 不要提交
+改动留在工作树（`git status` 里应只有 `src-tauri/` 下的文件）。审查者会代为提交。
 
 ## 不要做
 - 不要起 dev server（`npx tauri dev`、`vite`），不要开 VNC，不要截图。
@@ -127,6 +127,6 @@ git checkout openapi.json                        # 不提交 openapi.json
 ## `.3b/REPORT.md` 格式
 1. 改了哪些文件
 2. 每个 handler：前后签名、对应的形状测试名
-3. 追加进 shape-cleanups 的条目
+3. 「形状清理」一节（表格，没有就写「无」）
 4. 不确定的地方、发现的疑似 bug
 5. 第 5 步各命令的结果（通过 / 失败 + 摘要），以及 jq 列出的路径

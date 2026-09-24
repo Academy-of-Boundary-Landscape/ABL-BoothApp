@@ -518,6 +518,1670 @@
         ]
       }
     },
+    "/events/{event_id}/closing": {
+      "get": {
+        "tags": [
+          "closing"
+        ],
+        "summary": "收摊向导的当前状态：待处理订单、现场仓余量、盘点时间与推进阻断项。",
+        "description": "**能不能进下一步由后端说了算**——`blockers` 非空就挡住。",
+        "operationId": "get_closing",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClosingState"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "展会不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/events/{event_id}/closing/settle": {
+      "post": {
+        "tags": [
+          "closing"
+        ],
+        "summary": "结束展会：把状态置为「已结算」，账本从此冻结。",
+        "description": "盘点可跳过；结算单靠 `stocktaken_at` 是否为 null 区分「没盘点」。",
+        "operationId": "settle",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "展会不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "还有待处理订单、现场仓还有货，或展会已结算",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/events/{event_id}/closing/stocktake": {
+      "post": {
+        "tags": [
+          "closing"
+        ],
+        "summary": "提交盘点实数。**收全量**：现场仓余额非 0 的商品必须全部出现，数过一致的也要报。",
+        "description": "盘亏/盘盈写差异腿，只动货不动钱。零差异时不写 journal，但仍落 `stocktaken_at`。",
+        "operationId": "stocktake",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StocktakeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StocktakeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "重复报数、实数为负、漏报现场仓商品或商品不在这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "展会不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "还有待处理订单，或展会已结算",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/events/{event_id}/closing/takeback": {
+      "post": {
+        "tags": [
+          "closing"
+        ],
+        "summary": "把现场仓余货全部带回（现场仓 → 外部）。全卖光时是空操作，不写 journal。",
+        "operationId": "takeback",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakebackResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "展会不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "还有待处理订单、展会已结算或账本不自洽",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/events/{event_id}/gifts": {
+      "get": {
+        "tags": [
+          "inventory"
+        ],
+        "summary": "这场展会的赠送列表。已被冲正的原条目和冲正条目都不出现。",
+        "operationId": "list_gifts",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "按 journal id 倒序",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InventoryLogEntry"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "inventory"
+        ],
+        "summary": "登记一笔赠送。默认由货主自己承担；`vendor_pays = true` 时摊主按原价补给货主。",
+        "operationId": "create_gift",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InventoryLogRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "登记成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryLogResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "数量非正或金额溢出",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "商品不在这场展会里，或展会不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "现场仓余量不足，或展会已结算",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/events/{event_id}/journals/{journal_id}/reverse": {
+      "post": {
+        "tags": [
+          "inventory"
+        ],
+        "summary": "撤销一条赠送 / 报废登记。",
+        "description": "**只接受这两种 kind。** 销售和收款有自己的冲正通道（取消订单，\n`reverse_order_journals`），进货和盘点没有撤销语义（记错了就再记一条反向的）。\n不设这道闸，这个端点就成了一个能把任何 journal 冲掉的万能口子。",
+        "operationId": "reverse_entry",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "journal_id",
+            "in": "path",
+            "description": "要撤销的 journal id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "撤销成功，返回冲正 journal 的 id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryLogResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "这条 journal 不是赠送或报废",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "记录不存在，或展会不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "这条记录已经撤销过了，或展会已结算",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/events/{event_id}/lots": {
+      "get": {
+        "tags": [
+          "lot"
+        ],
+        "summary": "列出这场展会的全部套装，含候选已被删空的（它们仍需在管理页可见、可删）。",
+        "operationId": "list_lots",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "按 id 升序；每个套装的候选按 id 升序",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LotResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "lot"
+        ],
+        "summary": "新建一个套装（Lot）：候选商品集合 + 要选几件 + 总价，候选必须同一货主。",
+        "operationId": "create_lot",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LotPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LotResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "名称/件数/价格不合法、候选不属于本场或跨货主、不允许同款但候选种类不够",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "展会不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "展会已结算，不能再改账",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/events/{event_id}/lots/preview": {
+      "post": {
+        "tags": [
+          "lot"
+        ],
+        "summary": "试算一份还没保存的套装配置：它会被顾客怎么用、你最多让多少、哪里可能配错了。",
+        "description": "**零写入**，走和 `create_lot` 完全相同的校验（同一个 `validate_numbers` /\n`validate_candidates` / `validate_candidate_count`），所以「跨货主」「候选不属于\n本场展会」「不允许重复但候选数不够」这些错，试算和保存报的是同一个 400——\n不会出现「试算说行、保存说不行」。\n\n这个端点同时服务两个消费方：配置页的实时预览，以及将来接 LLM 辅助配置时\n「提一个方案、立刻看后果」的那一步。**在它之前，配置的后果对人和对机器都是黑箱**——\n摊主只能配完等顾客来薅，这正是 2026-09-24 那个缺陷被发现的方式。",
+        "operationId": "preview_lot",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LotPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "零写入的试算结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LotPreviewResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "件数/价格不合法、候选不属于本场或跨货主、不允许同款但候选种类不够",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/events/{event_id}/lots/{lot_id}": {
+      "put": {
+        "tags": [
+          "lot"
+        ],
+        "summary": "整体替换一个套装的配置：候选集整组重写，不是追加。",
+        "operationId": "update_lot",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "lot_id",
+            "in": "path",
+            "description": "套装 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LotPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LotResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "名称/件数/价格不合法、候选不属于本场或跨货主、不允许同款但候选种类不够",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "套装或展会不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "展会已结算，不能再改账",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "lot"
+        ],
+        "summary": "删除一个套装。",
+        "description": "删除永远放行。\n\n`order_lots.lot_id` 是 `ON DELETE SET NULL`，而名字和价格在下单那一刻就\n**快照**进了 `order_lots`——历史订单不受影响。所以这里不需要\n「被引用就不给删」那种守卫（`api/product.rs` 删商品时要，因为那边没有快照）。",
+        "operationId": "delete_lot",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "lot_id",
+            "in": "path",
+            "description": "套装 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "已删除"
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "套装或展会不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "展会已结算，不能再改账",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/events/{event_id}/orders": {
+      "get": {
+        "tags": [
+          "order"
+        ],
+        "summary": "本场展会的订单列表，可按 `status` 过滤。需要管理员或这场展会的摊主。",
+        "operationId": "list_orders",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OrderResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "order"
+        ],
+        "summary": "顾客下单（公开接口，不需要 token）。要求展会处于「进行中」。",
+        "operationId": "create_order",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "购物车为空、数量非正或金额溢出",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "展会或商品不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "库存不足，或展会不是「进行中」",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events/{event_id}/orders/{order_id}/refunds": {
+      "get": {
+        "tags": [
+          "refund"
+        ],
+        "summary": "一张订单的退货历史，以及每一行的可退余量。",
+        "description": "按 `order_lines` 逐行返回——同一个商品可能因套装归属拆成多行，前端不要按\n`event_product_id` 去重。订单不属于这场展会时返回 404（而不是空列表）。",
+        "operationId": "list_refunds",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "order_id",
+            "in": "path",
+            "description": "订单 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "退货历史与可退行",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefundListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "订单不存在或不属于这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "refund"
+        ],
+        "summary": "创建一笔退货：逐行冲销货主应得、手工折让与顾客退款，记一条退货 journal。",
+        "description": "只能退**已完成**的订单；待处理/已取消的订单会被拒绝。展会已结算（冻结）后\n`require_event_open` 会挡住退货。",
+        "operationId": "create_refund",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "order_id",
+            "in": "path",
+            "description": "订单 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefundRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "退货已记账",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefundResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "渠道为空、退行重复、去向不认识、数量非正、退款为负或超过实付、订单状态不对、订单行不属于该订单",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "订单不存在或展会不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "可退数量不足、没有本社团、或展会已结算",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/events/{event_id}/orders/{order_id}/status": {
+      "put": {
+        "tags": [
+          "order"
+        ],
+        "summary": "完成或取消一张订单。需要管理员或这场展会的摊主。",
+        "operationId": "update_order_status",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "order_id",
+            "in": "path",
+            "description": "订单 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderUpdateStatusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "未知状态、实收为负、缺渠道或要拆的套装不属于这张订单",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "订单不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "订单已取消/已完成，或展会已结算",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/events/{event_id}/quote": {
+      "post": {
+        "tags": [
+          "lot"
+        ],
+        "summary": "给购物车报价。**公开、无鉴权、零写入。**",
+        "description": "存在的唯一理由是 D3「顾客端价格必须可解释」：购物车要明写\n「已应用：本子任选3本100 −20.00」，而不是默默给个低价。\n\n**不查库存**——报价是定价预览，库存由下单把关（所以这里也不必开事务）。\n\n**报价永远不被信任**：下单时服务端用同一份 `price_cart` 独立重算，顾客最终付的\n金额取自**下单响应**而不是这里。两次之间摊主完全可能刚改过 Lot 配置。",
+        "operationId": "quote",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LotQuoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "公开、无鉴权、零写入的报价；不查库存",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LotQuoteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "购物车为空/过多、数量非正、金额溢出或组合方式过多",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "展会或商品不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "展会不是「进行中」",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events/{event_id}/scraps": {
+      "get": {
+        "tags": [
+          "inventory"
+        ],
+        "summary": "这场展会的报废列表。已被冲正的原条目和冲正条目都不出现。",
+        "operationId": "list_scraps",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "按 journal id 倒序",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InventoryLogEntry"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "inventory"
+        ],
+        "summary": "登记一笔报废。报废没有「谁买单」，请求里的 `vendor_pays` 恒被忽略。",
+        "operationId": "create_scrap",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InventoryLogRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "登记成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryLogResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "数量非正或金额溢出",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问这场展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "商品不在这场展会里，或展会不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "现场仓余量不足，或展会已结算",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/events/{event_id}/settlement": {
       "get": {
         "tags": [
@@ -807,6 +2471,24 @@
           }
         }
       },
+      "CartItemRequest": {
+        "type": "object",
+        "description": "请求里的一项。下单与报价的请求体同形，所以只有这一个结构。",
+        "required": [
+          "product_id",
+          "quantity"
+        ],
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "ChannelActual": {
         "type": "object",
         "required": [
@@ -847,6 +2529,161 @@
           },
           "diff": {
             "$ref": "#/components/schemas/Money"
+          }
+        }
+      },
+      "ClosingCountRow": {
+        "type": "object",
+        "required": [
+          "event_product_id",
+          "counted_qty"
+        ],
+        "properties": {
+          "counted_qty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "event_product_id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ClosingDiffRow": {
+        "type": "object",
+        "required": [
+          "event_product_id",
+          "name",
+          "book_qty",
+          "counted_qty"
+        ],
+        "properties": {
+          "book_qty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "counted_qty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "event_product_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "ClosingOnSiteRow": {
+        "type": "object",
+        "required": [
+          "event_product_id",
+          "product_code",
+          "name",
+          "owner_society_id",
+          "owner_name",
+          "qty"
+        ],
+        "properties": {
+          "event_product_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner_name": {
+            "type": "string"
+          },
+          "owner_society_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "product_code": {
+            "type": "string"
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ClosingPendingOrderRow": {
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "final_amount",
+          "item_count"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "final_amount": {
+            "$ref": "#/components/schemas/Money",
+            "description": "分。与前端 `formatYuan` 的约定一致。"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "item_count": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ClosingState": {
+        "type": "object",
+        "required": [
+          "status",
+          "pending_orders",
+          "onsite_remaining",
+          "blockers"
+        ],
+        "properties": {
+          "blockers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "onsite_remaining": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ClosingOnSiteRow"
+            }
+          },
+          "pending_orders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ClosingPendingOrderRow"
+            }
+          },
+          "status": {
+            "type": "string"
+          },
+          "stocktaken_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CreateOrderRequest": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CartItemRequest"
+            }
           }
         }
       },
@@ -986,6 +2823,99 @@
           }
         }
       },
+      "InventoryLogEntry": {
+        "type": "object",
+        "description": "一条登记记录。`vendor_paid` 由「这条 journal 有没有资金腿」推出来，\n不另存一列——存两处就会有一处先腐烂。",
+        "required": [
+          "journal_id",
+          "occurred_at",
+          "event_product_id",
+          "product_code",
+          "name",
+          "owner_society_id",
+          "owner_name",
+          "qty",
+          "vendor_paid"
+        ],
+        "properties": {
+          "event_product_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "journal_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "occurred_at": {
+            "type": "string"
+          },
+          "owner_name": {
+            "type": "string"
+          },
+          "owner_society_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "product_code": {
+            "type": "string"
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "vendor_paid": {
+            "type": "boolean"
+          }
+        }
+      },
+      "InventoryLogRequest": {
+        "type": "object",
+        "required": [
+          "event_product_id",
+          "qty"
+        ],
+        "properties": {
+          "event_product_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "vendor_pays": {
+            "type": "boolean",
+            "description": "只对赠送有意义。报废时忽略——报废的货没有「谁买单」这回事，\n真要赔给货主是结算调整的事（协商结果，系统推不出来）。"
+          }
+        }
+      },
+      "InventoryLogResponse": {
+        "type": "object",
+        "required": [
+          "journal_id"
+        ],
+        "properties": {
+          "journal_id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "LedgerEntryRow": {
         "type": "object",
         "required": [
@@ -1016,10 +2946,587 @@
           }
         }
       },
+      "LotPayload": {
+        "type": "object",
+        "required": [
+          "name",
+          "pick_count",
+          "total_price",
+          "candidate_ids"
+        ],
+        "properties": {
+          "allow_repeat": {
+            "type": "boolean",
+            "description": "老客户端不带这个字段，`serde(default)` 落到 false——**默认限 1**，\n不会因为升级悄悄从「每种 1 件」变成「可同款」。"
+          },
+          "candidate_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "pick_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total_price": {
+            "$ref": "#/components/schemas/Money",
+            "description": "单位：分。"
+          }
+        }
+      },
+      "LotPreviewCandidate": {
+        "type": "object",
+        "required": [
+          "product_id",
+          "name",
+          "unit_price",
+          "owner_society_id",
+          "owner_society_name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "owner_society_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "owner_society_name": {
+            "type": "string"
+          },
+          "product_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "unit_price": {
+            "$ref": "#/components/schemas/Money",
+            "description": "单位：分。"
+          }
+        }
+      },
+      "LotPreviewMember": {
+        "type": "object",
+        "required": [
+          "product_id",
+          "name",
+          "qty"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "product_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "LotPreviewRequest": {
+        "type": "object",
+        "description": "试算请求：一份**还没保存**的套装配置。字段与 `LotPayload` 相同，只是不要名字。",
+        "required": [
+          "pick_count",
+          "total_price",
+          "candidate_ids"
+        ],
+        "properties": {
+          "allow_repeat": {
+            "type": "boolean"
+          },
+          "candidate_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "pick_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total_price": {
+            "$ref": "#/components/schemas/Money",
+            "description": "单位：分。"
+          }
+        }
+      },
+      "LotPreviewResponse": {
+        "type": "object",
+        "required": [
+          "candidates",
+          "scenarios",
+          "warnings"
+        ],
+        "properties": {
+          "candidates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LotPreviewCandidate"
+            }
+          },
+          "scenarios": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LotPreviewScenario"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LotPreviewWarning"
+            }
+          }
+        }
+      },
+      "LotPreviewScenario": {
+        "type": "object",
+        "description": "顾客可能怎么凑满这个套装的一个极端。",
+        "required": [
+          "kind",
+          "members",
+          "original_amount",
+          "lot_price",
+          "discount"
+        ],
+        "properties": {
+          "discount": {
+            "$ref": "#/components/schemas/Money",
+            "description": "`original_amount − lot_price`。**可能为负**——那表示这种组合下套装比原价还贵，\n求解器不会套用它。故意保留负数而不是省略字段：调用方（含将来的 LLM）\n判一个符号，比判一个字段在不在要可靠。"
+          },
+          "kind": {
+            "type": "string",
+            "description": "`\"max_discount\"`（顾客拿走最贵的那几件）或 `\"min_discount\"`（最便宜的那几件）。"
+          },
+          "lot_price": {
+            "$ref": "#/components/schemas/Money",
+            "description": "套装价（分），两个 scenario 相同，放进来是为了这个对象能独立读懂。"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LotPreviewMember"
+            }
+          },
+          "original_amount": {
+            "$ref": "#/components/schemas/Money",
+            "description": "这些成分按原价的合计（分）。"
+          }
+        }
+      },
+      "LotPreviewWarning": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "机器读的稳定标识；`message` 是给摊主看的，措辞会变，code 不会。"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "LotQuoteLine": {
+        "type": "object",
+        "required": [
+          "product_id",
+          "qty",
+          "allocated_amount"
+        ],
+        "properties": {
+          "allocated_amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "lot_index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "进了 `lots` 数组的第几个，`null` = 没进套装。",
+            "minimum": 0
+          },
+          "product_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "LotQuoteLot": {
+        "type": "object",
+        "required": [
+          "lot_id",
+          "name",
+          "price",
+          "original_amount",
+          "members"
+        ],
+        "properties": {
+          "lot_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LotQuoteMember"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "original_amount": {
+            "$ref": "#/components/schemas/Money",
+            "description": "成分按原价的合计（分）。\n\n前端显示「已应用：XX −YY」时 `YY = original_amount − price`。放在后端算，\n是因为前端再做一遍单价乘法就等于把分摊逻辑抄了半份出去。"
+          },
+          "price": {
+            "$ref": "#/components/schemas/Money",
+            "description": "套装价（分）。"
+          }
+        }
+      },
+      "LotQuoteMember": {
+        "type": "object",
+        "required": [
+          "product_id",
+          "qty"
+        ],
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "LotQuoteRequest": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CartItemRequest"
+            }
+          }
+        }
+      },
+      "LotQuoteResponse": {
+        "type": "object",
+        "required": [
+          "gross_amount",
+          "solved_amount",
+          "lots",
+          "lines"
+        ],
+        "properties": {
+          "gross_amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LotQuoteLine"
+            }
+          },
+          "lots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LotQuoteLot"
+            }
+          },
+          "solved_amount": {
+            "$ref": "#/components/schemas/Money"
+          }
+        }
+      },
+      "LotResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "event_id",
+          "name",
+          "pick_count",
+          "total_price",
+          "allow_repeat",
+          "candidate_ids",
+          "owner_society_id",
+          "owner_society_name"
+        ],
+        "properties": {
+          "allow_repeat": {
+            "type": "boolean",
+            "description": "一个套装实例里，同一个候选能不能算多件（默认 false = 每种最多 1 件）。"
+          },
+          "candidate_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "event_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner_society_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "候选集必然同一货主（下面的 `validate_candidates` 保证），所以取其一即可。"
+          },
+          "owner_society_name": {
+            "type": "string"
+          },
+          "pick_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total_price": {
+            "$ref": "#/components/schemas/Money",
+            "description": "单位：分。"
+          }
+        }
+      },
       "Money": {
         "type": "integer",
         "format": "cents",
         "description": "金额，单位：分"
+      },
+      "OrderItemResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "product_id",
+          "quantity",
+          "product_name",
+          "product_price",
+          "allocated_amount",
+          "paid_amount"
+        ],
+        "properties": {
+          "allocated_amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "lot_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "这一行进了哪个套装。`None` = 散卖。\n\n同一个商品可能在一张订单里出现两次（2 件进套装、1 件散着，spec 4.5），\n摊主必须看得出哪一行是哪一种，否则配货时会以为系统重复计数了。"
+          },
+          "paid_amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "product_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "product_image_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_name": {
+            "type": "string"
+          },
+          "product_price": {
+            "$ref": "#/components/schemas/Money",
+            "description": "单位：分（展示端除以 100 是前端 Task 8 的事）。"
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "OrderLotResponse": {
+        "type": "object",
+        "description": "订单上的一个套装**实例**。\n\n`id` 是 `order_lots.id` 而不是 `lots.id`——同一个套装可以套用多次\n（「任选3本100」买 6 本 = 两个实例），拆的时候必须能指到具体是哪一次。",
+        "required": [
+          "id",
+          "name",
+          "price",
+          "original_amount"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "lot_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "原始 Lot 的 id。套装被删掉后是 null（`ON DELETE SET NULL`），名字和价格仍在。"
+          },
+          "name": {
+            "type": "string"
+          },
+          "original_amount": {
+            "$ref": "#/components/schemas/Money",
+            "description": "成分按原价的合计（分）。**摊主拆掉它时应收会回到这个数**，\n收款弹窗靠它在本地把新的应收算出来，不必多一次往返。"
+          },
+          "price": {
+            "$ref": "#/components/schemas/Money",
+            "description": "套装价（分），下单那一刻的快照。"
+          }
+        }
+      },
+      "OrderResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/OrderRow"
+          },
+          {
+            "type": "object",
+            "required": [
+              "items",
+              "lots"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/OrderItemResponse"
+                }
+              },
+              "lots": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/OrderLotResponse"
+                }
+              }
+            }
+          }
+        ],
+        "description": "订单响应：`{...order, items: [...]}`。\n`order` 是 `OrderRow` 摊平后的字段，`created_at` 经 serde rename 成 `timestamp`\n（前端读的是 timestamp，见 db/models.rs 的注释，别动）。"
+      },
+      "OrderRow": {
+        "type": "object",
+        "required": [
+          "id",
+          "event_id",
+          "status",
+          "gross_amount",
+          "solved_amount",
+          "final_amount",
+          "timestamp"
+        ],
+        "properties": {
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "completed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "event_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "final_amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "gross_amount": {
+            "$ref": "#/components/schemas/Money",
+            "description": "以下三个单位都是分。②-1 里恒相等；②-2 引入 Lot 和手工覆盖后才会分开。"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "solved_amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "status": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "前端读的是 `timestamp` —— 这个 rename 是个隐形契约，\n`frontend/src/components/order/OrderCard.vue:55` 和\n`frontend/src/views/AdminEventOrders.vue:114` 都依赖它。改名会静默白屏。"
+          }
+        }
+      },
+      "OrderUpdateStatusRequest": {
+        "type": "object",
+        "description": "改订单状态的请求体。schema 名加 `Order` 前缀：`UpdateStatusRequest` 这种名字\n还会出现在别的模块，重名会在 openapi.json 里互相覆盖且不报错。",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "final_amount": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Money",
+                "description": "摊主手工改的实收金额（分）。不给就等于 `solved_amount`。\n\n落点是「确认收款」这一步（spec 4.3）：现场的手势本来就是\n「报个数、收钱、点完成」，拆成两步只会多一次忘记。"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "unapply_lot_ids": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "要拆掉的套装实例（`order_lots.id`）。\n\n**拆 ≠ 改总价。** 改总价把差额记成手工折让、按 spec 4.4 整笔落本社团；\n而「这个套装不该套用」是纠错，钱必须回到真正的货主头上。代卖货上\n只改总价会让货主少拿钱、差额挂在本社团头上——金额总数对，归属错。"
+          }
+        }
       },
       "ReconcileRequest": {
         "type": "object",
@@ -1045,6 +3552,214 @@
             ],
             "format": "int64",
             "description": "分文不差时为 `None`——没有腿可记，「数过了」靠 `events.reconciled_at`。"
+          }
+        }
+      },
+      "RefundHistoryRow": {
+        "type": "object",
+        "required": [
+          "id",
+          "order_line_id",
+          "product_code",
+          "name",
+          "qty",
+          "refund_amount",
+          "channel",
+          "destination",
+          "occurred_at"
+        ],
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "destination": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string"
+          },
+          "order_line_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "product_code": {
+            "type": "string"
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "refund_amount": {
+            "$ref": "#/components/schemas/Money"
+          }
+        }
+      },
+      "RefundLineRequest": {
+        "type": "object",
+        "required": [
+          "order_line_id",
+          "qty",
+          "destination"
+        ],
+        "properties": {
+          "destination": {
+            "type": "string",
+            "description": "`现场仓`（还能卖）或 `损耗`（已损坏）。"
+          },
+          "order_line_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "RefundListResponse": {
+        "type": "object",
+        "required": [
+          "history",
+          "lines"
+        ],
+        "properties": {
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RefundHistoryRow"
+            }
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RefundableLine"
+            }
+          }
+        }
+      },
+      "RefundRequest": {
+        "type": "object",
+        "required": [
+          "channel",
+          "lines"
+        ],
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RefundLineRequest"
+            }
+          },
+          "refund_amount": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Money",
+                "description": "实际退给顾客的总额（分）。省略 = 按各行实付全额退。"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "RefundResponse": {
+        "type": "object",
+        "required": [
+          "journal_id",
+          "refund_amount",
+          "allocated_total",
+          "paid_total"
+        ],
+        "properties": {
+          "allocated_total": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "journal_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "paid_total": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "refund_amount": {
+            "$ref": "#/components/schemas/Money"
+          }
+        }
+      },
+      "RefundableLine": {
+        "type": "object",
+        "description": "可退的行。**同一个商品可能出现多行**（按 Lot 归属拆的），\n所以前端不要按 `event_product_id` 去重（②-2 交接契约第 3 条）。",
+        "required": [
+          "order_line_id",
+          "event_product_id",
+          "product_code",
+          "name",
+          "qty",
+          "refunded_qty",
+          "remaining_qty",
+          "remaining_allocated",
+          "remaining_paid"
+        ],
+        "properties": {
+          "event_product_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "lot_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "order_line_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "product_code": {
+            "type": "string"
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "refunded_qty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "remaining_allocated": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "remaining_paid": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "remaining_qty": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "SettleResponse": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
           }
         }
       },
@@ -1220,6 +3935,61 @@
           "transfer": {
             "$ref": "#/components/schemas/Money",
             "description": "我应转给他们 = −（往来余额）。"
+          }
+        }
+      },
+      "StocktakeRequest": {
+        "type": "object",
+        "required": [
+          "counts"
+        ],
+        "properties": {
+          "counts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ClosingCountRow"
+            }
+          }
+        }
+      },
+      "StocktakeResponse": {
+        "type": "object",
+        "required": [
+          "diffs"
+        ],
+        "properties": {
+          "diffs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ClosingDiffRow"
+            }
+          },
+          "journal_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "零差异时为 `None`——`post_journal` 拒绝空 journal，而\n「盘了全对」这个事实靠 `events.stocktaken_at` 记，不靠 journal 存在性。"
+          }
+        }
+      },
+      "TakebackResponse": {
+        "type": "object",
+        "required": [
+          "moved"
+        ],
+        "properties": {
+          "journal_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "moved": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       }
