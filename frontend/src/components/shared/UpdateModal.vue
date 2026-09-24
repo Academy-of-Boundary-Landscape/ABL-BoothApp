@@ -127,7 +127,7 @@ import {
 } from 'naive-ui'
 
 const props = defineProps<{ show: boolean }>()
-const emit = defineEmits(['update:show'])
+const emit = defineEmits<{ (e: 'update:show', v: boolean): void }>()
 
 const isTauriEnv = ref(typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined)
 const dialog = useDialog()

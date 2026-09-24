@@ -196,7 +196,7 @@ import {
 const message = useMessage()
 
 // QA 分类展开状态
-const expandedCategories = ref([])
+const expandedCategories = ref<string[]>([])
 
 // 轮播图数据
 const tutorialSteps = [

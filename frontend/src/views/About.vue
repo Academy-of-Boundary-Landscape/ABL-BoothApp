@@ -314,7 +314,7 @@ import {
   useDialog,
   NBlockquote,
 } from 'naive-ui'
-import api from '@/services/api'
+import { api, unwrap, errorMessage } from '@/api/client'
 import { copyLink as copyLinkUtil } from '@/services/clipboard'
 import {
   BookOutline,
@@ -390,18 +390,16 @@ const resetDatabase = () => {
     onPositiveClick: async () => {
       const load = message.loading('正在重置...')
       try {
-        const res = await api.put('/admin/reset-database')
+        const res = await unwrap(api.PUT('/admin/reset-database'))
         load.destroy()
-        message.success(res.data.message || '重置成功')
+        message.success(res.message || '重置成功')
         setTimeout(() => {
           sessionStorage.clear()
           window.location.href = '/admin'
         }, 1500)
       } catch (err) {
         load.destroy()
-        // ③b Task 11 迁到新 client 后改成 errorMessage(err, '重置失败')
-        const e = err as { response?: { data?: { error?: string } } }
-        message.error(e.response?.data?.error || '重置失败')
+        message.error(errorMessage(err, '重置失败'))
       }
     },
   })
