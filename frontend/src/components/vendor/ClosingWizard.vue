@@ -228,6 +228,21 @@ const step = computed(() => {
 
 const stepTitle = computed(() => STEP_TITLES[step.value - 1])
 
+// 后端说这场已经结算了（别的设备收的摊、或外壳里的展会列表还是旧的）：
+// 交给页面换成只读结算单，不停在「账本已冻结」屏——向导里本身没有结算单。
+let settledEmitted = false
+function emitSettledOnce() {
+  if (settledEmitted) return
+  settledEmitted = true
+  emit('settled')
+}
+watch(
+  () => store.state?.status,
+  (status) => {
+    if (status === '已结算') emitSettledOnce()
+  }
+)
+
 const stocktakeRows = computed(() => store.state?.onsite_remaining ?? [])
 
 /** 粘性条上的「已盘 X」：填了数字（含 0）的行数，空输入框不算。 */
@@ -350,7 +365,7 @@ async function doSettle() {
   try {
     await store.settle(Number(props.eventId))
     fb.success('展会已结束，账本已冻结')
-    emit('settled')
+    emitSettledOnce()
   } catch (err) {
     fb.error(err, '结束展会失败')
   } finally {

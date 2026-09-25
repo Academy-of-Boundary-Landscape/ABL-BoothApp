@@ -191,3 +191,21 @@ describe('ClosingWizard 盘点（手机优先页面）', () => {
     expect(second.findAll('[data-test="stocktake-row"]')).toHaveLength(5)
   })
 })
+
+describe('ClosingWizard 已结算', () => {
+  it('后端状态已是「已结算」（外壳里的展会列表还是旧的）→ 发一次 settled 让页面换结算单', async () => {
+    closingState = makeState({ status: '已结算' })
+    const w = mountWizard()
+    await flushPromises()
+
+    expect(w.emitted('settled')).toHaveLength(1)
+  })
+
+  it('未结算时不发 settled', async () => {
+    closingState = makeState({ onsite_remaining: onsiteRows(2) })
+    const w = mountWizard()
+    await flushPromises()
+
+    expect(w.emitted('settled')).toBeUndefined()
+  })
+})

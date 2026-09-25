@@ -216,9 +216,13 @@ function openRefund(order: Schemas['OrderResponse']) {
   showRefundModal.value = true
 }
 
+// 关弹窗时重拉已完成单与现场商品：「已全部退货」置灰、扣退款后的营业额、
+// 退回现场仓的库存都靠这两份数据，退货弹窗本身只刷新它自己的明细。
 function closeRefund() {
   showRefundModal.value = false
   refundOrder.value = null
+  void store.fetchCompletedOrders()
+  void eventDetailStore.fetchProductsForEvent(Number(props.id))
 }
 </script>
 

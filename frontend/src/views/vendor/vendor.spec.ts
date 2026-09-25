@@ -7,6 +7,7 @@ import { useOrderStore } from '@/stores/orderStore'
 import { useEventStore } from '@/stores/eventStore'
 import VendorClosing from '@/views/vendor/VendorClosing.vue'
 import CustomerView from '@/views/CustomerView.vue'
+import RefundModal from '@/components/vendor/RefundModal.vue'
 import { cents } from '@/utils/money'
 import type { Schemas } from '@/api/client'
 
@@ -304,6 +305,33 @@ describe('VendorShell 营业额', () => {
     ]
 
     expect(orderStore.totalRevenue).toBe(1200)
+  })
+})
+
+describe('VendorOrders 退货后刷新', () => {
+  const Host = defineComponent({ template: '<router-view />' })
+
+  it('关闭退货弹窗后重拉已完成单（「已全部退货」置灰与扣退款营业额才会更新）', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    completedOrders = [makeOrder(1, { status: 'completed' })]
+
+    await router.push('/vendor/3/orders')
+    const wrapper = mount(Host, { global: { plugins: [pinia, router] } })
+    await flushPromises()
+
+    const completedCalls = () =>
+      mocks.apiGet.mock.calls.filter(
+        ([path, opts]) =>
+          path === '/events/{event_id}/orders' && opts?.params?.query?.status === 'completed'
+      ).length
+    const before = completedCalls()
+
+    wrapper.findComponent(RefundModal).vm.$emit('close')
+    await flushPromises()
+
+    expect(completedCalls()).toBe(before + 1)
+    wrapper.unmount()
   })
 })
 
