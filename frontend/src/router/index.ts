@@ -32,6 +32,10 @@ declare module 'vue-router' {
   }
 }
 
+// 工作台子页的 `id` 声明为 number；`props: true` 传的是路由参数原样的字符串，
+// 严格比较（如导入抽屉里「排除本场」的 `e.id !== eventId`）会静默失效。
+const workbenchIdProp = (to: RouteLocation) => ({ id: Number(to.params.id) })
+
 const routes = [
   // --- 路由组 1: 管理后台 ---
   // 所有 /admin 开头的路径都会使用 AdminLayout 布局
@@ -52,8 +56,10 @@ const routes = [
       },
       {
         // 展会工作台：外壳负责加载展会并 provide，子路由是展前 / 现场 / 收摊的具体页面。
+        // 外壳**故意不命名**：vue-router 按父路由名跳转时不会匹配空路径子路由，
+        // `<router-view>` 会是空的、按状态重定向也不发生。要进工作台就跳
+        // `admin-event-workbench-index`（或直接用路径 `/admin/events/:id`）。
         path: 'events/:id',
-        name: 'admin-event-workbench',
         component: AdminEventWorkbench,
         children: [
           {
@@ -66,19 +72,19 @@ const routes = [
             path: 'products',
             name: 'admin-event-products',
             component: AdminEventProducts,
-            props: true,
+            props: workbenchIdProp,
           },
           {
             path: 'lots',
             name: 'admin-event-lots',
             component: AdminEventLots,
-            props: true,
+            props: workbenchIdProp,
           },
           {
             path: 'orders',
             name: 'admin-event-orders',
             component: AdminEventOrders,
-            props: true,
+            props: workbenchIdProp,
           },
           {
             path: 'stats',
@@ -89,7 +95,7 @@ const routes = [
             path: 'settlement',
             name: 'admin-event-settlement',
             component: () => import('@/views/AdminEventSettlement.vue'),
-            props: true,
+            props: workbenchIdProp,
           },
         ],
       },
@@ -131,8 +137,8 @@ const routes = [
 
   // 摊主端外壳：订单 / 库存 / 收摊三个 tab 各是子路由；旧的 `/vendor/:id` URL 保留。
   {
+    // 外壳同样不命名（理由见上面的展会工作台）：按名字跳这里不会走空路径子路由的重定向。
     path: '/vendor/:id', // :id 是展会 ID
-    name: 'vendor-shell',
     component: VendorShell,
     props: true,
     meta: { requiresAuth: true, role: 'vendor' },

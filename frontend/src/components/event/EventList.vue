@@ -230,7 +230,7 @@ function statusType(status: Schemas['EventStatus']): 'warning' | 'default' | 'su
 }
 
 function openWorkbench(event: Schemas['EventResponse']) {
-  void router.push({ name: 'admin-event-workbench', params: { id: event.id } })
+  void router.push({ name: 'admin-event-workbench-index', params: { id: event.id } })
 }
 
 function onCardAction(key: string | number, event: Schemas['EventResponse']) {
