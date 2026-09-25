@@ -444,7 +444,14 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
                 skipped += 1;
                 continue;
             }
-            if file_path_str.contains("..") {
+            // 条目名来自别人发来的包，不可信。enclosed_name 拒绝绝对路径、盘符和 `..`：
+            // 只拦 `..` 不够——`Path::join` 遇到绝对路径会整段替换，
+            // 一个名为 `C:/…/Startup/x.bat` 的条目就能写进开机启动目录。
+            let rel_path = file
+                .enclosed_name()
+                .filter(|_| !file_path_str.contains(".."))
+                .map(|p| p.to_path_buf());
+            let Some(rel_path) = rel_path else {
                 log::warn!(
                     "{} import.blk: rejected path-traversal entry: {}",
                     TAG,
@@ -452,9 +459,9 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
                 );
                 errored += 1;
                 continue;
-            }
+            };
 
-            let target_path = upload_dir.join(&file_path_str);
+            let target_path = upload_dir.join(&rel_path);
             if let Some(parent) = target_path.parent() {
                 if let Err(e) = std::fs::create_dir_all(parent) {
                     log::warn!(
@@ -970,6 +977,54 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(homes, 1, "导入新建社团时 is_home 必须恒为 0");
+    }
+
+    #[tokio::test]
+    async fn import_refuses_entries_that_escape_the_upload_dir() {
+        // 包来自第三方。条目名是绝对路径时 `Path::join` 会整段替换，
+        // 只拦 `..` 的旧检查放得过去，文件会被写到磁盘上任意位置。
+        let (router, _dir, _pool) = test_router_with().await;
+        let outside = tempfile::tempdir().unwrap();
+        let abs = outside.path().join("pwned.txt");
+        let abs_name = abs.to_string_lossy().replace('\\', "/");
+
+        let mut buf = std::io::Cursor::new(Vec::new());
+        {
+            let mut zip = zip::ZipWriter::new(&mut buf);
+            let opts = zip::write::FileOptions::default();
+            zip.start_file("catalog.json", opts).unwrap();
+            zip.write_all(json!({"products": []}).to_string().as_bytes())
+                .unwrap();
+            zip.start_file(abs_name.as_str(), opts).unwrap();
+            zip.write_all(b"x").unwrap();
+            zip.start_file("products/../../escaped.txt", opts).unwrap();
+            zip.write_all(b"x").unwrap();
+            zip.finish().unwrap();
+        }
+
+        let res = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/sync/import-products-raw")
+                    .header("authorization", format!("Bearer {}", admin_token()))
+                    .header("content-type", "application/zip")
+                    .body(Body::from(buf.into_inner()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = res.status();
+        let body = read_json(res).await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "坏条目只跳过，不让整包失败: {body:?}"
+        );
+        assert!(
+            !abs.exists(),
+            "绝对路径条目被写到了 upload 目录之外: {abs:?}"
+        );
     }
 }
 
