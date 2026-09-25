@@ -1,7 +1,5 @@
 <!-- 终审补的绕过写法：行尾带标记的每一行都必须被 check-ui-boundary 报出（--self-test 校验） -->
-<template>
-  <NModal :show="true" /><!-- expect-hit -->
-</template>
+<template><NModal :show="true" /><!-- expect-hit --></template>
 
 <script setup lang="ts">
 import * as naive from 'naive-ui' // expect-hit
@@ -12,7 +10,7 @@ import { NButton } from 'naive-ui' // 不应命中
 
 naive.useMessage()
 globalThis.alert('x') // expect-hit
-alert ('y') // expect-hit
+alert('y') // expect-hit
 self.confirm('z') // expect-hit
 prompt('w') // expect-hit
 const { innerWidth } = window // expect-hit

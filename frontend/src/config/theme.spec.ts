@@ -67,3 +67,13 @@ describe('useViewport', () => {
     expect(isTablet.value).toBe(true)
   })
 })
+
+describe('Radio 按钮组配色', () => {
+  it('未选中不是实心主色，选中才是', () => {
+    const r = generateNaiveUITheme(lightTheme).Radio!
+    expect(r.buttonColor).toBe(lightTheme.background.card)
+    expect(r.buttonColorActive).toBe(lightTheme.primary.base)
+    expect(r.buttonTextColorActive).toBe(lightTheme.text.white)
+    expect(r.dotColorActive).toBe(lightTheme.primary.base)
+  })
+})

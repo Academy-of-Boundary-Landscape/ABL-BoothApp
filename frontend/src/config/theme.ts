@@ -475,12 +475,18 @@ export function generateNaiveUITheme(theme: ThemeColors): GlobalThemeOverrides {
       colorCheckedPressed: primary.pressed,
       checkMarkColor: text.white,
     },
+    // 单选按钮组：未选中是卡片底 + 常规字，选中才是实心主色 + 白字——
+    // 原来未选中也填主色，两个按钮看起来都「选中」，分不出当前是哪个（④-2 截图发现）。
     Radio: {
-      dotColorActive: text.white,
-      buttonColor: primary.base,
-      buttonColorHover: primary.hover,
-      buttonColorActive: primary.pressed,
-      buttonTextColor: text.white,
+      dotColorActive: primary.base,
+      boxShadowActive: `inset 0 0 0 1px ${primary.base}`,
+      buttonColor: theme.background.card,
+      buttonColorActive: primary.base,
+      buttonTextColor: text.primary,
+      buttonTextColorHover: primary.base,
+      buttonTextColorActive: text.white,
+      buttonBorderColorActive: primary.base,
+      buttonBorderColorHover: primary.base,
     },
     Input: {
       borderFocus: theme.border.focus,

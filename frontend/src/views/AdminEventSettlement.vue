@@ -521,19 +521,6 @@ onMounted(async () => {
 .field > *:not(.field-label) {
   width: 100%;
 }
-/* 主题（theme.ts 的 Radio.buttonColor = primary.base）把 n-radio-button 的**未选中态**
-   也填成了主色实心，两个方向看起来都被选中；且选中态的 `buttonTextColorActive`
-   仍是深主色，压在深主色背景上几乎看不清。这里在消费方补齐两种状态：
-   未选 = 描边 + 主色字，选中 = 实心 + 白字。theme.ts 颜色值不动（全局约束），
-   选择器多带一层 `.n-radio-button` 以保证压过 Naive 自己的样式。 */
-:deep(.n-radio-group .n-radio-button:not(.n-radio-button--checked)) {
-  background-color: transparent;
-  border-color: var(--accent-color);
-  color: var(--accent-color);
-}
-:deep(.n-radio-group .n-radio-button.n-radio-button--checked) {
-  color: var(--text-white);
-}
 .actions {
   justify-content: flex-end;
 }

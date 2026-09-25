@@ -142,6 +142,58 @@ const RULES = [
   },
 ]
 
+// ④-2 新增：只对特定路径生效的规则（appliesTo 收仓库相对路径 `src/...`）。
+const SHELL_SUBPAGES =
+  /^src\/views\/(vendor\/Vendor(Orders|Inventory|Closing)|AdminEvent(Products|Lots|Orders|Stat|Settlement))\.vue$/
+RULES.push(
+  {
+    // 工作台子页与摊主 tab 子页的页头由外壳提供，自己的 PageShell 必须 embedded（spec §3.2 / §3.6）。
+    // 外壳本身（VendorShell、AdminEventWorkbench）不在清单里。
+    id: 'shell-subpage-embedded',
+    appliesTo: (rel) => SHELL_SUBPAGES.test(rel),
+    find(text) {
+      const hits = []
+      const re = /<PageShell\b[^>]*>/g
+      let m
+      while ((m = re.exec(text))) {
+        if (!/\bembedded\b/.test(m[0])) hits.push({ index: m.index, match: m[0] })
+      }
+      return hits
+    },
+  },
+  {
+    // 页面不手写加载错误态，交给 AsyncState（spec §5.8）。只抓「n-alert type=error 里渲染 store.error 这类成员」这一种形态，
+    // 登录失败这类表单提交错误（裸 `error`）不算；
+    // 表单校验、业务警示等其他红色提示不受影响。
+    id: 'handwritten-load-error',
+    appliesTo: (rel) => rel.startsWith('src/views/'),
+    find(text) {
+      const hits = []
+      const re = /<n-alert\b[^>]*type="error"[^>]*>[\s\S]{0,300}?<\/n-alert>/g
+      let m
+      while ((m = re.exec(text))) {
+        if (/\{\{\s*[\w.]*\w\.error\s*\}\}|:title="[\w.]*\w\.error"/.test(m[0]))
+          hits.push({ index: m.index, match: '<n-alert type="error">…error' })
+      }
+      return hits
+    },
+  },
+  {
+    // 数据列表用 n-data-table；原生 <table> 只留给结算单报表（版式要对齐 xlsx）。
+    id: 'native-table',
+    appliesTo: (rel) => rel.endsWith('.vue') && !rel.startsWith('src/components/settlement/'),
+    find(text) {
+      const hits = []
+      // HTML 注释里提到 <table> 不算（等长替换成空格，下标不变）
+      const masked = text.replace(/<!--[\s\S]*?-->/g, (c) => c.replace(/[^\n]/g, ' '))
+      const re = /<table\b/g
+      let m
+      while ((m = re.exec(masked))) hits.push({ index: m.index, match: '<table' })
+      return hits
+    },
+  }
+)
+
 const RULE_IDS = RULES.map((r) => r.id)
 
 function lineAt(text, index) {
@@ -158,12 +210,13 @@ function hasIgnoreReason(prevLine) {
   return m[1].replace(/-->\s*$/, '').trim().length > 0
 }
 
-function scanText(text, { appRules = true } = {}) {
+function scanText(text, { appRules = true, rel = '' } = {}) {
   const lines = text.split('\n')
   const hits = []
   let suppressed = 0
   for (const rule of RULES) {
     if (!rule.global && !appRules) continue
+    if (rule.appliesTo && !rule.appliesTo(rel)) continue
     for (const raw of rule.find(text)) {
       const line = lineAt(text, raw.index)
       const prev = lines[line - 2] ?? ''
@@ -211,9 +264,15 @@ function scanFiles(files) {
   const results = []
   for (const file of files) {
     const text = readFileSync(file, 'utf8')
-    const { hits, suppressed } = scanText(text, { appRules: appRulesApply(file) })
+    // fixture 用首行 `boundary-fixture-path: src/...` 假装自己在某个路径下，好让按路径生效的规则也能自测。
+    const pragma = text.match(/boundary-fixture-path:\s*(\S+)/)
+    const rel =
+      pragma && file.startsWith(FIXTURE_DIR)
+        ? pragma[1]
+        : relative(ROOT, file).split('\\').join('/')
+    const { hits, suppressed } = scanText(text, { appRules: appRulesApply(file), rel })
     if (hits.length || suppressed) {
-      results.push({ file, rel: relative(ROOT, file).split('\\').join('/'), hits, suppressed })
+      results.push({ file, rel, hits, suppressed })
     }
   }
   return results
