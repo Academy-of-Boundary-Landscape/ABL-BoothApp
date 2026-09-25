@@ -1,83 +1,89 @@
-<template>
-  <div class="stats-container">
-    <div class="stats-header" @click="collapsed = !collapsed">
-      <h3>实时销售统计</h3>
-      <n-button tertiary size="small" class="collapse-btn">
-        {{ collapsed ? '展开' : '收起' }}
-      </n-button>
-    </div>
+<!--
+  摊主 · 实时销售统计（spec §5.6 / §7）。
 
-    <div v-show="!collapsed">
-      <!-- 营业额 + 待处理 -->
-      <div class="stat-row">
-        <div class="stat-card">
-          <span class="label">当前营业额</span>
-          <span class="value revenue">{{ formatYuan(orderStore.totalRevenue) }}</span>
-        </div>
-        <div class="stat-card">
-          <span class="label">待处理订单</span>
-          <span class="value">{{ orderStore.pendingOrders.length }}</span>
-        </div>
+  手机单列（营业额 / 待处理两张 tile 在上，库存速览在下），平板起两列并排。
+  数据自己每 5 秒拉一次；加载 / 错误 / 空态都交给 `AsyncState` + `EmptyState`，
+  页面不手写错误态。
+-->
+<template>
+  <SectionCard title="实时销售统计" collapsible v-model:collapsed="collapsed">
+    <div class="live-stats__grid">
+      <div class="live-stats__tiles">
+        <StatTile label="当前营业额">
+          <template #value>
+            <Money :value="orderStore.totalRevenue" size="lg" />
+          </template>
+        </StatTile>
+        <StatTile label="待处理订单" :value="orderStore.pendingOrders.length" />
       </div>
 
-      <!-- 库存速览 -->
-      <div class="stock-section">
-        <div class="stock-section-header">
+      <div class="live-stats__stock">
+        <div class="stock-header">
           <h4>库存速览</h4>
           <n-button
             v-if="eventDetailStore.products.length > 0"
             text
             size="tiny"
+            class="stock-toggle"
             @click="stockExpanded = !stockExpanded"
           >
             {{ stockExpanded ? '收起详情' : '展开详情' }}
           </n-button>
         </div>
 
-        <div v-if="eventDetailStore.isLoading" class="loading">
-          <n-spin size="small" />
-        </div>
+        <AsyncState
+          :loading="eventDetailStore.isLoading && !eventDetailStore.products.length"
+          :error="eventDetailStore.error"
+          :empty="!eventDetailStore.isLoading && !eventDetailStore.products.length"
+          :keep-content="eventDetailStore.products.length > 0"
+          loading-text="正在加载库存…"
+          @retry="reload"
+        >
+          <template #empty>
+            <EmptyState compact title="这场还没有上架商品。" />
+          </template>
 
-        <!-- 紧凑模式：色块网格 -->
-        <div v-else-if="!stockExpanded" class="stock-grid">
-          <div
-            v-for="product in eventDetailStore.products"
-            :key="product.id"
-            class="stock-chip"
-            :class="stockLevel(product)"
-          >
-            <span class="chip-name">{{ product.name }}</span>
-            <span class="chip-count">{{ product.onsite_qty }}</span>
+          <!-- 紧凑模式：色块网格 -->
+          <div v-if="!stockExpanded" class="stock-grid">
+            <div
+              v-for="product in eventDetailStore.products"
+              :key="product.id"
+              class="stock-chip"
+              :class="stockLevel(product)"
+            >
+              <span class="chip-name">{{ product.name }}</span>
+              <span class="chip-count">{{ product.onsite_qty }}</span>
+            </div>
           </div>
-        </div>
 
-        <!-- 详情模式：进度条列表 -->
-        <div v-else class="stock-list">
-          <div v-for="product in eventDetailStore.products" :key="product.id" class="stock-item">
-            <span class="product-name">{{ product.name }}</span>
-            <n-progress
-              type="line"
-              :percentage="stockPercentage(product)"
-              :show-indicator="false"
-              :color="stockColor(product)"
-              rail-color="var(--bg-secondary)"
-            />
-            <span class="stock-value" :class="stockLevel(product)">
-              {{ product.onsite_qty }} / {{ product.stocked_qty }}
-            </span>
+          <!-- 详情模式：进度条列表 -->
+          <div v-else class="stock-list">
+            <div v-for="product in eventDetailStore.products" :key="product.id" class="stock-item">
+              <span class="product-name">{{ product.name }}</span>
+              <n-progress
+                type="line"
+                :percentage="stockPercentage(product)"
+                :show-indicator="false"
+                :color="stockColor(product)"
+                rail-color="var(--bg-secondary)"
+              />
+              <span class="stock-value" :class="stockLevel(product)">
+                {{ product.onsite_qty }} / {{ product.stocked_qty }}
+              </span>
+            </div>
           </div>
-        </div>
+        </AsyncState>
       </div>
     </div>
-  </div>
+  </SectionCard>
 </template>
 
 <script setup lang="ts">
-import { useOrderStore } from '@/stores/orderStore'
 import { onMounted, onUnmounted, ref } from 'vue'
-import { NButton, NSpin, NProgress } from 'naive-ui'
+import { NButton, NProgress } from 'naive-ui'
+import { AsyncState, EmptyState, Money, SectionCard, StatTile } from '@/components/ui'
+import { useOrderStore } from '@/stores/orderStore'
 import { useEventDetailStore } from '@/stores/eventDetailStore'
-import { formatYuan } from '@/utils/money'
 import type { Schemas } from '@/api/client'
 
 const props = defineProps<{ eventId: string | number }>()
@@ -115,8 +121,12 @@ async function refreshStats() {
     eventDetailStore.fetchProductsForEvent?.(Number(props.eventId)),
   ])
 }
+/** AsyncState 的重试入口：重拉一次即可，加载 / 错误态由 store 驱动。 */
+async function reload() {
+  await refreshStats()
+}
 onMounted(() => {
-  refreshStats()
+  void refreshStats()
   timer = setInterval(refreshStats, 5000)
 })
 onUnmounted(() => {
@@ -125,78 +135,30 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.stats-container {
-  background-color: var(--card-bg-color);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  padding: var(--space-lg);
-  margin-bottom: var(--space-xl);
+/* 平板起两列：左侧统计 tile，右侧库存速览；手机单列。 */
+.live-stats__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-lg);
+  align-items: start;
 }
-
-.stats-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  cursor: pointer;
-  user-select: none;
-}
-.stats-header h3 {
-  margin: 0;
-  font-size: var(--font-md);
-}
-.collapse-btn {
-  min-width: 48px;
-}
-
-/* 营业额卡片 */
-.stat-row {
-  display: flex;
+.live-stats__tiles {
+  display: grid;
   gap: var(--space-sm);
-  margin-top: var(--space-md);
-}
-.stat-card {
-  flex: 1;
-  background: var(--bg-color);
-  border-radius: var(--radius-md);
-  padding: var(--space-sm) var(--space-md);
-  text-align: center;
-}
-.stat-card .label {
-  display: block;
-  font-size: var(--font-sm);
-  color: var(--text-muted);
-  margin-bottom: var(--space-xs);
-}
-.stat-card .value {
-  display: block;
-  font-size: var(--font-xl);
-  font-weight: var(--weight-bold);
-}
-.stat-card .revenue {
-  color: var(--accent-color);
 }
 
-/* 库存区域 */
-.stock-section {
-  margin-top: var(--space-md);
-}
-.stock-section-header {
+.stock-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-sm);
   margin-bottom: var(--space-sm);
 }
-.stock-section-header h4 {
+.stock-header h4 {
   margin: 0;
   font-size: var(--font-base);
   font-weight: var(--weight-bold);
   color: var(--primary-text-color);
-}
-
-.loading {
-  display: flex;
-  justify-content: center;
-  padding: var(--space-lg) 0;
 }
 
 /* ===== 紧凑色块网格 ===== */
@@ -217,7 +179,6 @@ onUnmounted(() => {
   background: var(--bg-secondary);
   color: var(--primary-text-color);
   border: 1px solid var(--border-color);
-  transition: border-color 0.15s;
 }
 
 .chip-name {
@@ -288,8 +249,8 @@ onUnmounted(() => {
 
 .stock-value {
   text-align: right;
-  font-family: monospace;
   font-size: var(--font-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 .stock-value.level-ok {
@@ -304,5 +265,15 @@ onUnmounted(() => {
 }
 .stock-value.level-out {
   color: var(--text-disabled);
+}
+
+@media (--phone) {
+  .live-stats__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* 手机上把「展开 / 收起详情」抬到 44px（「能用」标准）。 */
+  .stock-toggle {
+    min-height: 44px;
+  }
 }
 </style>

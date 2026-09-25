@@ -1,11 +1,12 @@
 <!--
-  赠送 / 报废登记弹窗。
+  赠送 / 报废登记弹窗（spec §5.6，摊主端手机为主）。
 
   商品候选来自 `GET /events/:id/closing` 的 `onsite_remaining`——**复用它而不是
   另开端点**，那个接口本来就在算这笔余额。只列余额 > 0 的。
 
   数量上限只是「少一次往返」的前置提示，真正判超卖的是后端；后端说不行就把
-  它那句话原样显示出来。
+  它那句话原样显示出来。加载 / 错误 / 空态都走 `AsyncState` + `EmptyState`，
+  已登记记录是数据列表，用 `n-data-table`。
 -->
 <template>
   <AppModal
@@ -19,7 +20,12 @@
       <n-tab-pane name="scrap" tab="报废" />
     </n-tabs>
 
-    <n-spin :show="isLoading">
+    <AsyncState
+      :loading="isLoading"
+      :error="store.error ?? loadError"
+      loading-text="正在加载登记数据…"
+      @retry="load"
+    >
       <div class="log-form">
         <div class="field">
           <span class="field-label">商品</span>
@@ -44,6 +50,8 @@
             :min="1"
             :max="maxQty"
             :precision="0"
+            :show-button="false"
+            :input-props="{ inputmode: 'numeric' }"
             :disabled="!form.productId"
           />
           <span v-if="selectedProduct" class="field-hint">现场仓 {{ selectedProduct.qty }} 件</span>
@@ -68,28 +76,23 @@
           </n-button>
         </div>
       </div>
-    </n-spin>
 
-    <div class="entries">
-      <p class="entries-title">已登记 · {{ activeTab === 'gift' ? '赠送' : '报废' }}</p>
-      <EmptyState v-if="!entries.length" compact title="还没有登记记录。" />
-      <div v-for="entry in entries" :key="entry.journal_id" class="entry">
-        <div class="entry-main">
-          <span class="entry-name">{{ entry.name }}</span>
-          <span class="entry-code">{{ entry.product_code }}</span>
-          <span class="entry-qty">×{{ entry.qty }}</span>
-          <n-tag v-if="activeTab === 'gift'" size="small" :bordered="false">
-            {{ entry.vendor_paid ? '我自掏' : '货主承担' }}
-          </n-tag>
+      <div class="entries">
+        <p class="entries-title">已登记 · {{ activeTab === 'gift' ? '赠送' : '报废' }}</p>
+        <EmptyState v-if="!entries.length" compact title="还没有登记记录。" />
+        <div v-else class="entries-table">
+          <n-data-table
+            :columns="columns"
+            :data="entries"
+            :row-key="(row) => row.journal_id"
+            size="small"
+            :bordered="false"
+            :scroll-x="640"
+          />
         </div>
-        <div class="entry-meta">
-          <span>{{ entry.owner_name }}</span>
-          <span>{{ formatTimestamp(entry.occurred_at, false) }}</span>
-          <span v-if="entry.note" class="entry-note">{{ entry.note }}</span>
-        </div>
-        <n-button size="small" quaternary :disabled="isBusy" @click="undo(entry)">撤销</n-button>
       </div>
-    </div>
+    </AsyncState>
+
     <template #footer>
       <n-button @click="emit('close')">关闭</n-button>
     </template>
@@ -97,19 +100,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { computed, h, ref, watch } from 'vue'
 import {
   NButton,
+  NDataTable,
   NInput,
   NInputNumber,
   NSelect,
-  NSpin,
   NSwitch,
-  NTabs,
   NTabPane,
+  NTabs,
   NTag,
+  type DataTableColumns,
 } from 'naive-ui'
-import { AppModal, EmptyState } from '@/components/ui'
+import { AppModal, AsyncState, EmptyState } from '@/components/ui'
 import { useFeedback } from '@/composables/useFeedback'
 import { useInventoryLogStore } from '@/stores/inventoryLogStore'
 import { formatTimestamp } from '@/utils/dateFormatter'
@@ -127,6 +131,7 @@ const activeTab = ref('gift')
 const onsite = ref<Schemas['ClosingOnSiteRow'][]>([])
 const isLoading = ref(false)
 const isBusy = ref(false)
+const loadError = ref<string | null>(null)
 const form = ref<{
   productId: number | null
   qty: number | null
@@ -148,6 +153,62 @@ const maxQty = computed(() => selectedProduct.value?.qty || 1)
 
 const entries = computed(() => (activeTab.value === 'gift' ? store.gifts : store.scraps))
 
+const columns = computed<DataTableColumns<Schemas['InventoryLogEntry']>>(() => {
+  const cols: DataTableColumns<Schemas['InventoryLogEntry']> = [
+    {
+      title: '商品',
+      key: 'name',
+      render: (row) =>
+        h('span', { class: 'entry-product' }, [
+          h('span', { class: 'entry-name' }, row.name),
+          h('span', { class: 'entry-code' }, row.product_code),
+        ]),
+    },
+    { title: '数量', key: 'qty', width: 72, render: (row) => `×${row.qty}` },
+  ]
+  if (activeTab.value === 'gift') {
+    cols.push({
+      title: '承担',
+      key: 'vendor_paid',
+      width: 96,
+      render: (row) =>
+        h(
+          NTag,
+          { size: 'small', bordered: false },
+          {
+            default: () => (row.vendor_paid ? '我自掏' : '货主承担'),
+          }
+        ),
+    })
+  }
+  cols.push(
+    { title: '货主', key: 'owner_name' },
+    {
+      title: '时间',
+      key: 'occurred_at',
+      render: (row) => formatTimestamp(row.occurred_at, false),
+    },
+    { title: '备注', key: 'note', render: (row) => row.note || '—' },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 84,
+      render: (row) =>
+        h(
+          NButton,
+          {
+            size: 'small',
+            quaternary: true,
+            disabled: isBusy.value,
+            onClick: () => undo(row),
+          },
+          { default: () => '撤销' }
+        ),
+    }
+  )
+  return cols
+})
+
 function resetForm() {
   form.value = { productId: null, qty: 1, note: '', vendorPays: false }
 }
@@ -161,20 +222,25 @@ async function loadOnsite() {
       })
     )
     onsite.value = (data?.onsite_remaining || []).filter((p) => p.qty > 0)
+    loadError.value = null
   } catch (err) {
     onsite.value = []
-    fb.error(errorMessage(err, '无法加载现场仓余额。'))
+    loadError.value = errorMessage(err, '无法加载现场仓余额。')
   }
 }
 
 async function load() {
   isLoading.value = true
-  await loadOnsite()
-  await Promise.all([
-    store.fetchGifts(Number(props.eventId)),
-    store.fetchScraps(Number(props.eventId)),
-  ])
-  isLoading.value = false
+  loadError.value = null
+  try {
+    await loadOnsite()
+    await Promise.all([
+      store.fetchGifts(Number(props.eventId)),
+      store.fetchScraps(Number(props.eventId)),
+    ])
+  } finally {
+    isLoading.value = false
+  }
 }
 
 watch(
@@ -183,7 +249,7 @@ watch(
     if (val) {
       activeTab.value = 'gift'
       resetForm()
-      load()
+      void load()
     }
   }
 )
@@ -305,21 +371,13 @@ async function undo(entry: Schemas['InventoryLogEntry']) {
   color: var(--text-muted);
   font-size: var(--font-sm);
 }
-.entry {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  grid-template-areas: 'main action' 'meta action';
-  gap: var(--space-xs) var(--space-sm);
-  align-items: center;
-  padding: var(--space-sm) 0;
-  border-bottom: 1px dashed var(--border-color);
+.entries-table {
+  overflow-x: auto;
 }
-.entry-main {
-  grid-area: main;
-  display: flex;
-  align-items: center;
+.entry-product {
+  display: inline-flex;
+  align-items: baseline;
   gap: var(--space-sm);
-  flex-wrap: wrap;
 }
 .entry-name {
   font-weight: var(--weight-bold);
@@ -328,22 +386,25 @@ async function undo(entry: Schemas['InventoryLogEntry']) {
   color: var(--text-muted);
   font-size: var(--font-sm);
 }
-.entry-qty {
-  color: var(--accent-color);
-  font-weight: var(--weight-bold);
-}
-.entry-meta {
-  grid-area: meta;
-  display: flex;
-  gap: var(--space-sm);
-  flex-wrap: wrap;
-  color: var(--text-muted);
-  font-size: var(--font-sm);
-}
-.entry-note {
-  color: var(--warning-color);
-}
-.entry > .n-button {
-  grid-area: action;
+
+@media (--phone) {
+  /* 手机上标签占一行、控件占满下一行，点得准。 */
+  .field {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-xs);
+  }
+  .field-label {
+    flex: none;
+  }
+  .switch-field {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+  /* 手机上把登记主按钮抬到 44px（「能用」标准）。 */
+  .actions :deep(.n-button) {
+    min-height: 44px;
+    width: 100%;
+  }
 }
 </style>

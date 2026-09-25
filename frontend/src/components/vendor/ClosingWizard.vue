@@ -1,5 +1,5 @@
 <!--
-  收摊向导（母 spec 6.4）：清 pending → 盘点 → 带回 → 转已结算。
+  收摊向导（母 spec 6.4，spec §5.6）：清 pending → 盘点 → 带回 → 转已结算。
 
   当前在第几屏**完全由后端状态推出来**，不存本地 step 变量——存了就会出现
   「退出重进回到第一步、但货已经带回了」这种错位。四步之间没有会话状态，
@@ -7,16 +7,23 @@
 
   能不能进下一步也由后端的 `blockers` 说了算：结算按钮在 blockers 非空时禁用，
   其余动作把后端那句错误原文显示出来即可。
+
+  这是**页面组件**（不是弹窗）：挂载即加载，不会退出；手机上按手机优先设计——
+  步骤指示缩成一行字、盘点每行一个大号数字键盘、主按钮固定在底部 tab 栏之上。
 -->
 <template>
   <div class="closing-wizard">
-    <n-spin class="wizard-scroll" :show="store.isLoading && !store.state">
+    <AsyncState
+      :loading="store.isLoading && !store.state"
+      :error="loadError"
+      loading-text="正在加载收摊状态…"
+      @retry="reload"
+    >
       <template v-if="store.state">
-        <n-steps :current="step" size="small" class="steps">
-          <n-step title="清点订单" />
-          <n-step title="盘点" />
-          <n-step title="带回" />
-          <n-step title="结算" />
+        <!-- 步骤指示：宽屏用 n-steps；手机上缩成一行，省掉横向空间。 -->
+        <div v-if="isPhone" class="step-line">第 {{ step }} 步 / 共 4 步 · {{ stepTitle }}</div>
+        <n-steps v-else :current="step" size="small" class="steps">
+          <n-step v-for="title in STEP_TITLES" :key="title" :title="title" />
         </n-steps>
 
         <!-- ① 清 pending -->
@@ -24,6 +31,11 @@
           <p class="screen-hint">
             还有 {{ store.state.pending_orders.length }} 单待处理，逐单完成或取消之后才能盘点。
           </p>
+          <EmptyState
+            v-if="!store.state.pending_orders.length"
+            compact
+            title="没有待处理的订单，可以进入盘点。"
+          />
           <div v-for="o in store.state.pending_orders" :key="o.id" class="row">
             <div class="row-info">
               <span class="row-title">#{{ o.id }}</span>
@@ -38,7 +50,7 @@
               </n-button>
             </n-space>
           </div>
-          <div class="screen-actions">
+          <div class="screen-actions" :class="{ 'screen-actions--fixed': isPhone }">
             <n-button
               type="error"
               tertiary
@@ -53,25 +65,47 @@
 
         <!-- ② 盘点 -->
         <section v-else-if="step === 2" class="screen">
+          <!-- 粘性条：随时知道还差几行；「只看未填」只看没填的，避免一屏划到底。 -->
+          <div class="stocktake-bar">
+            <span class="stocktake-count"
+              >已盘 {{ countedCount }} / {{ stocktakeRows.length }}</span
+            >
+            <label class="stocktake-filter">
+              <n-switch v-model:value="onlyUnfilled" size="small" />
+              <span>只看未填</span>
+            </label>
+          </div>
           <p class="screen-hint">
             盘点现场仓。<strong>数过一致的也要报</strong>——「我数了，一致」和「我没数」是两件事。
           </p>
-          <div v-for="p in store.state.onsite_remaining" :key="p.event_product_id" class="row">
+          <EmptyState
+            v-if="onlyUnfilled && !visibleRows.length"
+            compact
+            title="都盘完了，可以提交。"
+          />
+          <div
+            v-for="p in visibleRows"
+            :key="p.event_product_id"
+            class="row stocktake-row"
+            data-test="stocktake-row"
+          >
             <div class="row-info">
               <span class="row-title">{{ p.name }}</span>
               <span class="row-code">{{ p.product_code }}</span>
-              <span>{{ p.owner_name }}</span>
-              <span>账面 {{ p.qty }} 件</span>
+              <span class="row-muted">{{ p.owner_name }} · 账面 {{ p.qty }} 件</span>
             </div>
             <n-input-number
               v-model:value="counts[p.event_product_id]"
               :min="0"
               :precision="0"
+              :show-button="false"
+              :input-props="{ inputmode: 'numeric' }"
+              placeholder="实数"
               class="count-input"
             />
           </div>
           <p class="screen-note">跳过盘点之后，结算单上会写「未盘点，剩余数为账面推算」。</p>
-          <div class="screen-actions">
+          <div class="screen-actions" :class="{ 'screen-actions--fixed': isPhone }">
             <n-button :disabled="isBusy" @click="skipStocktake">跳过盘点</n-button>
             <n-button type="primary" :loading="isBusy" @click="submitStocktake">
               提交盘点
@@ -82,15 +116,20 @@
         <!-- ③ 带回 -->
         <section v-else-if="step === 3" class="screen">
           <p class="screen-hint">以下商品将带回，共 {{ takebackTotal }} 件。</p>
+          <EmptyState
+            v-if="!store.state.onsite_remaining.length"
+            compact
+            title="现场仓已经空了。"
+          />
           <div v-for="p in store.state.onsite_remaining" :key="p.event_product_id" class="row">
             <div class="row-info">
               <span class="row-title">{{ p.name }}</span>
               <span class="row-code">{{ p.product_code }}</span>
-              <span>{{ p.owner_name }}</span>
+              <span class="row-muted">{{ p.owner_name }}</span>
               <span class="row-amount">×{{ p.qty }}</span>
             </div>
           </div>
-          <div class="screen-actions">
+          <div class="screen-actions" :class="{ 'screen-actions--fixed': isPhone }">
             <n-button type="primary" :loading="isBusy" @click="doTakeback">确认带回</n-button>
           </div>
         </section>
@@ -100,8 +139,7 @@
           <div v-if="store.state.status === '已结算'" class="settled-note">
             <p>
               <strong>账本已冻结。</strong>
-              之后仍然可以补垫付、结算调整和收摊清点，其余都改不了了。 结算单请到管理端的「展会 →
-              结算」查看。
+              之后仍然可以补垫付、结算调整和收摊清点，其余都改不了了。 下面就是这一场的结算单。
             </p>
           </div>
           <template v-else>
@@ -109,7 +147,7 @@
               <p v-for="(b, i) in store.state.blockers" :key="i" class="blocker-line">⚠ {{ b }}</p>
             </div>
             <p v-else class="screen-hint">没有拦路的项了，确认无误后结束展会。</p>
-            <div class="screen-actions">
+            <div class="screen-actions" :class="{ 'screen-actions--fixed': isPhone }">
               <n-button
                 type="primary"
                 :loading="isBusy"
@@ -122,7 +160,7 @@
           </template>
         </section>
       </template>
-    </n-spin>
+    </AsyncState>
 
     <!-- 第①屏「完成」复用现成的收款弹窗补录渠道。 -->
     <ReceiptModal
@@ -138,8 +176,10 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { NButton, NInputNumber, NSpace, NSpin, NSteps, NStep } from 'naive-ui'
+import { NButton, NInputNumber, NSpace, NStep, NSteps, NSwitch } from 'naive-ui'
+import { AsyncState, EmptyState } from '@/components/ui'
 import { useFeedback } from '@/composables/useFeedback'
+import { useViewport } from '@/composables/useViewport'
 import ReceiptModal from '@/components/vendor/ReceiptModal.vue'
 import { useClosingStore } from '@/stores/closingStore'
 import { useOrderStore } from '@/stores/orderStore'
@@ -154,8 +194,12 @@ const emit = defineEmits<{ (e: 'settled'): void }>()
 const store = useClosingStore()
 const orderStore = useOrderStore()
 const fb = useFeedback()
+const { isPhone } = useViewport()
+
+const STEP_TITLES = ['清点订单', '盘点', '带回', '结算'] as const
 
 const isBusy = ref(false)
+const loadError = ref<string | null>(null)
 const counts = ref<Record<number, number | null>>({})
 // 「跳过盘点」是唯一一处必要的本地状态：后端没有「跳过」这个事实，
 // 而这一步不落库。它只在「还有货、但摊主决定不盘点」时把界面推到带回屏；
@@ -163,6 +207,8 @@ const counts = ref<Record<number, number | null>>({})
 // 每次打开都重置是有意的：跳过没有写任何后端事实，关掉再进来等于「什么都还没做」，
 // 再问一次合情合理；若把它持久化，摊主上次跳过、这次只想确认一下就再也回不到盘点屏。
 const skippedStocktake = ref(false)
+// 只看未填：纯界面筛选，不落库。
+const onlyUnfilled = ref(false)
 
 const showReceipt = ref(false)
 const receiptOrder = ref<Schemas['OrderResponse'] | null>(null)
@@ -178,6 +224,20 @@ const step = computed(() => {
   }
   // 现场仓空了：带回已完成（或本来就没货），只剩结算。
   return 4
+})
+
+const stepTitle = computed(() => STEP_TITLES[step.value - 1])
+
+const stocktakeRows = computed(() => store.state?.onsite_remaining ?? [])
+
+/** 粘性条上的「已盘 X」：填了数字（含 0）的行数，空输入框不算。 */
+const countedCount = computed(
+  () => stocktakeRows.value.filter((p) => Number.isFinite(counts.value[p.event_product_id])).length
+)
+
+const visibleRows = computed(() => {
+  if (!onlyUnfilled.value) return stocktakeRows.value
+  return stocktakeRows.value.filter((p) => !Number.isFinite(counts.value[p.event_product_id]))
 })
 
 const takebackTotal = computed(() =>
@@ -203,24 +263,25 @@ watch(
   { immediate: true }
 )
 
+async function reload() {
+  loadError.value = null
+  skippedStocktake.value = false
+  onlyUnfilled.value = false
+  showReceipt.value = false
+  receiptOrder.value = null
+  store.resetStore()
+  try {
+    // 收摊接口只给待处理单的金额摘要；ReceiptModal 要原价/套装，先把订单全量拉回来。
+    await orderStore.pollPendingOrders()
+    await store.fetchState(Number(props.eventId))
+  } catch (err) {
+    // 页面不手写错误态，交给 AsyncState 的 error 态（带重试）。
+    loadError.value = errorMessage(err, '无法加载收摊状态。')
+  }
+}
+
 // 页面组件挂载即加载；切换展会时按新的 eventId 重新拉一遍。
-watch(
-  () => props.eventId,
-  async () => {
-    skippedStocktake.value = false
-    showReceipt.value = false
-    receiptOrder.value = null
-    store.resetStore()
-    try {
-      // 收摊接口只给待处理单的金额摘要；ReceiptModal 要原价/套装，先把订单全量拉回来。
-      await orderStore.pollPendingOrders()
-      await store.fetchState(Number(props.eventId))
-    } catch (err) {
-      fb.error(err, '无法加载收摊状态')
-    }
-  },
-  { immediate: true }
-)
+watch(() => props.eventId, reload, { immediate: true })
 
 function skipStocktake() {
   skippedStocktake.value = true
@@ -392,14 +453,22 @@ async function onReceiptConfirm(payload: {
 </script>
 
 <style scoped>
-.wizard-scroll {
-  display: block;
-  max-height: 68vh;
-  overflow-y: auto;
-}
+/* 步骤指示 */
 .steps {
   margin-bottom: var(--space-lg);
 }
+.step-line {
+  margin-bottom: var(--space-lg);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-pill);
+  background-color: var(--card-bg-color);
+  border: 1px solid var(--border-color);
+  color: var(--primary-text-color);
+  font-size: var(--font-base);
+  font-weight: var(--weight-bold);
+  text-align: center;
+}
+
 .screen-hint {
   margin: 0 0 var(--space-md);
   color: var(--text-muted);
@@ -411,6 +480,36 @@ async function onReceiptConfirm(payload: {
   color: var(--warning-color);
   font-size: var(--font-sm);
 }
+
+/* 盘点粘性条 */
+.stocktake-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  margin-bottom: var(--space-md);
+  background-color: var(--card-bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+.stocktake-count {
+  color: var(--primary-text-color);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+.stocktake-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-height: 44px;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+}
+
 .row {
   display: flex;
   align-items: center;
@@ -435,6 +534,9 @@ async function onReceiptConfirm(payload: {
 .row-code {
   color: var(--text-disabled);
 }
+.row-muted {
+  color: var(--text-muted);
+}
 .row-amount {
   color: var(--accent-color);
   font-weight: var(--weight-bold);
@@ -442,12 +544,18 @@ async function onReceiptConfirm(payload: {
 .count-input {
   flex: 0 0 120px;
 }
+/* 盘点输入框要有手机能点的大号码；n-input 默认 34px。 */
+.count-input :deep(.n-input) {
+  min-height: 44px;
+}
+
 .screen-actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-md);
   margin-top: var(--space-lg);
 }
+
 .blockers {
   border: 1px solid var(--warning-color);
   border-radius: var(--radius-sm);
@@ -466,5 +574,34 @@ async function onReceiptConfirm(payload: {
 .settled-note p {
   margin: 0;
   line-height: 1.6;
+}
+
+@media (--phone) {
+  /* 主按钮固定在底部 tab 栏之上（外壳在根元素写了 --vendor-tabbar-height）。 */
+  .screen-actions--fixed {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: var(--vendor-tabbar-height, 0px);
+    z-index: 90;
+    margin: 0;
+    padding: var(--space-sm) var(--space-lg);
+    background-color: var(--card-bg-color);
+    border-top: 1px solid var(--border-color);
+  }
+  .screen-actions--fixed > * {
+    flex: 1;
+  }
+  /* 固定条会盖住内容，底部留出高于它的空间。 */
+  .screen {
+    padding-bottom: calc(var(--space-2xl) + var(--space-lg));
+  }
+  /* 盘点行：商品信息一行，输入框占满下一行，方便点。 */
+  .row {
+    flex-wrap: wrap;
+  }
+  .count-input {
+    flex: 1 1 100%;
+  }
 }
 </style>
