@@ -19,6 +19,19 @@ SHA_ORT_DLL=f5131591edac6b0a8090d0e329040a49319d7a689cb5b465235fbf7030fa8027
 SHA_DIRECTML_DLL=9c9e6d822561c6c41b90e6994b3e8857cf1d66dbfb1e0c4c799c7c89b4e92da1
 SHA_ORT_SO=cd1285f8955f3abcb0127d1ffaf1e5da7893d2547872a831b4717c0bfe388328
 
+# onnxruntime.dll 依赖 VC++ 运行库（MSVCP140 / VCRUNTIME140 及其 _1），而 BoothKernel.exe
+# 静态链接了 CRT、自己不需要——于是没装 VC++ 运行库的机器上，一加载模型就闪退。
+# 按微软允许的 app-local 方式跟 exe 放在同一目录。来源是 conda-forge 的 vc14_runtime
+# （微软签名的原版 DLL 重新打包，版本号即 MSVC 运行库版本），先校验整包再逐个校验。
+VCRT_PKG=vc14_runtime-14.51.36247-habf1de7_41
+SHA_VCRT_PKG=4e4cb599cdc41bf2109d1464c127b5bcbddf548ce3e322e612afb691338b48f8
+VCRT_DLLS=(
+  "vcruntime140.dll   d1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7"
+  "vcruntime140_1.dll a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e"
+  "msvcp140.dll       7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca"
+  "msvcp140_1.dll     206c931bf90fdad8816de3b5e2ef80b2bcaa9406c89ecc05fe6fddffe251e982"
+)
+
 cd "$REPO_ROOT"
 
 info "检查基础工具"
@@ -26,6 +39,7 @@ need_cmd node   "先装 Node 20+（本机用 nvm）。"
 need_cmd npm    "跟 node 一起装。"
 need_cmd curl   "系统包管理器装一下。"
 need_cmd unzip  "系统包管理器装一下。"
+need_cmd zstd   "系统包管理器装一下（解 conda 包里的 VC++ 运行库用）。"
 need_cmd python3 "脚本用它读 tauri.conf.json。"
 need_cmd rustup "装 Rust 工具链：https://rustup.rs"
 ok "node $(node -v) / npm $(npm -v)"
@@ -73,6 +87,36 @@ fetch_verified \
   "$REPO_ROOT/src-tauri/resources/DirectML.dll" \
   "$SHA_DIRECTML_DLL" \
   "bin/x64-win/DirectML.dll"
+
+info "Windows 用 VC++ 运行库（onnxruntime.dll 的依赖，app-local）"
+fetch_vcrt() {
+  local need=0 name sha
+  for entry in "${VCRT_DLLS[@]}"; do
+    read -r name sha <<<"$entry"
+    local dest="$REPO_ROOT/src-tauri/resources/$name"
+    if [ ! -f "$dest" ] || [ "$(sha256sum "$dest" | cut -d' ' -f1)" != "$sha" ]; then need=1; fi
+  done
+  if [ "$need" = 0 ]; then ok "VC++ 运行库 ${#VCRT_DLLS[@]} 个 DLL 已就位且校验通过"; return 0; fi
+
+  local tmp; tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+  info "下载 $VCRT_PKG …"
+  curl -fsSL --retry 3 -o "$tmp/pkg.conda" \
+    "https://conda.anaconda.org/conda-forge/win-64/$VCRT_PKG.conda" || die "下载 $VCRT_PKG 失败"
+  local got; got="$(sha256sum "$tmp/pkg.conda" | cut -d' ' -f1)"
+  [ "$got" = "$SHA_VCRT_PKG" ] || die "$VCRT_PKG 校验不符：期望 $SHA_VCRT_PKG，实际 $got"
+  unzip -o -q "$tmp/pkg.conda" "pkg-$VCRT_PKG.tar.zst" -d "$tmp" || die "解压 $VCRT_PKG 失败"
+  zstd -d -q -f "$tmp/pkg-$VCRT_PKG.tar.zst" -o "$tmp/pkg.tar" || die "解压 $VCRT_PKG 失败"
+  for entry in "${VCRT_DLLS[@]}"; do
+    read -r name sha <<<"$entry"
+    tar -xf "$tmp/pkg.tar" -C "$tmp" "$name" || die "包里没有 $name"
+    got="$(sha256sum "$tmp/$name" | cut -d' ' -f1)"
+    [ "$got" = "$sha" ] || die "$name 校验不符：期望 $sha，实际 $got"
+    mv "$tmp/$name" "$REPO_ROOT/src-tauri/resources/$name"
+  done
+  ok "VC++ 运行库 ${#VCRT_DLLS[@]} 个 DLL 下载完成并校验通过"
+}
+fetch_vcrt
 
 info "Android 用 ONNX Runtime（NNAPI 版）"
 fetch_verified \

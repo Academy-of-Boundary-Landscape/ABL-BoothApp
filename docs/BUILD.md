@@ -36,7 +36,7 @@ Vision 功能依赖 ONNX Runtime 动态库。**版本必须是 1.23.x**（与 or
 
 ### Windows (x64) — DirectML GPU 加速版
 
-需要两个 DLL，放入 `src-tauri/resources/`：
+需要六个 DLL，放入 `src-tauri/resources/`（`./scripts/setup-dev.sh` 会带 sha256 校验地全部下好）：
 
 **1. onnxruntime.dll (DirectML 版，~17MB)**
 1. 下载 NuGet 包：`https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime.DirectML/1.23.0`
@@ -50,7 +50,20 @@ Vision 功能依赖 ONNX Runtime 动态库。**版本必须是 1.23.x**（与 or
 
 > 打包独立的 DirectML.dll 可以避免依赖用户系统自带的旧版本（Windows 自带最高只有 1.8，ORT 1.23 需要更高版本）。
 
-**⚠ 关键：确保 `tauri.windows.conf.json` 的 `bundle.resources` 声明了这两个 DLL**，否则 `tauri build` 不会把它们打进安装包：
+**3. VC++ 运行库（4 个，app-local，共 ~0.9MB）**
+
+`onnxruntime.dll` 导入 `MSVCP140.dll`、`MSVCP140_1.dll`、`VCRUNTIME140.dll`、`VCRUNTIME140_1.dll`
+（`objdump -p onnxruntime.dll | grep "DLL Name"` 可见）。`BoothKernel.exe` 自己静态链接了 CRT，不需要它们，
+所以问题一直藏着：**没装 VC++ 2015-2022 运行库的机器上，一加载模型就闪退**（release 是 `panic = "abort"`），
+而启动时会预加载已下载的模型——模型一旦下载过，之后每次启动都打不开。
+
+按微软允许的 app-local 方式，把这 4 个 DLL 和 exe 放在同一目录。来源是 conda-forge 的
+`vc14_runtime`（微软签名的原版 DLL），版本与 sha256 见 `scripts/setup-dev.sh` 的 `VCRT_*`。
+
+另外启动时用 `ort::init_from` 预先加载 ORT：即使 DLL 仍然加载失败（被杀毒隔离、用户只拷了 exe），
+也只是 AI 识别不可用，不再让整个 App 崩掉。
+
+**⚠ 关键：确保 `tauri.windows.conf.json` 的 `bundle.resources` 声明了这六个 DLL**，否则 `tauri build` 不会把它们打进安装包：
 
 ```json
 {
@@ -58,7 +71,11 @@ Vision 功能依赖 ONNX Runtime 动态库。**版本必须是 1.23.x**（与 or
   "bundle": {
     "resources": {
       "resources/onnxruntime.dll": "./",
-      "resources/DirectML.dll": "./"
+      "resources/DirectML.dll": "./",
+      "resources/vcruntime140.dll": "./",
+      "resources/vcruntime140_1.dll": "./",
+      "resources/msvcp140.dll": "./",
+      "resources/msvcp140_1.dll": "./"
     }
   }
 }
@@ -158,6 +175,7 @@ TMPDIR=/path/to/real/dir sh -c 'mkdir -p "$TMPDIR" && cd src-tauri && tauri-env 
 | 应用程序主体 | ~30MB | Rust + 前端 |
 | `onnxruntime.dll` | ~17MB | ONNX Runtime (DirectML) |
 | `DirectML.dll` | ~18MB | DirectML 独立分发版 |
+| `vcruntime140*.dll` / `msvcp140*.dll` | ~0.9MB | VC++ 运行库（onnxruntime.dll 的依赖） |
 
 > v1.1.0 起安装包**不再内嵌模型**，首次启动会在 AI 视觉识别面板中提示下载。
 > 默认下载项：`convnextv2_pico_fp16` (~17MB)。
@@ -185,7 +203,7 @@ TMPDIR=/path/to/real/dir sh -c 'mkdir -p "$TMPDIR" && cd src-tauri && tauri-env 
 | `convnextv2_pico_fp32.onnx` | 34MB | 参考精度版本（一般选 FP16 即可）|
 | `dinov2_small_fp32.onnx` | 87MB | 参考精度版本（一般选 FP16 即可）|
 
-用户在 管理后台 → 控制台 → AI 视觉识别 面板中下载安装。
+用户在 管理后台 → 设置 → AI 视觉识别 面板中下载安装。
 
 > **注**：MobileCLIP 只有 FP32 版本，已验证其 FP16 / INT8 变体会产生错误 embedding。
 
@@ -194,9 +212,13 @@ TMPDIR=/path/to/real/dir sh -c 'mkdir -p "$TMPDIR" && cd src-tauri && tauri-env 
 | 平台 | 自动模式 | 可选 |
 |------|---------|------|
 | Windows | DirectML (GPU) → CPU | 指定 GPU 设备 / 仅 CPU |
-| Android | NNAPI (NPU/GPU) → CPU | NNAPI / 仅 CPU |
+| Android | CPU | NNAPI / 仅 CPU |
 
-设备选择在 管理后台 → 控制台 → AI 视觉识别 面板的"设备选择"下拉框中配置，设置持久化到 `vision_model.json`。
+Android 的自动模式**不走 NNAPI**：ORT 官方的 `check_onnx_model_mobile_usability` 显示三个模型在 NNAPI 下
+都会被切成 42–64 段（`Erf`、`LayerNormalization`、`ReduceL2` 等不支持），判定「比 CPU EP 更慢」；fp16 模型的节点
+多半根本分不到 NNAPI。NNAPI 保留为手动选项。
+
+设备选择在 管理后台 → 设置 → AI 视觉识别 面板的"设备选择"下拉框中配置，设置持久化到 `vision_model.json`。
 
 ## 发布带自动更新的新版本
 

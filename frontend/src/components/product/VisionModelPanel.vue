@@ -279,8 +279,8 @@ async function loadEpSetting() {
         })
       }
     } else if (data.platform === 'android') {
-      // Android: NNAPI 选项
-      opts.push({ label: 'NNAPI (NPU/GPU)', value: 'nnapi' })
+      // Android: auto 走 CPU；NNAPI 只作手动选项（对这些模型大多比 CPU 慢）
+      opts.push({ label: 'NNAPI (NPU/GPU，多数机型比 CPU 慢)', value: 'nnapi' })
     }
 
     epOptions.value = opts

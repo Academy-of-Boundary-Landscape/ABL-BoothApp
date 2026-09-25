@@ -235,36 +235,32 @@ pub fn run() {
                 lan_https_port,
             };
 
-            // 初始化 ONNX Runtime 动态库路径
+            // 先加载 ONNX Runtime 动态库，再做任何会碰 ort 的事（下面的模型预加载）。
+            // 失败只让 AI 识别不可用——见 vision::session::init_runtime 的说明。
             #[cfg(feature = "vision")]
             let resource_dir = app_handle.path().resource_dir().ok();
             #[cfg(feature = "vision")]
             {
-                // Android: .so 在 jniLibs 中，dlopen 自动找到，不需要设 ORT_DYLIB_PATH
-                // Windows/macOS/Linux: 从 resources 目录加载
+                // Windows/macOS/Linux: 从 resources 目录加载（Windows 上就是安装目录，
+                // VC++ 运行库也在那里）；找不到就交给系统加载器。
+                // Android: .so 在 jniLibs 里，按裸文件名 dlopen。
                 #[cfg(not(target_os = "android"))]
-                if let Some(ref res_dir) = resource_dir {
-                    let lib_name = if cfg!(target_os = "windows") {
+                let ort_lib_path = resource_dir.as_ref().map(|d| {
+                    d.join(if cfg!(target_os = "windows") {
                         "onnxruntime.dll"
                     } else if cfg!(target_os = "macos") {
                         "libonnxruntime.dylib"
                     } else {
                         "libonnxruntime.so"
-                    };
-                    let ort_lib_path = res_dir.join(lib_name);
-                    if ort_lib_path.exists() {
-                        std::env::set_var("ORT_DYLIB_PATH", &ort_lib_path);
-                        log::info!("[Vision] ORT_DYLIB_PATH set to: {:?}", ort_lib_path);
-                    } else {
-                        log::info!(
-                            "[Vision] ORT library not found at: {:?}, will use system default",
-                            ort_lib_path
-                        );
-                    }
-                }
-
+                    })
+                });
+                #[cfg(not(target_os = "android"))]
+                let ort_lib_path = ort_lib_path.filter(|p| p.exists());
                 #[cfg(target_os = "android")]
-                log::info!("[Vision] Android: using system linker for libonnxruntime.so");
+                let ort_lib_path: Option<std::path::PathBuf> = None;
+
+                // 错误已在 init_runtime 里记日志；之后每次加载模型都会返回同一个错误
+                let _ = vision::session::init_runtime(ort_lib_path.as_deref());
             }
 
             // 内嵌模型释放：从 Tauri 资源目录复制到 AppData。

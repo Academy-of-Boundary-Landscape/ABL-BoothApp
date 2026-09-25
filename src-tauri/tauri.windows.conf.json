@@ -3,7 +3,11 @@
   "bundle": {
     "resources": {
       "resources/onnxruntime.dll": "./",
-      "resources/DirectML.dll": "./"
+      "resources/DirectML.dll": "./",
+      "resources/vcruntime140.dll": "./",
+      "resources/vcruntime140_1.dll": "./",
+      "resources/msvcp140.dll": "./",
+      "resources/msvcp140_1.dll": "./"
     }
   }
 }

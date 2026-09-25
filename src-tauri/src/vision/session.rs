@@ -2,7 +2,7 @@
 //!
 //! 使用 ort (ONNX Runtime) 作为推理后端
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -28,6 +28,46 @@ pub struct OnnxSession {
 
 /// 当前使用的执行设备名称（加载后记录，供前端查询）
 static ACTIVE_EP_NAME: std::sync::RwLock<String> = std::sync::RwLock::new(String::new());
+
+/// ONNX Runtime 动态库的加载结果，进程内只尝试一次。
+static ORT_RUNTIME: std::sync::OnceLock<Result<(), String>> = std::sync::OnceLock::new();
+
+/// 加载 ONNX Runtime 动态库。**所有 ort API 之前必须先过这一关。**
+///
+/// ort 自己的懒加载失败时是 `expect` panic，而 release 是 `panic = "abort"`——
+/// DLL 缺依赖（没装 VC++ 运行库）、被杀毒隔离、版本不对，都会让整个进程直接退出；
+/// 启动时又会预加载模型，于是模型一旦下载过，App 就再也打不开。
+/// 这里用返回 `Result` 的 `ort::init_from` 先加载，失败只让 AI 识别不可用。
+///
+/// `path` 为 `None` 时用平台默认的裸文件名，交给系统加载器找（Android 的 jniLibs 就是这样）。
+/// 只有第一次调用的 `path` 生效。
+pub fn init_runtime(path: Option<&Path>) -> Result<(), String> {
+    ORT_RUNTIME
+        .get_or_init(|| {
+            let path: PathBuf = match path {
+                Some(p) => p.to_path_buf(),
+                None if cfg!(target_os = "windows") => "onnxruntime.dll".into(),
+                None if cfg!(target_os = "macos") => "libonnxruntime.dylib".into(),
+                None => "libonnxruntime.so".into(),
+            };
+            match ort::init_from(&path) {
+                Ok(builder) => {
+                    builder.commit();
+                    log::info!("[Vision] ONNX Runtime loaded from {:?}", path);
+                    Ok(())
+                }
+                Err(e) => {
+                    log::error!(
+                        "[Vision] ONNX Runtime failed to load from {:?}: {}",
+                        path,
+                        e
+                    );
+                    Err(format!("ONNX Runtime 加载失败：{e}"))
+                }
+            }
+        })
+        .clone()
+}
 
 /// 系统 GPU 列表（启动时探测一次）
 static GPU_DEVICES: std::sync::OnceLock<Vec<GpuDevice>> = std::sync::OnceLock::new();
@@ -115,6 +155,7 @@ impl OnnxSession {
         manifest: &ModelManifest,
         ep_pref: &str,
     ) -> Result<Self, String> {
+        init_runtime(None)?;
         let t0 = Instant::now();
 
         let (session, ep_name) = match ep_pref {
@@ -215,15 +256,10 @@ impl OnnxSession {
 
     /// 自动选择平台最佳加速方案
     /// Windows: DirectML (遍历 GPU) → 失败返回 Err
-    /// Android: NNAPI → 失败返回 Err
-    /// 其他平台: 直接返回 Err（由调用方 fallback 到 CPU）
-    // model_path 只在 windows/android 分支里被用到（分别传给
-    // try_load_gpu_device/try_load_nnapi）；这个函数本身在所有平台都被 load() 的
-    // "auto" 分支无条件调用，不是死代码，只是参数在其它平台上用不到。
-    #[cfg_attr(
-        not(any(target_os = "windows", target_os = "android")),
-        allow(unused_variables)
-    )]
+    /// 其他平台（含 Android）: 直接返回 Err（由调用方 fallback 到 CPU）
+    // model_path 只在 windows 分支里被用到（传给 try_load_gpu_device）；这个函数本身
+    // 在所有平台都被 load() 的 "auto" 分支无条件调用，不是死代码，只是参数在其它平台上用不到。
+    #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
     fn try_load_accelerated(model_path: &Path) -> Result<(Session, String), String> {
         // Windows: 遍历 DirectML GPU 设备
         #[cfg(target_os = "windows")]
@@ -261,11 +297,9 @@ impl OnnxSession {
             return Err("No DirectML GPU available".to_string());
         }
 
-        // Android: 尝试 NNAPI
-        #[cfg(target_os = "android")]
-        {
-            return Self::try_load_nnapi(model_path);
-        }
+        // Android 的 auto 不走 NNAPI，直接落到 CPU：ORT 官方的 mobile usability 检查显示
+        // 三个模型在 NNAPI 下都被切成 42–64 段（Erf / LayerNormalization / ReduceL2 等不支持），
+        // 判定比 CPU EP 更慢；fp16 节点多半根本分不到 NNAPI。NNAPI 仍可在设置里手动选。
 
         // 其他平台: 无加速
         #[allow(unreachable_code)]

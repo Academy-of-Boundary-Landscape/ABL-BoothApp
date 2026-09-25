@@ -93,7 +93,7 @@ export const helpContent: Record<string, HelpContentEntry> = {
       '**激活** = 让系统使用这个模型；切换模型后需要重新构建索引（因为每个模型生成的 embedding 格式不同）',
       '**增量构建** = 只处理新上传 / 未嵌入的图片（日常用这个）；**全量重建** = 清空后全部重做（换模型或索引出错时用）',
       '每个商品建议上传 **1~3 张** 不同角度的识别用图（在商品编辑窗的**「识别用图片」**Tab 中）',
-      '推理设备选 **"auto"** 即可：Windows 会优先用 GPU / DirectML，Android 会用 NPU / NNAPI',
+      '推理设备选 **"auto"** 即可：Windows 会优先用 GPU / DirectML，Android 用 CPU（NNAPI 对这些模型反而更慢，想试可以手动选）',
       '顾客报告「拍照识别不准」时：检查该商品有没有「识别用图片」、照片数量 / 角度是否足够，必要时**全量重建**索引',
     ],
   },

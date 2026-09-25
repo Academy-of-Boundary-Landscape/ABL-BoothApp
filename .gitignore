@@ -1,6 +1,8 @@
 # ONNX Runtime + DirectML 动态库（打包时从官方下载，不提交到 git）
 src-tauri/resources/onnxruntime.dll
 src-tauri/resources/DirectML.dll
+src-tauri/resources/vcruntime140*.dll
+src-tauri/resources/msvcp140*.dll
 src-tauri/resources/libonnxruntime.so
 src-tauri/resources/libonnxruntime.dylib
 src-tauri/resources/*.nupkg
