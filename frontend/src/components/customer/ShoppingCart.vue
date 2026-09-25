@@ -1,42 +1,39 @@
 <template>
-  <!-- 
+  <!--
     根容器：
-    桌面端：普通 div，撑满高度
-    移动端：仅作为逻辑容器，内容通过 fixed 定位跳出
+    宽屏（sidebar）：普通 div，撑满侧栏高度。
+    平板竖屏 / 手机（bar）：零尺寸逻辑容器，内容通过 fixed 定位跳出，避免抢占内容区高度。
   -->
-  <div class="shopping-cart-root">
-    <!-- ✅ 移动端遮罩层 (点击关闭) -->
-    <transition name="fade">
-      <div v-if="isMobile && expanded" class="cart-backdrop" @click="toggleCart"></div>
-    </transition>
+  <div class="shopping-cart" :class="[`shopping-cart--${variant}`]">
+    <!-- ✅ 展开态遮罩层（仅底部条） -->
+    <Transition name="fade">
+      <div v-if="isBar && expanded" class="cart-backdrop" @click="toggleCart"></div>
+    </Transition>
 
     <!-- 购物车主体 -->
-    <div
-      class="cart-container"
-      :class="{
-        'is-mobile': isMobile,
-        'is-expanded': expanded,
-        'is-desktop': !isMobile,
-      }"
-    >
-      <!-- 1. 顶部/手机底部 触发栏 -->
-      <div class="cart-header" @click="isMobile ? toggleCart() : null">
+    <div class="cart-container" :class="{ 'cart-container--bar': isBar, 'is-expanded': expanded }">
+      <!-- 触发栏：底部条可点开合；侧栏为纯标题 -->
+      <div
+        class="cart-header"
+        :class="{ 'cart-header--clickable': isBar }"
+        @click="isBar && toggleCart()"
+      >
         <div class="header-left">
           <span class="header-icon">🛒</span>
           <span class="header-title">购物车</span>
-          <span class="count-badge" v-if="cartCount > 0">{{ cartCount }}</span>
+          <span v-if="cartCount > 0" class="count-badge">{{ cartCount }}</span>
+          <span v-if="isBar" class="count-unit">件</span>
         </div>
 
         <div class="header-right">
-          <span class="total-price">{{ formatYuan(payable) }}</span>
-          <!-- 手机端箭头 -->
-          <span v-if="isMobile" class="toggle-icon">
-            {{ expanded ? '▼' : '▲' }}
-          </span>
+          <span v-if="isBar" class="total-label">合计</span>
+          <span class="total-price"><Money :value="payable" size="lg" /></span>
+          <!-- 底部条：展开 / 收起指示 -->
+          <span v-if="isBar" class="toggle-icon">{{ expanded ? '▼' : '▲' }}</span>
         </div>
       </div>
 
-      <!-- 2. 内容区域 (列表 + 结算) -->
+      <!-- 内容区域（列表 + 结算） -->
       <div class="cart-body">
         <div class="list-scroll-area">
           <ul v-if="cart.length" class="cart-list">
@@ -50,19 +47,32 @@
                 />
                 <span v-else class="thumb-fallback">{{ item.name?.charAt(0) || '?' }}</span>
               </div>
+
               <div class="item-info">
                 <div class="item-name">{{ item.name }}</div>
                 <div class="item-price-row">
-                  <span class="unit-price">{{ formatYuan(item.unit_price) }}</span>
+                  <span class="unit-price"><Money :value="item.unit_price" size="md" /></span>
                 </div>
               </div>
 
               <div class="item-controls">
-                <button class="ctrl-btn minus" @click.stop="$emit('removeFromCart', item.id)">
-                  -
+                <button
+                  type="button"
+                  class="ctrl-btn minus"
+                  aria-label="减少一件"
+                  @click.stop="$emit('removeFromCart', item.id)"
+                >
+                  −
                 </button>
                 <span class="qty">{{ item.quantity }}</span>
-                <button class="ctrl-btn plus" @click.stop="$emit('addToCart', item)">+</button>
+                <button
+                  type="button"
+                  class="ctrl-btn plus"
+                  aria-label="增加一件"
+                  @click.stop="$emit('addToCart', item)"
+                >
+                  +
+                </button>
               </div>
             </li>
           </ul>
@@ -83,7 +93,7 @@
                否则自助点单的顾客不会信任它。 -->
           <div v-if="payable !== total" class="footer-row subtle">
             <span>原价</span>
-            <span class="struck">{{ formatYuan(total) }}</span>
+            <span class="struck"><Money :value="total" size="sm" strike /></span>
           </div>
           <div v-for="d in discounts" :key="d.name" class="footer-row discount">
             <span
@@ -96,7 +106,7 @@
           <p v-if="quotePending" class="quote-notice">优惠计算中…</p>
           <div class="footer-row">
             <span>应付</span>
-            <span class="big-total">{{ formatYuan(payable) }}</span>
+            <span class="big-total"><Money :value="payable" size="lg" /></span>
           </div>
           <n-button
             type="primary"
@@ -105,8 +115,8 @@
             size="large"
             :disabled="!cart.length || isCheckingOut || quotePending"
             :loading="isCheckingOut"
-            @click="$emit('checkout')"
             class="checkout-btn"
+            @click="$emit('checkout')"
           >
             {{ isCheckingOut ? '提交中...' : '去结算' }}
           </n-button>
@@ -119,8 +129,7 @@
 <script setup lang="ts">
 import { ref, computed, onUnmounted, watch } from 'vue'
 import { NButton } from 'naive-ui'
-import { EmptyState } from '@/components/ui'
-import { useViewport } from '@/composables/useViewport'
+import { EmptyState, Money } from '@/components/ui'
 import { formatYuan, type Cents } from '@/utils/money'
 import type { Schemas } from '@/api/client'
 import type { QuoteDiscount } from '@/utils/quote'
@@ -142,12 +151,15 @@ const props = withDefaults(
     /** 报价在途（debounce/请求中）。为真时 payable 只是原价，不能结算。 */
     quotePending?: boolean
     isCheckingOut?: boolean
+    /** sidebar：宽屏侧栏，常展开；bar：平板竖屏 / 手机底部可展开条。 */
+    variant?: 'sidebar' | 'bar'
   }>(),
   {
     discounts: () => [],
     quoteNotice: null,
     quotePending: false,
     isCheckingOut: false,
+    variant: 'sidebar',
   }
 )
 
@@ -157,25 +169,13 @@ defineEmits<{
   (e: 'checkout'): void
 }>()
 
-const { isPhone } = useViewport()
-const isMobile = isPhone
+const isBar = computed(() => props.variant === 'bar')
 const expanded = ref(false)
 
 const cartCount = computed(() => props.cart.reduce((sum, item) => sum + item.quantity, 0))
 
-watch(
-  isMobile,
-  (mobile) => {
-    // 桌面端默认永远展开，expanded 状态仅用于移动端
-    expanded.value = !mobile
-  },
-  { immediate: true }
-)
-
 function toggleCart() {
-  if (isMobile.value) {
-    expanded.value = !expanded.value
-  }
+  if (isBar.value) expanded.value = !expanded.value
 }
 
 function syncBodyScrollLock(locked: boolean) {
@@ -188,9 +188,9 @@ onUnmounted(() => {
 })
 
 watch(
-  [isMobile, expanded],
-  ([mobile, isExpanded]) => {
-    syncBodyScrollLock(mobile && isExpanded)
+  [isBar, expanded],
+  ([bar, isExpanded]) => {
+    syncBodyScrollLock(bar && isExpanded)
   },
   { immediate: true }
 )
@@ -198,56 +198,55 @@ watch(
 
 <style scoped>
 /* ============================================================================
-   通用样式 (Desktop First)
+   通用（侧栏优先）
 ============================================================================ */
-/*
- * 根元素策略：
- *   - 桌面端：作为 .cart-panel-desktop 的子元素，需要撑满其高度
- *   - 移动端：内容全部 position:fixed 出流；根元素若占高度会挤压主内容面板（product-panel / vision-panel）
- *             → 移动端需要"存在但不占空间"
- */
-.shopping-cart-root {
+.shopping-cart {
+  --cart-bar-h: 60px;
+
   height: 100%;
   width: 100%;
   min-height: 0;
 }
 
-@media (--phone) {
-  .shopping-cart-root {
-    /* 移动端：零尺寸根，避免在 flex column 父容器里抢占高度 */
-    height: 0;
-    width: 0;
-    min-height: 0;
-    position: relative;
-  }
+/* 底部条：零尺寸根，避免在 flex 父容器里抢占空间 */
+.shopping-cart--bar {
+  position: relative;
+  width: 0;
+  height: 0;
+  min-height: 0;
 }
 
 .cart-container {
   display: flex;
   flex-direction: column;
-  background: var(--card-bg-color);
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background: var(--card-bg-color);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* 头部 */
 .cart-header {
-  flex: 0 0 60px; /* 与左侧 Sidebar 标题高度一致 */
+  flex: 0 0 var(--cart-bar-h);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-sm);
   padding: 0 var(--space-lg);
   border-bottom: 1px solid var(--border-color);
-  font-weight: var(--weight-bold);
   color: var(--primary-text-color);
+  font-weight: var(--weight-bold);
+}
+.cart-header--clickable {
+  cursor: pointer;
 }
 
 .header-left {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
+  min-width: 0;
 }
 .header-icon {
   font-size: var(--font-xl);
@@ -257,15 +256,20 @@ watch(
   font-weight: var(--weight-bold);
 }
 .count-badge {
+  min-width: 24px;
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-lg);
   background: var(--error-color);
   color: var(--text-white);
   font-size: var(--font-base);
   font-weight: var(--weight-bold);
-  padding: var(--space-xs) var(--space-sm);
-  border-radius: var(--radius-lg);
   line-height: 1.3;
-  min-width: 24px;
   text-align: center;
+}
+.count-unit {
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-regular);
 }
 
 .header-right {
@@ -273,11 +277,18 @@ watch(
   align-items: center;
   gap: var(--space-sm);
 }
+.total-label {
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-regular);
+}
 .total-price {
-  font-family: 'DIN Alternate', sans-serif;
-  font-size: var(--font-xl);
-  font-weight: var(--weight-bold);
   color: var(--accent-color);
+  font-weight: var(--weight-bold);
+}
+.toggle-icon {
+  color: var(--text-muted);
+  font-size: var(--font-sm);
 }
 
 /* 列表区 */
@@ -314,8 +325,8 @@ watch(
 /* 商品缩略图（圆形） */
 .item-thumb {
   flex-shrink: 0;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   overflow: hidden;
   background: var(--bg-secondary);
@@ -339,17 +350,16 @@ watch(
   min-width: 0;
 }
 .item-name {
+  margin-bottom: var(--space-xs);
   font-size: var(--font-md);
   font-weight: var(--weight-bold);
-  margin-bottom: var(--space-xs);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .unit-price {
-  font-size: var(--font-base);
-  font-weight: var(--weight-bold);
   color: var(--accent-color);
+  font-weight: var(--weight-bold);
 }
 
 /* 加减按钮控件 */
@@ -358,23 +368,23 @@ watch(
   display: flex;
   align-items: center;
   gap: var(--space-xs);
-  background: var(--bg-secondary);
   padding: var(--space-xs);
   border-radius: var(--radius-md);
+  background: var(--bg-secondary);
 }
 .ctrl-btn {
-  width: 36px;
-  height: 36px;
-  border: none;
-  border-radius: var(--radius-md);
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
+  border: none;
+  border-radius: var(--radius-md);
   font-size: var(--font-xl);
   font-weight: var(--weight-bold);
   line-height: 1;
   box-shadow: var(--shadow-sm);
+  cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   transition: transform 0.12s;
@@ -391,9 +401,9 @@ watch(
   transform: scale(0.9);
 }
 .qty {
-  font-weight: var(--weight-bold);
-  font-size: var(--font-lg);
   min-width: 28px;
+  font-size: var(--font-lg);
+  font-weight: var(--weight-bold);
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
@@ -432,25 +442,24 @@ watch(
   line-height: 1.4;
 }
 .big-total {
-  font-size: var(--font-2xl);
-  font-weight: var(--weight-bold);
   color: var(--accent-color);
+  font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
 }
 .checkout-btn {
-  font-weight: var(--weight-bold);
   font-size: var(--font-lg);
+  font-weight: var(--weight-bold);
   height: 48px;
 }
 
 /* 空状态 */
 .empty-cart {
   height: 100%;
+  min-height: 200px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 200px;
   padding: var(--space-xl) var(--space-lg);
 }
 .hint-plus {
@@ -468,59 +477,52 @@ watch(
 }
 
 /* ============================================================================
-   📱 Mobile Specific Styles (移动端抽屉模式)
+   底部可展开条（平板竖屏 / 手机）
 ============================================================================ */
-.cart-container.is-mobile {
+.cart-container--bar {
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
   width: 100%;
-  height: auto; /* 自动高度，不占满全屏 */
-  max-height: min(80vh, calc(100dvh - 24px)); /* 最大高度 */
+  height: auto;
+  max-height: 80vh;
   z-index: 2000;
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   box-shadow: var(--shadow-xl);
-  transform: translateY(calc(100% - 60px - env(safe-area-inset-bottom))); /* 默认只露出头部 */
+  transform: translateY(calc(100% - var(--cart-bar-h) - env(safe-area-inset-bottom)));
   /* stylelint-disable-next-line declaration-property-value-allowed-list -- iPhone 底部安全区适配，env() 无法用 space token 表达 */
-  padding-bottom: env(safe-area-inset-bottom); /* 适配 iPhone X 横条 */
+  padding-bottom: env(safe-area-inset-bottom);
 }
-
-/* 移动端头部特殊处理 */
-.cart-container.is-mobile .cart-header {
-  height: 60px;
-  background: var(--card-bg-color); /* 保证不透明 */
-  cursor: pointer;
-  border-bottom: none; /* 收起时不需要线 */
+.cart-container--bar .cart-header {
+  border-bottom: none;
 }
-
-/* 移动端展开状态 */
-.cart-container.is-mobile.is-expanded {
+.cart-container--bar.is-expanded {
   transform: translateY(0);
 }
-.cart-container.is-mobile.is-expanded .cart-header {
+.cart-container--bar.is-expanded .cart-header {
   border-bottom: 1px solid var(--border-color);
 }
-.cart-container.is-mobile .cart-body {
-  max-height: calc(min(80vh, 100dvh - 24px) - 60px - env(safe-area-inset-bottom, 0px));
+.cart-container--bar .cart-body {
+  max-height: calc(80vh - var(--cart-bar-h) - env(safe-area-inset-bottom, 0px));
 }
 
-/* 移动端遮罩层 */
+/* 展开态遮罩层 */
 .cart-backdrop {
   position: fixed;
   inset: 0;
+  z-index: 1999;
   background: var(--overlay-color);
   backdrop-filter: blur(2px);
-  z-index: 1999;
 }
 
 /* 窄屏（手机）：允许商品名占 2 行，避免过早被截断 */
 @media (--phone) {
   .item-name {
-    white-space: normal;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
+    white-space: normal;
     overflow: hidden;
     line-height: 1.3;
   }

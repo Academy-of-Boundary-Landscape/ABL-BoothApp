@@ -152,10 +152,49 @@
       </n-button>
     </template>
 
-    <!-- ========== 搜索结果：摄像头模式用居中悬浮弹窗，普通模式用内联列表 ========== -->
+    <!-- ========== 搜索结果：摄像头模式用悬浮层（手机底部抽屉 / 其余弹窗），普通模式用内联列表 ========== -->
 
-    <!-- 摄像头模式：悬浮弹窗 -->
+    <!-- 手机：底部抽屉（高 60%），取景画面仍留在上方可见 -->
+    <NDrawer
+      v-if="isPhone"
+      :show="showCameraResults"
+      placement="bottom"
+      height="60%"
+      :auto-focus="false"
+      :trap-focus="false"
+      @update:show="onCameraResultsShow"
+    >
+      <NDrawerContent title="匹配结果" closable @close="results = []">
+        <template #header>
+          <div class="vision-popup__header">
+            <span class="vision-popup__title">匹配结果</span>
+            <n-tag v-if="isUncertain" size="small" type="warning">置信度较低</n-tag>
+          </div>
+        </template>
+        <div class="vision-popup__list">
+          <div
+            v-for="item in results"
+            :key="item.master_product_id"
+            class="vision-result-item"
+            @click="selectResultAndClose(item)"
+          >
+            <div class="vision-result-item__thumb">
+              <img v-if="item.thumb_url" :src="resolveThumb(item.thumb_url)" alt="" />
+              <div v-else class="vision-result-item__no-thumb">?</div>
+            </div>
+            <div class="vision-result-item__info">
+              <div class="vision-result-item__name">{{ item.name }}</div>
+              <div class="vision-result-item__code">{{ item.product_code }}</div>
+            </div>
+            <div class="vision-result-item__score">{{ (item.score * 100).toFixed(1) }}%</div>
+          </div>
+        </div>
+      </NDrawerContent>
+    </NDrawer>
+
+    <!-- 桌面 / 平板：居中悬浮弹窗 -->
     <AppModal
+      v-else
       :show="showCameraResults"
       size="sm"
       :closable="false"
@@ -217,12 +256,13 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
-import { NButton, NTag } from 'naive-ui'
+import { NButton, NDrawer, NDrawerContent, NTag } from 'naive-ui'
 
 import { AppModal } from '@/components/ui'
 import { searchByImage } from '@/services/vision'
 import { getImageUrl } from '@/services/url'
 import { useFeedback } from '@/composables/useFeedback'
+import { useViewport } from '@/composables/useViewport'
 import { resizeImageFile } from '@/utils/upload'
 import { ApiRequestError, errorMessage, type Schemas } from '@/api/client'
 
@@ -255,6 +295,8 @@ const emit = defineEmits<{
 }>()
 
 const fb = useFeedback()
+// 手机：识别结果改成底部抽屉（spec §5.8），取景画面仍留在上方可见。
+const { isPhone } = useViewport()
 
 // ===================== 图片输入（文件模式）=====================
 const fileInputRef = ref<HTMLInputElement | null>(null)
@@ -932,6 +974,12 @@ onBeforeUnmount(() => {
 }
 
 /* 摄像头模式：结果列表（弹窗外壳由 AppModal 提供） */
+.vision-popup__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
 .vision-popup__title {
   font-size: var(--font-md);
   font-weight: var(--weight-bold);
