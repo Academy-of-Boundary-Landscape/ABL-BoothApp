@@ -1,5 +1,11 @@
 <template>
-  <n-config-provider class="app-container" :theme="naiveTheme" :theme-overrides="themeOverrides">
+  <n-config-provider
+    class="app-container"
+    :theme="naiveTheme"
+    :theme-overrides="themeOverrides"
+    :locale="zhCN"
+    :date-locale="dateZhCN"
+  >
     <n-message-provider>
       <n-dialog-provider>
         <main class="app-content">
@@ -16,7 +22,15 @@
 import { computed } from 'vue'
 import { RouterView } from 'vue-router'
 import MigrationNotice from '@/views/MigrationNotice.vue'
-import { NConfigProvider, NMessageProvider, NDialogProvider, darkTheme } from 'naive-ui'
+// 不设 locale 时 naive-ui 默认英文：输入框占位符是「Please Input」、空表格是「No Data」
+import {
+  NConfigProvider,
+  NMessageProvider,
+  NDialogProvider,
+  darkTheme,
+  zhCN,
+  dateZhCN,
+} from 'naive-ui'
 import { useThemeStore } from '@/stores/themeStore'
 
 const themeStore = useThemeStore()

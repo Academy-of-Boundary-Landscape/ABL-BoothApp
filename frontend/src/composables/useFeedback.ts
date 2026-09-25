@@ -1,7 +1,7 @@
 // composables/useFeedback.ts —— 反馈（toast / 确认 / 模态提示）的唯一入口。
 // 基于 createDiscreteApi：不依赖组件 setup 上下文，store 里也能用；主题跟随 themeStore。
 import { computed, type VNodeChild } from 'vue'
-import { createDiscreteApi, darkTheme, type ConfigProviderProps } from 'naive-ui'
+import { createDiscreteApi, darkTheme, zhCN, dateZhCN, type ConfigProviderProps } from 'naive-ui'
 import { useThemeStore } from '@/stores/themeStore'
 
 type FeedbackApi = ReturnType<typeof createDiscreteApi<'message' | 'dialog'>>
@@ -17,6 +17,8 @@ function discrete(): FeedbackApi {
       return {
         theme: theme.isDark ? darkTheme : null,
         themeOverrides: theme.naiveThemeOverrides,
+        locale: zhCN,
+        dateLocale: dateZhCN,
       }
     })
     api = createDiscreteApi<'message' | 'dialog'>(['message', 'dialog'], {

@@ -141,9 +141,8 @@ describe('RefundModal 实际退款', () => {
 
   // bug：输入框被清空（null）时 `toCents(amountYuan ?? 0)` 把它当成「退 0 元」，
   // 静默提交一笔零退款——顾客一分钱没拿回，账上全记成货主留存。
-  // 收款弹窗（ReceiptModal.handleConfirm）对同样的情形有「请填写实收金额」的拦截，
-  // 退货弹窗没有。见 RefundModal.vue 的 refundCents / submit。
-  it.fails('清空实际退款输入框后提交：应拦下并提示，而不是按 0 元退款提交', async () => {
+  // 和收款弹窗（ReceiptModal.handleConfirm）的「请填写实收金额」同一条规则。
+  it('清空实际退款输入框后提交：应拦下并提示，而不是按 0 元退款提交', async () => {
     const w = await open()
     await setInput(qtyInput(1), '1')
     await setInput(amountInput(), '')

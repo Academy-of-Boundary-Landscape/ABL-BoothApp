@@ -44,6 +44,7 @@
                 :max="line.remaining_qty"
                 :precision="0"
                 :disabled="line.remaining_qty === 0"
+                placeholder="退几件"
                 @update:value="(v) => (qtyByLine[line.order_line_id] = v ?? 0)"
               />
               <span class="line-refund"> 本次退 {{ formatYuan(perLineRefund[idx]) }} </span>
@@ -74,6 +75,7 @@
             v-model:value="amountYuan"
             :min="0"
             :precision="2"
+            placeholder="请输入退款金额"
             @update:value="amountTouched = true"
           />
         </div>
@@ -212,6 +214,11 @@ async function submit() {
   const order = props.order
   if (!order) return
   if (!channel.value) return fb.warning('请选择退款渠道')
+  // 清空输入框时 amountYuan 为 null，refundCents 会回落成 0——不拦就静默退 ¥0。
+  // 真要退 0 元（全额留下）得明确填 0。和收款弹窗的「请填写实收金额」同一条规则。
+  if (amountYuan.value === null || !Number.isFinite(amountYuan.value)) {
+    return fb.warning('请填写实际退款金额')
+  }
   if (overLimit.value) return fb.warning('不能多于顾客实付，白送钱请走结算调整')
 
   const payload: Schemas['RefundRequest'] = {
