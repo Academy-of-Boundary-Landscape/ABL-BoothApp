@@ -30,6 +30,16 @@ export const useClosingStore = defineStore('closing', () => {
     }
   }
 
+  // 动作被后端挡回（典型：盘点时顾客又下了一单 → 409）时，界面上的步骤已经过期了。
+  // 拉一次新状态，让向导跟着回到该去的那一步；拉失败就算了，原错误照常抛给调用方。
+  async function refreshAfterFailure(eventId: number) {
+    try {
+      await fetchState(eventId)
+    } catch {
+      /* 原错误更要紧 */
+    }
+  }
+
   async function stocktake(eventId: number, counts: Schemas['StocktakeRequest']['counts']) {
     try {
       await unwrap(
@@ -41,6 +51,7 @@ export const useClosingStore = defineStore('closing', () => {
       await fetchState(eventId)
     } catch (e) {
       console.error(e)
+      await refreshAfterFailure(eventId)
       throw new Error(errorMessage(e, '提交盘点失败。'))
     }
   }
@@ -55,6 +66,7 @@ export const useClosingStore = defineStore('closing', () => {
       await fetchState(eventId)
     } catch (e) {
       console.error(e)
+      await refreshAfterFailure(eventId)
       throw new Error(errorMessage(e, '确认带回失败。'))
     }
   }
@@ -67,6 +79,7 @@ export const useClosingStore = defineStore('closing', () => {
       await fetchState(eventId)
     } catch (e) {
       console.error(e)
+      await refreshAfterFailure(eventId)
       throw new Error(errorMessage(e, '结束展会失败。'))
     }
   }

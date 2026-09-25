@@ -212,11 +212,11 @@ describe('ClosingWizard 已结算', () => {
 
 // 2026-09-26 收摊走查（场景 4：停在收摊 tab 时来新单）。
 // 外壳的轮询会响铃、弹「收到新订单！」、订单 tab 出角标，但向导的 state 只在挂载时拉一次：
-// 摊主照旧填完盘点点提交，后端 409「还有 1 单待处理，清完才能盘点」，
-// `closingStore.stocktake` 在 fetchState 之前就抛了，向导原地停在盘点屏，
-// 要切走 tab 再切回来才看得到第 ① 步——而切 tab 会把刚填的实数全部清空。
+// 摊主照旧填完盘点点提交，后端 409「还有 1 单待处理，清完才能盘点」。
+// 曾经 `closingStore.stocktake` 在 fetchState 之前就抛了，向导原地停在盘点屏，
+// 要切走 tab 再切回来才看得到第 ① 步——而切 tab 会把刚填的实数全部清空（见下一组）。
 describe('ClosingWizard 盘点时来了新单', () => {
-  it.fails('提交盘点被 409（有待处理订单）挡回后，向导应刷新状态并回到第 ① 步', async () => {
+  it('提交盘点被 409（有待处理订单）挡回后，向导应刷新状态并回到第 ① 步', async () => {
     const { ApiRequestError } = await import('@/api/client')
     closingState = makeState({ onsite_remaining: onsiteRows(2) })
     const w = mountWizard()
@@ -243,5 +243,50 @@ describe('ClosingWizard 盘点时来了新单', () => {
     expect(mocks.fbError).toHaveBeenCalled()
     expect(w.text()).toContain('还有 1 单待处理')
     expect(w.findAll('[data-test="stocktake-row"]')).toHaveLength(0)
+  })
+})
+
+// 同一次走查：中途退出再进（或切 tab，组件会卸载），步骤不丢但已填的实数全部清空。
+describe('ClosingWizard 盘点草稿', () => {
+  it('卸载后重新挂载，已填的实数恢复，没填的仍为空', async () => {
+    closingState = makeState({ onsite_remaining: onsiteRows(3) })
+    const first = mountWizard()
+    await flushPromises()
+    await fillRow(first, 0, '7')
+    await fillRow(first, 2, '0')
+    await flushPromises()
+    first.unmount()
+
+    const second = mountWizard()
+    await flushPromises()
+    const values = second
+      .findAll('[data-test="stocktake-row"] input')
+      .map((i) => (i.element as HTMLInputElement).value)
+    expect(values).toEqual(['7', '', '0'])
+    expect(second.find('.stocktake-bar').text()).toContain('已盘 2 / 3')
+  })
+
+  it('草稿按展会区分，别的展会不会串进来', async () => {
+    localStorage.setItem('closing-stocktake-draft:99', JSON.stringify({ 1: 5 }))
+    closingState = makeState({ onsite_remaining: onsiteRows(1) })
+    const w = mountWizard()
+    await flushPromises()
+    expect((w.find('[data-test="stocktake-row"] input').element as HTMLInputElement).value).toBe('')
+  })
+
+  it('盘点提交成功后清掉草稿', async () => {
+    closingState = makeState({ onsite_remaining: onsiteRows(1) })
+    const w = mountWizard()
+    await flushPromises()
+    await fillRow(w, 0, '10')
+    await flushPromises()
+    expect(localStorage.getItem('closing-stocktake-draft:3')).not.toBeNull()
+
+    mocks.apiPost.mockResolvedValueOnce({})
+    const submit = w.findAll('.screen-actions button').find((b) => b.text().includes('提交盘点'))!
+    await submit.trigger('click')
+    await flushPromises()
+
+    expect(localStorage.getItem('closing-stocktake-draft:3')).toBeNull()
   })
 })

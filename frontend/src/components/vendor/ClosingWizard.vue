@@ -264,19 +264,61 @@ const takebackTotal = computed(() =>
 // 而「我数了、一致」和「我没数这个」正是盘点要分开的两件事——后端那条
 // stocktaken_at 迁移存在的全部理由就是这个。同 AdminEventSettlement 的清点输入。
 // 「摊主没数」由「跳过盘点」承接，那条路径留下 stocktaken_at = null。
+//
+// 已填的实数存成按展会区分的本地草稿：切 tab、退出再进、手机浏览器被杀后重开，
+// 都接着填，不用重数一遍。草稿只恢复摊主自己填过的数，不违背上面「不预填账面数」。
+// 盘点提交成功后清掉。
+const draftKey = computed(() => `closing-stocktake-draft:${props.eventId}`)
+
+function readDraft(): Record<number, number> {
+  try {
+    const raw = localStorage.getItem(draftKey.value)
+    const parsed: unknown = raw ? JSON.parse(raw) : {}
+    return parsed && typeof parsed === 'object' ? (parsed as Record<number, number>) : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeDraft(value: Record<number, number | null>) {
+  const filled = Object.fromEntries(Object.entries(value).filter(([, v]) => Number.isFinite(v)))
+  try {
+    if (Object.keys(filled).length) localStorage.setItem(draftKey.value, JSON.stringify(filled))
+    else localStorage.removeItem(draftKey.value)
+  } catch {
+    /* 存不了就只是不能跨次恢复 */
+  }
+}
+
+function clearDraft() {
+  try {
+    localStorage.removeItem(draftKey.value)
+  } catch {
+    /* 同上 */
+  }
+}
+
 watch(
   () => store.state?.onsite_remaining,
   (rows) => {
     if (!rows) return
+    const draft = readDraft()
     const next: Record<number, number | null> = {}
     for (const p of rows) {
       const existing = counts.value[p.event_product_id]
-      next[p.event_product_id] = Number.isFinite(existing) ? existing : null
+      const saved = draft[p.event_product_id]
+      next[p.event_product_id] = Number.isFinite(existing)
+        ? existing
+        : Number.isFinite(saved)
+          ? saved
+          : null
     }
     counts.value = next
   },
   { immediate: true }
 )
+
+watch(counts, writeDraft, { deep: true })
 
 async function reload() {
   loadError.value = null
@@ -306,6 +348,7 @@ async function doSubmitStocktake(payload: Schemas['StocktakeRequest']['counts'])
   isBusy.value = true
   try {
     await store.stocktake(Number(props.eventId), payload)
+    clearDraft()
     fb.success('盘点已提交')
   } catch (err) {
     fb.error(err, '提交盘点失败')
