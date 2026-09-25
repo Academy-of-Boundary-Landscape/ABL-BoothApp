@@ -85,7 +85,13 @@
     <router-view v-else />
 
     <AppModal v-model:show="isEditModalVisible" title="编辑展会" size="sm" :mask-closable="false">
-      <EditEventForm v-if="editTarget" ref="editForm" :event="editTarget" />
+      <EventForm
+        v-if="editTarget"
+        ref="editForm"
+        mode="edit"
+        :event="editTarget"
+        @saved="onEditSaved"
+      />
       <template #footer>
         <n-button @click="closeEditModal">取消</n-button>
         <n-button type="primary" @click="handleUpdateEvent">保存更改</n-button>
@@ -103,7 +109,7 @@ import { useEventStore } from '@/stores/eventStore'
 import { useFeedback } from '@/composables/useFeedback'
 import { provideWorkbenchEvent } from '@/composables/useWorkbenchEvent'
 import type { Schemas } from '@/api/client'
-import EditEventForm from '@/components/event/EditEventForm.vue'
+import EventForm from '@/components/event/EventForm.vue'
 
 const STATUS_STEPS = ['筹备', '进行中', '已结算'] as const
 
@@ -145,10 +151,10 @@ async function startEvent() {
   }
 }
 
-// ── 编辑：本 task 先挂现有 EditEventForm（Task 4 P2 换成 EventForm）。──
+// ── 编辑：EventForm 自己调 store 并在失败时把错误显示在弹窗内；saved 后关弹窗 + 刷新外壳。──
 const isEditModalVisible = ref(false)
 const editTarget = ref<Schemas['EventResponse'] | null>(null)
-const editForm = ref<InstanceType<typeof EditEventForm> | null>(null)
+const editForm = ref<InstanceType<typeof EventForm> | null>(null)
 
 function openEdit() {
   editTarget.value = event.value
@@ -161,16 +167,13 @@ function closeEditModal() {
 }
 
 async function handleUpdateEvent() {
-  if (!editForm.value || !editTarget.value) return
-  const formData = editForm.value.submit()
-  if (!formData) return
-  try {
-    await eventStore.updateEvent(editTarget.value.id, formData)
-    closeEditModal()
-    await reload()
-  } catch (e) {
-    fb.error(e, '保存失败')
-  }
+  if (!editForm.value) return
+  await editForm.value.submit()
+}
+
+function onEditSaved() {
+  closeEditModal()
+  void reload()
 }
 </script>
 
