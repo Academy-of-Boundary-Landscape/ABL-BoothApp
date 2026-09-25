@@ -528,6 +528,7 @@ async function handleDeleteImage(img: Schemas['MasterProductImageDto']) {
     const ok = await fb.confirm({
       title:
         '这是从商品预览图自动同步的图片。删除后如需恢复，请在「基本信息」中重新上传预览图。确认删除？',
+      danger: true,
     })
     if (!ok) return
   }

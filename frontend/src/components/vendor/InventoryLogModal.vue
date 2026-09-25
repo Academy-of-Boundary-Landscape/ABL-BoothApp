@@ -305,7 +305,7 @@ async function undo(entry: Schemas['InventoryLogEntry']) {
     content: `撤销这条${activeTab.value === 'gift' ? '赠送' : '报废'}登记？货会回到现场仓。`,
     positiveText: '撤销',
     negativeText: '返回',
-    danger: true,
+    type: 'warning',
     onConfirm: async () => {
       isBusy.value = true
       try {

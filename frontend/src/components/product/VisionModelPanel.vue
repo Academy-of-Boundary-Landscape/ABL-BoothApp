@@ -522,7 +522,7 @@ async function handleActivate(modelId: string) {
 
 // ===== 模型删除 =====
 async function handleDelete(modelId: string) {
-  const ok = await fb.confirm({ title: `确认删除模型 ${modelId}？` })
+  const ok = await fb.confirm({ title: `确认删除模型 ${modelId}？`, danger: true })
   if (!ok) return
   actionMsg.value = ''
   try {
