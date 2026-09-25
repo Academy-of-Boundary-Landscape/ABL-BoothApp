@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, type RouteLocation } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore' // 导入 auth store
 // 导入所有需要的布局和视图
 import AdminLayout from '../views/AdminLayout.vue'
@@ -10,7 +10,10 @@ import AdminEventWorkbench from '../views/AdminEventWorkbench.vue'
 import WorkbenchIndex from '../views/WorkbenchIndex.vue'
 import AdminSocieties from '../views/AdminSocieties.vue'
 import VendorEventSelection from '../views/VendorEventSelection.vue' // 【新增】导入新视图
-import VendorView from '../views/VendorView.vue' // 这个现在是详情页
+import VendorShell from '../views/vendor/VendorShell.vue'
+import VendorOrders from '../views/vendor/VendorOrders.vue'
+import VendorInventory from '../views/vendor/VendorInventory.vue'
+import VendorClosing from '../views/vendor/VendorClosing.vue'
 import CustomerView from '../views/CustomerView.vue'
 import EventPortalView from '../views/EventPortalView.vue'
 import AdminEventOrders from '../views/AdminEventOrders.vue'
@@ -126,13 +129,38 @@ const routes = [
     component: VendorEventSelection,
   },
 
-  // 【修改】摊主的操作页面现在是一个动态路径
+  // 摊主端外壳：订单 / 库存 / 收摊三个 tab 各是子路由；旧的 `/vendor/:id` URL 保留。
   {
     path: '/vendor/:id', // :id 是展会 ID
-    name: 'vendor-detail',
-    component: VendorView,
-    props: true, // 将 id 作为 prop 传入 VendorView
+    name: 'vendor-shell',
+    component: VendorShell,
+    props: true,
     meta: { requiresAuth: true, role: 'vendor' },
+    children: [
+      {
+        // 父路由的 :id 在子路由上仍存在；redirect 显式带过去。
+        path: '',
+        redirect: (to: RouteLocation) => ({ name: 'vendor-orders', params: { id: to.params.id } }),
+      },
+      {
+        path: 'orders',
+        name: 'vendor-orders',
+        component: VendorOrders,
+        props: true,
+      },
+      {
+        path: 'inventory',
+        name: 'vendor-inventory',
+        component: VendorInventory,
+        props: true,
+      },
+      {
+        path: 'closing',
+        name: 'vendor-closing',
+        component: VendorClosing,
+        props: true,
+      },
+    ],
   },
 
   // --- 路由组 3: 顾客点单页面 ---

@@ -1,416 +1,238 @@
 <template>
   <PageShell embedded width="wide">
-    <div class="page-toolbar">
-      <p class="page-hint">
-        录垫付、结算调整和收摊清点。金额框里填「元」，提交时换算成「分」；
-        业务规则由后端判定，这里只负责把后端那句话原样显示出来。
+    <p class="page-hint">
+      录垫付、结算调整和收摊清点。金额框里填「元」，提交时换算成「分」；
+      业务规则由后端判定，这里只负责把后端那句话原样显示出来。
+    </p>
+
+    <!-- 只读结算单 + 导出（管理端与摊主端共用，spec §5.4）。 -->
+    <SettlementReportView :event-id="eventId" />
+
+    <!-- 垫付 -->
+    <section class="block">
+      <h2>垫付</h2>
+      <p class="block-note">展会结算之后，这两项仍然可以增删</p>
+      <p class="block-hint">
+        摊主先掏钱替某个社团垫的费用（摊位费、打印费等）。这笔钱从「我应转给」里减掉。
       </p>
-      <n-space class="header-actions">
-        <n-button :disabled="!store.report" @click="reloadReport">刷新</n-button>
-        <n-button type="primary" ghost :disabled="!store.report" @click="exportXlsx">
-          导出 Excel
-        </n-button>
-      </n-space>
-    </div>
 
-    <!-- warnings 必须最显眼：这里非空意味着业务表加出来的数和账本对不上，
-         也就是某笔账记错了。不折叠、不放底部，逐条列在整张单最上方。 -->
-    <n-alert
-      v-if="store.report && store.report.warnings.length"
-      type="error"
-      :bordered="false"
-      title="这张结算单和账本对不上，先别急着导出"
-      class="warnings-block"
-    >
-      <p v-for="(w, i) in store.report.warnings" :key="i" class="warning-line">⚠ {{ w }}</p>
-      <p class="warning-line muted">说明某笔账记错了，核对无误后再导出。</p>
-    </n-alert>
-
-    <AsyncState :loading="store.isLoading && !store.report" loading-text="正在加载结算数据...">
-      <n-alert v-if="store.error" type="error" class="store-error" :bordered="false">
-        {{ store.error }}
-      </n-alert>
-
-      <!-- ── 结算单主体（母 spec 第 7 节）───────────────────────── -->
-      <section v-if="store.report" class="block report-block">
-        <div v-for="s in store.report.societies" :key="s.society_id" class="society-card">
-          <div class="society-head">
-            <span class="society-name">货主：{{ s.name }}</span>
-            <n-tag v-if="s.is_home" size="small" type="success" round>本社团</n-tag>
-          </div>
-
-          <!-- 【货】收起时是合计，点「展开明细」到每个商品。 -->
-          <div class="society-line">
-            <span class="line-tag">【货】</span>
-            <span class="line-body">
-              带去 {{ s.totals.brought_in }} → 卖出 {{ s.totals.sold }} / 赠送
-              {{ s.totals.gifted }} / 报废 {{ s.totals.scrapped }} / 带回
-              {{ s.totals.taken_back }}
-              <template v-if="s.totals.on_site">／现场仓 {{ s.totals.on_site }}</template>
-              <span class="variance">盘点差异 {{ s.totals.variance }}</span>
-              <!-- 未盘点时不能安静地按账面推算，必须标出来。 -->
-              <n-tag
-                v-if="!store.report.stocktaken"
-                size="small"
-                type="warning"
-                class="stocktake-tag"
-              >
-                未盘点，剩余数为账面推算
-              </n-tag>
-              <n-button text size="tiny" class="detail-toggle" @click="toggleGoods(s.society_id)">
-                {{ expanded[s.society_id] ? '收起明细' : `展开明细（${s.goods.length} 项）` }}
-              </n-button>
-            </span>
-          </div>
-
-          <div v-if="expanded[s.society_id]" class="goods-detail">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>商品</th>
-                  <th class="text-right">带去</th>
-                  <th class="text-right">卖出</th>
-                  <th class="text-right">赠送</th>
-                  <th class="text-right">报废</th>
-                  <th class="text-right">差异</th>
-                  <th class="text-right">带回</th>
-                  <th class="text-right">现场仓</th>
-                  <th class="text-right">原价</th>
-                  <th class="text-right">折让</th>
-                  <th class="text-right">净额</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="g in s.goods" :key="g.event_product_id">
-                  <td>{{ g.product_code }} {{ g.name }}</td>
-                  <td class="text-right">{{ g.brought_in }}</td>
-                  <td class="text-right">{{ g.sold }}</td>
-                  <td class="text-right">{{ g.gifted }}</td>
-                  <td class="text-right">{{ g.scrapped }}</td>
-                  <td class="text-right">{{ g.variance }}</td>
-                  <td class="text-right">{{ g.taken_back }}</td>
-                  <td class="text-right">{{ g.on_site }}</td>
-                  <td class="text-right amount-cell">{{ formatYuan(g.gross) }}</td>
-                  <td class="text-right amount-cell">{{ formatSigned(g.lot_discount) }}</td>
-                  <td class="text-right amount-cell">{{ formatYuan(g.allocated) }}</td>
-                </tr>
-                <tr v-if="!s.goods.length">
-                  <td colspan="11"><EmptyState compact title="这个货主没有上架商品" /></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div class="society-line">
-            <span class="line-tag">【钱】</span>
-            <span class="line-body">
-              商品原价 {{ formatYuan(s.gross) }} · Lot折让 {{ formatSigned(s.lot_discount) }} ·
-              {{ manualDiscountLabel(s.manual_discount) }} {{ formatSigned(s.manual_discount) }} →
-              净额 {{ formatYuan(s.net) }}
-              <!-- 这两项是「我应转给」的加项，xlsx 里有、网页上原来漏了。
-                   非零时才出现，否则默认全 0 的行会淹没真正的数字。 -->
-              <template v-if="s.refund_kept"> · 退货保留 {{ formatYuan(s.refund_kept) }}</template>
-              <template v-if="s.gift_self_paid">
-                · 自掏赠品 {{ formatYuan(s.gift_self_paid) }}
-              </template>
-            </span>
-          </div>
-
-          <div class="society-line">
-            <span class="line-tag">【我垫付】</span>
-            <span class="line-body">
-              <template v-if="s.advances.length">
-                {{ advanceSummary(s.advances) }} = {{ formatSigned(s.advances_total) }}
-              </template>
-              <template v-else>（无）</template>
-            </span>
-          </div>
-
-          <div class="society-line">
-            <span class="line-tag">【调整】</span>
-            <span class="line-body">
-              <template v-if="s.adjustments.length">
-                {{ adjustmentSummary(s.adjustments) }}
-                <!-- 单条明细时合计和它上面那句完全一样，没必要念两遍；
-                     多条时才需要合计，且合计也必须说人话，不能露原始符号。 -->
-                <template v-if="s.adjustments.length > 1">
-                  = {{ describeReportAdjustment(s.adjustments_total) }}
-                </template>
-              </template>
-              <template v-else>（无）</template>
-            </span>
-          </div>
-
-          <!-- 这一块唯一要被记住的数字，视觉上压过其它行。 -->
-          <div class="transfer-row">
-            我应转给{{ s.name }}：
-            <span class="transfer-amount">{{ formatYuan(s.transfer) }}</span>
-          </div>
+      <div class="form-grid">
+        <div class="field">
+          <span class="field-label">社团</span>
+          <n-select
+            v-model:value="advanceForm.societyId"
+            :options="societyOptions"
+            filterable
+            placeholder="选择垫付给哪个社团"
+          />
         </div>
-
-        <div class="report-totals">
-          <span
-            >实际到手合计 <strong>{{ formatYuan(store.report.actual_total) }}</strong></span
-          >
-          <span
-            >Σ 我应转给 <strong>{{ formatYuan(store.report.transfer_total) }}</strong></span
-          >
-          <span
-            >摊主留存 <strong>{{ formatYuan(store.report.vendor_retained) }}</strong></span
-          >
+        <label class="field">
+          <span class="field-label">名目</span>
+          <n-input v-model:value="advanceForm.label" placeholder="如 摊位费" />
+        </label>
+        <label class="field">
+          <span class="field-label">金额（元）</span>
+          <n-input-number
+            v-model:value="advanceForm.amountYuan"
+            :min="0"
+            :precision="2"
+            placeholder="只填正数"
+          />
+        </label>
+        <div class="field actions">
+          <n-button type="primary" :disabled="isBusy" @click="submitAdvance">新增垫付</n-button>
         </div>
+      </div>
 
-        <!-- 两个时间戳平铺，不加警告语气。generated_at（此刻）和 last_changed_at
-             （最新 journal 的时间）几乎恒不相等，按字面提示「导出前请刷新」会基本
-             常亮；常亮的警告会训练人忽略警告，而这一页顶部有个真正不能被稀释的
-             红色 warnings 块。摊主自己看得出新旧。 -->
-        <p class="report-meta">
-          生成于 {{ store.report.generated_at }} · 账本最后变动于
-          {{ store.report.last_changed_at || '（无记录）' }}
-        </p>
-      </section>
+      <div v-if="store.advances.length" class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>社团</th>
+              <th>名目</th>
+              <th class="text-right">金额</th>
+              <th class="text-right">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="a in store.advances" :key="a.id">
+              <td>{{ a.society_name }}</td>
+              <td>{{ a.label }}</td>
+              <td class="text-right amount-cell">{{ formatYuan(a.amount) }}</td>
+              <td class="text-right">
+                <n-button
+                  size="small"
+                  type="error"
+                  quaternary
+                  :disabled="isBusy"
+                  @click="removeAdvance(a)"
+                >
+                  删除
+                </n-button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <EmptyState v-else compact title="暂无垫付" />
+    </section>
 
-      <!-- 垫付 -->
-      <section class="block">
-        <h2>垫付</h2>
-        <p class="block-note">展会结算之后，这两项仍然可以增删</p>
-        <p class="block-hint">
-          摊主先掏钱替某个社团垫的费用（摊位费、打印费等）。这笔钱从「我应转给」里减掉。
-        </p>
+    <!-- 结算调整 -->
+    <section class="block">
+      <h2>结算调整</h2>
+      <p class="block-note">展会结算之后，这两项仍然可以增删</p>
+      <p class="block-hint">方向用按钮选，金额只填正数——不要自己判断该填正号还是负号。</p>
 
-        <div class="form-grid">
-          <div class="field">
-            <span class="field-label">社团</span>
-            <n-select
-              v-model:value="advanceForm.societyId"
-              :options="societyOptions"
-              filterable
-              placeholder="选择垫付给哪个社团"
-            />
-          </div>
-          <label class="field">
-            <span class="field-label">名目</span>
-            <n-input v-model:value="advanceForm.label" placeholder="如 摊位费" />
-          </label>
-          <label class="field">
-            <span class="field-label">金额（元）</span>
-            <n-input-number
-              v-model:value="advanceForm.amountYuan"
-              :min="0"
-              :precision="2"
-              placeholder="只填正数"
-            />
-          </label>
-          <div class="field actions">
-            <n-button type="primary" :disabled="isBusy" @click="submitAdvance">新增垫付</n-button>
-          </div>
+      <div class="form-grid">
+        <div class="field field-wide">
+          <span class="field-label">方向</span>
+          <n-radio-group v-model:value="adjustmentForm.direction">
+            <n-space>
+              <n-radio-button value="to_them">我要多给他们</n-radio-button>
+              <n-radio-button value="to_me">他们要多给我</n-radio-button>
+            </n-space>
+          </n-radio-group>
         </div>
-
-        <div v-if="store.advances.length" class="table-scroll">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>社团</th>
-                <th>名目</th>
-                <th class="text-right">金额</th>
-                <th class="text-right">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="a in store.advances" :key="a.id">
-                <td>{{ a.society_name }}</td>
-                <td>{{ a.label }}</td>
-                <td class="text-right amount-cell">{{ formatYuan(a.amount) }}</td>
-                <td class="text-right">
-                  <n-button
-                    size="small"
-                    type="error"
-                    quaternary
-                    :disabled="isBusy"
-                    @click="removeAdvance(a)"
-                  >
-                    删除
-                  </n-button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        <div class="field">
+          <span class="field-label">社团</span>
+          <n-select
+            v-model:value="adjustmentForm.societyId"
+            :options="societyOptions"
+            filterable
+            placeholder="选择调整给哪个社团"
+          />
         </div>
-        <EmptyState v-else compact title="暂无垫付" />
-      </section>
-
-      <!-- 结算调整 -->
-      <section class="block">
-        <h2>结算调整</h2>
-        <p class="block-note">展会结算之后，这两项仍然可以增删</p>
-        <p class="block-hint">方向用按钮选，金额只填正数——不要自己判断该填正号还是负号。</p>
-
-        <div class="form-grid">
-          <div class="field field-wide">
-            <span class="field-label">方向</span>
-            <n-radio-group v-model:value="adjustmentForm.direction">
-              <n-space>
-                <n-radio-button value="to_them">我要多给他们</n-radio-button>
-                <n-radio-button value="to_me">他们要多给我</n-radio-button>
-              </n-space>
-            </n-radio-group>
-          </div>
-          <div class="field">
-            <span class="field-label">社团</span>
-            <n-select
-              v-model:value="adjustmentForm.societyId"
-              :options="societyOptions"
-              filterable
-              placeholder="选择调整给哪个社团"
-            />
-          </div>
-          <label class="field">
-            <span class="field-label">名目</span>
-            <n-input v-model:value="adjustmentForm.label" placeholder="如 清点少一本按成本赔" />
-          </label>
-          <label class="field">
-            <span class="field-label">金额（元）</span>
-            <n-input-number
-              v-model:value="adjustmentForm.amountYuan"
-              :min="0"
-              :precision="2"
-              placeholder="只填正数"
-            />
-          </label>
-          <div class="field actions">
-            <n-button type="primary" :disabled="isBusy" @click="submitAdjustment">
-              新增结算调整
-            </n-button>
-          </div>
-        </div>
-
-        <div v-if="store.adjustments.length" class="table-scroll">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>社团</th>
-                <th>名目</th>
-                <th class="text-right">方向与金额</th>
-                <th class="text-right">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="a in store.adjustments" :key="a.id">
-                <td>{{ a.society_name }}</td>
-                <td>{{ a.label }}</td>
-                <td class="text-right amount-cell">{{ describeEntryAdjustment(a.amount) }}</td>
-                <td class="text-right">
-                  <n-button
-                    size="small"
-                    type="error"
-                    quaternary
-                    :disabled="isBusy"
-                    @click="removeAdjustment(a)"
-                  >
-                    删除
-                  </n-button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <EmptyState v-else compact title="暂无结算调整" />
-      </section>
-
-      <!-- 收摊清点 -->
-      <section v-if="store.report" class="block">
-        <h2>收摊清点</h2>
-        <p class="block-hint">
-          收全量：本场用过的每个渠道都要报数，<strong>数过一致的也要报</strong>——
-          「我数了，一致」和「我没数」是两件事。
-        </p>
-
-        <div class="table-scroll">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>渠道</th>
-                <th class="text-right">账面应有</th>
-                <th class="text-right">实际到手（元）</th>
-                <th class="text-right">差额</th>
-                <th>是否清点</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="c in store.report.channels" :key="c.channel">
-                <td>{{ c.channel }}</td>
-                <td class="text-right amount-cell">{{ formatYuan(c.book) }}</td>
-                <td class="text-right">
-                  <n-input-number
-                    v-model:value="counts[c.channel]"
-                    :min="0"
-                    :precision="2"
-                    class="count-input"
-                  />
-                </td>
-                <td class="text-right amount-cell" :class="diffClass(c)">
-                  {{ formatYuan(rowDiff(c)) }}
-                </td>
-                <td>{{ c.counted ? '已清点' : '未清点' }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <EmptyState
-          v-if="!store.report.channels.length"
-          compact
-          title="本场还没有用过的收款渠道，无需清点。"
-        />
-
-        <div v-if="hasDiff" class="shortfall-note">
-          差额由摊主自己承担，不进任何货主的结算。要推给某个货主，请到上面加一条结算调整。
-        </div>
-
-        <div class="actions-row">
-          <n-button
-            type="primary"
-            :disabled="isBusy || !store.report.channels.length"
-            @click="submitReconcile"
-          >
-            提交清点
+        <label class="field">
+          <span class="field-label">名目</span>
+          <n-input v-model:value="adjustmentForm.label" placeholder="如 清点少一本按成本赔" />
+        </label>
+        <label class="field">
+          <span class="field-label">金额（元）</span>
+          <n-input-number
+            v-model:value="adjustmentForm.amountYuan"
+            :min="0"
+            :precision="2"
+            placeholder="只填正数"
+          />
+        </label>
+        <div class="field actions">
+          <n-button type="primary" :disabled="isBusy" @click="submitAdjustment">
+            新增结算调整
           </n-button>
         </div>
-      </section>
-    </AsyncState>
+      </div>
+
+      <div v-if="store.adjustments.length" class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>社团</th>
+              <th>名目</th>
+              <th class="text-right">方向与金额</th>
+              <th class="text-right">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="a in store.adjustments" :key="a.id">
+              <td>{{ a.society_name }}</td>
+              <td>{{ a.label }}</td>
+              <td class="text-right amount-cell">{{ describeEntryAdjustment(a.amount) }}</td>
+              <td class="text-right">
+                <n-button
+                  size="small"
+                  type="error"
+                  quaternary
+                  :disabled="isBusy"
+                  @click="removeAdjustment(a)"
+                >
+                  删除
+                </n-button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <EmptyState v-else compact title="暂无结算调整" />
+    </section>
+
+    <!-- 收摊清点 -->
+    <section v-if="store.report" class="block">
+      <h2>收摊清点</h2>
+      <p class="block-hint">
+        收全量：本场用过的每个渠道都要报数，<strong>数过一致的也要报</strong>——
+        「我数了，一致」和「我没数」是两件事。
+      </p>
+
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>渠道</th>
+              <th class="text-right">账面应有</th>
+              <th class="text-right">实际到手（元）</th>
+              <th class="text-right">差额</th>
+              <th>是否清点</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="c in store.report.channels" :key="c.channel">
+              <td>{{ c.channel }}</td>
+              <td class="text-right amount-cell">{{ formatYuan(c.book) }}</td>
+              <td class="text-right">
+                <n-input-number
+                  v-model:value="counts[c.channel]"
+                  :min="0"
+                  :precision="2"
+                  class="count-input"
+                />
+              </td>
+              <td class="text-right amount-cell" :class="diffClass(c)">
+                {{ formatYuan(rowDiff(c)) }}
+              </td>
+              <td>{{ c.counted ? '已清点' : '未清点' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <EmptyState
+        v-if="!store.report.channels.length"
+        compact
+        title="本场还没有用过的收款渠道，无需清点。"
+      />
+
+      <div v-if="hasDiff" class="shortfall-note">
+        差额由摊主自己承担，不进任何货主的结算。要推给某个货主，请到上面加一条结算调整。
+      </div>
+
+      <div class="actions-row">
+        <n-button
+          type="primary"
+          :disabled="isBusy || !store.report.channels.length"
+          @click="submitReconcile"
+        >
+          提交清点
+        </n-button>
+      </div>
+    </section>
   </PageShell>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import {
-  NAlert,
-  NButton,
-  NInput,
-  NInputNumber,
-  NSelect,
-  NSpace,
-  NRadioGroup,
-  NRadioButton,
-  NTag,
-} from 'naive-ui'
+import { ref, computed, watch, onMounted } from 'vue'
+import { NButton, NInput, NInputNumber, NSelect, NSpace, NRadioGroup, NRadioButton } from 'naive-ui'
 import { useSettlementStore } from '@/stores/settlementStore'
 import { useSocietyStore } from '@/stores/societyStore'
 import { formatYuan, cents, toCents, fromCents, type Cents } from '@/utils/money'
-import {
-  describeEntryAdjustment,
-  describeReportAdjustment,
-  manualDiscountLabel,
-} from '@/utils/settlementSigns'
-import { toAbsoluteApiUrl } from '@/services/url'
-import { save } from '@tauri-apps/plugin-dialog'
-import { writeFile } from '@tauri-apps/plugin-fs'
-import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
+import { describeEntryAdjustment } from '@/utils/settlementSigns'
 import type { Schemas } from '@/api/client'
-import { PageShell, AsyncState, EmptyState } from '@/components/ui'
+import { PageShell, EmptyState } from '@/components/ui'
+import SettlementReportView from '@/components/settlement/SettlementReportView.vue'
 import { useFeedback } from '@/composables/useFeedback'
 
 const props = defineProps<{ id: string | number }>()
+
+const eventId = computed(() => Number(props.id))
 
 const store = useSettlementStore()
 const societyStore = useSocietyStore()
@@ -489,109 +311,6 @@ function diffClass(c: Schemas['ChannelLine']) {
   return d < 0 ? 'diff-short' : 'diff-over'
 }
 
-// --- 结算单主体 ---
-// 【货】默认收起，展开状态只是界面状态，不落库。
-const expanded = ref<Record<number, boolean>>({})
-
-function toggleGoods(societyId: number) {
-  expanded.value = { ...expanded.value, [societyId]: !expanded.value[societyId] }
-}
-
-/**
- * 折让显示成带符号的减/加：折让为正（真折让）→ `−¥x`，加价为负 → `+¥x`。
- * 直接 `formatYuan(cents)` 对负数会打印成 `¥-60.00`（符号在货币号之后），
- * 加价那一行必须在标签下面读得出是个加项，不能靠摊主自己看负号。
- */
-function formatSigned(amount: Cents) {
-  if (amount > 0) return `−${formatYuan(amount)}`
-  if (amount < 0) return `+${formatYuan(cents(-amount))}`
-  return formatYuan(cents(0))
-}
-
-function advanceSummary(entries: Schemas['SettlementEntry'][]) {
-  // 垫付是「我应转给」的减项，逐条也带上符号，和右边那个 = 合计对得上。
-  return entries.map((a) => `${a.label} ${formatSigned(a.amount)}`).join(' + ')
-}
-
-function adjustmentSummary(entries: Schemas['SettlementEntry'][]) {
-  return entries
-    .map((a) => {
-      const at = a.at ? `（${a.at}）` : ''
-      return `${a.label} ${describeReportAdjustment(a.amount)}${at}`
-    })
-    .join('；')
-}
-
-async function reloadReport() {
-  await store.refresh(Number(props.id))
-}
-
-/**
- * 导出 xlsx。**照 AdminEventStat 那条验过的路径抄**：Tauri 里 `window.open`
- * 不一定触发下载，得走 plugin-http 取字节 + 保存对话框 + 写文件。
- */
-async function exportXlsx() {
-  const report = store.report
-  if (!report) return
-
-  const isTauri = window.__TAURI_INTERNALS__ !== undefined
-  const token = sessionStorage.getItem('access_token')
-  const safeName = (report.event_name || 'settlement').replace(/[\\/:*?"<>|]/g, '_')
-  const fileName = `settlement_${safeName}.xlsx`
-  const url = toAbsoluteApiUrl(`/api/events/${props.id}/settlement.xlsx`)
-
-  try {
-    if (isTauri) {
-      const headers: Record<string, string> = {
-        Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      }
-      if (token) headers['Authorization'] = `Bearer ${token}`
-
-      const resp = await tauriFetch(url, { method: 'GET', headers })
-      if (!resp.ok) {
-        const text = await resp.text().catch(() => '')
-        throw new Error(`下载失败: ${resp.status} ${resp.statusText} ${text.slice(0, 200)}`)
-      }
-
-      const ab = await resp.arrayBuffer()
-      const bytes = new Uint8Array(ab)
-      const filePath = await save({
-        defaultPath: fileName,
-        filters: [{ name: 'Excel Files', extensions: ['xlsx'] }],
-      })
-      if (!filePath) return
-
-      await writeFile(filePath, bytes)
-      fb.success('导出成功')
-      return
-    }
-
-    const headers: Record<string, string> = {}
-    if (token) headers['Authorization'] = `Bearer ${token}`
-    const response = await fetch(url, { method: 'GET', credentials: 'include', headers })
-    if (!response.ok) {
-      const text = await response.text().catch(() => '')
-      throw new Error(`下载失败: ${response.status} ${text.slice(0, 200)}`)
-    }
-
-    const blob = await response.blob()
-    const dl = window.URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.style.display = 'none'
-    a.href = dl
-    a.download = fileName
-    document.body.appendChild(a)
-    a.click()
-    setTimeout(() => {
-      document.body.removeChild(a)
-      window.URL.revokeObjectURL(dl)
-    }, 100)
-  } catch (error) {
-    console.error('下载结算单失败:', error)
-    fb.error(error, '下载失败')
-  }
-}
-
 async function submitAdvance() {
   const { societyId, label: rawLabel, amountYuan } = advanceForm.value
   if (!societyId) return fb.warning('请选择社团')
@@ -603,7 +322,7 @@ async function submitAdvance() {
 
   isBusy.value = true
   try {
-    await store.createAdvance(Number(props.id), {
+    await store.createAdvance(eventId.value, {
       society_id: societyId,
       label,
       amount: toCents(amountYuan),
@@ -627,7 +346,7 @@ async function removeAdvance(entry: Schemas['LedgerEntryRow']) {
     onConfirm: async () => {
       isBusy.value = true
       try {
-        await store.deleteAdvance(Number(props.id), entry.id)
+        await store.deleteAdvance(eventId.value, entry.id)
         fb.success('垫付已删除')
       } catch (error) {
         fb.error(error, '删除垫付失败')
@@ -650,7 +369,7 @@ async function submitAdjustment() {
 
   isBusy.value = true
   try {
-    await store.createAdjustment(Number(props.id), {
+    await store.createAdjustment(eventId.value, {
       society_id: societyId,
       label,
       direction,
@@ -675,7 +394,7 @@ async function removeAdjustment(entry: Schemas['LedgerEntryRow']) {
     onConfirm: async () => {
       isBusy.value = true
       try {
-        await store.deleteAdjustment(Number(props.id), entry.id)
+        await store.deleteAdjustment(eventId.value, entry.id)
         fb.success('结算调整已删除')
       } catch (error) {
         fb.error(error, '删除结算调整失败')
@@ -700,7 +419,7 @@ async function submitReconcile() {
 
   isBusy.value = true
   try {
-    await store.reconcile(Number(props.id), payload)
+    await store.reconcile(eventId.value, payload)
     fb.success('清点已提交')
   } catch (error) {
     // 漏渠道、重复渠道、本场没用过的渠道，后端 400 的原文原样显示。
@@ -712,142 +431,15 @@ async function submitReconcile() {
 
 onMounted(async () => {
   if (!societyStore.societies.length) await societyStore.fetchSocieties()
-  await store.refresh(Number(props.id))
-})
-
-onUnmounted(() => {
-  store.resetStore()
 })
 </script>
 
 <style scoped>
-/* 页头改 embedded 后，原副标题与刷新/导出按钮挪到内容区顶部；保证文字与操作都不丢。 */
-.page-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-lg);
-  flex-wrap: wrap;
-  margin-bottom: var(--space-lg);
-}
 .page-hint {
-  margin: 0;
+  margin: 0 0 var(--space-lg);
   color: var(--text-muted);
   font-size: var(--font-base);
   line-height: var(--leading-base);
-}
-.header-actions {
-  flex: 0 0 auto;
-}
-
-/* warnings 是「业务表加出来的数和账本对不上」，n-alert 自带红底，这里只压间距。 */
-.warnings-block {
-  margin-bottom: var(--space-lg);
-}
-.warning-line {
-  margin: var(--space-xs) 0;
-  line-height: 1.6;
-  /* stylelint-disable-next-line declaration-property-value-keyword-no-deprecated -- 保留原关键字，不做行为变更 */
-  word-break: break-word;
-}
-.warning-line.muted {
-  color: var(--text-muted);
-}
-
-/* ── 结算单主体 ── */
-.report-block {
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  padding: var(--space-lg) var(--space-xl);
-  background-color: var(--card-bg-color);
-}
-.society-card {
-  border-bottom: 1px solid var(--border-color);
-  padding-bottom: var(--space-md);
-  margin-bottom: var(--space-md);
-}
-.society-card:last-of-type {
-  border-bottom: none;
-}
-.society-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  margin-bottom: var(--space-xs);
-}
-.society-name {
-  font-weight: var(--weight-bold);
-  color: var(--primary-text-color);
-}
-.society-line {
-  display: flex;
-  gap: var(--space-sm);
-  padding: var(--space-xs) 0;
-  font-size: var(--font-sm);
-  line-height: 1.7;
-  color: var(--text-placeholder);
-}
-.line-tag {
-  flex: 0 0 auto;
-  color: var(--accent-color);
-  font-weight: var(--weight-bold);
-}
-.line-body {
-  min-width: 0;
-}
-.variance {
-  margin-left: var(--space-md);
-}
-.stocktake-tag {
-  margin-left: var(--space-sm);
-}
-.detail-toggle {
-  margin-left: var(--space-sm);
-}
-.goods-detail {
-  margin: var(--space-sm) 0;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  overflow-x: auto;
-}
-.transfer-row {
-  margin-top: var(--space-sm);
-  padding-top: var(--space-sm);
-  border-top: 1px solid var(--border-color);
-  font-size: var(--font-base);
-  color: var(--primary-text-color);
-}
-/* 这一块唯一要被记住的数字，视觉上压过其它行。 */
-.transfer-amount {
-  margin-left: var(--space-xs);
-  font-size: var(--font-xl);
-  font-weight: var(--weight-bold);
-  color: var(--accent-color);
-  font-variant-numeric: tabular-nums;
-}
-.report-totals {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-lg);
-  justify-content: flex-end;
-  padding-top: var(--space-sm);
-  border-top: 2px solid var(--accent-color);
-  font-size: var(--font-sm);
-  color: var(--text-muted);
-}
-.report-totals strong {
-  color: var(--primary-text-color);
-  font-variant-numeric: tabular-nums;
-}
-.report-meta {
-  margin: var(--space-md) 0 0;
-  font-size: var(--font-xs);
-  color: var(--text-muted);
-  line-height: 1.6;
-}
-
-.store-error {
-  margin-bottom: var(--space-lg);
 }
 
 .block {

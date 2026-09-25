@@ -93,6 +93,13 @@
             </div>
 
             <div class="toolbar-right">
+              <router-link
+                v-if="canReturnToVendor"
+                class="nav-chip vendor-return"
+                :to="{ name: 'vendor-orders', params: { id: props.id } }"
+              >
+                回摊主端
+              </router-link>
               <n-button
                 v-if="showAdminControls"
                 size="small"
@@ -178,7 +185,15 @@
               </button>
             </div>
           </div>
-          <div class="toolbar-right"></div>
+          <div class="toolbar-right">
+            <router-link
+              v-if="canReturnToVendor"
+              class="nav-chip vendor-return"
+              :to="{ name: 'vendor-orders', params: { id: props.id } }"
+            >
+              回摊主端
+            </router-link>
+          </div>
         </div>
       </div>
 
@@ -298,6 +313,7 @@ import { useFeedback } from '@/composables/useFeedback'
 import { useViewport } from '@/composables/useViewport'
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useCustomerStore } from '@/stores/customerStore'
+import { useAuthStore } from '@/stores/authStore'
 import { useConnectionCheck } from '@/composables/useConnectionCheck'
 import ProductGrid from '@/components/customer/ProductGrid.vue'
 import ShoppingCart from '@/components/customer/ShoppingCart.vue'
@@ -310,7 +326,11 @@ import { NScrollbar, NSpin, NSlider, NButton } from 'naive-ui'
 
 const props = defineProps<{ id: string }>()
 const store = useCustomerStore()
+const authStore = useAuthStore()
 const { isConnected } = useConnectionCheck()
+
+// 只有能进这个展会摊主端的会话才显示「回摊主端」（§3.7）；不登录自助点单的平板不显示。
+const canReturnToVendor = computed(() => authStore.canAccessVendorPage(props.id))
 
 // ===================== 模式切换 =====================
 const isVisionMode = ref(false)

@@ -9,13 +9,7 @@
   其余动作把后端那句错误原文显示出来即可。
 -->
 <template>
-  <AppModal
-    :show="show"
-    title="收摊向导"
-    size="md"
-    :mask-closable="false"
-    @update:show="(v) => !v && emit('close')"
-  >
+  <div class="closing-wizard">
     <n-spin class="wizard-scroll" :show="store.isLoading && !store.state">
       <template v-if="store.state">
         <n-steps :current="step" size="small" class="steps">
@@ -130,29 +124,21 @@
       </template>
     </n-spin>
 
-    <template #footer>
-      <n-space justify="end">
-        <n-button @click="emit('close')">关闭</n-button>
-      </n-space>
-    </template>
-  </AppModal>
-
-  <!-- 第①屏「完成」复用现成的收款弹窗补录渠道。放在外层弹窗外，
-       避免两个 n-modal 相互盖住/抢点击。 -->
-  <ReceiptModal
-    :show="showReceipt"
-    :gross-amount="receiptOrder?.gross_amount"
-    :solved-amount="receiptOrder?.solved_amount"
-    :lots="receiptOrder?.lots ?? []"
-    @confirm="onReceiptConfirm"
-    @cancel="closeReceipt"
-  />
+    <!-- 第①屏「完成」复用现成的收款弹窗补录渠道。 -->
+    <ReceiptModal
+      :show="showReceipt"
+      :gross-amount="receiptOrder?.gross_amount"
+      :solved-amount="receiptOrder?.solved_amount"
+      :lots="receiptOrder?.lots ?? []"
+      @confirm="onReceiptConfirm"
+      @cancel="closeReceipt"
+    />
+  </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { NButton, NInputNumber, NSpace, NSpin, NSteps, NStep } from 'naive-ui'
-import { AppModal } from '@/components/ui'
 import { useFeedback } from '@/composables/useFeedback'
 import ReceiptModal from '@/components/vendor/ReceiptModal.vue'
 import { useClosingStore } from '@/stores/closingStore'
@@ -161,10 +147,9 @@ import { formatYuan, type Cents } from '@/utils/money'
 import { formatTimestamp } from '@/utils/dateFormatter'
 import { api, unwrap, errorMessage, type Schemas } from '@/api/client'
 
-const props = withDefaults(defineProps<{ show?: boolean; eventId: string | number }>(), {
-  show: false,
-})
-const emit = defineEmits<{ (e: 'close'): void; (e: 'settled'): void }>()
+// 页面组件：不再有 show prop 与 close 事件，挂载即加载；只有 settled 事件。
+const props = defineProps<{ eventId: string | number }>()
+const emit = defineEmits<{ (e: 'settled'): void }>()
 
 const store = useClosingStore()
 const orderStore = useOrderStore()
@@ -218,10 +203,10 @@ watch(
   { immediate: true }
 )
 
+// 页面组件挂载即加载；切换展会时按新的 eventId 重新拉一遍。
 watch(
-  () => props.show,
-  async (val) => {
-    if (!val) return
+  () => props.eventId,
+  async () => {
     skippedStocktake.value = false
     showReceipt.value = false
     receiptOrder.value = null
@@ -233,7 +218,8 @@ watch(
     } catch (err) {
       fb.error(err, '无法加载收摊状态')
     }
-  }
+  },
+  { immediate: true }
 )
 
 function skipStocktake() {
