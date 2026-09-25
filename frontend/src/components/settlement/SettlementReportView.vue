@@ -197,8 +197,12 @@
                常亮；常亮的警告会训练人忽略警告，而这一页顶部有个真正不能被稀释的
                红色 warnings 块。摊主自己看得出新旧。 -->
           <p class="report-meta">
-            生成于 {{ store.report.generated_at }} · 账本最后变动于
-            {{ store.report.last_changed_at || '（无记录）' }}
+            生成于 {{ formatTimestamp(store.report.generated_at, false) }} · 账本最后变动于
+            {{
+              store.report.last_changed_at
+                ? formatTimestamp(store.report.last_changed_at, false)
+                : '（无记录）'
+            }}
           </p>
         </section>
       </AsyncState>
@@ -216,6 +220,7 @@ import { useFeedback } from '@/composables/useFeedback'
 import { formatYuan, cents, type Cents } from '@/utils/money'
 import { describeReportAdjustment, manualDiscountLabel } from '@/utils/settlementSigns'
 import { toAbsoluteApiUrl } from '@/services/url'
+import { formatTimestamp } from '@/utils/dateFormatter'
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeFile } from '@tauri-apps/plugin-fs'
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
@@ -267,7 +272,7 @@ function advanceSummary(entries: Schemas['SettlementEntry'][]) {
 function adjustmentSummary(entries: Schemas['SettlementEntry'][]) {
   return entries
     .map((a) => {
-      const at = a.at ? `（${a.at}）` : ''
+      const at = a.at ? `（${formatTimestamp(a.at, false)}）` : ''
       return `${a.label} ${describeReportAdjustment(a.amount)}${at}`
     })
     .join('；')

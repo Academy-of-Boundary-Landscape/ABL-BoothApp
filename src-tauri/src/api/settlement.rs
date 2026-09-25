@@ -934,7 +934,9 @@ pub(crate) async fn load_input(state: &AppState, event_id: i64) -> ApiResult<Set
     Ok(SettlementInput {
         event_name,
         event_date,
-        generated_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        // 和 last_changed_at / 调整的 at 同一个钟：SQLite CURRENT_TIMESTAMP 是 UTC。
+        // 接口里一律 UTC，由前端 formatTimestamp、xlsx 的 local_display 各自转本地显示。
+        generated_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         last_changed_at,
         stocktaken_at,
         societies,
@@ -1325,6 +1327,19 @@ fn build_workbook(
     workbook.save_to_buffer()
 }
 
+/// 接口里的时间是 UTC 的 `YYYY-MM-DD HH:MM:SS`（SQLite `CURRENT_TIMESTAMP` 的格式）；
+/// xlsx 在摊主这台机器上生成、给人看，转成本机时区。解析不了就原样写出。
+fn local_display(utc: &str) -> String {
+    chrono::NaiveDateTime::parse_from_str(utc, "%Y-%m-%d %H:%M:%S")
+        .map(|t| {
+            t.and_utc()
+                .with_timezone(&chrono::Local)
+                .format("%Y-%m-%d %H:%M")
+                .to_string()
+        })
+        .unwrap_or_else(|_| utc.to_string())
+}
+
 /// 金额一律写成**元的浮点**并套两位小数的 number format——xlsx 是给人看和给
 /// 社团财务再加工的，写分会让每个数都要除 100。这是唯一允许把 Money 变成浮点的
 /// 地方，因为它离开系统了。
@@ -1367,8 +1382,12 @@ fn write_summary_sheet(
     row += 1;
     let mut meta = format!(
         "生成于 {}；最后更新于 {}",
-        report.generated_at,
-        report.last_changed_at.as_deref().unwrap_or("（无记录）")
+        local_display(&report.generated_at),
+        report
+            .last_changed_at
+            .as_deref()
+            .map(local_display)
+            .unwrap_or_else(|| "（无记录）".to_string())
     );
     if !report.stocktaken {
         meta.push_str("；未盘点，剩余数为账面推算");
@@ -1436,7 +1455,7 @@ fn write_summary_sheet(
             worksheet.write_string(row, 0, format!("  调整：{}", a.label))?;
             write_money(worksheet, row, 8, a.amount, &money_fmt)?;
             if let Some(at) = &a.at {
-                worksheet.write_string(row, 10, at.as_str())?;
+                worksheet.write_string(row, 10, local_display(at))?;
             }
             row += 1;
         }
@@ -3280,7 +3299,7 @@ mod timestamp_tests {
     use serde_json::json;
     use tower::ServiceExt;
 
-    /// `generated_at` 用 `chrono::Local::now()`（本地时间），而 `last_changed_at`
+    /// 曾经 `generated_at` 用 `chrono::Local::now()`（本地时间），而 `last_changed_at`
     /// 取 `journals.occurred_at`（SQLite `CURRENT_TIMESTAMP`，UTC），页面
     /// （`SettlementReportView.vue` 的「生成于 … · 账本最后变动于 …」）和 xlsx
     /// 都原样拼出来。东八区真机上看到的是
@@ -3290,7 +3309,6 @@ mod timestamp_tests {
     ///
     /// **只在本机时区不是 UTC 时复现**（CI 若跑在 UTC 上会假绿）。
     #[tokio::test]
-    #[ignore = "bug: settlement.generated_at 是本地时间、last_changed_at 是 UTC，页面与 xlsx 原样并排显示（非 UTC 时区才复现）"]
     async fn generated_at_and_last_changed_at_share_a_clock() {
         let (router, _dir, pool) = test_router_with().await;
         let (event_id, _, _) = seed_event_and_product(&pool).await;
