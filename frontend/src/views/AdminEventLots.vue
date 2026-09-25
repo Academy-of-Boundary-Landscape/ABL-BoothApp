@@ -95,8 +95,11 @@ const columns = computed<DataTableColumns<Schemas['LotResponse']>>(() => [
     // 「任选 2 件 · 可同款」不许折成两行。
     minWidth: 150,
     ellipsis: { tooltip: true },
+    // 与导入抽屉同一套说法（spec §4.3）：不可同款 = 从候选里挑 N 件不同的。
     render: (lot) =>
-      lot.allow_repeat ? `任选 ${lot.pick_count} 件 · 可同款` : `各 1 件 · ${lot.pick_count} 件`,
+      lot.allow_repeat
+        ? `任选 ${lot.pick_count} 件 · 可同款`
+        : `任选 ${lot.pick_count} 件 · 各 1 件`,
   },
   {
     title: '总价',
