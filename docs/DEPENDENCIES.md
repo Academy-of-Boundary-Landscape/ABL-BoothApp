@@ -94,3 +94,16 @@ sqlx 0.9 起，`query()` / `query_as()` 只接受 `&'static str`。项目里有 
 **每一处旁边都写了审计结论。新增这种写法时必须同样先审计再包**——
 `AssertSqlSafe` 的字面意思就是「我看过了，这里没有把用户输入拼进 SQL」。
 用户数据一律走 `.bind()`。
+
+## naive-ui 钉在 2.44.1（2026-09-25）
+
+`frontend/package.json` 里写的是精确版本 `"naive-ui": "2.44.1"`，**不带 `^`**。
+
+2.45.0 起 naive-ui 改用 vue-jsx-vapor 编译，产物里的 block 元数据不稳定。以 `n-space` 为例，
+每个子项的包裹 div 都是同一个 `key: 1`，外层 Fragment 却被标成 STABLE_FRAGMENT（「子节点结构不会变」）。
+子节点里只要有 `v-if` 在变，就会留下旧 DOM：Windows 真机上，控制台的「历史数据（v1）」卡片
+被复制了四份，全挤在页面最上方（浏览器和 jsdom 里都复现不了，要 WebView2 下的请求时序才触发）。
+上游同类问题：tusen-ai/naive-ui#8218（批量卸载/重建崩溃，2.44.1 正常）、#8207（异步填充后内容冻结）。
+
+**升级前先确认**：上游修掉这类回归（看 CHANGELOG 里有没有提到 vapor / block 相关的修复），
+而且要在真 Windows 上打开控制台，从别的页面来回切几次，确认没有重复卡片。

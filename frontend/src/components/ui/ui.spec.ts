@@ -25,6 +25,7 @@ const pageShellOpts = {
 function clickMask(el: Element) {
   el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
   el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+  el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
 }
 
 describe('AsyncState', () => {
