@@ -8,15 +8,16 @@ const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== 
 export const SERVER_ORIGIN = backendOrigin()
 
 /**
- * 把后端返回的相对地址补成绝对地址。
- * 和 getImageUrl 的区别：这个不判断 Tauri 环境，任何相对路径都补全，
- * 用于 fetch / 下载链接这类必须拿到绝对地址的场景。
+ * 把后端返回的相对地址补成可以直接 fetch 的地址。
+ * Tauri 里页面不是 http 源，必须拼上后端的绝对地址；
+ * 浏览器（LAN 设备）里保持同源的相对路径——拼成 127.0.0.1 会指向访问者自己的设备，
+ * 而且在 HTTPS 页面里是混合内容，摊主在手机上导出结算单就会失败。
  */
 export function toAbsoluteApiUrl(url: string): string {
   if (!url) return url
   if (url.startsWith('http://') || url.startsWith('https://')) return url
-  if (url.startsWith('/')) return `${SERVER_ORIGIN}${url}`
-  return `${SERVER_ORIGIN}/${url}`
+  const path = url.startsWith('/') ? url : `/${url}`
+  return isTauri ? `${SERVER_ORIGIN}${path}` : path
 }
 
 /**
