@@ -236,7 +236,7 @@ plan 内按依赖排序（骨架 → 页面），但不设中间审批关口。
 - 从 `AdminEventSettlement.vue` 抽出 `components/settlement/SettlementReportView.vue`：结算单全部内容 + xlsx 导出按钮，只读。
 - 管理端「收摊 · 结算」= `SettlementReportView` + 垫付 / 结算调整 / 收摊清点三个编辑区块 + 对账警示条。
 - 摊主端「收摊」tab 在已结算时 = `SettlementReportView`（后端 `get_settlement` 走 `check_read_permission`，摊主可读，不改后端）。
-  摊主端导出同样可用（`download_settlement_xlsx` 的权限在实现时核实；若只许 admin，摊主端隐藏导出按钮，不改后端）。
+  摊主端导出同样可用（`download_settlement_xlsx` 同样走 `check_read_permission`，已核实）。
 - 自写错误态交给 `AsyncState`。
 - **结算单内的 4 张表保留语义化 `<table>`**：它们是报表，版式要与 xlsx 对应。
 
@@ -300,7 +300,7 @@ plan 内按依赖排序（骨架 → 页面），但不设中间审批关口。
   `VendorShell` 切 tab 时轮询不中断、提示音不重复；
   「回摊主端」仅在 `canAccessVendorPage(id)` 为真时渲染；
   `importPlan.ts`：价格差异、套装可导入性、勾选联动；
-  `EventForm` 编辑模式密码留空不提交该字段（或提交空串——以现后端「留空不改」的实际语义为准，实现时核实）。
+  `EventForm` 编辑模式密码留空时提交空串（后端 `update_event` 对空值保留原哈希，已核实）。
 - **截图对照**：Playwright 在 390 / 820 / 1440 三宽度，按角色的主要页面（清单进 plan），亮暗两套主题，重写前后各一组。
   controller 在 VNC 上做，**不进 worker brief**（dev server 不退出）。门禁与提交用 `&&` 串。
 - **门禁**：④-1 全部门禁 + §6 新增规则；`UPDATE_OPENAPI` 流程后 `gen:api` 无 diff；Rust 六条门禁全绿。
