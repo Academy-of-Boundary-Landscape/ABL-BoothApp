@@ -59,19 +59,15 @@ export function useVendorPolling(
     })
   }
 
-  // 核心逻辑：监听订单数量变化（与旧 VendorView 完全一致）。
+  // 核心逻辑：只负责「已初始化且数量变大 → 响」。
+  // 初始化标志由外壳启动后的首次 pollPendingOrders() 完成后置位（见 onMounted），
+  // 不能放在 watch 里：首次拉回 0 条时数量 0 → 0 不触发 watch，第一张真正的新单会被误当初始化吞掉。
   watch(
     () => orderStore.pendingOrders.length,
     (newCount, oldCount) => {
-      // 只有当数量增加，且不是第一次初始化加载时才响铃
       if (isInitialized.value && newCount > oldCount) {
         playNoticeSound()
         fb.info('收到新订单！', { keepAliveOnHover: true })
-      }
-
-      // 首次加载后标记为已初始化
-      if (!isInitialized.value && newCount !== undefined) {
-        isInitialized.value = true
       }
     }
   )
@@ -94,7 +90,10 @@ export function useVendorPolling(
     if (eventStore.events.length === 0) {
       eventStore.fetchEvents()
     }
-    orderStore.setActiveEvent(eventId.value)
+    // 首次轮询完成（成功或失败都算）后置 isInitialized，之后数量变大才响。
+    void orderStore.setActiveEvent(eventId.value).finally(() => {
+      isInitialized.value = true
+    })
     eventDetailStore.fetchProductsForEvent(Number(eventId.value))
   })
 

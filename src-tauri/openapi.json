@@ -2516,11 +2516,11 @@
     "/events/{event_id}/products/import": {
       "post": {
         "tags": [
-          "products"
+          "product"
         ],
         "summary": "批量把商品上架到某场展会，并可选地从别的展会复制套装。需要管理员或本场摊主。",
         "description": "**单事务**：任一商品重复上架（409，写明商品名，**不跳过**）、任一候选商品映射不到\n（400，写明套装名与商品名）、展会已结算（409），都会让整批回滚。套装映射按\n`master_product_id`：本请求刚建的商品与目标展会原本就有的商品都算“在本场”。",
-        "operationId": "products.import_products",
+        "operationId": "product.import_products",
         "parameters": [
           {
             "name": "event_id",

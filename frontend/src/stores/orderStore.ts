@@ -22,12 +22,13 @@ export const useOrderStore = defineStore('order', () => {
   const activeEventId = ref<number | null>(null)
   let pollingInterval: ReturnType<typeof setInterval> | null = null
   // 【新增】设置当前活动的展会
-  function setActiveEvent(eventId: string | number | null) {
+  // 返回首次轮询的 Promise，便于外壳在「第一次拉取完成」后标记初始化（成功或失败都算）。
+  async function setActiveEvent(eventId: string | number | null): Promise<void> {
     stopPolling() // 切换展会时，先停止旧的轮询
     activeEventId.value = eventId === null || eventId === undefined ? null : Number(eventId)
     pendingOrders.value = [] // 清空旧的订单列表
     if (eventId) {
-      startPolling() // 如果设置了新的 eventId，则开始新的轮询
+      await startPolling() // 如果设置了新的 eventId，则开始新的轮询
     }
   }
 
@@ -59,9 +60,9 @@ export const useOrderStore = defineStore('order', () => {
 
   let _visibilityHandler: (() => void) | null = null
 
-  function startPolling() {
+  function startPolling(): Promise<void> {
     if (pollingInterval) stopPolling() // 防止重复启动
-    pollPendingOrders()
+    const firstPoll = pollPendingOrders()
     pollingInterval = setInterval(pollPendingOrders, 3000)
 
     // 页面不可见时暂停轮询，节省电量
@@ -75,6 +76,7 @@ export const useOrderStore = defineStore('order', () => {
       }
     }
     document.addEventListener('visibilitychange', _visibilityHandler)
+    return firstPoll
   }
 
   function stopPolling() {

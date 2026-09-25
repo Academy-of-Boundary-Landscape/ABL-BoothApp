@@ -512,7 +512,7 @@ export interface paths {
          *     （400，写明套装名与商品名）、展会已结算（409），都会让整批回滚。套装映射按
          *     `master_product_id`：本请求刚建的商品与目标展会原本就有的商品都算“在本场”。
          */
-        post: operations["products.import_products"];
+        post: operations["product.import_products"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4097,7 +4097,7 @@ export interface operations {
             };
         };
     };
-    "products.import_products": {
+    "product.import_products": {
         parameters: {
             query?: never;
             header?: never;

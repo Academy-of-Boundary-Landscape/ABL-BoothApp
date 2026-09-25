@@ -186,6 +186,25 @@ describe('AdminEventWorkbench 开始展会', () => {
     expect((mocks.fbError.mock.calls[0][0] as Error).message).toContain('后端说不行')
     expect(startBtn!.props('loading')).toBe(false)
   })
+
+  it('直接访问不存在的展会子页：页头报错并给出返回入口，不永远显示加载中', async () => {
+    mocks.apiGet.mockRejectedValue(new ApiRequestError(404, { error: '展会不存在或已被删除。' }))
+    const router = makeRouter()
+    await router.push('/admin/events/999/products')
+
+    const wrapper = mount(AdminEventWorkbench, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('正在加载展会')
+    expect(wrapper.text()).toContain('展会不存在或无法加载')
+    expect(wrapper.text()).toContain('展会不存在或已被删除。')
+    expect(wrapper.text()).toContain('返回展会列表')
+    // 状态条与 tab 行不该渲染，也不该再渲染子页。
+    expect(wrapper.find('.status-bar').exists()).toBe(false)
+    expect(wrapper.find('.workbench-tabs').exists()).toBe(false)
+  })
 })
 
 describe('AdminLayout activeKey', () => {

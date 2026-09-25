@@ -229,6 +229,43 @@ describe('VendorShell 轮询与提示音', () => {
 
     wrapper.unmount()
   })
+
+  it('首次轮询 0 条 → 下一次 1 条：第一张新单提示音响恰好一次', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    pendingOrders = []
+    const play = vi
+      .spyOn(HTMLMediaElement.prototype, 'play')
+      .mockImplementation(() => Promise.resolve())
+
+    const orderStore = useOrderStore()
+    const wrapper = await mountShell(pinia)
+
+    expect(play).not.toHaveBeenCalled()
+
+    // 下一次轮询回来一张真正的新单：0 → 1，必须响。
+    pendingOrders = [makeOrder(1)]
+    await orderStore.pollPendingOrders()
+    await flushPromises()
+
+    expect(play).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('首次轮询已有 2 条：不响（初始化不算新单）', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    pendingOrders = [makeOrder(1), makeOrder(2)]
+    const play = vi
+      .spyOn(HTMLMediaElement.prototype, 'play')
+      .mockImplementation(() => Promise.resolve())
+
+    const wrapper = await mountShell(pinia)
+    await flushPromises()
+
+    expect(play).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
 })
 
 describe('CustomerView 回摊主端', () => {

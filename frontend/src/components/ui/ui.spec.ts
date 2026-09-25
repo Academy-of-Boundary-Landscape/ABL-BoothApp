@@ -74,6 +74,39 @@ describe('AsyncState', () => {
     expect(onRetry).toHaveBeenCalledOnce()
   })
 
+  it('keepContent=false 时 error 替换默认插槽（旧行为不变）', () => {
+    const w = mount(AsyncState, {
+      props: { error: '加载失败', keepContent: false },
+      slots,
+      ...mountOpts,
+    })
+    expect(w.text()).toContain('加载失败')
+    expect(w.find('.ok').exists()).toBe(false)
+  })
+
+  it('keepContent=true 时错误文字与默认插槽内容同时可见', () => {
+    const w = mount(AsyncState, {
+      props: { error: '加载失败', keepContent: true },
+      slots,
+      ...mountOpts,
+    })
+    expect(w.text()).toContain('加载失败')
+    expect(w.find('.ok').exists()).toBe(true)
+  })
+
+  it('keepContent=true 有 retry 监听时出现重试按钮并触发', async () => {
+    const onRetry = vi.fn()
+    const w = mount(AsyncState, {
+      props: { error: 'x', keepContent: true, onRetry },
+      slots,
+      ...mountOpts,
+    })
+    const btn = w.findAll('button').find((b) => b.text().includes('重试'))
+    expect(btn).toBeTruthy()
+    await btn!.trigger('click')
+    expect(onRetry).toHaveBeenCalledOnce()
+  })
+
   it('缺省 empty 插槽渲染紧凑 EmptyState', () => {
     const w = mount(AsyncState, { props: { empty: true }, ...mountOpts })
     expect(w.text()).toContain('暂无数据')

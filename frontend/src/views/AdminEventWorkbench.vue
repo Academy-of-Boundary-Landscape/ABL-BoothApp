@@ -1,10 +1,11 @@
 <template>
   <PageShell width="wide">
-    <template #title>{{ event?.name || '展会工作台' }}</template>
+    <template #title>{{ pageTitle }}</template>
     <template #subtitle>
       <span v-if="event">
         {{ event.date }}<template v-if="event.location"> · {{ event.location }}</template>
       </span>
+      <span v-else-if="error">{{ error }}</span>
       <span v-else>正在加载展会…</span>
     </template>
     <template #actions>
@@ -74,7 +75,14 @@
       </nav>
     </template>
 
-    <router-view />
+    <!-- 外壳加载失败（不存在 / 已删除）：只渲染错误态与出口，不渲染子页，免得各子页各报一遍。 -->
+    <template v-if="error">
+      <AsyncState :error="error" />
+      <div class="workbench-back">
+        <n-button @click="goEvents">返回展会列表</n-button>
+      </div>
+    </template>
+    <router-view v-else />
 
     <AppModal v-model:show="isEditModalVisible" title="编辑展会" size="sm" :mask-closable="false">
       <EditEventForm v-if="editTarget" ref="editForm" :event="editTarget" />
@@ -88,9 +96,9 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { NButton } from 'naive-ui'
-import { AppModal, PageShell } from '@/components/ui'
+import { AppModal, AsyncState, PageShell } from '@/components/ui'
 import { useEventStore } from '@/stores/eventStore'
 import { useFeedback } from '@/composables/useFeedback'
 import { provideWorkbenchEvent } from '@/composables/useWorkbenchEvent'
@@ -100,11 +108,21 @@ import EditEventForm from '@/components/event/EditEventForm.vue'
 const STATUS_STEPS = ['筹备', '进行中', '已结算'] as const
 
 const route = useRoute()
+const router = useRouter()
 const eventStore = useEventStore()
 const fb = useFeedback()
 
 const eventId = computed(() => Number(route.params.id))
-const { event, reload } = provideWorkbenchEvent(eventId)
+const { event, error, reload } = provideWorkbenchEvent(eventId)
+
+// 页头：有展会用展会名；加载失败给一个稳定的错误标题；否则是加载中。
+const pageTitle = computed(
+  () => event.value?.name || (error.value ? '展会不存在或无法加载' : '展会工作台')
+)
+
+function goEvents() {
+  void router.push({ name: 'admin-events' })
+}
 
 const currentStepIndex = computed(() =>
   event.value ? STATUS_STEPS.indexOf(event.value.status) : -1
@@ -254,5 +272,10 @@ async function handleUpdateEvent() {
     flex-direction: column;
     align-items: flex-start;
   }
+}
+
+/* 外壳加载失败时的出口按钮：AsyncState 只渲染错误态，出口单独放在下面。 */
+.workbench-back {
+  margin-top: var(--space-lg);
 }
 </style>

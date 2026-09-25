@@ -33,7 +33,9 @@
     <AsyncState
       :loading="store.isLoading && !store.report"
       :error="store.error"
+      :keep-content="Boolean(store.report)"
       loading-text="正在加载结算数据..."
+      @retry="reloadReport"
     >
       <!-- ── 结算单主体（母 spec 第 7 节）───────────────────────── -->
       <section v-if="store.report" class="block report-block">

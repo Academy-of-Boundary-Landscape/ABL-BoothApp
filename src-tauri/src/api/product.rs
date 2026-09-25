@@ -432,7 +432,7 @@ struct SourceLotRow {
 #[utoipa::path(
     post,
     path = "/events/{event_id}/products/import",
-    tag = "products",
+    tag = "product",
     params(("event_id" = i64, Path, description = "展会 id")),
     request_body = ImportRequest,
     security(("bearer" = [])),

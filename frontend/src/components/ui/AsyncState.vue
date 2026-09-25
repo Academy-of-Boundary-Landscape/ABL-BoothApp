@@ -9,12 +9,22 @@
     </template>
 
     <n-spin v-else-if="overlay" :show="loading">
-      <template v-if="state === 'error'">
+      <template v-if="state === 'error' && !keepContent">
         <n-alert class="async-state__error" type="error" :title="error ?? undefined">
           <div v-if="hasRetry" class="async-state__retry">
             <n-button size="small" @click="emit('retry')">重试</n-button>
           </div>
         </n-alert>
+      </template>
+
+      <!-- keepContent：错误不替换内容，顶部报错、下面继续渲染默认插槽。 -->
+      <template v-else-if="state === 'error'">
+        <n-alert class="async-state__error" type="error" :title="error ?? undefined">
+          <div v-if="hasRetry" class="async-state__retry">
+            <n-button size="small" @click="emit('retry')">重试</n-button>
+          </div>
+        </n-alert>
+        <slot />
       </template>
 
       <template v-else-if="state === 'empty'">
@@ -28,12 +38,22 @@
       </template>
     </n-spin>
 
+    <template v-else-if="state === 'error' && !keepContent">
+      <n-alert class="async-state__error" type="error" :title="error ?? undefined">
+        <div v-if="hasRetry" class="async-state__retry">
+          <n-button size="small" @click="emit('retry')">重试</n-button>
+        </div>
+      </n-alert>
+    </template>
+
+    <!-- keepContent：错误不替换内容，顶部报错、下面继续渲染默认插槽。 -->
     <template v-else-if="state === 'error'">
       <n-alert class="async-state__error" type="error" :title="error ?? undefined">
         <div v-if="hasRetry" class="async-state__retry">
           <n-button size="small" @click="emit('retry')">重试</n-button>
         </div>
       </n-alert>
+      <slot />
     </template>
 
     <template v-else-if="state === 'empty'">
@@ -64,6 +84,11 @@ const props = withDefaults(
      * error / empty / default 态上（旧数据仍可见）。默认 false 保持原行为。
      */
     overlay?: boolean
+    /**
+     * 错误不替换内容：`error` 且为 true 时，只在顶部渲染错误 `n-alert`，
+     * 下面继续渲染默认插槽（刷新失败时旧数据仍可见）。默认 false 保持原行为。
+     */
+    keepContent?: boolean
   }>(),
   {
     loading: false,
@@ -71,6 +96,7 @@ const props = withDefaults(
     empty: false,
     loadingText: '加载中…',
     overlay: false,
+    keepContent: false,
   }
 )
 
