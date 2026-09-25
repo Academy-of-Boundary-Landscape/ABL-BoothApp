@@ -1,5 +1,5 @@
 <template>
-  <SectionCard title="局域网连接" collapsible v-model:collapsed="collapsed">
+  <SectionCard id="lan" title="局域网连接" collapsible v-model:collapsed="collapsed">
     <n-space vertical size="small">
       <!-- 使用指南：三个二维码是给摊主自己的设备扫的，顾客只用摊主放在摊位上的平板 -->
       <div class="lan-guide">

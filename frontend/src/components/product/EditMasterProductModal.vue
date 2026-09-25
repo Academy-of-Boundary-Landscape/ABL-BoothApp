@@ -94,7 +94,7 @@
               class="gallery-hint"
             >
               <strong>⚠ 尚未激活 AI 视觉模型。</strong>
-              现在上传的图片会暂存但无法生成识别向量（状态为"未嵌入"）。 请先到「控制台 → AI
+              现在上传的图片会暂存但无法生成识别向量（状态为"未嵌入"）。 请先到「设置 → AI
               视觉识别」下载并激活一个模型，之后再回来构建索引。
             </n-alert>
             <n-alert :bordered="false" type="info" class="gallery-hint">
