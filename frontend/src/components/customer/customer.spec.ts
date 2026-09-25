@@ -239,3 +239,57 @@ describe('CustomerView 平板竖屏购物车条', () => {
     wrapper.unmount()
   })
 })
+
+describe('CustomerView 下单流程', () => {
+  function mountCustomer(): VueWrapper {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useCustomerStore()
+    store.cart = [{ ...makeProduct(), quantity: 2 }]
+    return mount(CustomerView, {
+      props: { id: '3' },
+      global: {
+        plugins: [pinia],
+        stubs: {
+          ProductGrid: true,
+          VisionSearch: true,
+          PaymentModal: true,
+          OrderConfirmPanel: true,
+          RouterLink: { template: '<a class="router-link-stub"><slot /></a>' },
+        },
+      },
+    })
+  }
+
+  it('底部条收起态直接有「去结算」，点它打开确认面板', async () => {
+    viewport().isTablet.value = true
+    const wrapper = mountCustomer()
+    await flushPromises()
+    const panel = wrapper.findComponent({ name: 'OrderConfirmPanel' })
+    expect(panel.props('show')).toBe(false)
+    await wrapper.find('.bar-checkout-btn').trigger('click')
+    expect(panel.props('show')).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('确认下单后收款页拿到订单号，关闭后成功屏显示单号', async () => {
+    viewport().isTablet.value = false
+    mocks.apiPost.mockResolvedValue({ id: 42, final_amount: cents(2000) })
+    const wrapper = mountCustomer()
+    await flushPromises()
+
+    const panel = wrapper.findComponent({ name: 'OrderConfirmPanel' })
+    panel.vm.$emit('confirm')
+    await flushPromises()
+
+    const pay = wrapper.findComponent({ name: 'PaymentModal' })
+    expect(pay.props('show')).toBe(true)
+    expect(pay.props('orderId')).toBe(42)
+    expect(panel.props('show')).toBe(false)
+
+    pay.vm.$emit('close')
+    await nextTick()
+    expect(wrapper.find('.success-screen').text()).toContain('#42')
+    wrapper.unmount()
+  })
+})

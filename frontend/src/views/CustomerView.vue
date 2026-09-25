@@ -4,7 +4,7 @@
          点单模式：分类侧栏（平板/桌面）+ 商品网格
     ================================================================= -->
     <template v-if="!isVisionMode">
-      <!-- 分类侧栏：手机不渲染（改用工具栏横滚分类） -->
+      <!-- 分类侧栏：只在横屏宽屏渲染；竖屏平板与手机改用工具栏里的横滑分类 -->
       <aside v-if="showSidebar" class="category-sidebar">
         <div class="category-sidebar__title">商品分类</div>
 
@@ -16,7 +16,6 @@
             @click="selectedCategory = ''"
           >
             <span class="category-item__text">全部</span>
-            <span v-if="selectedCategory === ''" class="category-item__dot" />
           </button>
 
           <button
@@ -28,7 +27,6 @@
             @click="selectedCategory = cat"
           >
             <span class="category-item__text">{{ cat }}</span>
-            <span v-if="selectedCategory === cat" class="category-item__dot" />
           </button>
         </n-scrollbar>
       </aside>
@@ -37,28 +35,6 @@
       <section class="product-panel">
         <!-- 工具栏：管理控件 + 模式切换 + 快捷入口 -->
         <div class="toolbar">
-          <!-- 手机：分类横滚 -->
-          <div v-if="isPhone" class="toolbar__categories">
-            <button
-              type="button"
-              class="cat-chip"
-              :class="{ 'is-active': selectedCategory === '' }"
-              @click="selectedCategory = ''"
-            >
-              全部
-            </button>
-            <button
-              v-for="cat in categoryOptions"
-              :key="cat"
-              type="button"
-              class="cat-chip"
-              :class="{ 'is-active': selectedCategory === cat }"
-              @click="selectedCategory = cat"
-            >
-              {{ cat }}
-            </button>
-          </div>
-
           <div class="toolbar__row">
             <!-- 管理控件：默认折叠，点齿轮展开 -->
             <div v-if="showAdminControls" class="toolbar__left">
@@ -126,6 +102,28 @@
             </div>
           </div>
 
+          <!-- 竖屏平板 / 手机：分类横滑（排在模式切换下面，顶部压成两行） -->
+          <div v-if="!showSidebar" class="toolbar__categories">
+            <button
+              type="button"
+              class="cat-chip"
+              :class="{ 'is-active': selectedCategory === '' }"
+              @click="selectedCategory = ''"
+            >
+              全部
+            </button>
+            <button
+              v-for="cat in categoryOptions"
+              :key="cat"
+              type="button"
+              class="cat-chip"
+              :class="{ 'is-active': selectedCategory === cat }"
+              @click="selectedCategory = cat"
+            >
+              {{ cat }}
+            </button>
+          </div>
+
           <!-- 管理控件展开时：导航快捷入口 -->
           <div v-if="showAdminControls" class="toolbar__nav">
             <router-link to="/admin" class="nav-chip">管理后台</router-link>
@@ -147,6 +145,23 @@
             {{ tag }}
           </button>
         </div>
+
+        <!-- 首次操作引导：放在网格上方占位，不再浮在商品上挡住名字 -->
+        <Transition name="expand">
+          <div
+            v-if="showGuideBar && isConnected"
+            class="guide-banner"
+            @click="showGuideBar = false"
+          >
+            <span class="guide-mode-label">浏览点单</span>
+            <span class="guide-step"><span class="guide-num">1</span>点商品加入购物车</span>
+            <span class="guide-arrow">›</span>
+            <span class="guide-step"><span class="guide-num">2</span>查看已选</span>
+            <span class="guide-arrow">›</span>
+            <span class="guide-step"><span class="guide-num">3</span>结算付款</span>
+            <span class="guide-close" aria-hidden="true">✕</span>
+          </div>
+        </Transition>
 
         <!-- 商品列表：加载 / 错误 / 空态统一走 AsyncState -->
         <div class="product-scroll">
@@ -212,6 +227,18 @@
         </div>
       </div>
 
+      <Transition name="expand">
+        <div v-if="showGuideBar && isConnected" class="guide-banner" @click="showGuideBar = false">
+          <span class="guide-mode-label">拍照识别</span>
+          <span class="guide-step"><span class="guide-num">1</span>对准商品拍照</span>
+          <span class="guide-arrow">›</span>
+          <span class="guide-step"><span class="guide-num">2</span>选择匹配结果</span>
+          <span class="guide-arrow">›</span>
+          <span class="guide-step"><span class="guide-num">3</span>结算付款</span>
+          <span class="guide-close" aria-hidden="true">✕</span>
+        </div>
+      </Transition>
+
       <div class="vision-panel__body">
         <VisionSearch
           camera-mode
@@ -256,12 +283,36 @@
       @checkout="handleCheckout"
     />
 
+    <OrderConfirmPanel
+      :show="showConfirm"
+      :cart="store.cart"
+      :total="store.cartTotal"
+      :payable="store.cartSummary.payable"
+      :discounts="store.cartSummary.discounts"
+      :submitting="isCheckingOut"
+      @confirm="submitOrder"
+      @cancel="showConfirm = false"
+    />
+
     <PaymentModal
       :show="showPaymentModal"
+      :order-id="orderId"
       :total="orderTotal"
       :qr-code-urls="store.qrCodeUrls"
       @close="closePaymentModal"
     />
+
+    <!-- ======== 下单成功：告诉顾客单号，几秒后回吸引屏等下一位 ======== -->
+    <Transition name="fade">
+      <div v-if="showSuccess" class="success-screen" @click="finishSuccess">
+        <div class="success-icon" aria-hidden="true">✓</div>
+        <p class="success-title">下单成功</p>
+        <p v-if="orderId" class="success-order">
+          请向摊主出示单号 <strong>#{{ orderId }}</strong>
+        </p>
+        <p class="success-hint">点击任意处返回</p>
+      </div>
+    </Transition>
 
     <!-- ======== 闲置吸引屏 ======== -->
     <Transition name="fade">
@@ -294,34 +345,6 @@
         连接已断开，请检查网络 · 恢复后将自动重连
       </div>
     </Transition>
-
-    <!-- ======== 首次操作引导条 ======== -->
-    <Transition name="guide-toast">
-      <div v-if="showGuideBar && isConnected" class="guide-toast" @click="showGuideBar = false">
-        <div class="guide-mode-label">
-          {{ isVisionMode ? '拍照识别模式' : '浏览点单模式' }}
-        </div>
-        <div class="guide-steps">
-          <template v-if="isVisionMode">
-            <span class="guide-step"><span class="guide-num">1</span>对准商品拍照</span>
-            <span class="guide-arrow">›</span>
-            <span class="guide-step"><span class="guide-num">2</span>选择匹配结果</span>
-            <span class="guide-arrow">›</span>
-            <span class="guide-step"><span class="guide-num">3</span>结算付款</span>
-          </template>
-          <template v-else>
-            <span class="guide-step"><span class="guide-num">1</span>点击商品加入购物车</span>
-            <span class="guide-arrow">›</span>
-            <span class="guide-step"><span class="guide-num">2</span>查看已选</span>
-            <span class="guide-arrow">›</span>
-            <span class="guide-step"><span class="guide-num">3</span>结算付款</span>
-          </template>
-        </div>
-        <div class="guide-switch-hint">
-          顶部可切换到「{{ isVisionMode ? '浏览点单' : '拍照识别' }}」模式
-        </div>
-      </div>
-    </Transition>
   </div>
 </template>
 
@@ -335,9 +358,10 @@ import { useConnectionCheck } from '@/composables/useConnectionCheck'
 import ProductGrid from '@/components/customer/ProductGrid.vue'
 import ShoppingCart from '@/components/customer/ShoppingCart.vue'
 import PaymentModal from '@/components/customer/PaymentModal.vue'
+import OrderConfirmPanel from '@/components/customer/OrderConfirmPanel.vue'
 import VisionSearch from '@/components/shared/VisionSearch.vue'
 import { AsyncState, EmptyState } from '@/components/ui'
-import { cents, formatYuan, type Cents } from '@/utils/money'
+import { cents, type Cents } from '@/utils/money'
 import type { Schemas } from '@/api/client'
 import { NScrollbar, NSlider, NButton } from 'naive-ui'
 
@@ -353,8 +377,9 @@ const canReturnToVendor = computed(() => authStore.canAccessVendorPage(props.id)
 // 目标（spec §5.7 / §7）：平板横屏（≥1025）三栏；平板竖屏（641–1024）购物车改底部条；
 // 手机（≤640）沿用竖屏形态（无侧栏 + 底部条）。
 const { isPhone, isTablet } = useViewport()
-const showSidebar = computed(() => !isPhone.value)
 const cartAsSidebar = computed(() => !isTablet.value)
+// 分类侧栏只在横屏宽屏（三栏）时出现；竖屏平板把它换成顶部横滑分类，网格多一列。
+const showSidebar = cartAsSidebar
 
 // ===================== 模式切换 =====================
 const isVisionMode = ref(false)
@@ -385,6 +410,10 @@ function onVisionSelect(hit: Schemas['VisionSearchResult']) {
 
 // ===================== 点单模式 =====================
 const showPaymentModal = ref(false)
+const showConfirm = ref(false)
+const showSuccess = ref(false)
+/** 刚下的那一单：收款页和成功屏都要把单号给顾客看 */
+const orderId = ref<number | null>(null)
 const orderTotal = ref<Cents>(cents(0))
 const isCheckingOut = ref(false)
 const selectedCategory = ref('')
@@ -420,6 +449,7 @@ onUnmounted(() => {
   ACTIVITY_EVENTS.forEach((e) => window.removeEventListener(e, onUserActivity))
   clearTimeout(idleTimer ?? undefined)
   clearTimeout(guideTimer ?? undefined)
+  clearTimeout(successTimer ?? undefined)
 })
 
 const categoryOptions = computed(() => {
@@ -576,58 +606,65 @@ watch(
 )
 
 // ===== 下单 =====
-async function handleCheckout() {
+function handleCheckout() {
+  if (isCheckingOut.value || !store.cart.length) return
+  showConfirm.value = true
+}
+
+async function submitOrder() {
   const fb = useFeedback()
   if (isCheckingOut.value) return
-
-  const itemCount = store.cartItemCount
-  const totalAmount = store.cartSummary.payable // 确认框里也该是折后价
-
-  await fb.confirm({
-    title: '确认下单',
-    content: `共 ${itemCount} 件商品，合计 ${formatYuan(totalAmount)}`,
-    positiveText: '确认下单',
-    negativeText: '再看看',
-    type: 'info',
-    onConfirm: async () => {
-      isCheckingOut.value = true
-      try {
-        const newOrder = await store.submitOrder()
-        if (newOrder) {
-          // **金额取自下单响应，不是购物车的报价。** 报价只是预览，两次之间
-          // 摊主完全可能刚改过 Lot 配置——顾客扫码付的数必须是服务端落账的那个数。
-          orderTotal.value = newOrder.final_amount
-          showPaymentModal.value = true
-          store.clearCart()
-          store.fetchProductsForEvent()
-        }
-      } catch (error) {
-        fb.alert({
-          title: '错误',
-          content: (error instanceof Error && error.message) || '下单失败',
-          type: 'error',
-        })
-        store.clearCart()
-        store.fetchProductsForEvent()
-      } finally {
-        isCheckingOut.value = false
-      }
-    },
-  })
+  isCheckingOut.value = true
+  try {
+    const newOrder = await store.submitOrder()
+    if (newOrder) {
+      // **金额取自下单响应，不是购物车的报价。** 报价只是预览，两次之间
+      // 摊主完全可能刚改过 Lot 配置——顾客扫码付的数必须是服务端落账的那个数。
+      orderTotal.value = newOrder.final_amount
+      orderId.value = newOrder.id
+      showConfirm.value = false
+      showPaymentModal.value = true
+      store.clearCart()
+      store.fetchProductsForEvent()
+    }
+  } catch (error) {
+    showConfirm.value = false
+    fb.alert({
+      title: '错误',
+      content: (error instanceof Error && error.message) || '下单失败',
+      type: 'error',
+    })
+    store.clearCart()
+    store.fetchProductsForEvent()
+  } finally {
+    isCheckingOut.value = false
+  }
 }
+
+const SUCCESS_SCREEN_MS = 6000
+let successTimer: ReturnType<typeof setTimeout> | null = null
+
 function closePaymentModal() {
   showPaymentModal.value = false
-  // 付款完成是一个自然的"交接点"，直接回到吸引屏等待下一位顾客
-  showAttractScreen.value = true
   store.clearCart()
   isVisionMode.value = false
+  // 付款完成是一个自然的「交接点」：先亮一下单号，再回到吸引屏等待下一位顾客
+  showSuccess.value = true
+  clearTimeout(successTimer ?? undefined)
+  successTimer = setTimeout(finishSuccess, SUCCESS_SCREEN_MS)
+}
+
+function finishSuccess() {
+  clearTimeout(successTimer ?? undefined)
+  showSuccess.value = false
+  showAttractScreen.value = true
 }
 </script>
 
 <style scoped>
 /* ===================== 根容器 ===================== */
 .customer-view {
-  --sidebar-w: 196px;
+  --sidebar-w: 112px;
   --cart-w: 300px;
   --cart-bar-h: 60px;
 
@@ -700,13 +737,6 @@ function closePaymentModal() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.category-item__dot {
-  flex-shrink: 0;
-  width: 4px;
-  height: 14px;
-  border-radius: var(--radius-sm);
-  background-color: var(--accent-color);
 }
 
 /* ===================== 中间面板（点单 & 识别共用结构） ===================== */
@@ -1038,60 +1068,34 @@ function closePaymentModal() {
   opacity: 0.8;
 }
 
-/* ===================== 引导条 ===================== */
-.guide-toast {
-  position: fixed;
-  /* 避开 iPhone X+ 底部手势横条 */
-  bottom: calc(var(--space-xl) + env(safe-area-inset-bottom));
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 8000;
+/* ===================== 引导横幅（网格上方，占位不遮挡） ===================== */
+.guide-banner {
+  flex-shrink: 0;
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-sm);
-  padding: var(--space-md) var(--space-xl);
-  border: 1.5px solid var(--border-color);
+  margin: var(--space-sm) var(--space-md) 0;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid color-mix(in srgb, var(--accent-color) 30%, transparent);
   border-radius: var(--radius-md);
-  background: var(--card-bg-color);
-  box-shadow: var(--shadow-lg);
+  background: color-mix(in srgb, var(--accent-color) 6%, var(--card-bg-color));
+  color: var(--secondary-text-color);
+  font-size: var(--font-sm);
   cursor: pointer;
   user-select: none;
 }
 
-/* 底部有购物车条时，引导条上移让位 */
-.customer-view--cartbar .guide-toast {
-  bottom: calc(var(--cart-bar-h) + var(--space-xl) + env(safe-area-inset-bottom));
-}
-
 .guide-mode-label {
-  font-size: var(--font-xs);
-  font-weight: var(--weight-bold);
+  margin-right: var(--space-xs);
   color: var(--accent-color);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.guide-switch-hint {
-  font-size: var(--font-xs);
-  color: var(--text-muted);
-  opacity: 0.7;
-}
-
-.guide-steps {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: var(--space-sm);
-  font-size: var(--font-sm);
-  color: var(--secondary-text-color);
+  font-weight: var(--weight-bold);
 }
 
 .guide-step {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-sm);
+  gap: var(--space-xs);
 }
 
 .guide-num {
@@ -1110,26 +1114,61 @@ function closePaymentModal() {
 
 .guide-arrow {
   color: var(--text-muted);
-  font-size: var(--font-base);
 }
 
-.guide-toast-enter-active {
-  transition:
-    transform 0.3s ease,
-    opacity 0.3s ease;
+.guide-close {
+  margin-left: auto;
+  color: var(--text-muted);
 }
-.guide-toast-leave-active {
-  transition:
-    transform 0.25s ease,
-    opacity 0.25s ease;
+
+/* ===================== 下单成功屏 ===================== */
+.success-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 9400;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  background: var(--bg-color);
+  text-align: center;
+  cursor: pointer;
 }
-.guide-toast-enter-from {
-  transform: translateX(-50%) translateY(24px);
-  opacity: 0;
+
+.success-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: var(--success-color);
+  color: var(--text-white);
+  font-size: var(--font-2xl);
+  font-weight: var(--weight-bold);
 }
-.guide-toast-leave-to {
-  transform: translateX(-50%) translateY(12px);
-  opacity: 0;
+
+.success-title {
+  margin: 0;
+  font-size: var(--font-2xl);
+  font-weight: var(--weight-bold);
+}
+
+.success-order {
+  margin: 0;
+  font-size: var(--font-lg);
+}
+
+.success-order strong {
+  color: var(--accent-color);
+  font-size: var(--font-2xl);
+}
+
+.success-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
 }
 
 /* ===================== 断连横幅 ===================== */
@@ -1181,9 +1220,10 @@ function closePaymentModal() {
     gap: var(--space-xs);
   }
 
+  /* 模式切换与 ⚙ 同一行：切换占满剩余宽度，顶部只剩「切换 + 分类」两行 */
   .toolbar__center {
-    order: 3;
-    width: 100%;
+    flex: 1;
+    min-width: 0;
   }
 
   .mode-toggle {

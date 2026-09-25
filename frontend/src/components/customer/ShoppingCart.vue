@@ -30,6 +30,19 @@
           <span class="total-price"><Money :value="payable" size="lg" /></span>
           <!-- 底部条：展开 / 收起指示 -->
           <span v-if="isBar" class="toggle-icon">{{ expanded ? '▼' : '▲' }}</span>
+          <!-- 底部条直接给结算入口：不用先展开购物车再找按钮。
+               展开后下面的结算区里还有同一个按钮，这里收起态才显示，避免一屏两个。 -->
+          <n-button
+            v-if="isBar && !expanded"
+            type="primary"
+            round
+            class="bar-checkout-btn"
+            :disabled="!cart.length || isCheckingOut || quotePending"
+            :loading="isCheckingOut"
+            @click.stop="$emit('checkout')"
+          >
+            去结算
+          </n-button>
         </div>
       </div>
 
@@ -290,6 +303,12 @@ watch(
   color: var(--text-muted);
   font-size: var(--font-sm);
 }
+.bar-checkout-btn {
+  min-height: 44px;
+  margin-left: var(--space-xs);
+  padding: 0 var(--space-lg);
+  font-weight: var(--weight-bold);
+}
 
 /* 列表区 */
 .cart-body {
@@ -353,9 +372,13 @@ watch(
   margin-bottom: var(--space-xs);
   font-size: var(--font-md);
   font-weight: var(--weight-bold);
-  white-space: nowrap;
+  line-height: var(--leading-tight);
+  /* 最多两行：一行放不下「吧唧 58mm」这种名字，截成「吧唧 58…」顾客认不出来 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 .unit-price {
   color: var(--accent-color);
@@ -516,15 +539,17 @@ watch(
   backdrop-filter: blur(2px);
 }
 
-/* 窄屏（手机）：允许商品名占 2 行，避免过早被截断 */
+/* 手机底部条：放下「去结算」按钮后空间很紧，只留图标、件数角标、金额和按钮 */
 @media (--phone) {
-  .item-name {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    white-space: normal;
-    overflow: hidden;
-    line-height: 1.3;
+  .shopping-cart--bar .header-title,
+  .shopping-cart--bar .count-unit,
+  .shopping-cart--bar .total-label {
+    display: none;
+  }
+
+  .shopping-cart--bar .header-left,
+  .shopping-cart--bar .header-right {
+    white-space: nowrap;
   }
 }
 </style>

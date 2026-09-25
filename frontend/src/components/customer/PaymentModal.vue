@@ -5,7 +5,13 @@
       <div class="payment-card">
         <!-- 顶部：金额 -->
         <div class="payment-header">
-          请扫码支付 <strong>{{ formatYuan(total) }}</strong>
+          <!-- 订单号给顾客报给摊主：待处理里同时有好几单时，摊主靠它对上是哪一单 -->
+          <div v-if="orderId" class="order-no">
+            订单 <strong>#{{ orderId }}</strong>
+          </div>
+          <div class="pay-line">
+            请扫码支付 <strong>{{ formatYuan(total) }}</strong>
+          </div>
         </div>
 
         <!-- 中间：二维码区域 -->
@@ -33,8 +39,9 @@
           <div class="timer-bar">
             <div class="timer-fill" :style="{ width: progress + '%' }"></div>
           </div>
+          <p class="timer-text">{{ countdown }} 秒后自动返回</p>
           <n-button type="primary" block round size="large" class="close-btn" @click="handleClose">
-            确认已付款 · 关闭{{ countdown > 0 && countdown <= 30 ? `（${countdown}s）` : '' }}
+            完成
           </n-button>
           <button
             v-if="countdown > 0 && countdown <= 30"
@@ -61,9 +68,11 @@ const props = withDefaults(
   defineProps<{
     show: boolean
     total: Cents
+    /** 下单响应里的订单号；为空时不显示那一行 */
+    orderId?: number | null
     qrCodeUrls?: string[]
   }>(),
-  { qrCodeUrls: () => [] }
+  { qrCodeUrls: () => [], orderId: null }
 )
 
 const countdown = ref(0)
@@ -127,7 +136,7 @@ onUnmounted(stopCountdown)
 
 .payment-card {
   width: 100%;
-  max-width: var(--page-narrow);
+  max-width: var(--page-content);
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -145,6 +154,17 @@ onUnmounted(stopCountdown)
 .payment-header strong {
   color: var(--accent-color);
   font-size: var(--font-2xl);
+}
+.order-no {
+  display: inline-block;
+  margin-bottom: var(--space-sm);
+  padding: var(--space-xs) var(--space-lg);
+  border: 2px solid var(--accent-color);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-lg);
+}
+.pay-line {
+  font-size: var(--font-xl);
 }
 
 /* 二维码区域 */
@@ -168,12 +188,12 @@ onUnmounted(stopCountdown)
 
 /* 单码：居中最大化 */
 .qr-grid.single .qr-wrapper {
-  max-width: min(100%, 65vh);
+  max-width: min(100%, 70vh);
 }
 
 /* 双码：各占一半，保证都能看到 */
 .qr-grid:not(.single) .qr-wrapper {
-  max-width: min(48%, 50vh);
+  max-width: min(48%, 60vh);
 }
 
 .qr-wrapper {
@@ -229,8 +249,13 @@ onUnmounted(stopCountdown)
   height: 3px;
   background: var(--border-color);
   border-radius: var(--radius-sm);
-  margin-bottom: var(--space-md);
+  margin-bottom: var(--space-xs);
   overflow: hidden;
+}
+.timer-text {
+  margin: 0 0 var(--space-md);
+  color: var(--text-muted);
+  font-size: var(--font-xs);
 }
 .timer-fill {
   height: 100%;
@@ -257,8 +282,9 @@ onUnmounted(stopCountdown)
   .qr-grid:not(.single) {
     flex-direction: column;
   }
+  /* 两码上下叠：各自最多占约 3 成屏高，给顶部订单号和底部提示、按钮留位置 */
   .qr-grid:not(.single) .qr-wrapper {
-    max-width: min(80%, 35vh);
+    max-width: min(70%, 28vh);
   }
 }
 </style>

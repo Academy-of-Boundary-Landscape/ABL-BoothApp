@@ -83,8 +83,7 @@
 
               <!-- 售罄 -->
               <div v-if="product.onsite_qty === 0" class="sold-overlay">
-                <div class="sold-badge">SOLD OUT</div>
-                <div class="sold-sub">已售罄</div>
+                <div class="sold-badge">已售罄</div>
               </div>
             </template>
           </div>
@@ -432,7 +431,7 @@ function handleDragEnd() {
   background: var(--error-color);
 }
 
-/* ✅ SOLD OUT：磨砂 + badge，自适应明暗主题 */
+/* 售罄：磨砂 + 标签，自适应明暗主题 */
 .sold-overlay {
   position: absolute;
   inset: 0;
@@ -455,12 +454,6 @@ function handleDragEnd() {
   background: var(--tooltip-bg);
   box-shadow: var(--shadow-lg);
   transform: rotate(-6deg);
-}
-
-.sold-sub {
-  font-size: var(--font-xs);
-  font-weight: var(--weight-bold);
-  color: var(--text-muted);
 }
 
 /* 信息区 */
@@ -509,9 +502,12 @@ function handleDragEnd() {
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: var(--accent-color);
-  box-shadow: var(--shadow-sm);
-  transition: transform 0.15s;
+  /* 描边样式：一屏十几张卡，实心红圆太重；整张卡本来就可点，「+」只是提示 */
+  border: 2px solid var(--accent-color);
+  background: var(--card-bg-color);
+  transition:
+    transform 0.15s,
+    background-color 0.15s;
   position: relative;
 }
 /* 用伪元素画十字，确保像素级居中 */
@@ -521,7 +517,7 @@ function handleDragEnd() {
   position: absolute;
   top: 50%;
   left: 50%;
-  background: var(--text-white);
+  background: var(--accent-color);
   border-radius: var(--radius-sm);
   transform: translate(-50%, -50%);
 }
@@ -535,6 +531,7 @@ function handleDragEnd() {
 }
 .action-icon:active {
   transform: scale(0.88);
+  background: var(--accent-color-light);
 }
 
 /* 拖拽视觉 */
