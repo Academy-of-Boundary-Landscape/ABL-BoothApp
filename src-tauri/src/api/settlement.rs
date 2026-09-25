@@ -3270,6 +3270,69 @@ mod tests {
     }
 }
 
+/// 2026-09-26 收摊走查发现：结算单上两个时间戳不在同一个时区。
+#[cfg(test)]
+mod timestamp_tests {
+    use crate::test_support::{
+        admin_token, json_request, read_json, seed_event_and_product, test_router_with,
+    };
+    use axum::http::StatusCode;
+    use serde_json::json;
+    use tower::ServiceExt;
+
+    /// `generated_at` 用 `chrono::Local::now()`（本地时间），而 `last_changed_at`
+    /// 取 `journals.occurred_at`（SQLite `CURRENT_TIMESTAMP`，UTC），页面
+    /// （`SettlementReportView.vue` 的「生成于 … · 账本最后变动于 …」）和 xlsx
+    /// 都原样拼出来。东八区真机上看到的是
+    /// 「生成于 2026-09-26 00:35 · 账本最后变动于 2026-09-25 16:34」——
+    /// 刚改过的账看起来像 8 小时前的，而这个时间戳存在的全部理由就是让摊主判断
+    /// 手里的表是不是最新的（spec 3.2）。结算调整那一行的 `at` 同样是 UTC 原样显示。
+    ///
+    /// **只在本机时区不是 UTC 时复现**（CI 若跑在 UTC 上会假绿）。
+    #[tokio::test]
+    #[ignore = "bug: settlement.generated_at 是本地时间、last_changed_at 是 UTC，页面与 xlsx 原样并排显示（非 UTC 时区才复现）"]
+    async fn generated_at_and_last_changed_at_share_a_clock() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _, _) = seed_event_and_product(&pool).await;
+
+        // 刚写一条 journal，「最后变动」就应该是此刻。
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/closing/takeback"),
+                Some(&admin_token()),
+                json!(null),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "GET",
+                &format!("/api/events/{event_id}/settlement"),
+                Some(&admin_token()),
+                json!(null),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let report = read_json(res).await;
+
+        let parse =
+            |s: &str| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").unwrap();
+        let generated = parse(report["generated_at"].as_str().unwrap());
+        let changed = parse(report["last_changed_at"].as_str().unwrap());
+        let gap = (generated - changed).num_seconds().abs();
+        assert!(
+            gap < 120,
+            "刚改完账就生成，两个时间应该几乎相同，实际差 {gap} 秒：generated_at={generated} last_changed_at={changed}"
+        );
+    }
+}
+
 /// ③b 形状快照：钉住每个路由的 JSON 形状（键 + 类型），类型化前后必须一行不改照样绿。
 #[cfg(test)]
 mod shape_tests {

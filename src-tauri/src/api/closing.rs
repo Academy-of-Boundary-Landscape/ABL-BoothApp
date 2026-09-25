@@ -149,7 +149,10 @@ async fn onsite_rows(state: &AppState, event_id: i64) -> ApiResult<Vec<OnSiteRow
          LEFT JOIN stock_movements sm ON sm.event_product_id = ep.id
          WHERE ep.event_id = ?
          GROUP BY ep.id
-         HAVING qty <> 0
+         -- 不能写 HAVING qty：SQLite 在 HAVING 里优先把它解析成表列 sm.qty（恒为正），
+         -- 过滤形同虚设，带回后向导永远停在「还有 N 种商品在现场仓」。
+         HAVING COALESCE(SUM(CASE WHEN sm.to_location   = '现场仓' THEN sm.qty ELSE 0 END), 0)
+              - COALESCE(SUM(CASE WHEN sm.from_location = '现场仓' THEN sm.qty ELSE 0 END), 0) <> 0
          ORDER BY ep.id",
     )
     .bind(event_id)
@@ -861,6 +864,223 @@ mod tests {
                 .await
                 .unwrap();
         assert!(at.is_none(), "失败的盘点不该留下「盘过了」的痕迹");
+    }
+}
+
+/// 2026-09-26 收摊流程端到端走查里发现 / 值得钉住的边缘情况。
+///
+/// 夹具同上：一场进行中的展会，A（本社团）10 件、B（代卖）5 件。
+#[cfg(test)]
+mod walkthrough_tests {
+    use crate::test_support::{
+        admin_token, json_request, place, read_json, seed_event_and_product, test_router_with,
+    };
+    use axum::http::StatusCode;
+    use axum::Router;
+    use serde_json::{json, Value};
+    use tower::ServiceExt;
+
+    async fn call(router: &Router, method: &str, uri: &str, body: Value) -> (StatusCode, Value) {
+        let res = router
+            .clone()
+            .oneshot(json_request(method, uri, Some(&admin_token()), body))
+            .await
+            .unwrap();
+        let status = res.status();
+        (status, read_json(res).await)
+    }
+
+    async fn closing(router: &Router, event_id: i64) -> Value {
+        let (s, body) = call(
+            router,
+            "GET",
+            &format!("/api/events/{event_id}/closing"),
+            json!(null),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        body
+    }
+
+    async fn complete(router: &Router, event_id: i64, order_id: i64, channel: &str) {
+        let (s, body) = call(
+            router,
+            "PUT",
+            &format!("/api/events/{event_id}/orders/{order_id}/status"),
+            json!({"status": "completed", "channel": channel}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK, "{body}");
+    }
+
+    /// 走查时真机卡死的那一步：带回之后向导停在「③ 带回 · 共 0 件」，
+    /// 永远到不了「④ 结束展会」。
+    ///
+    /// 根因曾是 `onsite_rows()` 的 `HAVING qty <> 0`：SQLite 在 HAVING 里遇到
+    /// 与表列同名的别名时**先解析成表列**，这里 `qty` 成了 `stock_movements.qty`
+    /// （组内任意一行的裸列，恒为正），过滤形同虚设——余额为 0 的商品照样
+    /// 出现在 `onsite_remaining` 里，`blockers` 也一直写着「还有 N 种商品在现场仓」。
+    /// 后端 `settle` 走的是 Rust 侧过滤，所以 API 直调能结算，只有界面被卡住。
+    #[tokio::test]
+    async fn after_takeback_nothing_is_listed_as_still_on_site() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _, _) = seed_event_and_product(&pool).await;
+
+        let (s, _) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/closing/takeback"),
+            json!(null),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+
+        let body = closing(&router, event_id).await;
+        assert_eq!(
+            body["onsite_remaining"],
+            json!([]),
+            "带回之后现场仓应该是空的：{body}"
+        );
+        assert_eq!(
+            body["blockers"],
+            json!([]),
+            "没有拦路项，前端才会给「结束展会」按钮：{body}"
+        );
+    }
+
+    /// 同一个根因的另一面：一件没带回、但全卖光的商品，也会以「账面 0 件」
+    /// 出现在盘点屏上，并被算进「还有 N 种商品在现场仓」。
+    #[tokio::test]
+    async fn a_sold_out_product_is_not_listed_as_still_on_site() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, ep_b) = seed_event_and_product(&pool).await;
+
+        let oid = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_b, "quantity": 5}]),
+        )
+        .await;
+        complete(&router, event_id, oid, "现金").await;
+
+        let body = closing(&router, event_id).await;
+        let ids: Vec<i64> = body["onsite_remaining"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["event_product_id"].as_i64().unwrap())
+            .collect();
+        assert_eq!(
+            ids,
+            vec![ep_a],
+            "B 卖光了，不该再出现在现场仓列表里：{body}"
+        );
+    }
+
+    /// 停在盘点屏时来了新单（走查场景 4）：后端必须挡住盘点，
+    /// 否则顾客仓里那几件会被当成「现场仓少了」写进盘亏。
+    #[tokio::test]
+    async fn a_new_pending_order_blocks_a_stocktake_already_on_screen() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, ep_b) = seed_event_and_product(&pool).await;
+
+        // 摊主看到的账面是 10 / 5，照着填好了……
+        place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_a, "quantity": 1}]),
+        )
+        .await;
+
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/closing/stocktake"),
+            json!({"counts": [{"event_product_id": ep_a, "counted_qty": 10},
+                              {"event_product_id": ep_b, "counted_qty": 5}]}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::CONFLICT, "{body}");
+        assert!(body["error"].as_str().unwrap().contains("待处理"), "{body}");
+
+        let at: Option<String> =
+            sqlx::query_scalar("SELECT stocktaken_at FROM events WHERE id = ?")
+                .bind(event_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(at.is_none(), "被挡住的盘点不能留下「盘过了」");
+    }
+
+    /// 「结束展会」连点两下：第二下必须是 409，而不是再写一遍状态或 500。
+    #[tokio::test]
+    async fn settling_twice_is_refused_the_second_time() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _, _) = seed_event_and_product(&pool).await;
+
+        let uri = format!("/api/events/{event_id}/closing/takeback");
+        assert_eq!(
+            call(&router, "POST", &uri, json!(null)).await.0,
+            StatusCode::OK
+        );
+
+        let uri = format!("/api/events/{event_id}/closing/settle");
+        let (a, b) = tokio::join!(
+            call(&router, "POST", &uri, json!(null)),
+            call(&router, "POST", &uri, json!(null)),
+        );
+        let mut codes = vec![a.0, b.0];
+        codes.sort();
+        assert_eq!(codes, vec![StatusCode::OK, StatusCode::CONFLICT]);
+    }
+
+    /// spec 5.1：带回之后（尚未结算）退货回现场仓，货真的又回到摊位上了——
+    /// 必须再挡住结算，再带回一次才放行。
+    #[tokio::test]
+    async fn a_refund_back_on_site_after_takeback_requires_another_takeback() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+
+        let oid = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_a, "quantity": 2}]),
+        )
+        .await;
+        complete(&router, event_id, oid, "微信").await;
+
+        let takeback = format!("/api/events/{event_id}/closing/takeback");
+        let settle = format!("/api/events/{event_id}/closing/settle");
+        assert_eq!(
+            call(&router, "POST", &takeback, json!(null)).await.0,
+            StatusCode::OK
+        );
+
+        let line_id: i64 = sqlx::query_scalar("SELECT id FROM order_lines WHERE order_id = ?")
+            .bind(oid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/orders/{oid}/refunds"),
+            json!({"channel": "现金",
+                   "lines": [{"order_line_id": line_id, "qty": 1, "destination": "现场仓"}]}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::CREATED, "{body}");
+
+        let (s, body) = call(&router, "POST", &settle, json!(null)).await;
+        assert_eq!(s, StatusCode::CONFLICT, "退回来的那件还在现场仓：{body}");
+
+        let (s, body) = call(&router, "POST", &takeback, json!(null)).await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(body["moved"], 1);
+        assert_eq!(
+            call(&router, "POST", &settle, json!(null)).await.0,
+            StatusCode::OK
+        );
     }
 }
 
