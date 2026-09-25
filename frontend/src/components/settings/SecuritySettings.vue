@@ -1,59 +1,62 @@
 <template>
-  <SectionCard title="安全设置" collapsible v-model:collapsed="collapsed">
-    <div class="settings-grid">
-      <div class="settings-card">
-        <div class="settings-title">管理员密码</div>
-        <n-form :model="adminForm" label-placement="top">
-          <n-form-item label="旧密码">
-            <n-input
-              v-model:value="adminForm.oldPassword"
-              type="password"
-              show-password-on="click"
-              placeholder="请输入旧密码"
-            />
-          </n-form-item>
-          <n-form-item label="新密码 (至少 4 位)">
-            <n-input
-              v-model:value="adminForm.newPassword"
-              type="password"
-              show-password-on="click"
-              placeholder="请输入新密码"
-            />
-          </n-form-item>
-          <n-space justify="end">
-            <n-button type="primary" :loading="adminSaving" @click="updateAdminPassword"
-              >保存</n-button
-            >
-          </n-space>
-        </n-form>
-        <n-alert v-if="adminMessage" :type="adminMessage.type" :bordered="false" class="mt-8">{{
-          adminMessage.text
-        }}</n-alert>
-      </div>
+  <!-- id 给默认密码横幅的「去修改」跳转用 -->
+  <div id="security">
+    <SectionCard title="安全设置" collapsible v-model:collapsed="collapsed">
+      <div class="settings-grid">
+        <div class="settings-card">
+          <div class="settings-title">管理员密码</div>
+          <n-form :model="adminForm" label-placement="top">
+            <n-form-item label="旧密码">
+              <n-input
+                v-model:value="adminForm.oldPassword"
+                type="password"
+                show-password-on="click"
+                placeholder="请输入旧密码"
+              />
+            </n-form-item>
+            <n-form-item label="新密码 (至少 4 位)">
+              <n-input
+                v-model:value="adminForm.newPassword"
+                type="password"
+                show-password-on="click"
+                placeholder="请输入新密码"
+              />
+            </n-form-item>
+            <n-space justify="end">
+              <n-button type="primary" :loading="adminSaving" @click="updateAdminPassword"
+                >保存</n-button
+              >
+            </n-space>
+          </n-form>
+          <n-alert v-if="adminMessage" :type="adminMessage.type" :bordered="false" class="mt-8">{{
+            adminMessage.text
+          }}</n-alert>
+        </div>
 
-      <div class="settings-card">
-        <div class="settings-title">默认摊主密码（未配置摊主密码时采用）</div>
-        <n-form :model="vendorForm" label-placement="top">
-          <n-form-item label="新密码 (至少 4 位)">
-            <n-input
-              v-model:value="vendorForm.newPassword"
-              type="password"
-              show-password-on="click"
-              placeholder="请输入新密码"
-            />
-          </n-form-item>
-          <n-space justify="end">
-            <n-button type="primary" :loading="vendorSaving" @click="updateVendorPassword"
-              >保存</n-button
-            >
-          </n-space>
-        </n-form>
-        <n-alert v-if="vendorMessage" :type="vendorMessage.type" :bordered="false" class="mt-8">{{
-          vendorMessage.text
-        }}</n-alert>
+        <div class="settings-card">
+          <div class="settings-title">默认摊主密码（未配置摊主密码时采用）</div>
+          <n-form :model="vendorForm" label-placement="top">
+            <n-form-item label="新密码 (至少 4 位)">
+              <n-input
+                v-model:value="vendorForm.newPassword"
+                type="password"
+                show-password-on="click"
+                placeholder="请输入新密码"
+              />
+            </n-form-item>
+            <n-space justify="end">
+              <n-button type="primary" :loading="vendorSaving" @click="updateVendorPassword"
+                >保存</n-button
+              >
+            </n-space>
+          </n-form>
+          <n-alert v-if="vendorMessage" :type="vendorMessage.type" :bordered="false" class="mt-8">{{
+            vendorMessage.text
+          }}</n-alert>
+        </div>
       </div>
-    </div>
-  </SectionCard>
+    </SectionCard>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -62,8 +65,10 @@ import { NAlert, NButton, NForm, NFormItem, NInput, NSpace } from 'naive-ui'
 import { SectionCard } from '@/components/ui'
 import { api, unwrap, errorMessage } from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
+import { useDefaultPasswords } from '@/composables/useDefaultPasswords'
 
 const authStore = useAuthStore()
+const { refresh: refreshDefaultPasswords } = useDefaultPasswords()
 const collapsed = ref(false)
 const adminForm = ref({ oldPassword: '', newPassword: '' })
 const vendorForm = ref({ newPassword: '' })
@@ -97,6 +102,7 @@ async function updateAdminPassword() {
     adminForm.value = { oldPassword: '', newPassword: '' }
     // 密码改了需要重新登录
     await authStore.login(newPassword, 'admin')
+    void refreshDefaultPasswords()
   } catch (e) {
     adminMessage.value = {
       type: 'error',
@@ -122,6 +128,7 @@ async function updateVendorPassword() {
     )
     vendorMessage.value = { type: 'success', text: '默认摊主密码已更新' }
     vendorForm.value = { newPassword: '' }
+    void refreshDefaultPasswords()
   } catch (e) {
     vendorMessage.value = {
       type: 'error',

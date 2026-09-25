@@ -66,6 +66,7 @@
         <template #icon>{{ isSidebarCollapsed ? '☰' : '✕' }}</template>
       </n-button>
 
+      <DefaultPasswordBanner />
       <router-view />
 
       <div
@@ -92,6 +93,7 @@ import {
   type MenuOption,
 } from 'naive-ui'
 import { useViewport } from '@/composables/useViewport'
+import DefaultPasswordBanner from '@/components/settings/DefaultPasswordBanner.vue'
 import { resolveActiveKey } from './adminNav'
 
 const route = useRoute()

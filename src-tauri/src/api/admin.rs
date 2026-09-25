@@ -20,9 +20,53 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
+        .routes(routes!(default_passwords))
         .routes(routes!(update_admin_password))
         .routes(routes!(update_vendor_default_password))
         .routes(routes!(reset_database_handler))
+}
+
+// ==========================================
+// 0. 出厂默认密码是否还在用
+// ==========================================
+/// 两个全局密码是否仍是出厂默认值。
+#[derive(Serialize, ToSchema)]
+struct DefaultPasswordsResponse {
+    /// 管理员密码仍是 `admin123`
+    admin: bool,
+    /// 全局摊主密码仍是 `vendor123`（它能进所有展会）
+    vendor: bool,
+}
+
+async fn setting_is(state: &AppState, key: &str, default_password: &str) -> Result<bool, ApiError> {
+    let row: Option<(String,)> = sqlx::query_as("SELECT value FROM settings WHERE key = ?")
+        .bind(key)
+        .fetch_optional(&state.db)
+        .await?;
+    Ok(row.is_some_and(|(hash,)| verify_password(default_password, &hash)))
+}
+
+/// 管理后台据此常驻提醒改密码。默认密码写在公开文档里，而 LAN 上的任何设备都能访问登录页，
+/// 所以这里只**提醒**、不拦登录（摊位现场临时借设备登录是正常用法）。
+#[utoipa::path(
+    get,
+    path = "/default-passwords",
+    tag = "admin",
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = DefaultPasswordsResponse),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "需要管理员"),
+    ),
+)]
+async fn default_passwords(
+    State(state): State<AppState>,
+    _: AdminOnly,
+) -> Result<Json<DefaultPasswordsResponse>, ApiError> {
+    Ok(Json(DefaultPasswordsResponse {
+        admin: setting_is(&state, "admin_password", "admin123").await?,
+        vendor: setting_is(&state, "vendor_password", "vendor123").await?,
+    }))
 }
 
 // ==========================================
@@ -407,6 +451,61 @@ mod shape_tests {
             .unwrap();
         let status = res.status();
         (status, read_json(res).await)
+    }
+
+    #[tokio::test]
+    async fn default_passwords_reports_each_password_and_is_admin_only() {
+        let (router, _dir) = seeded().await;
+        let t = admin_token();
+
+        let (s, body) = call(
+            &router,
+            "GET",
+            "/api/admin/default-passwords",
+            Some(&t),
+            json!(null),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK, "{body}");
+        assert_eq!(body, json!({"admin": true, "vendor": true}));
+
+        let (s, _) = call(
+            &router,
+            "PUT",
+            "/api/admin/vendor-default-password",
+            Some(&t),
+            json!({"newPassword": "stall-2026"}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        let (_, body) = call(
+            &router,
+            "GET",
+            "/api/admin/default-passwords",
+            Some(&t),
+            json!(null),
+        )
+        .await;
+        assert_eq!(body, json!({"admin": true, "vendor": false}));
+
+        let (s, _) = call(
+            &router,
+            "GET",
+            "/api/admin/default-passwords",
+            Some(&vendor_token(1)),
+            json!(null),
+        )
+        .await;
+        assert_eq!(s, StatusCode::FORBIDDEN);
+        let (s, _) = call(
+            &router,
+            "GET",
+            "/api/admin/default-passwords",
+            None,
+            json!(null),
+        )
+        .await;
+        assert_eq!(s, StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]

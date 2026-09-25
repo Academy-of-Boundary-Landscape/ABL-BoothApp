@@ -4,6 +4,26 @@
 import type { Cents } from '@/utils/money'
 
 export interface paths {
+    "/admin/default-passwords": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 管理后台据此常驻提醒改密码。默认密码写在公开文档里，而 LAN 上的任何设备都能访问登录页，
+         *     所以这里只**提醒**、不拦登录（摊位现场临时借设备登录是正常用法）。
+         */
+        get: operations["admin.default_passwords"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/password": {
         parameters: {
             query?: never;
@@ -1313,6 +1333,13 @@ export interface components {
             /** Format: int64 */
             journal_id: number;
         };
+        /** @description 两个全局密码是否仍是出厂默认值。 */
+        DefaultPasswordsResponse: {
+            /** @description 管理员密码仍是 `admin123` */
+            admin: boolean;
+            /** @description 全局摊主密码仍是 `vendor123`（它能进所有展会） */
+            vendor: boolean;
+        };
         /** @description 删除识别图的响应。 */
         DeleteMasterProductImageResponse: {
             /** Format: int64 */
@@ -2292,6 +2319,43 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    "admin.default_passwords": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DefaultPasswordsResponse"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 需要管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
     "admin.update_admin_password": {
         parameters: {
             query?: never;

@@ -12,6 +12,51 @@
     "version": "1"
   },
   "paths": {
+    "/admin/default-passwords": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "管理后台据此常驻提醒改密码。默认密码写在公开文档里，而 LAN 上的任何设备都能访问登录页，\n所以这里只**提醒**、不拦登录（摊位现场临时借设备登录是正常用法）。",
+        "operationId": "admin.default_passwords",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefaultPasswordsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/admin/password": {
       "put": {
         "tags": [
@@ -6317,6 +6362,24 @@
           "journal_id": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "DefaultPasswordsResponse": {
+        "type": "object",
+        "description": "两个全局密码是否仍是出厂默认值。",
+        "required": [
+          "admin",
+          "vendor"
+        ],
+        "properties": {
+          "admin": {
+            "type": "boolean",
+            "description": "管理员密码仍是 `admin123`"
+          },
+          "vendor": {
+            "type": "boolean",
+            "description": "全局摊主密码仍是 `vendor123`（它能进所有展会）"
           }
         }
       },
