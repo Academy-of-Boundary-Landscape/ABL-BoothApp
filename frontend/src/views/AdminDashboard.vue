@@ -1,58 +1,52 @@
 <template>
   <PageShell title="展会管理" subtitle="创建和管理展会活动。" help="events" width="content">
     <main class="page-body">
-      <n-space vertical size="large">
-        <!-- 快速开始引导（原控制台，搬到 /admin 的落地页） -->
-        <section v-if="showGuide" class="guide-card">
-          <div class="guide-header">
-            <span class="guide-title">🚀 快速开始</span>
-            <n-button text size="small" @click="dismissGuide">关闭</n-button>
-          </div>
+      <!-- 快速开始引导（原控制台，搬到 /admin 的落地页；逻辑与文案不变） -->
+      <section v-if="showGuide" class="guide-card">
+        <div class="guide-header">
+          <span class="guide-title">🚀 快速开始</span>
+          <n-button text size="small" @click="dismissGuide">关闭</n-button>
+        </div>
 
-          <div class="guide-progress">
-            <div class="guide-progress-bar">
-              <div class="guide-progress-fill" :style="{ width: guideProgress + '%' }"></div>
-            </div>
-            <span class="guide-progress-text"
-              >{{ guideDoneCount }} / {{ guideTotalCount }} 完成</span
-            >
+        <div class="guide-progress">
+          <div class="guide-progress-bar">
+            <div class="guide-progress-fill" :style="{ width: guideProgress + '%' }"></div>
           </div>
+          <span class="guide-progress-text">{{ guideDoneCount }} / {{ guideTotalCount }} 完成</span>
+        </div>
 
-          <div v-if="guideAllDone" class="guide-done">
-            🎉 一切就绪！你可以将平板放在摊位前，开始接待顾客了。
+        <div v-if="guideAllDone" class="guide-done">
+          🎉 一切就绪！你可以将平板放在摊位前，开始接待顾客了。
+        </div>
+
+        <div v-else class="guide-steps">
+          <div
+            v-for="step in guideSteps"
+            :key="step.key"
+            class="guide-step"
+            :class="{ 'guide-step--done': step.done }"
+          >
+            <span class="guide-check">{{ step.done ? '✅' : '⬜' }}</span>
+            <span class="guide-text">{{ step.label }}</span>
+            <router-link v-if="!step.done && step.to" :to="step.to" class="guide-link">
+              前往 →
+            </router-link>
+            <span v-if="!step.done && step.hint" class="guide-hint">{{ step.hint }}</span>
           </div>
+          <p class="guide-footer">完成以上步骤后，将平板放在摊位前即可开始使用</p>
+        </div>
+      </section>
 
-          <div v-else class="guide-steps">
-            <div
-              v-for="step in guideSteps"
-              :key="step.key"
-              class="guide-step"
-              :class="{ 'guide-step--done': step.done }"
-            >
-              <span class="guide-check">{{ step.done ? '✅' : '⬜' }}</span>
-              <span class="guide-text">{{ step.label }}</span>
-              <router-link v-if="!step.done && step.to" :to="step.to" class="guide-link">
-                前往 →
-              </router-link>
-              <span v-if="!step.done && step.hint" class="guide-hint">{{ step.hint }}</span>
-            </div>
-            <p class="guide-footer">完成以上步骤后，将平板放在摊位前即可开始使用</p>
-          </div>
-        </section>
-
-        <CreateEventForm />
-        <EventList />
-      </n-space>
+      <EventList />
     </main>
   </PageShell>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { NButton, NSpace } from 'naive-ui'
+import { NButton } from 'naive-ui'
 import { api, unwrap } from '@/api/client'
 import { PageShell } from '@/components/ui'
-import CreateEventForm from '@/components/event/CreateEventForm.vue'
 import EventList from '@/components/event/EventList.vue'
 
 // ===================== 快速开始引导（原 AdminControlPanel 逻辑原样搬）=====================
@@ -168,6 +162,12 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.page-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
 /* ===== 快速开始引导 ===== */
 .guide-card {
   background: var(--card-bg-color);

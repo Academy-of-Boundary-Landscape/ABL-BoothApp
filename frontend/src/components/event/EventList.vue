@@ -1,169 +1,183 @@
 <template>
-  <SectionCard class="list-container" title="展会列表">
-    <!-- 搜索和过滤区域（Naive UI） -->
-    <div class="search-container">
-      <n-space wrap align="end" :size="16">
-        <div class="search-group">
-          <label for="search-name">按名称搜索:</label>
+  <div class="event-list">
+    <div class="event-toolbar">
+      <div class="filters">
+        <label class="filter-field" for="event-search-name">
+          <span class="filter-label">按名称搜索</span>
           <n-input
-            id="search-name"
+            id="event-search-name"
             v-model:value="searchName"
             clearable
             placeholder="输入展会名称关键字..."
           />
-        </div>
-        <div class="search-group">
-          <label for="search-date-start">日期范围:</label>
-          <div class="date-range-inputs">
+        </label>
+        <div class="filter-field">
+          <span class="filter-label">日期范围</span>
+          <div class="date-range">
             <n-date-picker
-              id="search-date-start"
               v-model:value="dateRangeStart"
               type="date"
               clearable
               value-format="yyyy-MM-dd"
+              placeholder="开始日期"
             />
-            <span>至</span>
+            <span class="date-range__sep">至</span>
             <n-date-picker
-              id="search-date-end"
               v-model:value="dateRangeEnd"
               type="date"
               clearable
               value-format="yyyy-MM-dd"
+              placeholder="结束日期"
             />
           </div>
         </div>
-        <n-button tertiary @click="clearFilters">清空筛选</n-button>
-      </n-space>
+        <n-button v-if="hasFilters" tertiary @click="clearFilters">清空筛选</n-button>
+      </div>
+
+      <n-button type="primary" class="touch-target" @click="openCreate">新建展会</n-button>
     </div>
 
     <AsyncState
       :loading="store.isLoading"
       :error="store.error"
-      :empty="!filteredEvents.length"
+      :empty="!store.events.length"
       loading-text="正在加载展会数据..."
     >
-      <!-- 【修改】v-for 循环现在使用 filteredEvents 计算属性 -->
-      <ul class="event-list">
-        <RouterLink
-          v-for="event in filteredEvents"
-          :key="event.id"
-          :to="`/admin/events/${event.id}/products`"
-          custom
-          v-slot="{ navigate }"
+      <template v-if="!filteredEvents.length">
+        <EmptyState
+          icon="🔍"
+          title="没有找到符合筛选条件的展会"
+          hint="换个关键字，或清空筛选再试。"
         >
-          <li @click="navigate" class="event-card clickable" role="link">
-            <n-card :title="event.name" :hoverable="true" embedded>
-              <div class="event-info">
-                <p>日期: {{ event.date }}</p>
-                <p>地点: {{ event.location || '未指定' }}</p>
-              </div>
-              <template #header-extra>
-                <n-tag :type="statusType(event.status)" size="small">{{ event.status }}</n-tag>
-              </template>
-              <template #footer>
-                <div class="status-actions">
-                  <n-button
-                    v-if="event.status === '筹备'"
-                    size="small"
-                    @click.stop="changeStatus(event.id, '进行中')"
-                    >► 开始</n-button
+          <template #action>
+            <n-button @click="clearFilters">清空筛选</n-button>
+          </template>
+        </EmptyState>
+      </template>
+
+      <template v-else>
+        <section v-for="group in groups" :key="group.status" class="event-group">
+          <div
+            class="group-header"
+            role="button"
+            tabindex="0"
+            :aria-expanded="!isCollapsed(group.status)"
+            @click="toggleGroup(group.status)"
+            @keydown.enter.prevent="toggleGroup(group.status)"
+            @keydown.space.prevent="toggleGroup(group.status)"
+          >
+            <span class="group-title">{{ group.label }}</span>
+            <span class="group-count">{{ group.events.length }}</span>
+            <span
+              class="group-arrow"
+              :class="{ 'group-arrow--collapsed': isCollapsed(group.status) }"
+              >▾</span
+            >
+          </div>
+
+          <div v-show="!isCollapsed(group.status)" class="event-grid">
+            <article
+              v-for="event in group.events"
+              :key="event.id"
+              class="event-card"
+              role="link"
+              tabindex="0"
+              @click="openWorkbench(event)"
+              @keydown.enter.prevent="openWorkbench(event)"
+            >
+              <div class="event-card__head">
+                <h3 class="event-card__name">{{ event.name }}</h3>
+                <div class="event-card__tools" @click.stop @keydown.stop>
+                  <n-tag :type="statusType(event.status)" size="small">{{ event.status }}</n-tag>
+                  <n-dropdown
+                    trigger="click"
+                    placement="bottom-end"
+                    :options="cardMenuOptions"
+                    @select="(key) => onCardAction(key, event)"
                   >
-                  <!--
-                    结束展会不再直接改状态：`PUT /events/:id/status` 的迁移守卫
-                    拒绝把展会置为「已结算」（要走收摊流程），也拒绝让已结算的展会
-                    离开「已结算」。管理端与摊主端角色互斥，跳摊主端会被要求重新登录，
-                    所以这里只留一个禁用态 + 提示，把摊主引到收摊向导。
-                  -->
-                  <template v-if="event.status === '进行中'">
-                    <n-button size="small" disabled>■ 结束</n-button>
-                    <span class="end-event-hint"
-                      >请在摊主端走收摊流程（清点订单 → 盘点 → 带回 → 结算）</span
-                    >
-                  </template>
-                  <n-button size="small" type="primary" @click.stop="openEditModal(event)"
-                    >编辑</n-button
-                  >
-                  <n-button size="small" type="error" @click.stop="confirmDelete(event)"
-                    >删除</n-button
-                  >
+                    <n-button quaternary circle size="small" aria-label="更多操作">⋯</n-button>
+                  </n-dropdown>
                 </div>
-              </template>
-            </n-card>
-          </li>
-        </RouterLink>
-      </ul>
+              </div>
+              <p class="event-card__meta">日期：{{ event.date }}</p>
+              <p class="event-card__meta">地点：{{ event.location || '未指定' }}</p>
+            </article>
+          </div>
+        </section>
+      </template>
 
       <template #empty>
-        <!-- 【修改】处理“无搜索结果”和“无任何展会”两种情况 -->
-        <p v-if="store.events.length && !filteredEvents.length" class="no-results-message">
-          没有找到符合筛选条件的展会。
-        </p>
         <EmptyState
-          v-else
           icon="📋"
           title="还没有创建展会"
           desc="展会是管理摊位的核心单位。每场漫展创建一个展会，然后在其中管理商品库存和订单。"
-          hint="在上方「创建新展会」表单中填写信息开始吧"
-        />
+          hint="点右上角「新建展会」开始吧"
+        >
+          <template #action>
+            <n-button type="primary" @click="openCreate">新建展会</n-button>
+          </template>
+        </EmptyState>
       </template>
     </AsyncState>
 
-    <!-- 编辑模态框 (保持不变) -->
     <AppModal
-      :show="isEditModalVisible"
-      title="编辑展会"
+      v-model:show="formVisible"
+      :title="editingEvent ? '编辑展会' : '新建展会'"
       size="sm"
-      @update:show="(v) => !v && closeEditModal()"
+      :mask-closable="false"
     >
-      <EditEventForm v-if="selectedEvent" ref="editForm" :event="selectedEvent" />
+      <EventForm
+        :key="formKey"
+        ref="eventFormRef"
+        :mode="editingEvent ? 'edit' : 'create'"
+        :event="editingEvent ?? undefined"
+        @saved="onSaved"
+      />
       <template #footer>
-        <n-button @click="closeEditModal">取消</n-button>
-        <n-button type="primary" @click="handleUpdateEvent">保存更改</n-button>
+        <n-button @click="closeForm">取消</n-button>
+        <n-button type="primary" @click="submitForm">
+          {{ editingEvent ? '保存更改' : '创建' }}
+        </n-button>
       </template>
     </AppModal>
-  </SectionCard>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { NButton, NDatePicker, NDropdown, NInput, NTag } from 'naive-ui'
+import { AsyncState, EmptyState, AppModal } from '@/components/ui'
 import { useEventStore } from '@/stores/eventStore'
-import { SectionCard, AsyncState, EmptyState, AppModal } from '@/components/ui'
 import { useFeedback } from '@/composables/useFeedback'
-import EditEventForm from '@/components/event/EditEventForm.vue'
-import { RouterLink } from 'vue-router'
-import { NInput, NDatePicker, NButton, NCard, NSpace, NTag } from 'naive-ui'
+import EventForm from '@/components/event/EventForm.vue'
 import type { Schemas } from '@/api/client'
 
 const store = useEventStore()
 const fb = useFeedback()
-const updatingStatusId = ref<number | null>(null)
+const router = useRouter()
 
-// =======================================================
-// 【新增】搜索和过滤相关的状态
-// =======================================================
+// ===================== 搜索 / 过滤 =====================
 const searchName = ref('')
 // n-date-picker 的 v-model:value 带 value-format 时，onUpdate:value 仍发时间戳（number）。
 const dateRangeStart = ref<number | null>(null)
 const dateRangeEnd = ref<number | null>(null)
+
 const filteredEvents = computed(() => {
-  // 从原始列表开始
   let events = store.events
 
-  // 1. 按名称过滤
   if (searchName.value.trim()) {
     const lowerCaseQuery = searchName.value.toLowerCase()
     events = events.filter((event) => event.name.toLowerCase().includes(lowerCaseQuery))
   }
 
-  // 2. 按开始日期过滤
   if (dateRangeStart.value) {
     const start = dateRangeStart.value
     events = events.filter((event) => new Date(event.date) >= new Date(start))
   }
 
-  // 3. 按结束日期过滤
   if (dateRangeEnd.value) {
-    // 创建一个 Date 对象并设置到当天的最后一刻，以确保包含选定的结束日期
+    // 设置到当天的最后一刻，确保包含选定的结束日期。
     const endDate = new Date(dateRangeEnd.value)
     endDate.setHours(23, 59, 59, 999)
     events = events.filter((event) => new Date(event.date) <= endDate)
@@ -172,27 +186,61 @@ const filteredEvents = computed(() => {
   return events
 })
 
-// 【新增】清空所有筛选条件的函数
+const hasFilters = computed(() =>
+  Boolean(searchName.value.trim() || dateRangeStart.value || dateRangeEnd.value)
+)
+
 function clearFilters() {
   searchName.value = ''
   dateRangeStart.value = null
   dateRangeEnd.value = null
 }
 
-// 【新增】编辑模态框相关的状态
-const isEditModalVisible = ref(false)
-const selectedEvent = ref<Schemas['EventResponse'] | null>(null)
-const editForm = ref<InstanceType<typeof EditEventForm> | null>(null) // 用于获取 EditEventForm 组件的实例
+// ===================== 分组（进行中 → 筹备 → 已结算） =====================
+const STATUS_ORDER = ['进行中', '筹备', '已结算'] as const
 
-onMounted(() => {
-  store.fetchEvents()
-})
+const groups = computed(() =>
+  STATUS_ORDER.map((status) => ({
+    status,
+    label: status,
+    events: filteredEvents.value.filter((event) => event.status === status),
+  })).filter((group) => group.events.length > 0)
+)
 
-const statusType = (status: Schemas['EventStatus']): 'warning' | 'default' | 'success' => {
+const collapsedGroups = ref<Record<string, boolean>>({ 已结算: true })
+
+function isCollapsed(status: string) {
+  return collapsedGroups.value[status] === true
+}
+
+function toggleGroup(status: string) {
+  collapsedGroups.value = { ...collapsedGroups.value, [status]: !isCollapsed(status) }
+}
+
+// ===================== 卡片 =====================
+const cardMenuOptions = [
+  { label: '编辑', key: 'edit' },
+  { label: '删除', key: 'delete' },
+]
+
+function statusType(status: Schemas['EventStatus']): 'warning' | 'default' | 'success' {
   if (status === '进行中') return 'warning'
   if (status === '已结算') return 'default'
   return 'success' // 筹备
 }
+
+function openWorkbench(event: Schemas['EventResponse']) {
+  void router.push({ name: 'admin-event-workbench', params: { id: event.id } })
+}
+
+function onCardAction(key: string | number, event: Schemas['EventResponse']) {
+  if (key === 'edit') {
+    openEdit(event)
+  } else if (key === 'delete') {
+    void confirmDelete(event)
+  }
+}
+
 async function confirmDelete(event: Schemas['EventResponse']) {
   // 已结算的展会账已经冻结、往往还要留着对账，删除却是级联删掉整本账且不受
   // 冻结保护（后端 DELETE /events/:id 有意不守展会状态）。这里给一句明确的
@@ -201,318 +249,237 @@ async function confirmDelete(event: Schemas['EventResponse']) {
     event.status === '已结算'
       ? `「${event.name}」已结算。删除将永久删除该展会的全部订单与账本流水，且无法恢复。确定继续吗？`
       : `您确定要删除「${event.name}」吗？此操作无法撤销。`
-  if (await fb.confirm({ title: message, danger: true })) {
-    try {
-      // 调用 store 中的 deleteEvent 方法执行删除操作
-      // 您需要在 eventStore.js 中实现 deleteEvent 方法，
-      // 该方法会向后端发送 DELETE 请求。
-      await store.deleteEvent(event.id)
-      // 可选：删除成功后显示提示
-    } catch (error) {
-      // 显示错误信息
-      fb.error(error, '删除失败，请稍后再试。')
-    }
-  }
-}
-// 【新增】处理状态变更的函数
-async function changeStatus(eventId: number, newStatus: Schemas['EventStatus']) {
-  // 防止重复点击
-  if (updatingStatusId.value) return
-
-  updatingStatusId.value = eventId
-  try {
-    await store.updateEventStatus(eventId, newStatus)
-  } catch (error) {
-    // 如果 store 抛出错误，在这里通知用户
-    fb.error(error)
-  } finally {
-    // 无论成功或失败，最后都清除更新中的状态
-    updatingStatusId.value = null
-  }
-}
-function openEditModal(event: Schemas['EventResponse']) {
-  selectedEvent.value = event
-  isEditModalVisible.value = true
-}
-
-// 【新增】关闭编辑模态框的函数
-function closeEditModal() {
-  isEditModalVisible.value = false
-  selectedEvent.value = null
-}
-
-// 【新增】处理更新提交的函数
-async function handleUpdateEvent() {
-  // 增加对 selectedEvent 的检查，更安全
-  if (editForm.value && selectedEvent.value) {
-    const formData = editForm.value.submit()
-    if (formData) {
+  await fb.confirm({
+    title: '确认删除',
+    content: message,
+    danger: true,
+    onConfirm: async () => {
       try {
-        // 【核心修正】
-        // 第一个参数传入 event ID
-        // 第二个参数传入 FormData
-        console.log('尝试进行更新')
-        await store.updateEvent(selectedEvent.value.id, formData)
-        console.log('更新成功')
-        closeEditModal() // 成功后关闭模态框
+        await store.deleteEvent(event.id)
       } catch (error) {
-        fb.error(error) // 显示错误
+        fb.error(error, '删除失败，请稍后再试。')
       }
-    }
-  }
+    },
+  })
 }
+
+// ===================== 新建 / 编辑弹窗 =====================
+const formVisible = ref(false)
+const editingEvent = ref<Schemas['EventResponse'] | null>(null)
+// 每次打开都换 key 强制 EventForm 重新挂载，避免上一次的输入 / 校验残留。
+const formKey = ref(0)
+const eventFormRef = ref<InstanceType<typeof EventForm> | null>(null)
+
+function openCreate() {
+  editingEvent.value = null
+  formKey.value += 1
+  formVisible.value = true
+}
+
+function openEdit(event: Schemas['EventResponse']) {
+  editingEvent.value = event
+  formKey.value += 1
+  formVisible.value = true
+}
+
+function closeForm() {
+  formVisible.value = false
+  editingEvent.value = null
+}
+
+function onSaved() {
+  closeForm()
+}
+
+function submitForm() {
+  void eventFormRef.value?.submit()
+}
+
+onMounted(() => {
+  store.fetchEvents()
+})
 </script>
 
 <style scoped>
-.list-container {
-  margin-bottom: var(--space-xl);
-}
-
-.search-container {
-  padding: var(--space-lg) var(--space-xl);
-  display: flex;
-  flex-wrap: wrap; /* 在小屏幕上换行 */
-  gap: var(--space-lg);
-  align-items: flex-end; /* 让元素底部对齐 */
-  border-bottom: 1px solid var(--border-color);
-  margin-bottom: var(--space-lg);
-}
-
 .event-list {
-  list-style: none;
-  padding: var(--space-xl);
-  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
 }
 
-/* 每个卡片为独立长条 */
-.event-card {
-  box-sizing: border-box;
+.event-toolbar {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
   gap: var(--space-lg);
-  width: 100%;
-  background-color: var(--card-bg-color);
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: var(--space-lg) var(--space-xl);
+  background: var(--card-bg-color);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
-  padding: var(--space-lg) var(--space-lg);
-  margin-bottom: var(--space-lg); /* 卡片之间的间距 */
-  box-shadow: var(--shadow-md);
-  transition:
-    transform 0.12s ease,
-    box-shadow 0.12s ease;
-  cursor: default; /* clickable 类会改为 pointer */
-  min-height: 72px; /* 保持卡片高度一致 */
 }
 
-/* 保持原有 clickable 行为（整行可点击） */
-.event-card.clickable {
-  cursor: pointer;
-  transition:
-    background-color 0.2s,
-    border-color 0.2s;
-}
-.event-card.clickable:hover {
-  transform: translateY(-6px);
-  box-shadow: var(--shadow-xl);
-  background-color: var(--accent-color-light);
-  border-color: var(--accent-color);
-}
-/* 左侧信息区域占满剩余空间 */
-.event-info {
-  flex: 1 1 auto;
-  min-width: 0; /* 保证文本可以正确换行 */
-}
-.event-info h3 {
-  margin: 0 0 var(--space-sm) 0;
-  font-size: var(--font-lg);
-  line-height: 1.25;
-  font-weight: var(--weight-bold);
-}
-.event-info p {
-  margin: 0;
-  color: var(--secondary-text-color);
-  font-size: var(--font-md);
-  line-height: 1.3;
-}
-
-/* 右侧状态与操作区固定宽度，垂直居中 */
-.event-status {
-  flex: 0 0 240px; /* 根据需要调整宽度 */
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: var(--space-sm);
-  text-align: right;
-}
-
-/* 状态徽章样式 */
-.status-badge {
-  display: inline-block;
-  padding: var(--space-sm) var(--space-sm);
-  border-radius: var(--radius-pill);
-  font-size: var(--font-base);
-  font-weight: var(--weight-bold);
-  color: var(--primary-text-color);
-  border: 1px solid transparent;
-}
-
-/* 状态颜色类（保留现有类名） */
-.status-ongoing {
-  background: var(--accent-color-light);
-  border-color: color-mix(in srgb, var(--highlight-color) 25%, transparent);
-}
-.status-finished {
-  background: var(--bg-elevated);
-  border-color: var(--border-color-light);
-}
-.status-upcoming {
-  background: var(--accent-color-light);
-  border-color: var(--accent-color);
-}
-
-.status-actions {
-  margin-top: var(--space-sm);
+.filters {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-sm);
-  justify-content: flex-end;
-  align-items: center;
-  width: 100%;
-  min-width: 250px;
-}
-/* 「结束」按钮旁边的禁用说明。移动端没有 hover，所以不靠 tooltip。 */
-.end-event-hint {
-  color: var(--text-muted);
-  font-size: var(--font-sm);
-  line-height: 1.4;
-  max-width: 220px;
-  text-align: right;
-}
-.action-btn {
-  background: none;
-  border: 1px solid var(--primary-text-color);
-  color: var(--primary-text-color);
-  padding: var(--space-sm) var(--space-md);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  font-size: var(--font-base);
-}
-.action-btn:hover {
-  background-color: var(--primary-text-color);
-  color: var(--bg-color);
-}
-.delete-btn {
-  border-color: var(--delete-color);
-  color: var(--delete-color);
+  gap: var(--space-lg);
+  align-items: flex-end;
 }
 
-.delete-btn:hover {
-  background-color: var(--delete-color);
-  color: var(--text-white);
-}
-
-.search-group {
+.filter-field {
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
-  flex-grow: 1; /* 让组占据可用空间 */
+  gap: var(--space-xs);
 }
 
-.search-group label {
-  font-size: var(--font-base);
+.filter-label {
+  font-size: var(--font-sm);
   color: var(--text-muted);
 }
 
-.search-group input[type='text'],
-.search-group input[type='date'] {
-  background-color: var(--bg-color);
-  border: 1px solid var(--border-color);
-  color: var(--primary-text-color);
-  padding: var(--space-sm);
-  border-radius: var(--radius-sm);
-  font-size: var(--font-md);
-}
-
-.date-range-inputs {
+.date-range {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
 }
 
-.date-range-inputs span {
+.date-range__sep {
   color: var(--text-muted);
 }
 
-.no-results-message {
-  text-align: center;
-  padding: var(--space-2xl) var(--space-xl);
+.event-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.group-title {
+  font-size: var(--font-lg);
+  font-weight: var(--weight-bold);
+  color: var(--accent-color);
+}
+
+.group-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 var(--space-xs);
+  border-radius: var(--radius-pill);
+  background: var(--accent-color-light);
+  color: var(--accent-color);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-bold);
+}
+
+.group-arrow {
+  margin-left: auto;
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+}
+
+.group-arrow--collapsed {
+  transform: rotate(-90deg);
+}
+
+.event-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-lg);
+}
+
+.event-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-lg);
+  background: var(--card-bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease,
+    border-color 0.12s ease,
+    background-color 0.12s ease;
+}
+
+.event-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+  border-color: var(--accent-color);
+  background: var(--accent-color-light);
+}
+
+.event-card:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}
+
+.event-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.event-card__name {
+  margin: 0;
+  font-size: var(--font-md);
+  font-weight: var(--weight-bold);
+  color: var(--primary-text-color);
+  overflow-wrap: anywhere;
+}
+
+.event-card__tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+}
+
+.event-card__meta {
+  margin: 0;
+  font-size: var(--font-sm);
   color: var(--text-muted);
 }
 
-/* 响应式布局调整 */
 @media (--phone) {
-  .event-card {
-    flex-direction: column;
-    align-items: flex-start;
-    min-height: auto;
-    padding: var(--space-lg);
-  }
-
-  .event-info {
-    width: 100%;
-  }
-
-  .status-actions {
-    width: 100%;
-    justify-content: flex-start;
-  }
-
-  .end-event-hint {
-    max-width: none;
-    text-align: left;
-  }
-
-  .search-container {
-    flex-direction: column;
+  .event-toolbar {
     padding: var(--space-md);
   }
 
-  .search-group {
+  .filters {
     width: 100%;
   }
 
-  .date-range-inputs {
-    flex-direction: column;
-    width: 100%;
+  .filter-field {
+    flex: 1 1 100%;
   }
 
-  .date-range-inputs span {
-    display: none;
-  }
-}
-
-@media (--phone) {
-  .event-card {
-    padding: var(--space-md);
-    gap: var(--space-sm);
+  .date-range {
+    flex-wrap: wrap;
   }
 
-  .event-info h3 {
-    font-size: var(--font-base);
+  .event-grid {
+    grid-template-columns: 1fr;
   }
 
-  .event-info p {
-    font-size: var(--font-sm);
-  }
-
-  .status-actions {
-    gap: var(--space-sm);
-  }
-
-  .search-group label {
-    font-size: var(--font-sm);
+  /* 手机上可点区域要求 ≥ 44px。 */
+  .event-toolbar :deep(.n-button),
+  .event-card__tools :deep(.n-button) {
+    min-height: 44px;
   }
 }
 </style>
