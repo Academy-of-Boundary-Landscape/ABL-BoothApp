@@ -156,9 +156,14 @@ export const useOrderStore = defineStore('order', () => {
       throw new Error('取消订单失败。')
     }
   }
-  // 单位：分。展示端由 formatYuan 除以 100。
+  // 单位：分。营业额 = Σ(实收 − 已退)，否则退了钱营业额还挂在高位。
   const totalRevenue = computed<Cents>(() => {
-    return cents(completedOrders.value.reduce((total, order) => total + order.final_amount, 0))
+    return cents(
+      completedOrders.value.reduce(
+        (total, order) => total + order.final_amount - order.refunded_amount,
+        0
+      )
+    )
   })
 
   return {

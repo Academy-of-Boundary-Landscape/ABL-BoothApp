@@ -603,5 +603,11 @@ async function onReceiptConfirm(payload: {
   .count-input {
     flex: 1 1 100%;
   }
+  /* 手机上门禁要求可点区域 ≥ 44px：① 清点订单每单的「取消 / 完成」，
+     以及各步底部的主按钮（n-button 默认约 34px）。 */
+  .row :deep(.n-button),
+  .screen-actions :deep(.n-button) {
+    min-height: 44px;
+  }
 }
 </style>

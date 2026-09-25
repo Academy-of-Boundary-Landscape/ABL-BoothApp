@@ -1,5 +1,5 @@
 <template>
-  <PageShell embedded width="content">
+  <PageShell embedded width="full">
     <div class="page-toolbar">
       <div class="page-hint-row">
         <p class="page-hint">查看当前展会的销售数据和统计分析。</p>

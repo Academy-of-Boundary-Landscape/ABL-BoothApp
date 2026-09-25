@@ -154,6 +154,7 @@
             :loading="store.isLoading"
             :error="store.error"
             :empty="mutableProducts.length === 0"
+            overlay
             loading-text="正在加载商品…"
             @retry="store.fetchProductsForEvent()"
           >

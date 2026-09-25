@@ -1,5 +1,5 @@
 <template>
-  <PageShell embedded width="content">
+  <PageShell embedded width="full">
     <!-- 说明：工作台子页是 embedded（外壳已有页头），PageShell 的 help 气泡不会渲染；
          共享的 helpContent 没有 event-lots 条目，本文件不能扩共享配置。这段说明保留在页面上，
          同时把「同货主」规则放进 LotDrawer 的字段说明。 -->
@@ -92,6 +92,9 @@ const columns = computed<DataTableColumns<Schemas['LotResponse']>>(() => [
   {
     title: '规则',
     key: 'rule',
+    // 「任选 2 件 · 可同款」不许折成两行。
+    minWidth: 150,
+    ellipsis: { tooltip: true },
     render: (lot) =>
       lot.allow_repeat ? `任选 ${lot.pick_count} 件 · 可同款` : `各 1 件 · ${lot.pick_count} 件`,
   },
@@ -100,7 +103,8 @@ const columns = computed<DataTableColumns<Schemas['LotResponse']>>(() => [
     key: 'total_price',
     render: (lot) => h(Money, { value: lot.total_price }),
   },
-  { title: '货主', key: 'owner_society_name' },
+  // 货主集中在一列，折行会把整张表撑高；给足宽度、超出省略。
+  { title: '货主', key: 'owner_society_name', minWidth: 96, ellipsis: { tooltip: true } },
   {
     title: '候选商品',
     key: 'candidates',
@@ -111,10 +115,12 @@ const columns = computed<DataTableColumns<Schemas['LotResponse']>>(() => [
     title: '操作',
     key: 'actions',
     align: 'right',
+    // 宽度要能容下「编辑 删除」两个小按钮；n-space 默认换行，显式关掉。
+    width: 132,
     render: (lot) =>
       h(
         NSpace,
-        { size: 'small', justify: 'end' },
+        { size: 'small', justify: 'end', wrap: false },
         {
           default: () => [
             h(

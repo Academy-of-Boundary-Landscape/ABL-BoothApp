@@ -489,20 +489,23 @@ function handleDragEnd() {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  flex-wrap: nowrap;
+  /* 价格与「+」一行放不下时让「+」下移，而不是把价格截断。 */
+  flex-wrap: wrap;
   gap: var(--space-sm);
 }
 
 .price-wrapper {
   color: var(--pg-accent);
   line-height: 1;
+  /* 价格永不截断：不缩、不省略，放不下就把按钮挤到下一行。 */
+  flex-shrink: 0;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .action-icon {
   flex-shrink: 0;
+  /* 换行到独立一行时靠右对齐（space-between 对单元素不生效）。 */
+  margin-left: auto;
   width: 44px;
   height: 44px;
   border-radius: 50%;
@@ -610,6 +613,14 @@ function handleDragEnd() {
   100% {
     transform: scale(1);
     box-shadow: none;
+  }
+}
+
+@media (--phone) {
+  /* small 卡片的「+」手机上门禁要求 ≥44px；桌面 36px 更紧凑可以保留。 */
+  .card-size-small .action-icon {
+    width: 44px;
+    height: 44px;
   }
 }
 </style>

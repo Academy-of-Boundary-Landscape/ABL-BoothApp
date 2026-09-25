@@ -9,7 +9,7 @@
   业务规则由后端判定，这里只负责把后端那句话原样显示出来。
 -->
 <template>
-  <PageShell embedded width="wide">
+  <PageShell embedded width="full">
     <!-- 对账警示条：页内首位。数据来自结算单的 warnings。 -->
     <SettlementWarnings :warnings="warnings" />
 
@@ -166,7 +166,7 @@ import {
 } from 'naive-ui'
 import { useSettlementStore } from '@/stores/settlementStore'
 import { useSocietyStore } from '@/stores/societyStore'
-import { formatYuan, cents, toCents, type Cents } from '@/utils/money'
+import { formatYuan, fromCents, cents, toCents, type Cents } from '@/utils/money'
 import { describeEntryAdjustment } from '@/utils/settlementSigns'
 import type { Schemas } from '@/api/client'
 import { PageShell, EmptyState, SectionCard } from '@/components/ui'
@@ -225,9 +225,10 @@ const channelRows = computed<ChannelRow[]>(() =>
   (store.report?.channels ?? []).map((c) => ({ ...c, entered: counts.value[c.channel] ?? null }))
 )
 
-// 清点输入**不预填**（「收全量」原则）：build_report 对没填的渠道回落 actual = book，
-// 预填账面值会让一键提交等于声称「每个渠道我都数了且都对」，而收全量这个设计的全部
-// 意义就是分开「我数了，一致」和「我没数这个」。已经动过的值不被后续刷新覆盖。
+// 只有**已经清点过**的渠道才预填上次的人工实收（重新清点时保留已知值有意义）。
+// 从未清点过的行必须留空（「收全量」原则）：build_report 对它们回落 actual = book，
+// 预填账面值会让一键提交等于声称「每个渠道我都数了且都对」，而收全量这个设计的
+// 全部意义就是分开「我数了，一致」和「我没数这个」。已经动过的值不被后续刷新覆盖。
 watch(
   () => store.report?.channels,
   (rows) => {
@@ -235,7 +236,11 @@ watch(
     const next: Record<string, number | null> = {}
     for (const c of rows) {
       const existing = counts.value[c.channel]
-      next[c.channel] = Number.isFinite(existing) ? existing : null
+      next[c.channel] = Number.isFinite(existing)
+        ? existing
+        : c.counted
+          ? fromCents(c.actual)
+          : null
     }
     counts.value = next
   },
@@ -515,6 +520,19 @@ onMounted(async () => {
 }
 .field > *:not(.field-label) {
   width: 100%;
+}
+/* 主题（theme.ts 的 Radio.buttonColor = primary.base）把 n-radio-button 的**未选中态**
+   也填成了主色实心，两个方向看起来都被选中；且选中态的 `buttonTextColorActive`
+   仍是深主色，压在深主色背景上几乎看不清。这里在消费方补齐两种状态：
+   未选 = 描边 + 主色字，选中 = 实心 + 白字。theme.ts 颜色值不动（全局约束），
+   选择器多带一层 `.n-radio-button` 以保证压过 Naive 自己的样式。 */
+:deep(.n-radio-group .n-radio-button:not(.n-radio-button--checked)) {
+  background-color: transparent;
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+:deep(.n-radio-group .n-radio-button.n-radio-button--checked) {
+  color: var(--text-white);
 }
 .actions {
   justify-content: flex-end;

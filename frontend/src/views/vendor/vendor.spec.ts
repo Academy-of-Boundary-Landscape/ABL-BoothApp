@@ -92,7 +92,10 @@ function makeEvent(overrides: Partial<Schemas['EventResponse']> = {}): Schemas['
   }
 }
 
-function makeOrder(id: number): Schemas['OrderResponse'] {
+function makeOrder(
+  id: number,
+  overrides: Partial<Schemas['OrderResponse']> = {}
+): Schemas['OrderResponse'] {
   return {
     id,
     event_id: 3,
@@ -106,6 +109,7 @@ function makeOrder(id: number): Schemas['OrderResponse'] {
     completed_at: null,
     items: [],
     lots: [],
+    ...overrides,
   }
 }
 
@@ -127,7 +131,7 @@ function setupApi(pending: () => Schemas['OrderResponse'][]) {
         return Promise.resolve([makeEvent()])
       case '/events/{event_id}/orders': {
         const status = opts?.params?.query?.status
-        return Promise.resolve(status === 'completed' ? [] : pending())
+        return Promise.resolve(status === 'completed' ? completedOrders : pending())
       }
       case '/events/{event_id}/products':
         return Promise.resolve([])
@@ -142,11 +146,13 @@ function setupApi(pending: () => Schemas['OrderResponse'][]) {
 }
 
 let pendingOrders: Schemas['OrderResponse'][] = []
+let completedOrders: Schemas['OrderResponse'][] = []
 
 beforeEach(() => {
   sessionStorage.clear()
   localStorage.clear()
   pendingOrders = []
+  completedOrders = []
   setActivePinia(createPinia())
   mocks.canAccessVendorPage.mockReturnValue(true)
   setupApi(() => pendingOrders)
@@ -265,6 +271,39 @@ describe('VendorShell 轮询与提示音', () => {
 
     expect(play).not.toHaveBeenCalled()
     wrapper.unmount()
+  })
+})
+
+describe('VendorShell 营业额', () => {
+  const Host = defineComponent({ template: '<router-view />' })
+
+  it('外壳挂载后首次渲染营业额即为非零（不用等下一次轮询）', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    // 外壳 onMounted 之前 activeEventId 必须先钉上；否则 LiveStats 首次
+    // fetchCompletedOrders 会因 activeEventId 为空直接 return，营业额显示 ¥0。
+    completedOrders = [
+      makeOrder(1, { status: 'completed', final_amount: cents(1234), refunded_amount: cents(0) }),
+    ]
+
+    await router.push('/vendor/3/orders')
+    const wrapper = mount(Host, { global: { plugins: [pinia, router] } })
+    await flushPromises()
+
+    expect(wrapper.find('.live-stats__tiles').text()).toContain('¥12.34')
+    wrapper.unmount()
+  })
+
+  it('营业额 = Σ(实收 − 已退)', () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const orderStore = useOrderStore()
+    orderStore.completedOrders = [
+      makeOrder(1, { status: 'completed', final_amount: cents(1000), refunded_amount: cents(300) }),
+      makeOrder(2, { status: 'completed', final_amount: cents(500), refunded_amount: cents(0) }),
+    ]
+
+    expect(orderStore.totalRevenue).toBe(1200)
   })
 })
 

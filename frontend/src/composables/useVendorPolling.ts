@@ -47,6 +47,13 @@ export function useVendorPolling(
   // 首次加载只是把已存在的待处理单拉进来，不是「新单」，不能响铃。
   const isInitialized = ref(false)
 
+  // 外壳 setup 是同步的、且早于 `<router-view>` 里所有子组件挂载；子组件
+  // （LiveStats）的 onMounted 早于外壳的 onMounted。若等 onMounted 里
+  // setActiveEvent 才设 activeEventId，子组件首次 fetchCompletedOrders 会因
+  // activeEventId 为空直接 return，营业额前几秒显示 ¥0。这里先同步钉上展会 id，
+  // 下面 onMounted 仍走 setActiveEvent 启动轮询与提示音初始化。
+  orderStore.activeEventId = Number(eventId.value)
+
   const pendingCount = computed(() => orderStore.pendingOrders.length)
 
   // 播放声音。现代浏览器要求用户必须先与页面交互过，失败就静默记一条日志。

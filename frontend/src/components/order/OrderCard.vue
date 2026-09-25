@@ -67,6 +67,7 @@ import { computed } from 'vue'
 import { NButton, NTag } from 'naive-ui'
 import { formatTimestamp } from '@/utils/dateFormatter'
 import { formatYuan } from '@/utils/money'
+import { isFullyRefunded } from '@/utils/order'
 import type { Schemas } from '@/api/client'
 
 const props = withDefaults(
@@ -80,12 +81,7 @@ const formattedTime = computed(() => {
 })
 
 // 已完成单每行都退满（`refunded_qty >= quantity`）时整张卡片置灰。
-const fullyRefunded = computed(
-  () =>
-    props.isCompleted &&
-    props.order.items.length > 0 &&
-    props.order.items.every((item) => item.refunded_qty >= item.quantity)
-)
+const fullyRefunded = computed(() => props.isCompleted && isFullyRefunded(props.order))
 </script>
 
 <style scoped>

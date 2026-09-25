@@ -1,5 +1,5 @@
 <template>
-  <PageShell embedded width="content">
+  <PageShell embedded width="full">
     <div class="page-hint-row">
       <p class="page-hint">查看并管理当前展会的所有订单记录。</p>
       <HelpBubble page="event-orders" />

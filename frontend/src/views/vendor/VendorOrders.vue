@@ -61,7 +61,7 @@
 
         <div v-show="currentTab === 'completed'" class="order-feed">
           <p class="revenue-summary">
-            今日已完成订单总额: <strong>{{ formatYuan(store.totalRevenue) }}</strong>
+            今日已完成订单实收（已扣退款）: <strong>{{ formatYuan(store.totalRevenue) }}</strong>
           </p>
           <EmptyState v-if="!store.completedOrders.length" icon="" title="暂无已完成订单" />
           <div v-for="order in store.completedOrders" :key="order.id" class="completed-entry">
@@ -123,6 +123,7 @@ import LiveStats from '@/components/vendor/LiveStats.vue'
 import ReceiptModal from '@/components/vendor/ReceiptModal.vue'
 import RefundModal from '@/components/vendor/RefundModal.vue'
 import { formatYuan, type Cents } from '@/utils/money'
+import { isFullyRefunded } from '@/utils/order'
 import type { Schemas } from '@/api/client'
 
 const props = defineProps<{ id: string | number }>()
@@ -146,12 +147,8 @@ async function manualRefresh() {
 }
 
 /**
- * 「已全部退货」：每行都退满（`refunded_qty >= quantity`）。
- * 用订单里带回的逐行退货数判定，避免为每张已完成单各发一个请求。
+ * 「已全部退货」判定收敛到 `@/utils/order`，与 OrderCard 共用同一份谓词。
  */
-function isFullyRefunded(order: Schemas['OrderResponse']): boolean {
-  return order.items.length > 0 && order.items.every((item) => item.refunded_qty >= item.quantity)
-}
 
 // 点「完成配货」先确认收款，确认了才真正调接口。
 const showReceiptModal = ref(false)
@@ -276,6 +273,13 @@ function closeRefund() {
 @media (--not-phone) {
   .orders-layout {
     grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+  }
+}
+
+@media (--phone) {
+  /* 页内刷新按钮：手机上门禁要求可点区域 ≥ 44px（默认 small 约 28px）。 */
+  .refresh-btn {
+    min-height: 44px;
   }
 }
 
