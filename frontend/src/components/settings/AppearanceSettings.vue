@@ -1,5 +1,5 @@
 <template>
-  <div class="theme-setting-container">
+  <SectionCard title="外观">
     <n-grid x-gap="24" y-gap="24" cols="1 s:1 m:2" responsive="screen">
       <!-- 左侧：设置面板 -->
       <n-grid-item>
@@ -136,26 +136,27 @@
         </n-card>
       </n-grid-item>
     </n-grid>
-  </div>
+  </SectionCard>
 </template>
 
 <script setup lang="ts">
 import {
-  NCard,
-  NSpace,
-  NSwitch,
-  NDivider,
+  NAlert,
   NButton,
+  NCard,
   NColorPicker,
+  NDivider,
   NGrid,
   NGridItem,
   NIcon,
-  NTag,
   NInput,
-  NAlert,
+  NSpace,
+  NSwitch,
+  NTag,
   NTooltip,
 } from 'naive-ui'
-import { Sunny, Moon, Checkmark } from '@vicons/ionicons5'
+import { Checkmark, Moon, Sunny } from '@vicons/ionicons5'
+import { SectionCard } from '@/components/ui'
 import { useThemeStore } from '@/stores/themeStore'
 
 const themeStore = useThemeStore()
@@ -176,11 +177,6 @@ const isDefaultColor = (swatch: { color: string; label: string }) => {
 </script>
 
 <style scoped>
-.theme-setting-container {
-  margin: 0 auto;
-  padding: var(--space-lg);
-}
-
 .setting-item {
   display: flex;
   justify-content: space-between;

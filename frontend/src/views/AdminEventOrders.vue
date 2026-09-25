@@ -1,10 +1,9 @@
 <template>
-  <PageShell
-    title="订单管理"
-    subtitle="查看并管理当前展会的所有订单记录。"
-    help="event-orders"
-    width="content"
-  >
+  <PageShell embedded width="content">
+    <div class="page-hint-row">
+      <p class="page-hint">查看并管理当前展会的所有订单记录。</p>
+      <HelpBubble page="event-orders" />
+    </div>
     <!-- 筛选器区块 -->
     <SectionCard
       title="订单筛选"
@@ -179,6 +178,7 @@ import {
 } from 'naive-ui'
 import type { Schemas } from '@/api/client'
 import { PageShell, SectionCard, AsyncState, EmptyState } from '@/components/ui'
+import HelpBubble from '@/components/shared/HelpBubble.vue'
 import { useFeedback } from '@/composables/useFeedback'
 import ReceiptModal from '@/components/vendor/ReceiptModal.vue'
 import { formatTimestamp } from '@/utils/dateFormatter'
@@ -329,6 +329,18 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* 页头改 embedded 后，原副标题挪到内容区顶部；保证文字不丢。 */
+.page-hint-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
+}
+.page-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-base);
+}
 .filter-section,
 .list-section {
   margin-bottom: var(--space-2xl);

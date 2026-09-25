@@ -82,7 +82,7 @@ function dismiss() {
 /**
  * 下载旧数据 xlsx。
  *
- * 实际下载逻辑在 `utils/legacyExport.js`，和 AdminControlPanel 的「历史数据（v1）」
+ * 实际下载逻辑在 `utils/legacyExport.js`，和设置页 LegacyDataSettings 的「历史数据（v1）」
  * 常驻入口共用——这个弹窗只负责第一次提醒，不是唯一出口。
  */
 async function exportLegacy() {

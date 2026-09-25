@@ -1,10 +1,9 @@
 <template>
-  <PageShell
-    title="商品管理"
-    subtitle="为当前展会添加、修改和移除上架商品。"
-    help="event-products"
-    width="content"
-  >
+  <PageShell embedded width="content">
+    <div class="page-hint-row">
+      <p class="page-hint">为当前展会添加、修改和移除上架商品。</p>
+      <HelpBubble page="event-products" />
+    </div>
     <!-- 上架新商品区块 -->
     <SectionCard
       title="上架新商品"
@@ -241,6 +240,7 @@ import { useEventDetailStore } from '@/stores/eventDetailStore'
 import { useProductStore } from '@/stores/productStore'
 import { useSocietyStore } from '@/stores/societyStore'
 import { PageShell, SectionCard, AsyncState, EmptyState, AppModal } from '@/components/ui'
+import HelpBubble from '@/components/shared/HelpBubble.vue'
 import { useFeedback } from '@/composables/useFeedback'
 import {
   NInput,
@@ -486,6 +486,18 @@ function getProductLabel(name: string | null | undefined) {
 </script>
 
 <style scoped>
+/* 页头改 embedded 后，原副标题挪到内容区顶部；保证文字不丢。 */
+.page-hint-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
+}
+.page-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-base);
+}
 /* 通用区块样式 */
 .form-section,
 .list-section {

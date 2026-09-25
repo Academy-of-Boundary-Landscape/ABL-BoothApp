@@ -3,10 +3,11 @@ import { useAuthStore } from '@/stores/authStore' // 导入 auth store
 // 导入所有需要的布局和视图
 import AdminLayout from '../views/AdminLayout.vue'
 import AdminDashboard from '../views/AdminDashboard.vue'
-import AdminControlPanel from '../views/AdminControlPanel.vue'
 import AdminMasterProducts from '../views/AdminMasterProducts.vue'
 import AdminEventProducts from '../views/AdminEventProducts.vue'
 import AdminEventLots from '../views/AdminEventLots.vue'
+import AdminEventWorkbench from '../views/AdminEventWorkbench.vue'
+import WorkbenchIndex from '../views/WorkbenchIndex.vue'
 import AdminSocieties from '../views/AdminSocieties.vue'
 import VendorEventSelection from '../views/VendorEventSelection.vue' // 【新增】导入新视图
 import VendorView from '../views/VendorView.vue' // 这个现在是详情页
@@ -15,7 +16,7 @@ import EventPortalView from '../views/EventPortalView.vue'
 import AdminEventOrders from '../views/AdminEventOrders.vue'
 import LoginView from '../views/LoginView.vue'
 import AdminEventStat from '../views/AdminEventStat.vue'
-import About from '../views/About.vue'
+import AdminSettings from '../views/AdminSettings.vue'
 import Help from '../views/Help.vue'
 import NotFound from '../views/NotFound.vue'
 import ServerError from '../views/ServerError.vue'
@@ -38,14 +39,56 @@ const routes = [
     // 管理后台的所有子页面
     children: [
       {
-        path: '', // 默认 /admin 路径 → 控制台
-        name: 'admin-control-panel',
-        component: AdminControlPanel,
+        path: '', // /admin → 展会列表（原「控制台」已取消）
+        redirect: { name: 'admin-events' },
       },
       {
         path: 'events',
         name: 'admin-events',
         component: AdminDashboard,
+      },
+      {
+        // 展会工作台：外壳负责加载展会并 provide，子路由是展前 / 现场 / 收摊的具体页面。
+        path: 'events/:id',
+        name: 'admin-event-workbench',
+        component: AdminEventWorkbench,
+        children: [
+          {
+            // 按展会状态重定向到对应子页（spec §3.1）。
+            path: '',
+            name: 'admin-event-workbench-index',
+            component: WorkbenchIndex,
+          },
+          {
+            path: 'products',
+            name: 'admin-event-products',
+            component: AdminEventProducts,
+            props: true,
+          },
+          {
+            path: 'lots',
+            name: 'admin-event-lots',
+            component: AdminEventLots,
+            props: true,
+          },
+          {
+            path: 'orders',
+            name: 'admin-event-orders',
+            component: AdminEventOrders,
+            props: true,
+          },
+          {
+            path: 'stats',
+            name: 'admin-event-stats',
+            component: AdminEventStat,
+          },
+          {
+            path: 'settlement',
+            name: 'admin-event-settlement',
+            component: () => import('@/views/AdminEventSettlement.vue'),
+            props: true,
+          },
+        ],
       },
       {
         path: 'master-products',
@@ -58,50 +101,19 @@ const routes = [
         component: AdminSocieties,
       },
       {
-        path: 'events/:id/products',
-        name: 'admin-event-products',
-        component: AdminEventProducts,
-        props: true,
+        path: 'settings',
+        name: 'admin-settings',
+        component: AdminSettings,
       },
-      {
-        path: 'events/:id/lots',
-        name: 'admin-event-lots',
-        component: AdminEventLots,
-        props: true,
-      },
-      // 【新增】订单管理路由
-      {
-        path: 'events/:id/orders',
-        name: 'admin-event-orders',
-        component: AdminEventOrders,
-        props: true,
-      },
-      // 【新增】销售统计路由
-      {
-        path: '/admin/events/:id/stats',
-        name: 'AdminEventStats',
-        component: AdminEventStat,
-      },
-      // 【新增】结算路由：垫付、结算调整、收摊清点、结算单
-      // 只对管理端开放：摊主端看到的是收摊向导里的「账本已冻结」那一屏，
-      // 结算单在这里查看，见 VendorView.openClosing 的注释。
-      {
-        path: 'events/:id/settlement',
-        name: 'admin-event-settlement',
-        component: () => import('@/views/AdminEventSettlement.vue'),
-        props: true,
-      },
-      // 【新增】关于页面
-      {
-        path: 'about',
-        name: 'admin-about',
-        component: About,
-      },
-      // 【新增】帮助教程页面
       {
         path: 'help',
         name: 'admin-help',
         component: Help,
+      },
+      {
+        // 旧「关于」页并入设置页的「关于与更新」区块。
+        path: 'about',
+        redirect: { name: 'admin-settings', hash: '#about' },
       },
     ],
   },

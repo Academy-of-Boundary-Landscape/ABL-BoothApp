@@ -1,55 +1,55 @@
 <template>
-  <div class="about-container">
-    <n-card :bordered="false" class="main-card" size="large">
-      <!-- 1. 头部 Header -->
-      <div class="header-section">
-        <n-avatar
-          :size="100"
-          src="/logo.png"
-          fallback-src="https://via.placeholder.com/96?text=THO"
-          class="logo"
-          bordered
-        />
-        <h1 class="app-title">摊盒 Booth-Kernel</h1>
-        <p class="app-subtitle">基于 Tauri 构建的现代化出摊一体工具，旨在改进同人摊主工作流</p>
+  <div id="about" class="about-settings">
+    <n-space vertical size="large">
+      <!-- 关于摊盒 -->
+      <SectionCard title="关于摊盒">
+        <div class="header-section">
+          <n-avatar
+            :size="100"
+            src="/logo.png"
+            fallback-src="https://via.placeholder.com/96?text=THO"
+            class="logo"
+            bordered
+          />
+          <h2 class="app-title">摊盒 Booth-Kernel</h2>
+          <p class="app-subtitle">基于 Tauri 构建的现代化出摊一体工具，旨在改进同人摊主工作流</p>
 
-        <n-flex justify="center" size="small" class="tag-row">
-          <n-tag :bordered="false" type="info" round size="small">
-            <template #icon
-              ><n-icon><LogoTux /></n-icon
-            ></template>
-            Tauri v2
-          </n-tag>
-          <n-tag :bordered="false" type="primary" round size="small">
-            <template #icon
-              ><n-icon><LogoWindows /></n-icon
-            ></template>
-            Windows
-          </n-tag>
-          <n-tag :bordered="false" type="success" round size="small">
-            <template #icon
-              ><n-icon><LogoAndroid /></n-icon
-            ></template>
-            Android
-          </n-tag>
-          <n-tag :bordered="false" type="warning" round size="small">MIT License</n-tag>
-        </n-flex>
-      </div>
+          <n-flex justify="center" size="small" class="tag-row">
+            <n-tag :bordered="false" type="info" round size="small">
+              <template #icon
+                ><n-icon><LogoTux /></n-icon
+              ></template>
+              Tauri v2
+            </n-tag>
+            <n-tag :bordered="false" type="primary" round size="small">
+              <template #icon
+                ><n-icon><LogoWindows /></n-icon
+              ></template>
+              Windows
+            </n-tag>
+            <n-tag :bordered="false" type="success" round size="small">
+              <template #icon
+                ><n-icon><LogoAndroid /></n-icon
+              ></template>
+              Android
+            </n-tag>
+            <n-tag :bordered="false" type="warning" round size="small">MIT License</n-tag>
+          </n-flex>
 
-      <n-divider />
-      <section class="section intro-section">
+          <div class="update-row">
+            <n-button secondary @click="showUpdateModal = true">检查更新</n-button>
+          </div>
+        </div>
+
+        <n-divider />
         <n-blockquote>
           “同人展会的魅力在于创作者与同好之间的交流。我不希望摊主们被杂乱的账本、卡顿的网络和繁琐的计算束缚。
           该工具的初衷，是把‘出摊’变得更简单、更优雅，让摊主能更多享受展会的快乐，而非被琐碎事项所束缚。”
         </n-blockquote>
-      </section>
+      </SectionCard>
 
-      <!-- 2. 项目背景 -->
-      <section class="section">
-        <div class="section-heading">
-          <n-icon size="24" color="#18a058"><BookOutline /></n-icon>
-          <h2>项目时间线</h2>
-        </div>
+      <!-- 项目时间线（默认折叠） -->
+      <SectionCard title="项目时间线" collapsible collapsed>
         <n-timeline size="large">
           <n-timeline-item type="error" title="痛点：混乱的纸质记录" time="2025年8月">
             <span class="text-muted"
@@ -79,14 +79,10 @@
             >
           </n-timeline-item>
         </n-timeline>
-      </section>
+      </SectionCard>
 
-      <!-- 3. 核心功能 (使用 Grid 组件处理响应式) -->
-      <section class="section">
-        <div class="section-heading">
-          <n-icon size="24" color="#2080f0"><HardwareChipOutline /></n-icon>
-          <h2>核心特征</h2>
-        </div>
+      <!-- 核心特征 -->
+      <SectionCard title="核心特征">
         <n-grid x-gap="16" y-gap="16" cols="1 s:1 m:3" responsive="screen">
           <n-grid-item v-for="feature in features" :key="feature.title">
             <n-card
@@ -105,14 +101,10 @@
             </n-card>
           </n-grid-item>
         </n-grid>
-      </section>
+      </SectionCard>
 
-      <!-- 4. 技术栈 -->
-      <section class="section">
-        <div class="section-heading">
-          <n-icon size="24" color="#8a2be2"><CodeSlashOutline /></n-icon>
-          <h2>技术架构</h2>
-        </div>
+      <!-- 技术架构 -->
+      <SectionCard title="技术架构">
         <n-flex size="small" class="mb-2">
           <n-tag :bordered="false" type="success">Vue 3 + Naive UI</n-tag>
           <n-tag :bordered="false" type="info">Rust (Axum)</n-tag>
@@ -122,14 +114,10 @@
         <p class="text-muted">
           Naive UI 提供现代化交互，Rust 负责高性能 HTTP 服务与业务逻辑，SQLite 确保数据本地化存储。
         </p>
-      </section>
+      </SectionCard>
 
-      <!-- 5. 致谢 (使用 Grid 简化布局) -->
-      <section class="section">
-        <div class="section-heading">
-          <n-icon size="24" color="#d03050"><HeartOutline /></n-icon>
-          <h2>致谢</h2>
-        </div>
+      <!-- 致谢 -->
+      <SectionCard title="致谢">
         <n-grid x-gap="12" y-gap="12" cols="1 s:2" responsive="screen">
           <n-grid-item v-for="item in credits" :key="item.title">
             <div class="credit-item">
@@ -138,17 +126,10 @@
             </div>
           </n-grid-item>
         </n-grid>
-      </section>
+      </SectionCard>
 
-      <n-divider />
-
-      <!-- 6. 使用指南与声明 -->
-      <section class="section">
-        <div class="section-heading">
-          <n-icon size="24" color="#555"><DocumentTextOutline /></n-icon>
-          <h2>指南 & 声明</h2>
-        </div>
-
+      <!-- 指南 & 声明 -->
+      <SectionCard title="指南 & 声明">
         <n-collapse arrow-placement="right" :default-expanded-names="['free', 'privacy']">
           <n-collapse-item name="free">
             <template #header>
@@ -212,14 +193,10 @@
             </div>
           </n-collapse-item>
         </n-collapse>
-      </section>
+      </SectionCard>
 
       <!-- 故障排查：日志文件位置（只在桌面 / 手机应用里有） -->
-      <section v-if="logDir" class="section">
-        <div class="section-heading">
-          <n-icon size="24" color="#555"><DocumentTextOutline /></n-icon>
-          <h2>故障排查</h2>
-        </div>
+      <SectionCard v-if="logDir" title="故障排查">
         <p class="log-desc">
           程序运行日志保存在下面的文件夹里（<code>booth.log</code>）。遇到闪退或功能异常时，
           把这个文件发给开发者能大大加快排查。
@@ -228,10 +205,10 @@
           <code class="log-path">{{ logDir }}</code>
           <n-button size="small" @click="copyLogDir">复制路径</n-button>
         </n-flex>
-      </section>
+      </SectionCard>
 
-      <!-- 7. 底部信息 -->
-      <section class="footer-section">
+      <!-- 开发者与联系方式 -->
+      <SectionCard title="开发者与联系方式">
         <n-flex vertical align="center" size="large">
           <div class="dev-info">
             <img src="/avatar.png" alt="Renko_1055" class="author-avatar" />
@@ -302,43 +279,69 @@
 
           <div class="copyright">© 2026 境界景观学会 | Designed for Doujin Circles</div>
         </n-flex>
+      </SectionCard>
 
-        <!-- 危险操作区 -->
-        <div class="danger-zone mt-4">
+      <!-- 危险操作区 -->
+      <SectionCard title="危险操作">
+        <div class="danger-zone">
           <div class="danger-header">
             <n-icon :color="'var(--error-color)'"><TrashOutline /></n-icon> 危险操作
           </div>
           <p class="danger-desc">清空所有数据和图片文件，仅在重置系统时使用。</p>
           <n-button type="error" ghost size="small" @click="resetDatabase"> 重置数据库 </n-button>
         </div>
-      </section>
-    </n-card>
+      </SectionCard>
+    </n-space>
+
+    <UpdateModal :show="showUpdateModal" @update:show="showUpdateModal = $event" />
   </div>
 </template>
 
 <script setup lang="ts">
+import { onMounted, ref } from 'vue'
 import {
-  NCard,
+  NAlert,
   NAvatar,
-  NTag,
+  NBlockquote,
+  NButton,
+  NCard,
+  NCollapse,
+  NCollapseItem,
   NDivider,
+  NFlex,
   NGrid,
   NGridItem,
   NIcon,
-  NButton,
   NPopover,
+  NSpace,
+  NTag,
   NTimeline,
   NTimelineItem,
-  NFlex,
-  NCollapse,
-  NCollapseItem,
-  NAlert,
-  NBlockquote,
 } from 'naive-ui'
+import {
+  AlertCircleOutline,
+  ChatbubblesOutline,
+  GiftOutline,
+  GlobeOutline,
+  LogoAndroid,
+  LogoGithub,
+  LogoTux,
+  LogoWindows,
+  MailOutline,
+  PhonePortraitOutline,
+  ShieldCheckmarkOutline,
+  StorefrontOutline,
+  TrashOutline,
+  WifiOutline,
+} from '@vicons/ionicons5'
+import { SectionCard } from '@/components/ui'
+import UpdateModal from '@/components/shared/UpdateModal.vue'
 import { api, unwrap, errorMessage } from '@/api/client'
 import { copyLink as copyLinkUtil } from '@/services/clipboard'
-import { onMounted, ref } from 'vue'
 import { useFeedback } from '@/composables/useFeedback'
+
+const fb = useFeedback()
+const showUpdateModal = ref(false)
 
 // ---- 故障排查：日志目录 ----
 const logDir = ref('')
@@ -348,9 +351,10 @@ onMounted(async () => {
     const { invoke } = await import('@tauri-apps/api/core')
     logDir.value = await invoke<string>('get_log_dir')
   } catch (e) {
-    console.warn('[About] get_log_dir failed', e)
+    console.warn('[AboutSettings] get_log_dir failed', e)
   }
 })
+
 async function copyLogDir() {
   try {
     await copyLinkUtil(logDir.value)
@@ -359,29 +363,6 @@ async function copyLogDir() {
     fb.info(logDir.value)
   }
 }
-import {
-  BookOutline,
-  HardwareChipOutline,
-  CodeSlashOutline,
-  DocumentTextOutline,
-  StorefrontOutline,
-  LogoGithub,
-  GlobeOutline,
-  MailOutline,
-  LogoWindows,
-  LogoAndroid,
-  LogoTux,
-  PhonePortraitOutline,
-  WifiOutline,
-  TrashOutline,
-  HeartOutline,
-  ShieldCheckmarkOutline,
-  AlertCircleOutline,
-  GiftOutline,
-  ChatbubblesOutline,
-} from '@vicons/ionicons5'
-
-const fb = useFeedback()
 
 // 数据定义：将原来硬编码在模板里的内容提取出来，使模板更干净
 const features = [
@@ -450,19 +431,12 @@ const resetDatabase = async () => {
 </script>
 
 <style scoped>
-/* 定义局部变量 */
-.about-container {
-  max-width: var(--page-content);
-  margin: 0 auto;
-  padding: var(--space-xl) var(--space-lg);
-  --text-primary: var(--primary-text-color);
-  --text-secondary: var(--text-muted);
-  --bg-subtle: color-mix(in srgb, var(--text-muted) 8%, transparent);
+.about-settings {
+  scroll-margin-top: var(--space-xl);
 }
 
-/* 通用排版 */
 .text-muted {
-  color: var(--text-secondary);
+  color: var(--text-muted);
   line-height: 1.6;
 }
 .text-small {
@@ -470,9 +444,6 @@ const resetDatabase = async () => {
 }
 .mb-2 {
   margin-bottom: var(--space-sm);
-}
-.mt-4 {
-  margin-top: var(--space-2xl);
 }
 
 /* 头部 Header */
@@ -492,24 +463,11 @@ const resetDatabase = async () => {
 }
 .app-subtitle {
   font-size: var(--font-lg);
-  color: var(--text-secondary);
+  color: var(--text-muted);
   margin: 0 0 var(--space-xl);
 }
-
-/* 章节通用 */
-.section {
-  margin-bottom: var(--space-2xl);
-}
-.section-heading {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  margin-bottom: var(--space-lg);
-}
-.section-heading h2 {
-  margin: 0;
-  font-size: var(--font-lg);
-  font-weight: var(--weight-bold);
+.update-row {
+  margin-top: var(--space-lg);
 }
 
 /* 核心功能卡片 */
@@ -530,7 +488,7 @@ const resetDatabase = async () => {
   margin-left: var(--space-sm);
 }
 .feature-desc {
-  color: var(--text-secondary);
+  color: var(--text-muted);
   font-size: var(--font-base);
   margin: 0;
   line-height: 1.5;
@@ -538,7 +496,7 @@ const resetDatabase = async () => {
 
 /* 致谢模块 */
 .credit-item {
-  background: var(--bg-subtle);
+  background: color-mix(in srgb, var(--text-muted) 8%, transparent);
   padding: var(--space-md) var(--space-lg);
   border-radius: var(--radius-md);
   height: 100%;
@@ -550,7 +508,7 @@ const resetDatabase = async () => {
 }
 .credit-desc {
   font-size: var(--font-base);
-  color: var(--text-secondary);
+  color: var(--text-muted);
 }
 
 /* 折叠面板内容 */
@@ -558,28 +516,8 @@ const resetDatabase = async () => {
   padding: var(--space-md) var(--space-xs);
   font-size: var(--font-base);
 }
-.qa-q {
-  font-weight: var(--weight-bold);
-  margin-bottom: var(--space-sm);
-}
-.qa-list {
-  margin: 0;
-  padding-left: var(--space-lg);
-  color: var(--text-secondary);
-}
-.qa-list li {
-  margin-bottom: var(--space-sm);
-}
-.highlight-item {
-  color: var(--accent-color);
-  font-weight: var(--weight-medium);
-}
 
-/* 底部区域 */
-.footer-section {
-  margin-top: var(--space-2xl);
-  text-align: center;
-}
+/* 开发者 */
 .dev-info {
   display: flex;
   align-items: center;
@@ -599,11 +537,11 @@ const resetDatabase = async () => {
 }
 .author-title {
   font-size: var(--font-sm);
-  color: var(--text-secondary);
+  color: var(--text-muted);
 }
 .copyright {
   font-size: var(--font-sm);
-  color: var(--text-secondary);
+  color: var(--text-muted);
   font-family: monospace;
 }
 
@@ -628,23 +566,10 @@ const resetDatabase = async () => {
 }
 .danger-desc {
   font-size: var(--font-sm);
-  color: var(--text-secondary);
+  color: var(--text-muted);
   margin: 0 0 var(--space-md);
 }
 
-/* 移动端微调：利用 CSS 变量微调间距，而非重写整个布局 */
-@media (--phone) {
-  .about-container {
-    padding: var(--space-md);
-  }
-  .app-title {
-    font-size: var(--font-xl);
-  }
-  .logo {
-    width: 80px !important;
-    height: 80px !important;
-  }
-}
 .log-desc {
   color: var(--text-muted);
   margin: 0 0 var(--space-md);
@@ -654,5 +579,15 @@ const resetDatabase = async () => {
   padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+}
+
+@media (--phone) {
+  .app-title {
+    font-size: var(--font-xl);
+  }
+  .logo {
+    width: 80px !important;
+    height: 80px !important;
+  }
 }
 </style>

@@ -1,11 +1,10 @@
 <template>
-  <PageShell
-    :title="pageTitle"
-    subtitle="查看当前展会的销售数据和统计分析。"
-    help="event-stats"
-    width="content"
-  >
-    <template #actions>
+  <PageShell embedded width="content">
+    <div class="page-toolbar">
+      <div class="page-hint-row">
+        <p class="page-hint">查看当前展会的销售数据和统计分析。</p>
+        <HelpBubble page="event-stats" />
+      </div>
       <div v-if="statStore.stats && statStore.stats.summary.length > 0" class="download-actions">
         <n-button class="download-btn" type="default" ghost size="large" @click="downloadCsv">
           下载 CSV
@@ -32,7 +31,7 @@
           下载 Excel 报告
         </n-button>
       </div>
-    </template>
+    </div>
 
     <AsyncState :loading="statStore.isLoading" loading-text="正在从数据库中提取统计信息...">
       <div v-if="statStore.error" class="error-state">
@@ -158,6 +157,7 @@ import SalesLineChart from '@/components/stats/SalesLineChart.vue'
 import StatFilters from '@/components/stats/StatFilters.vue'
 import { NButton } from 'naive-ui'
 import { PageShell, SectionCard, AsyncState, EmptyState } from '@/components/ui'
+import HelpBubble from '@/components/shared/HelpBubble.vue'
 import { useFeedback } from '@/composables/useFeedback'
 import { toAbsoluteApiUrl } from '@/services/url'
 import { formatYuan, fromCents, type Cents } from '@/utils/money'
@@ -186,9 +186,6 @@ const isSummaryCollapsed = ref(false)
 const isChartCollapsed = ref(false)
 const isTableCollapsed = ref(false)
 
-const pageTitle = computed(() =>
-  statStore.stats?.event_name ? `${statStore.stats.event_name} - 数据统计` : '数据统计'
-)
 const totalItemsSold = computed(
   () => statStore.stats?.summary.reduce((sum, item) => sum + item.total_quantity, 0) || 0
 )
@@ -405,6 +402,25 @@ watch(
 </script>
 
 <style scoped>
+/* 页头改 embedded 后，原副标题与下载按钮挪到内容区顶部；保证文字与操作都不丢。 */
+.page-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-lg);
+}
+.page-hint-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+.page-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-base);
+}
 /* 主题色通过 App.vue 动态注入 */
 
 .error-state {

@@ -25,7 +25,7 @@
           </n-button>
         </div>
 
-        <!-- ✅ 中间可滚动区域：菜单 + 正在进行的展会 -->
+        <!-- ✅ 中间可滚动区域：菜单 -->
         <div class="sidebar-body">
           <n-menu
             :collapsed="isSidebarCollapsed"
@@ -34,56 +34,25 @@
             :options="menuOptions"
             :value="activeKey"
           />
-
-          <div
-            v-if="!event && ongoingEvents.length > 0 && !isSidebarCollapsed"
-            class="ongoing-events-section"
-          >
-            <n-divider />
-            <p class="section-title">正在进行的展会</p>
-            <n-space vertical :size="8">
-              <n-button
-                v-for="evt in ongoingEvents"
-                :key="evt.id"
-                block
-                secondary
-                size="small"
-                @click="$router.push(`/admin/events/${evt.id}/products`)"
-                class="ongoing-event-btn"
-              >
-                <template #icon>
-                  <span class="event-status-dot">●</span>
-                </template>
-                <span class="event-name-text">{{ evt.name }}</span>
-              </n-button>
-            </n-space>
-          </div>
         </div>
 
-        <!-- ✅ 底部固定区域：永远不被遮住 -->
+        <!-- ✅ 底部固定区域：快捷入口 -->
         <div v-if="!isSidebarCollapsed" class="sidebar-footer">
           <n-divider />
-          <p class="section-title">快捷视图</p>
+          <p class="section-title">快捷入口</p>
           <n-space vertical>
             <n-button block secondary type="primary" @click="$router.push('/vendor')">
               <template #icon>
                 <n-icon><ExternalIcon /></n-icon>
               </template>
-              摊主视图
+              摊主端
             </n-button>
             <n-button block secondary @click="$router.push('/')">
               <template #icon>
                 <n-icon><ExternalIcon /></n-icon>
               </template>
-              顾客视图
+              顾客端
             </n-button>
-          </n-space>
-
-          <n-divider />
-          <p class="section-title">系统</p>
-          <n-space vertical>
-            <n-button block secondary @click="showUpdateModal = true">检查更新</n-button>
-            <n-button block secondary @click="$router.push('/admin/about')">关于</n-button>
           </n-space>
 
           <!-- ✅ 给底部留安全区，防止低高度/移动端被遮 -->
@@ -99,12 +68,6 @@
 
       <router-view />
 
-      <AppModal v-model:show="showThemeModal" title="主题设置" size="lg" :mask-closable="false">
-        <ThemeSetting />
-      </AppModal>
-
-      <UpdateModal :show="showUpdateModal" @update:show="showUpdateModal = $event" />
-
       <div
         v-if="!isSidebarCollapsed && isMobile"
         class="mobile-overlay"
@@ -115,7 +78,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, watch, h } from 'vue'
+import { computed, h, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import {
   NLayout,
@@ -128,19 +91,13 @@ import {
   NIcon,
   type MenuOption,
 } from 'naive-ui'
-import { useEventStore } from '@/stores/eventStore'
-import { AppModal } from '@/components/ui'
 import { useViewport } from '@/composables/useViewport'
-import ThemeSetting from '@/views/ThemeSetting.vue'
-import UpdateModal from '@/components/shared/UpdateModal.vue'
+import { resolveActiveKey } from './adminNav'
 
 const route = useRoute()
-const eventStore = useEventStore()
 
 const isSidebarCollapsed = ref(false)
 const { isTablet: isMobile } = useViewport()
-const showThemeModal = ref(false)
-const showUpdateModal = ref(false)
 
 watch(
   isMobile,
@@ -150,7 +107,8 @@ watch(
   { immediate: true }
 )
 
-const activeKey = computed(() => route.path)
+// 侧栏不再随展会跳变：固定五项 + 快捷入口（spec §3.3）。
+const activeKey = computed(() => resolveActiveKey(route.path))
 
 const ExternalIcon = () =>
   h(
@@ -169,114 +127,29 @@ const ExternalIcon = () =>
     ]
   )
 
-const event = computed(() => {
-  const eventId = route.params.id
-  if (!eventId) return null
-  return (
-    eventStore.events.find((e) => e.id === parseInt(String(eventId), 10)) || {
-      name: '加载中...',
-      id: eventId,
-    }
-  )
-})
-
-const ongoingEvents = computed(() => {
-  const events = Array.isArray(eventStore.events) ? eventStore.events : []
-  return events.filter((e) => e.status === '进行中').slice(0, 3)
-})
-
-const menuOptions = computed<MenuOption[]>(() => {
-  const baseOptions: MenuOption[] = [
-    { label: () => h(RouterLink, { to: '/admin' }, { default: () => '控制台' }), key: '/admin' },
-    {
-      label: () => h(RouterLink, { to: '/admin/events' }, { default: () => '展会管理' }),
-      key: '/admin/events',
-    },
-    {
-      label: () => h(RouterLink, { to: '/admin/master-products' }, { default: () => '全局商品库' }),
-      key: '/admin/master-products',
-    },
-    {
-      label: () => h(RouterLink, { to: '/admin/societies' }, { default: () => '社团管理' }),
-      key: '/admin/societies',
-    },
-    {
-      label: () => h(RouterLink, { to: '/admin/help' }, { default: () => '使用教程' }),
-      key: '/admin/help',
-    },
-    {
-      label: () =>
-        h(
-          'div',
-          { onClick: () => (showThemeModal.value = true), style: { cursor: 'pointer' } },
-          '主题设置'
-        ),
-      key: '/admin/theme-setting',
-    },
-  ]
-
-  const currentEvent = event.value
-  if (currentEvent) {
-    baseOptions.push(
-      { type: 'divider', key: 'd1' },
-      {
-        label: () =>
-          h('div', { class: 'menu-event-name', title: currentEvent.name }, currentEvent.name),
-        key: 'event-group',
-        type: 'group',
-        children: [
-          {
-            label: () =>
-              h(
-                RouterLink,
-                { to: `/admin/events/${currentEvent.id}/products` },
-                { default: () => '商品管理' }
-              ),
-            key: `/admin/events/${currentEvent.id}/products`,
-          },
-          {
-            label: () =>
-              h(
-                RouterLink,
-                { to: `/admin/events/${currentEvent.id}/lots` },
-                { default: () => '套装与优惠' }
-              ),
-            key: `/admin/events/${currentEvent.id}/lots`,
-          },
-          {
-            label: () =>
-              h(
-                RouterLink,
-                { to: `/admin/events/${currentEvent.id}/orders` },
-                { default: () => '订单管理' }
-              ),
-            key: `/admin/events/${currentEvent.id}/orders`,
-          },
-          {
-            label: () =>
-              h(
-                RouterLink,
-                { to: `/admin/events/${currentEvent.id}/stats` },
-                { default: () => '销售统计' }
-              ),
-            key: `/admin/events/${currentEvent.id}/stats`,
-          },
-          {
-            label: () =>
-              h(
-                RouterLink,
-                { to: `/admin/events/${currentEvent.id}/settlement` },
-                { default: () => '结算' }
-              ),
-            key: `/admin/events/${currentEvent.id}/settlement`,
-          },
-        ],
-      }
-    )
-  }
-
-  return baseOptions
-})
+const menuOptions: MenuOption[] = [
+  {
+    label: () => h(RouterLink, { to: '/admin/events' }, { default: () => '展会' }),
+    key: '/admin/events',
+  },
+  {
+    label: () => h(RouterLink, { to: '/admin/master-products' }, { default: () => '商品库' }),
+    key: '/admin/master-products',
+  },
+  {
+    label: () => h(RouterLink, { to: '/admin/societies' }, { default: () => '社团' }),
+    key: '/admin/societies',
+  },
+  { type: 'divider', key: 'd1' },
+  {
+    label: () => h(RouterLink, { to: '/admin/settings' }, { default: () => '设置' }),
+    key: '/admin/settings',
+  },
+  {
+    label: () => h(RouterLink, { to: '/admin/help' }, { default: () => '使用教程' }),
+    key: '/admin/help',
+  },
+]
 
 function toggleSidebar() {
   isSidebarCollapsed.value = !isSidebarCollapsed.value
@@ -284,12 +157,6 @@ function toggleSidebar() {
 function closeSidebar() {
   if (isMobile.value) isSidebarCollapsed.value = true
 }
-
-onMounted(() => {
-  if (!Array.isArray(eventStore.events) || eventStore.events.length === 0) {
-    eventStore.fetchEvents?.()
-  }
-})
 </script>
 
 <style scoped>
@@ -351,54 +218,6 @@ onMounted(() => {
   color: var(--text-muted);
   margin-bottom: var(--space-md);
   padding-left: var(--space-xs);
-}
-
-/* ongoing */
-.ongoing-events-section {
-  padding: 0 var(--space-lg);
-  margin-top: var(--space-md);
-}
-
-.ongoing-event-btn {
-  text-align: left;
-  justify-content: flex-start;
-  height: auto;
-  min-height: 36px;
-  padding: var(--space-sm) var(--space-md);
-  width: 100%;
-  overflow: hidden;
-}
-
-.event-status-dot {
-  color: var(--warning-color);
-  font-size: var(--font-xs);
-  margin-right: var(--space-xs);
-  flex-shrink: 0;
-}
-
-.event-name-text {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
-  min-width: 0;
-}
-
-.menu-event-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  display: block;
-  max-width: 100%;
-}
-
-:deep(.n-menu-item-group-title) {
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  white-space: nowrap !important;
-  max-width: 100% !important;
-  padding-right: var(--space-sm) !important;
 }
 
 /* 移动端汉堡按钮 */

@@ -359,7 +359,7 @@ const qaList = [
     items: [
       {
         q: '拍照识别是什么？怎么用？',
-        a: '拍照识别让顾客对准商品拍一张照片，系统自动识别是哪件商品并加入购物车，省去在列表里翻找的时间。<br/>使用前需要在 <strong>控制台 → AI 视觉识别</strong> 面板确认模型已安装、索引已构建。',
+        a: '拍照识别让顾客对准商品拍一张照片，系统自动识别是哪件商品并加入购物车，省去在列表里翻找的时间。<br/>使用前需要在 <strong>设置 → AI 视觉识别</strong> 面板确认模型已安装、索引已构建。',
       },
       {
         q: 'AI 识别的基本原理是什么？',
@@ -375,7 +375,7 @@ const qaList = [
       },
       {
         q: '推理设备怎么选？CPU 和 GPU 有什么区别？',
-        a: '<strong>自动模式</strong>（推荐）：系统会自动尝试 GPU 加速，不可用时降级到 CPU。<br/><strong>GPU</strong>：速度快（通常 20-50ms/张），但需要显卡支持 DirectX 12。<br/><strong>CPU</strong>：兼容性最好，速度稍慢（通常 50-200ms/张），但对识别准确率没有影响。<br/><br/>在 <strong>控制台 → AI 视觉识别</strong> 面板可以切换推理设备。',
+        a: '<strong>自动模式</strong>（推荐）：系统会自动尝试 GPU 加速，不可用时降级到 CPU。<br/><strong>GPU</strong>：速度快（通常 20-50ms/张），但需要显卡支持 DirectX 12。<br/><strong>CPU</strong>：兼容性最好，速度稍慢（通常 50-200ms/张），但对识别准确率没有影响。<br/><br/>在 <strong>设置 → AI 视觉识别</strong> 面板可以切换推理设备。',
       },
       {
         q: '索引构建是什么？什么时候需要重建？',
@@ -383,7 +383,7 @@ const qaList = [
       },
       {
         q: '识别不准怎么办？',
-        a: '可以尝试：<br/>1. <strong>补充图片</strong>：为识别不准的商品多上传几张不同角度的照片<br/>2. <strong>改善拍照</strong>：引导顾客将商品放在取景框中央，背景简洁<br/>3. <strong>换更大的模型</strong>：下载 MobileCLIP 或 DINOv2 试试<br/>4. <strong>全量重建</strong>：在控制台点击"全量重建索引"',
+        a: '可以尝试：<br/>1. <strong>补充图片</strong>：为识别不准的商品多上传几张不同角度的照片<br/>2. <strong>改善拍照</strong>：引导顾客将商品放在取景框中央，背景简洁<br/>3. <strong>换更大的模型</strong>：下载 MobileCLIP 或 DINOv2 试试<br/>4. <strong>全量重建</strong>：在设置点击"全量重建索引"',
       },
     ],
   },

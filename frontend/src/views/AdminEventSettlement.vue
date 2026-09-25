@@ -1,22 +1,17 @@
 <template>
-  <PageShell title="展会结算" width="wide">
-    <template #subtitle>
-      <p v-if="store.report" class="event-title">
-        {{ store.report.event_name }} · {{ store.report.event_date }}
-      </p>
-      <p class="header-desc">
+  <PageShell embedded width="wide">
+    <div class="page-toolbar">
+      <p class="page-hint">
         录垫付、结算调整和收摊清点。金额框里填「元」，提交时换算成「分」；
         业务规则由后端判定，这里只负责把后端那句话原样显示出来。
       </p>
-    </template>
-    <template #actions>
       <n-space class="header-actions">
         <n-button :disabled="!store.report" @click="reloadReport">刷新</n-button>
         <n-button type="primary" ghost :disabled="!store.report" @click="exportXlsx">
           导出 Excel
         </n-button>
       </n-space>
-    </template>
+    </div>
 
     <!-- warnings 必须最显眼：这里非空意味着业务表加出来的数和账本对不上，
          也就是某笔账记错了。不折叠、不放底部，逐条列在整张单最上方。 -->
@@ -726,13 +721,19 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.event-title {
-  margin: 0;
-  color: var(--primary-text-color);
-  font-weight: var(--weight-bold);
+/* 页头改 embedded 后，原副标题与刷新/导出按钮挪到内容区顶部；保证文字与操作都不丢。 */
+.page-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-lg);
 }
-.header-desc {
+.page-hint {
   margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-base);
   line-height: var(--leading-base);
 }
 .header-actions {

@@ -290,6 +290,19 @@ describe('PageShell', () => {
     expect(sub.find('.em').text()).toBe('重点')
     expect(w.text()).not.toContain('纯文本')
   })
+
+  it('embedded 不渲染 h1 / 副标题 / actions，只留内容', () => {
+    const w = mount(PageShell, {
+      props: { embedded: true, subtitle: '不该出现' },
+      slots: { actions: '<button class="act">操作</button>', default: '<p class="body">内容</p>' },
+      ...pageShellOpts,
+    })
+    expect(w.find('h1').exists()).toBe(false)
+    expect(w.find('.page-shell__header').exists()).toBe(false)
+    expect(w.find('.page-shell__subtitle').exists()).toBe(false)
+    expect(w.find('.act').exists()).toBe(false)
+    expect(w.find('.body').text()).toBe('内容')
+  })
 })
 
 describe('SectionCard', () => {

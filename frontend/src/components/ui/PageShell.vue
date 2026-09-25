@@ -1,6 +1,6 @@
 <template>
-  <div class="page-shell" :style="{ maxWidth }">
-    <header class="page-shell__header">
+  <div class="page-shell" :class="{ 'page-shell--embedded': embedded }" :style="{ maxWidth }">
+    <header v-if="!embedded" class="page-shell__header">
       <div class="page-shell__heading">
         <div class="page-shell__title-row">
           <h1 class="page-shell__title">
@@ -29,15 +29,22 @@ import HelpBubble from '@/components/shared/HelpBubble.vue'
 
 const props = withDefaults(
   defineProps<{
-    title: string
+    title?: string
     subtitle?: string
     help?: string
     width?: 'narrow' | 'content' | 'wide' | 'full'
+    /**
+     * 嵌套在别人的页头之下（工作台子页 / 摊主端 tab 子页）时置 true：
+     * 不渲染标题行 / 副标题 / actions，只保留页宽容器与默认插槽，内边距交给外层页头。
+     */
+    embedded?: boolean
   }>(),
   {
+    title: '',
     subtitle: '',
     help: '',
     width: 'content',
+    embedded: false,
   }
 )
 
@@ -61,6 +68,11 @@ const maxWidth = computed(() => {
   margin-inline: auto;
   padding: var(--space-xl);
   box-sizing: border-box;
+}
+
+/* 嵌套工作台外壳里时不再重复外层 padding，只保留页宽约束。 */
+.page-shell--embedded {
+  padding: 0;
 }
 
 .page-shell__header {

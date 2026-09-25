@@ -1,10 +1,10 @@
 <template>
-  <PageShell title="套装与优惠" width="content">
-    <template #subtitle>
+  <PageShell embedded width="content">
+    <p class="page-hint">
       套装 = 从一组候选商品里按一个总价卖。选「这几样各 1 件凑齐」就是甲+乙合购； 选「任选 N
       件、可以拿同款」就是同一本也能买 3 本。
       <strong>候选商品必须属于同一个货主</strong>——替别的社团让价不是摊主能单方面决定的。
-    </template>
+    </p>
     <SectionCard
       title="新建套装"
       collapsible
@@ -361,6 +361,12 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* 页头改 embedded 后，原副标题挪到内容区顶部；保证文字不丢。 */
+.page-hint {
+  margin: 0 0 var(--space-lg);
+  color: var(--text-muted);
+  font-size: var(--font-base);
+}
 .form-section {
   margin-bottom: var(--space-xl);
 }
