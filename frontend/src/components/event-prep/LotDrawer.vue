@@ -18,72 +18,89 @@
         <n-form-item label="套装名称" required>
           <n-input v-model:value="form.name" placeholder="如「本子任选3本100」" />
         </n-form-item>
-
-        <n-form-item label="要选几件" required>
-          <n-input-number
-            v-model:value="form.pickCount"
-            class="full-width"
-            :min="1"
-            :precision="0"
-          />
-        </n-form-item>
-
-        <n-form-item label="总价（元）" required>
-          <n-input-number
-            v-model:value="form.priceYuan"
-            class="full-width"
-            :min="0"
-            :precision="2"
-          />
-        </n-form-item>
-
-        <n-form-item label="候选商品" required>
-          <n-select
-            v-model:value="form.candidateIds"
-            multiple
-            filterable
-            :options="candidateOptions"
-            placeholder="可多选。必须属于同一个货主"
-          />
-          <template #feedback
-            >候选商品必须属于同一个货主——替别的社团让价不是摊主能单方面决定的。</template
-          >
-        </n-form-item>
-
-        <n-form-item label="怎么算「凑满」">
-          <n-radio-group v-model:value="form.allowRepeat">
-            <n-space vertical :size="10">
-              <n-radio :value="false">
-                这几样各 1 件凑齐
-                <span class="mode-hint">固定组合。「甲 + 乙 一起 50」是这一类</span>
-              </n-radio>
-              <n-radio :value="true">
-                任选 N 件，可以拿同款
-                <span class="mode-hint">「同一本买 3 本 80」「本子任选 3 本 100」是这一类</span>
-              </n-radio>
-            </n-space>
-          </n-radio-group>
-        </n-form-item>
       </n-form>
 
-      <!-- 配置的后果本来是黑箱：摊主配完只能等顾客来薅。把「顾客最多 / 最少能怎么拿」
-           摆在表单正下方，**切换上面那个模式时这几个数字当场变**——语义靠看见后果
-           理解，不靠读文字解释「重复」是什么意思。 -->
-      <div v-if="previewError" class="preview preview-problem">{{ previewError }}</div>
-      <div v-else-if="preview" class="preview">
-        <p class="preview-line muted">
-          候选：{{
-            preview.candidates.map((c) => `${c.name} ${formatYuan(c.unit_price)}`).join(' · ')
-          }}
-        </p>
-        <p v-for="s in scenarioLines" :key="s.kind" class="preview-line">
-          {{ s.label }}：<strong>{{ describeMembers(s.members) }}</strong> 原价
-          {{ formatYuan(s.original_amount) }} → 付 {{ formatYuan(s.lot_price) }}
-          <span v-if="s.discount > 0" class="gave">你让 {{ formatYuan(s.discount) }}</span>
-          <span v-else class="not-applied">这种组合不会套用（比原价贵）</span>
-        </p>
-        <p v-for="w in preview.warnings" :key="w.code" class="preview-warn">⚠ {{ w.message }}</p>
+      <!-- 一句话式配置：件数和总价嵌在句子里，读出来就是套装的规则。 -->
+      <div class="rule-sentence">
+        <span>顾客从下面选</span>
+        <n-input-number
+          v-model:value="form.pickCount"
+          class="rule-num"
+          :min="1"
+          :precision="0"
+          aria-label="要选几件"
+        />
+        <span>件，一共付</span>
+        <n-input-number
+          v-model:value="form.priceYuan"
+          class="rule-price"
+          :min="0"
+          :precision="2"
+          :show-button="false"
+          placeholder="总价"
+          aria-label="总价（元）"
+        >
+          <template #prefix>¥</template>
+        </n-input-number>
       </div>
+
+      <!-- 「怎么算凑满」：两张大卡片二选一，按单选组的语义与键盘行为实现。 -->
+      <div class="mode-cards" role="radiogroup" aria-label="怎么算凑满">
+        <button
+          v-for="m in MODES"
+          :key="String(m.value)"
+          type="button"
+          role="radio"
+          class="mode-card"
+          :class="{ 'mode-card--active': form.allowRepeat === m.value }"
+          :aria-checked="form.allowRepeat === m.value"
+          :tabindex="form.allowRepeat === m.value ? 0 : -1"
+          @click="form.allowRepeat = m.value"
+          @keydown.left.prevent="form.allowRepeat = !form.allowRepeat"
+          @keydown.right.prevent="form.allowRepeat = !form.allowRepeat"
+        >
+          <span class="mode-icon" aria-hidden="true">{{ m.icon }}</span>
+          <span class="mode-title">{{ m.title }}</span>
+          <span class="mode-desc">{{ m.desc }}</span>
+          <span class="mode-example">{{ m.example }}</span>
+        </button>
+      </div>
+
+      <section class="block">
+        <h4 class="block-title">候选商品</h4>
+        <LotCandidatePicker v-model="form.candidateIds" :products="eventDetailStore.products" />
+        <p v-if="notEnoughCandidates" class="block-warn">
+          「各 1 件凑齐」至少要选 {{ form.pickCount }} 件候选商品，现在只选了
+          {{ form.candidateIds.length }} 件——这样的套装永远凑不出来。
+        </p>
+      </section>
+
+      <!-- 配置的后果本来是黑箱：摊主配完只能等顾客来薅。把「顾客最多 / 最少能怎么拿」
+           做成小票摆在最下面，**切换上面的模式时数字当场变**——语义靠看见后果
+           理解，不靠读文字解释「重复」是什么意思。 -->
+      <section v-if="previewError || preview" class="receipt" aria-live="polite">
+        <h4 class="receipt-title">顾客会怎么拿</h4>
+        <p v-if="previewError" class="receipt-problem">{{ previewError }}</p>
+        <template v-else-if="preview">
+          <div v-for="s in scenarioLines" :key="s.kind" class="receipt-row">
+            <div class="receipt-label">{{ s.label }}</div>
+            <div class="receipt-items">{{ describeMembers(s.members) }}</div>
+            <div class="receipt-amounts">
+              <template v-if="s.discount > 0">
+                <Money :value="s.original_amount" strike size="sm" />
+                <span class="receipt-arrow">→</span>
+                <Money :value="s.lot_price" />
+                <span class="receipt-save">省 {{ formatYuan(s.discount) }}</span>
+              </template>
+              <template v-else>
+                <Money :value="s.original_amount" size="sm" />
+                <span class="receipt-skip">比原价贵，不会套用</span>
+              </template>
+            </div>
+          </div>
+          <p v-for="w in preview.warnings" :key="w.code" class="receipt-warn">⚠ {{ w.message }}</p>
+        </template>
+      </section>
 
       <template #footer>
         <n-space justify="end">
@@ -107,9 +124,6 @@ import {
   NFormItem,
   NInput,
   NInputNumber,
-  NRadio,
-  NRadioGroup,
-  NSelect,
   NSpace,
 } from 'naive-ui'
 import { useFeedback } from '@/composables/useFeedback'
@@ -118,6 +132,8 @@ import { useLotStore } from '@/stores/lotStore'
 import { useEventDetailStore } from '@/stores/eventDetailStore'
 import type { Schemas } from '@/api/client'
 import { formatYuan, toCents, fromCents } from '@/utils/money'
+import { Money } from '@/components/ui'
+import LotCandidatePicker from './LotCandidatePicker.vue'
 
 type LotForm = {
   name: string
@@ -153,13 +169,31 @@ const form = ref<LotForm>({
   allowRepeat: false,
 })
 
-// 选项标签带上货主名：候选集必须同一货主是后端硬校验，把货主写在标签上
-// 能让摊主在点选时就看出来，而不是提交后才吃一个 400。
-const candidateOptions = computed(() =>
-  eventDetailStore.products.map((p) => ({
-    label: `${p.name}（${p.owner_society_name} · ${formatYuan(p.unit_price)}）`,
-    value: p.id,
-  }))
+/** 两种「凑满」规则。默认「各 1 件凑齐」：猜错成可同款会让摊主静默少收钱，代价不对称。 */
+const MODES = [
+  {
+    value: false,
+    icon: '🧩',
+    title: '固定组合',
+    desc: '这几样各 1 件凑齐',
+    example: '「甲 + 乙 一起 50」',
+  },
+  {
+    value: true,
+    icon: '🔁',
+    title: '任选 N 件',
+    desc: '可以拿同款',
+    example: '「本子任选 3 本 100」',
+  },
+] as const
+
+/** 各 1 件凑齐时候选种类必须 ≥ 件数，否则永远凑不出（后端同样会拒）。当场提示，不等提交。 */
+const notEnoughCandidates = computed(
+  () =>
+    !form.value.allowRepeat &&
+    form.value.candidateIds.length > 0 &&
+    typeof form.value.pickCount === 'number' &&
+    form.value.candidateIds.length < form.value.pickCount
 )
 
 // --- 试算 ---
@@ -326,67 +360,180 @@ async function handleSubmit() {
 .drawer-hint {
   margin: 0 0 var(--space-lg);
   color: var(--text-muted);
-  font-size: var(--font-base);
-  line-height: 1.6;
-}
-
-.full-width {
-  width: 100%;
-}
-
-.mode-hint {
-  display: block;
   font-size: var(--font-sm);
-  line-height: 1.5;
-  color: var(--text-muted);
+  line-height: var(--leading-base);
 }
 
-.preview {
-  margin-top: var(--space-md);
-  padding: var(--space-md) var(--space-lg);
+/* 一句话配置 */
+.rule-sentence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--bg-color);
+  font-size: var(--font-md);
+}
+
+.rule-num {
+  width: 7em;
+}
+
+.rule-price {
+  width: 8em;
+}
+
+/* 模式卡片 */
+.mode-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
+}
+
+.mode-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-md);
   border: 1px solid var(--border-color);
-  border-left: 3px solid var(--accent-color);
-  border-radius: var(--radius-sm);
-  background-color: var(--card-bg-color);
+  border-radius: var(--radius-lg);
+  background: var(--card-bg-color);
+  color: var(--primary-text-color);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
 }
 
-.preview-problem {
-  border-left-color: var(--error-color);
-  color: var(--error-color);
+.mode-card:hover {
+  border-color: var(--accent-color);
 }
 
-.preview-line {
-  margin: 0 0 var(--space-xs);
+.mode-card:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}
+
+.mode-card--active {
+  border-color: var(--accent-color);
+  /* 选中态加粗描边：用 outline 叠一圈，不改 border 宽度（避免卡片跳动） */
+  outline: 1px solid var(--accent-color);
+  background: color-mix(in srgb, var(--accent-color) 6%, var(--card-bg-color));
+}
+
+.mode-icon {
+  font-size: var(--font-xl);
+}
+
+.mode-title {
+  font-size: var(--font-md);
+  font-weight: var(--weight-bold);
+}
+
+.mode-card--active .mode-title {
+  color: var(--accent-color);
+}
+
+.mode-desc {
   font-size: var(--font-sm);
-  line-height: 1.6;
 }
 
-.preview-line.muted {
+.mode-example {
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+}
+
+/* 候选商品 */
+.block {
+  margin-bottom: var(--space-lg);
+}
+
+.block-title,
+.receipt-title {
+  margin: 0 0 var(--space-sm);
+  font-size: var(--font-base);
+  font-weight: var(--weight-bold);
+}
+
+.block-warn {
+  margin: var(--space-sm) 0 0;
+  color: var(--warning-color);
+  font-size: var(--font-sm);
+  line-height: var(--leading-base);
+}
+
+/* 小票预览 */
+.receipt {
+  padding: var(--space-md) var(--space-lg);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--card-bg-color);
+}
+
+.receipt-row {
+  padding: var(--space-sm) 0;
+  border-bottom: 1px dashed var(--divider-color);
+}
+
+.receipt-row:last-of-type {
+  border-bottom: none;
+}
+
+.receipt-label {
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+}
+
+.receipt-items {
+  margin: var(--space-xs) 0;
+  font-size: var(--font-sm);
+  line-height: var(--leading-base);
+}
+
+.receipt-amounts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+
+.receipt-arrow {
   color: var(--text-muted);
 }
 
-.preview-line:last-child {
-  margin-bottom: 0;
+.receipt-save {
+  padding: 0 var(--space-sm);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--success-color) 14%, transparent);
+  color: var(--success-color);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-bold);
 }
 
-.gave {
-  color: var(--warning-color);
-}
-
-.not-applied {
+.receipt-skip {
   color: var(--text-disabled);
+  font-size: var(--font-xs);
 }
 
-.preview-warn {
-  margin: var(--space-sm) 0 0;
+.receipt-problem {
+  margin: 0;
+  color: var(--error-color);
   font-size: var(--font-sm);
-  line-height: 1.5;
+}
+
+.receipt-warn {
+  margin: var(--space-sm) 0 0;
   color: var(--warning-color);
+  font-size: var(--font-sm);
+  line-height: var(--leading-base);
 }
 
 @media (--phone) {
-  .drawer-hint {
-    font-size: var(--font-sm);
+  .rule-sentence {
+    font-size: var(--font-base);
   }
 }
 </style>

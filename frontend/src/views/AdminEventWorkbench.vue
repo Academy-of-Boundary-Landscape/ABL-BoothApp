@@ -43,33 +43,26 @@
         </div>
       </div>
 
-      <!-- tab 行：三组之间带组标题，窄屏横向滑动不折行。 -->
+      <!-- tab 行：三组之间带组标签。组标签是带框的色块、不可点，和可点的 tab 区分开；
+           展会当前所处阶段那一组的标签实心填色，和上面的状态条呼应。窄屏整行横滑不折行。 -->
       <nav class="workbench-tabs">
-        <div class="tab-group">
-          <span class="tab-group__label">展前</span>
-          <RouterLink class="tab" :to="{ name: 'admin-event-products', params: { id: event.id } }">
-            商品
-          </RouterLink>
-          <RouterLink class="tab" :to="{ name: 'admin-event-lots', params: { id: event.id } }">
-            套装
-          </RouterLink>
-        </div>
-        <div class="tab-group">
-          <span class="tab-group__label">现场</span>
-          <RouterLink class="tab" :to="{ name: 'admin-event-orders', params: { id: event.id } }">
-            订单
-          </RouterLink>
-          <RouterLink class="tab" :to="{ name: 'admin-event-stats', params: { id: event.id } }">
-            统计
-          </RouterLink>
-        </div>
-        <div class="tab-group">
-          <span class="tab-group__label">收摊</span>
+        <div
+          v-for="group in TAB_GROUPS"
+          :key="group.label"
+          class="tab-group"
+          :class="[
+            `tab-group--${group.tone}`,
+            { 'tab-group--current': group.status === event.status },
+          ]"
+        >
+          <span class="tab-group__label">{{ group.label }}</span>
           <RouterLink
+            v-for="tab in group.tabs"
+            :key="tab.route"
             class="tab"
-            :to="{ name: 'admin-event-settlement', params: { id: event.id } }"
+            :to="{ name: tab.route, params: { id: event.id } }"
           >
-            结算
+            {{ tab.label }}
           </RouterLink>
         </div>
       </nav>
@@ -112,6 +105,34 @@ import type { Schemas } from '@/api/client'
 import EventForm from '@/components/event/EventForm.vue'
 
 const STATUS_STEPS = ['筹备', '进行中', '已结算'] as const
+
+/** tab 分组。`status` 是该组对应的展会状态（用来高亮当前阶段），`tone` 决定组标签的颜色。 */
+const TAB_GROUPS = [
+  {
+    label: '展前',
+    status: '筹备',
+    tone: 'info',
+    tabs: [
+      { label: '商品', route: 'admin-event-products' },
+      { label: '套装', route: 'admin-event-lots' },
+    ],
+  },
+  {
+    label: '现场',
+    status: '进行中',
+    tone: 'success',
+    tabs: [
+      { label: '订单', route: 'admin-event-orders' },
+      { label: '统计', route: 'admin-event-stats' },
+    ],
+  },
+  {
+    label: '收摊',
+    status: '已结算',
+    tone: 'warning',
+    tabs: [{ label: '结算', route: 'admin-event-settlement' }],
+  },
+] as const
 
 const route = useRoute()
 const router = useRouter()
@@ -229,7 +250,7 @@ function onEditSaved() {
 
 .workbench-tabs {
   display: flex;
-  gap: var(--space-xl);
+  gap: var(--space-md);
   overflow-x: auto;
   flex-wrap: nowrap;
   padding-bottom: var(--space-sm);
@@ -238,15 +259,47 @@ function onEditSaved() {
 }
 
 .tab-group {
+  /* 组色：每组只定义一个 --group-color，标签的边框 / 底色 / 字色都从它派生 */
+  --group-color: var(--info-color);
+
   display: inline-flex;
   align-items: center;
-  gap: var(--space-sm);
+  gap: var(--space-xs);
   white-space: nowrap;
 }
 
+.tab-group + .tab-group {
+  padding-left: var(--space-md);
+  border-left: 1px solid var(--border-color);
+}
+
+.tab-group--success {
+  --group-color: var(--success-color);
+}
+
+.tab-group--warning {
+  --group-color: var(--warning-color);
+}
+
+/* 不可点的组标签：带框的小色块，字号小一档、不加粗、没有 hover，和可点的 tab 一眼分开 */
 .tab-group__label {
+  margin-right: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid color-mix(in srgb, var(--group-color) 45%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--group-color) 12%, transparent);
+  color: var(--group-color);
   font-size: var(--font-xs);
-  color: var(--text-muted);
+  line-height: var(--leading-tight);
+  cursor: default;
+  user-select: none;
+}
+
+/* 展会当前所处阶段：实心填色 */
+.tab-group--current .tab-group__label {
+  border-color: var(--group-color);
+  background: var(--group-color);
+  color: var(--text-white);
 }
 
 .tab {
