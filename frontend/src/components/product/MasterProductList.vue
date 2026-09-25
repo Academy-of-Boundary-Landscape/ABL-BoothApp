@@ -63,93 +63,14 @@
       :empty="!filteredProducts.length"
       overlay
     >
-      <div class="table-scroll">
-        <table class="product-table">
-          <thead>
-            <tr>
-              <th>图像</th>
-              <th>编号</th>
-              <th>名称</th>
-              <th>默认价格</th>
-              <th>商品分类</th>
-              <th>标签</th>
-              <th>识别图</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            <tr
-              v-for="product in filteredProducts"
-              :key="product.id"
-              :class="{ inactive: !product.is_active }"
-            >
-              <td>
-                <n-image
-                  v-if="product.image_url"
-                  :src="product.image_url"
-                  :alt="product.name"
-                  class="preview-img"
-                  preview-disabled
-                  style="width: 80px; height: 80px"
-                  :img-props="{
-                    style: 'width: 100%; height: 100%; object-fit: contain; display: block;',
-                  }"
-                />
-                <span v-else class="no-img">无图</span>
-              </td>
-
-              <td>{{ product.product_code }}</td>
-              <td>{{ product.name }}</td>
-              <td>¥{{ Number(product.default_price ?? 0).toFixed(2) }}</td>
-              <td>{{ product.category || '未分类' }}</td>
-              <td class="tags-cell">
-                <template v-if="product.tags">
-                  <n-tag
-                    v-for="tag in product.tags.split(',').filter(Boolean)"
-                    :key="tag"
-                    size="small"
-                    :bordered="false"
-                    type="info"
-                    style="margin: var(--space-xs)"
-                  >
-                    {{ tag.trim() }}
-                  </n-tag>
-                </template>
-              </td>
-
-              <td class="vision-cell">
-                <n-tag size="small" :type="visionTagType(product.image_count)" :bordered="false">
-                  {{ visionTagLabel(product.image_count) }}
-                </n-tag>
-              </td>
-
-              <td class="action-cell">
-                <n-button size="small" tertiary @click="$emit('edit', product)">编辑</n-button>
-                <n-button
-                  size="small"
-                  type="info"
-                  tertiary
-                  @click="$emit('edit', product, 'gallery')"
-                  style="margin-left: var(--space-sm)"
-                  :title="'直接打开识别图 Tab'"
-                >
-                  识别图
-                </n-button>
-                <n-button
-                  size="small"
-                  :type="product.is_active ? 'error' : 'success'"
-                  tertiary
-                  @click="$emit('toggleStatus', product)"
-                  style="margin-left: var(--space-sm)"
-                >
-                  {{ product.is_active ? '停用' : '启用' }}
-                </n-button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <n-data-table
+        :columns="columns"
+        :data="filteredProducts"
+        :row-key="(row) => row.id"
+        :row-class-name="rowClassName"
+        :scroll-x="1020"
+        size="small"
+      />
 
       <template #empty>
         <p v-if="hasActiveFilters">当前筛选条件下没有找到匹配的商品。</p>
@@ -166,17 +87,27 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, h } from 'vue'
 import { useRoute } from 'vue-router'
 import { useProductStore } from '@/stores/productStore'
-import { NButton, NCheckbox, NImage, NInput, NInputNumber, NSelect, NTag } from 'naive-ui'
+import {
+  NButton,
+  NCheckbox,
+  NDataTable,
+  NImage,
+  NInput,
+  NInputNumber,
+  NSelect,
+  NTag,
+  type DataTableColumns,
+} from 'naive-ui'
 import { AsyncState, EmptyState, SectionCard } from '@/components/ui'
 import type { Schemas } from '@/api/client'
 
 const store = useProductStore()
 const route = useRoute()
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'edit', product: Schemas['MasterProduct'], initialTab?: string): void
   (e: 'toggleStatus', product: Schemas['MasterProduct']): void
 }>()
@@ -212,6 +143,114 @@ const filteredProducts = computed(() => {
 
   return list
 })
+
+function rowClassName(product: Schemas['MasterProduct']) {
+  return product.is_active ? '' : 'inactive'
+}
+
+const columns: DataTableColumns<Schemas['MasterProduct']> = [
+  {
+    title: '图像',
+    key: 'image_url',
+    width: 92,
+    render: (product) =>
+      product.image_url
+        ? h(NImage, {
+            src: product.image_url,
+            alt: product.name,
+            previewDisabled: true,
+            class: 'preview-img',
+            imgProps: {
+              style: 'width: 100%; height: 100%; object-fit: contain; display: block;',
+            },
+          })
+        : h('span', { class: 'no-img' }, '无图'),
+  },
+  { title: '编号', key: 'product_code', width: 120 },
+  { title: '名称', key: 'name', minWidth: 160 },
+  {
+    title: '默认价格',
+    key: 'default_price',
+    width: 110,
+    render: (product) => `¥${Number(product.default_price ?? 0).toFixed(2)}`,
+  },
+  {
+    title: '商品分类',
+    key: 'category',
+    width: 120,
+    render: (product) => product.category || '未分类',
+  },
+  {
+    title: '标签',
+    key: 'tags',
+    minWidth: 160,
+    render: (product) => {
+      const tags = (product.tags || '')
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+      if (!tags.length) return ''
+      return h(
+        'div',
+        { class: 'tags-cell' },
+        tags.map((tag) =>
+          h(
+            NTag,
+            { key: tag, size: 'small', bordered: false, type: 'info' },
+            { default: () => tag }
+          )
+        )
+      )
+    },
+  },
+  {
+    title: '识别图',
+    key: 'image_count',
+    width: 100,
+    align: 'center',
+    render: (product) =>
+      h(
+        NTag,
+        { size: 'small', type: visionTagType(product.image_count), bordered: false },
+        { default: () => visionTagLabel(product.image_count) }
+      ),
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 230,
+    align: 'right',
+    render: (product) =>
+      h('div', { class: 'action-cell' }, [
+        h(
+          NButton,
+          { size: 'small', tertiary: true, onClick: () => emit('edit', product) },
+          { default: () => '编辑' }
+        ),
+        h(
+          NButton,
+          {
+            size: 'small',
+            type: 'info',
+            tertiary: true,
+            title: '直接打开识别图 Tab',
+            onClick: () => emit('edit', product, 'gallery'),
+          },
+          { default: () => '识别图' }
+        ),
+        h(
+          NButton,
+          {
+            size: 'small',
+            type: product.is_active ? 'error' : 'success',
+            tertiary: true,
+            onClick: () => emit('toggleStatus', product),
+          },
+          { default: () => (product.is_active ? '停用' : '启用') }
+        ),
+      ]),
+  },
+]
 
 function handleClearFilters() {
   store.searchTerm = ''
@@ -317,57 +356,17 @@ watch(
   margin-left: var(--space-sm);
 }
 
-.product-table {
-  width: 100%;
-  margin-top: 0;
-  border-collapse: collapse;
-  border-spacing: 0;
-  text-align: left;
-  font-size: var(--font-base);
-  min-width: 820px;
-}
-
-.product-table th {
-  padding: var(--space-md) var(--space-lg);
-  background-color: var(--card-bg-color);
-  color: var(--primary-text-color);
-  font-weight: var(--weight-bold);
-  border-bottom: 2px solid var(--accent-color);
-  white-space: nowrap;
-}
-
-.product-table td {
-  padding: var(--space-md) var(--space-lg);
-  border-bottom: 1px solid var(--border-color);
-  color: var(--secondary-text-color);
-  vertical-align: middle;
-}
-
-.product-table tbody tr {
-  transition: background-color 0.2s ease-in-out;
-}
-
-.product-table tbody tr:hover {
-  background-color: var(--accent-color-light);
-}
-
-.product-table th:first-child,
-.product-table td:first-child {
-  padding-left: 0;
-}
-
-.product-table th:last-child,
-.product-table td:last-child {
-  text-align: right;
-  padding-right: 0;
+.tags-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
 }
 
 .action-cell {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
   white-space: nowrap;
-}
-.vision-cell {
-  white-space: nowrap;
-  text-align: center;
 }
 
 .preview-img {
@@ -400,52 +399,13 @@ watch(
   vertical-align: middle;
 }
 
-.inactive {
+:deep(.inactive) {
   opacity: 0.5;
   background-color: var(--bg-elevated);
 }
 
-.inactive td {
+:deep(.inactive td) {
   text-decoration: line-through;
-}
-
-@media (--phone) {
-  .search-section {
-    margin-bottom: var(--space-lg);
-    padding-bottom: var(--space-lg);
-  }
-  .search-header h3 {
-    font-size: var(--font-base);
-  }
-  .search-hint {
-    font-size: var(--font-sm);
-  }
-  .search-box {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: var(--space-sm);
-  }
-  .clear-btn {
-    justify-self: stretch;
-    grid-column: 1 / -1;
-  }
-  .product-table {
-    font-size: var(--font-sm);
-    min-width: 760px;
-  }
-  .product-table th,
-  .product-table td {
-    padding: var(--space-sm) var(--space-md);
-  }
-  .preview-img {
-    width: 60px;
-    height: 60px;
-  }
-  .no-img {
-    width: 60px;
-    height: 60px;
-    line-height: 60px;
-    font-size: var(--font-xs);
-  }
 }
 
 @media (--phone) {
@@ -475,17 +435,6 @@ watch(
   }
   .checkbox-label {
     font-size: var(--font-sm);
-  }
-  .product-table {
-    font-size: var(--font-xs);
-    min-width: 600px;
-  }
-  .product-table th,
-  .product-table td {
-    padding: var(--space-sm);
-  }
-  .product-table th {
-    font-size: var(--font-xs);
   }
   .preview-img {
     width: 50px;

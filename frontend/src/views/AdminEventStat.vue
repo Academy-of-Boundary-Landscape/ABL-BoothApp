@@ -33,15 +33,14 @@
       </div>
     </div>
 
-    <AsyncState :loading="statStore.isLoading" loading-text="正在从数据库中提取统计信息...">
-      <div v-if="statStore.error" class="error-state">
-        <n-alert type="error" title="后端数据库寄了！" :bordered="false">
-          {{ statStore.error }}
-        </n-alert>
-        <n-button @click="applyFilters" tertiary class="btn-secondary">重新建立连接</n-button>
-      </div>
-
-      <div v-else-if="statStore.stats" class="stats-content">
+    <!-- 错误态交给 AsyncState，不再手写「后端数据库寄了！」。error 优先于 empty。 -->
+    <AsyncState
+      :loading="statStore.isLoading"
+      :error="statStore.error"
+      loading-text="正在从数据库中提取统计信息..."
+      @retry="applyFilters"
+    >
+      <div v-if="statStore.stats" class="stats-content">
         <SectionCard
           title="数据筛选"
           collapsible
@@ -70,18 +69,9 @@
           class="summary-section"
         >
           <div class="summary-cards">
-            <div class="summary-card">
-              <span class="label">总销售额</span>
-              <span class="value">{{ formatCurrency(statStore.stats.total_revenue) }}</span>
-            </div>
-            <div class="summary-card">
-              <span class="label">总销售件数</span>
-              <span class="value">{{ totalItemsSold }}</span>
-            </div>
-            <div class="summary-card">
-              <span class="label">销售品类数</span>
-              <span class="value">{{ productVarietyCount }}</span>
-            </div>
+            <StatTile label="总销售额" :value="formatCurrency(statStore.stats.total_revenue)" />
+            <StatTile label="总销售件数" :value="totalItemsSold" />
+            <StatTile label="销售品类数" :value="productVarietyCount" />
           </div>
         </SectionCard>
 
@@ -119,30 +109,14 @@
             compact
             title="// 无有效销售数据记录..."
           />
-          <div v-else class="table-scroll">
-            <table class="stats-table">
-              <thead>
-                <tr>
-                  <th>制品编号</th>
-                  <th>制品名</th>
-                  <th class="text-right">单价</th>
-                  <th class="text-center">销售量</th>
-                  <th class="text-right">销售额</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="item in statStore.stats.summary" :key="item.product_id">
-                  <td class="id-cell">#{{ item.product_code }}</td>
-                  <td>{{ item.product_name }}</td>
-                  <td class="text-right currency-cell">{{ formatCurrency(item.unit_price) }}</td>
-                  <td class="text-center quantity-cell">{{ item.total_quantity }}</td>
-                  <td class="text-right currency-cell">
-                    {{ formatCurrency(item.total_revenue_per_item) }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <n-data-table
+            v-else
+            :columns="summaryColumns"
+            :data="statStore.stats.summary"
+            :row-key="(row) => row.product_id"
+            :scroll-x="680"
+            size="small"
+          />
         </SectionCard>
       </div>
     </AsyncState>
@@ -150,17 +124,18 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch, computed, ref } from 'vue'
+import { onMounted, onUnmounted, watch, computed, ref, h } from 'vue'
 import { useRoute } from 'vue-router'
 import { useEventStatStore } from '@/stores/eventStatStore'
 import SalesLineChart from '@/components/stats/SalesLineChart.vue'
 import StatFilters from '@/components/stats/StatFilters.vue'
-import { NButton } from 'naive-ui'
-import { PageShell, SectionCard, AsyncState, EmptyState } from '@/components/ui'
+import { NButton, NDataTable, type DataTableColumns } from 'naive-ui'
+import { PageShell, SectionCard, AsyncState, EmptyState, StatTile, Money } from '@/components/ui'
 import HelpBubble from '@/components/shared/HelpBubble.vue'
 import { useFeedback } from '@/composables/useFeedback'
 import { toAbsoluteApiUrl } from '@/services/url'
 import { formatYuan, fromCents, type Cents } from '@/utils/money'
+import type { Schemas } from '@/api/client'
 
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeFile } from '@tauri-apps/plugin-fs'
@@ -201,6 +176,32 @@ const productOptions = computed(() => {
   return Array.from(unique.values())
 })
 
+// 明细表：语义化表格换成 n-data-table，窄屏在自身区域内横滑。
+const summaryColumns: DataTableColumns<Schemas['StatsProductSalesItem']> = [
+  {
+    title: '制品编号',
+    key: 'product_code',
+    width: 120,
+    render: (item) => `#${item.product_code}`,
+  },
+  { title: '制品名', key: 'product_name', minWidth: 160 },
+  {
+    title: '单价',
+    key: 'unit_price',
+    width: 120,
+    align: 'right',
+    render: (item) => h(Money, { value: item.unit_price }),
+  },
+  { title: '销售量', key: 'total_quantity', width: 96, align: 'center' },
+  {
+    title: '销售额',
+    key: 'total_revenue_per_item',
+    width: 130,
+    align: 'right',
+    render: (item) => h(Money, { value: item.total_revenue_per_item }),
+  },
+]
+
 const chartSubtitle = computed(() => {
   const parts: string[] = []
   if (selectedProduct.value) parts.push(`制品 ${selectedProduct.value}`)
@@ -219,8 +220,6 @@ function formatCurrency(value: Cents) {
 const chartSeries = computed(() =>
   (statStore.stats?.timeseries || []).map((p) => ({ ...p, revenue: fromCents(p.revenue) }))
 )
-
-// Chart implementation moved to SalesLineChart component
 
 async function applyFilters() {
   await statStore.fetchStats({
@@ -411,34 +410,17 @@ watch(
   flex-wrap: wrap;
   margin-bottom: var(--space-lg);
 }
+
 .page-hint-row {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
 }
+
 .page-hint {
   margin: 0;
   color: var(--text-muted);
   font-size: var(--font-base);
-}
-/* 主题色通过 App.vue 动态注入 */
-
-.error-state {
-  text-align: center;
-  padding: var(--space-xl) var(--space-lg);
-  border: 1px dashed var(--border-color);
-  border-radius: var(--radius-md);
-  background-color: var(--overlay-light);
-}
-
-.btn-secondary {
-  background-color: var(--card-bg-color);
-  color: var(--primary-text-color);
-  margin-top: var(--space-lg);
-}
-
-.btn-secondary:hover {
-  border-color: var(--primary-text-color);
 }
 
 .download-btn {
@@ -477,38 +459,6 @@ watch(
   gap: var(--space-lg);
 }
 
-.summary-card {
-  background: linear-gradient(135deg, var(--card-bg-color) 0%, var(--bg-color) 100%);
-  padding: var(--space-xl);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-md);
-  transition: all 0.2s ease;
-}
-
-.summary-card:hover {
-  transform: translateY(-3px);
-  box-shadow: var(--shadow-md);
-  border-color: var(--accent-color);
-}
-
-.summary-card .label {
-  font-size: var(--font-base);
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.summary-card .value {
-  font-size: var(--font-2xl);
-  font-weight: var(--weight-bold);
-  color: var(--accent-color);
-  line-height: 1;
-}
-
 .chart-info {
   margin-bottom: var(--space-lg);
 }
@@ -518,162 +468,10 @@ watch(
   font-size: var(--font-base);
 }
 
-.stats-table {
-  width: 100%;
-  margin-top: 0;
-  border-collapse: collapse;
-  border-spacing: 0;
-  text-align: left;
-  font-size: var(--font-base);
-  min-width: 700px;
-}
-
-/* 表头样式 */
-.stats-table th {
-  padding: var(--space-md) var(--space-lg);
-  background-color: var(--card-bg-color);
-  color: var(--primary-text-color);
-  font-weight: var(--weight-bold);
-  border-bottom: 2px solid var(--accent-color);
-  white-space: nowrap;
-}
-
-/* 数据单元格样式 */
-.stats-table td {
-  padding: var(--space-md) var(--space-lg);
-  border-bottom: 1px solid var(--border-color);
-  color: var(--secondary-text-color);
-  vertical-align: middle;
-}
-
-/* 表格行的交互效果 */
-.stats-table tbody tr {
-  transition: background-color 0.2s ease-in-out;
-}
-
-.stats-table tbody tr:hover {
-  background-color: var(--accent-color-light);
-}
-
-/* 特定列的微调 */
-.stats-table th:first-child,
-.stats-table td:first-child {
-  padding-left: 0;
-}
-
-.stats-table th:last-child,
-.stats-table td:last-child {
-  text-align: right;
-  padding-right: 0;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-th,
-td {
-  padding: var(--space-lg);
-  text-align: left;
-  border-bottom: 1px solid var(--border-color);
-}
-
-thead th {
-  color: var(--secondary-text-color);
-  font-weight: var(--weight-bold);
-  text-transform: uppercase;
-  font-size: var(--font-sm);
-  letter-spacing: 1px;
-}
-
-tbody tr {
-  transition: background-color 0.2s;
-}
-tbody tr:hover {
-  background-color: var(--accent-color-light);
-}
-tbody td {
-  color: var(--primary-text-color);
-}
-.id-cell {
-  color: var(--secondary-text-color);
-  font-family: 'Courier New', Courier, monospace;
-}
-.quantity-cell {
-  font-weight: var(--weight-bold);
-  font-size: var(--font-lg);
-}
-.currency-cell {
-  color: var(--accent-color);
-  font-weight: var(--weight-medium);
-}
-.text-right {
-  text-align: right;
-}
-.text-center {
-  text-align: center;
-}
-
 /* 响应式布局 */
 @media (--phone) {
   .download-btn {
-    align-self: flex-start;
-    font-size: var(--font-sm);
-    padding: var(--space-sm) var(--space-lg);
-  }
-
-  .download-actions {
-    width: 100%;
-    justify-content: flex-start;
-  }
-
-  .summary-cards {
-    gap: var(--space-md);
-  }
-
-  .summary-card {
-    padding: var(--space-lg);
-  }
-
-  .summary-card .label {
-    font-size: var(--font-sm);
-  }
-
-  .summary-card .value {
-    font-size: var(--font-xl);
-  }
-
-  .stats-table {
-    font-size: var(--font-sm);
-    min-width: 650px;
-  }
-
-  .stats-table th,
-  .stats-table td {
-    padding: var(--space-sm) var(--space-md);
-  }
-}
-
-@media (--phone) {
-  .summary-cards {
-    grid-template-columns: 1fr;
-    gap: var(--space-sm);
-  }
-
-  .summary-card {
-    padding: var(--space-md);
-  }
-
-  .summary-card .label {
-    font-size: var(--font-sm);
-  }
-
-  .summary-card .value {
-    font-size: var(--font-lg);
-  }
-
-  .download-btn {
+    align-self: stretch;
     width: 100%;
     justify-content: center;
     font-size: var(--font-sm);
@@ -681,33 +479,14 @@ tbody td {
   }
 
   .download-actions {
+    width: 100%;
+    justify-content: flex-start;
     gap: var(--space-sm);
   }
 
-  .stats-table {
-    font-size: var(--font-xs);
-    min-width: 600px;
-  }
-
-  .stats-table th,
-  .stats-table td {
-    padding: var(--space-sm);
-  }
-
-  .stats-table th {
-    font-size: var(--font-xs);
-  }
-
-  .id-cell {
-    font-size: var(--font-xs);
-  }
-
-  .quantity-cell {
-    font-size: var(--font-sm);
-  }
-
-  .currency-cell {
-    font-size: var(--font-xs);
+  .summary-cards {
+    grid-template-columns: 1fr;
+    gap: var(--space-sm);
   }
 
   .chart-subtitle {
