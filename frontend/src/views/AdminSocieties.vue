@@ -20,57 +20,34 @@
       <AsyncState
         :loading="store.isLoading"
         :error="store.error"
+        :empty="!store.societies.length"
         loading-text="正在加载社团列表..."
       >
-        <div class="table-scroll">
-          <table class="society-table">
-            <thead>
-              <tr>
-                <th>名字</th>
-                <th>是否本社团</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="society in store.societies" :key="society.id">
-                <td>{{ society.name }}</td>
-                <td>
-                  <n-tag v-if="society.is_home" type="success" size="small" round>本社团</n-tag>
-                  <span v-else class="muted">—</span>
-                </td>
-                <td>
-                  <n-space size="small" justify="end">
-                    <n-button
-                      v-if="!society.is_home"
-                      size="small"
-                      @click="handleSetHome(society)"
-                      :disabled="isBusy"
-                      >设为本社团</n-button
-                    >
-                    <n-button
-                      v-if="!society.is_home"
-                      size="small"
-                      type="error"
-                      quaternary
-                      @click="handleDelete(society)"
-                      :disabled="isBusy"
-                      >删除</n-button
-                    >
-                  </n-space>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <n-data-table
+          :columns="columns"
+          :data="store.societies"
+          :row-key="(row) => row.id"
+          :scroll-x="560"
+          size="small"
+        />
+
+        <template #empty>
+          <EmptyState
+            icon="🏷️"
+            title="暂无社团"
+            desc="社团是货主的单位，商品上架时会按社团归属记账。"
+            hint="在上方输入名称并点「新建」"
+          />
+        </template>
       </AsyncState>
     </main>
   </PageShell>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { NInput, NButton, NSpace, NTag } from 'naive-ui'
-import { PageShell, AsyncState } from '@/components/ui'
+import { ref, h, onMounted } from 'vue'
+import { NButton, NDataTable, NInput, NTag, type DataTableColumns } from 'naive-ui'
+import { PageShell, AsyncState, EmptyState } from '@/components/ui'
 import { useFeedback } from '@/composables/useFeedback'
 import { useSocietyStore } from '@/stores/societyStore'
 import type { Schemas } from '@/api/client'
@@ -81,6 +58,46 @@ const fb = useFeedback()
 const newName = ref('')
 const isCreating = ref(false)
 const isBusy = ref(false)
+
+const columns: DataTableColumns<Schemas['Society']> = [
+  { title: '名字', key: 'name', minWidth: 160 },
+  {
+    title: '是否本社团',
+    key: 'is_home',
+    width: 140,
+    render: (society) =>
+      society.is_home
+        ? h(NTag, { type: 'success', size: 'small', round: true }, { default: () => '本社团' })
+        : h('span', { class: 'muted' }, '—'),
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 220,
+    align: 'right',
+    render: (society) =>
+      society.is_home
+        ? null
+        : h('div', { class: 'row-actions' }, [
+            h(
+              NButton,
+              { size: 'small', disabled: isBusy.value, onClick: () => handleSetHome(society) },
+              { default: () => '设为本社团' }
+            ),
+            h(
+              NButton,
+              {
+                size: 'small',
+                type: 'error',
+                quaternary: true,
+                disabled: isBusy.value,
+                onClick: () => handleDelete(society),
+              },
+              { default: () => '删除' }
+            ),
+          ]),
+  },
+]
 
 async function handleCreate() {
   const name = newName.value.trim()
@@ -145,40 +162,19 @@ onMounted(() => {
   margin-bottom: var(--space-xl);
 }
 
-.society-table {
-  width: 100%;
-  border-collapse: collapse;
-  border-spacing: 0;
-  text-align: left;
-  font-size: var(--font-base);
-}
-
-.society-table th {
-  padding: var(--space-md) var(--space-lg);
-  background-color: var(--card-bg-color);
-  color: var(--primary-text-color);
-  font-weight: var(--weight-bold);
-  border-bottom: 2px solid var(--accent-color);
-  white-space: nowrap;
-}
-
-.society-table td {
-  padding: var(--space-md) var(--space-lg);
-  border-bottom: 1px solid var(--border-color);
-  color: var(--text-placeholder);
-  vertical-align: middle;
-}
-
-.society-table tbody tr:hover {
-  background-color: var(--accent-color-light);
-}
-
-.society-table th:last-child,
-.society-table td:last-child {
-  text-align: right;
+.row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
 }
 
 .muted {
   color: var(--text-disabled);
+}
+
+@media (--phone) {
+  .create-row {
+    flex-direction: column;
+  }
 }
 </style>

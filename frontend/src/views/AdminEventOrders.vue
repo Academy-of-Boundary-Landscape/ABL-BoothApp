@@ -4,141 +4,64 @@
       <p class="page-hint">查看并管理当前展会的所有订单记录。</p>
       <HelpBubble page="event-orders" />
     </div>
-    <!-- 筛选器区块 -->
-    <SectionCard
-      title="订单筛选"
-      collapsible
-      v-model:collapsed="isFilterCollapsed"
-      class="filter-section"
-    >
-      <div class="filter-content">
-        <div class="filter-row">
-          <label for="status-filter">状态:</label>
-          <n-select
-            id="status-filter"
-            v-model:value="statusFilter"
-            :options="statusOptions"
-            placeholder="选择筛选状态"
-            class="status-select"
-          />
-        </div>
 
-        <div class="filter-row">
-          <label>金额范围:</label>
-          <div class="amount-range">
-            <n-input-number
-              v-model:value="minAmount"
-              :min="0"
-              :precision="2"
-              placeholder="最小金额"
-              clearable
-              class="amount-input"
-            >
-              <template #prefix>¥</template>
-            </n-input-number>
-            <span class="range-separator">-</span>
-            <n-input-number
-              v-model:value="maxAmount"
-              :min="0"
-              :precision="2"
-              placeholder="最大金额"
-              clearable
-              class="amount-input"
-            >
-              <template #prefix>¥</template>
-            </n-input-number>
-          </div>
-        </div>
-
-        <div class="filter-row">
-          <label for="product-filter">商品名称:</label>
-          <n-input
-            id="product-filter"
-            v-model:value="productNameFilter"
-            placeholder="输入商品名称搜索"
+    <SectionCard title="订单列表" class="list-section">
+      <!-- 筛选保持原有能力（状态 / 金额范围 / 商品名），收成表格上方的一行。 -->
+      <div class="filter-bar">
+        <n-select
+          v-model:value="statusFilter"
+          :options="statusOptions"
+          placeholder="订单状态"
+          class="filter-status"
+        />
+        <div class="amount-range">
+          <n-input-number
+            v-model:value="minAmount"
+            :min="0"
+            :precision="2"
+            placeholder="最低金额"
             clearable
-            class="product-input"
-          />
+            class="filter-amount"
+          >
+            <template #prefix>¥</template>
+          </n-input-number>
+          <span class="range-separator">-</span>
+          <n-input-number
+            v-model:value="maxAmount"
+            :min="0"
+            :precision="2"
+            placeholder="最高金额"
+            clearable
+            class="filter-amount"
+          >
+            <template #prefix>¥</template>
+          </n-input-number>
         </div>
-
-        <n-button
-          v-if="
-            statusFilter !== 'all' || minAmount !== null || maxAmount !== null || productNameFilter
-          "
-          @click="clearFilters"
-          class="clear-btn"
-          secondary
-        >
+        <n-input
+          v-model:value="productNameFilter"
+          placeholder="按商品名称搜索"
+          clearable
+          class="filter-product"
+        />
+        <n-button v-if="hasFilters" secondary class="clear-btn" @click="clearFilters">
           清空筛选
         </n-button>
       </div>
-    </SectionCard>
 
-    <!-- 订单列表区块 -->
-    <SectionCard
-      title="订单列表"
-      collapsible
-      v-model:collapsed="isListCollapsed"
-      class="list-section"
-    >
       <AsyncState
         :loading="store.isLoading"
         :error="store.error"
         :empty="!filteredOrders.length"
         loading-text="正在加载订单..."
+        @retry="reload"
       >
-        <div class="table-scroll">
-          <n-table class="order-table" size="small">
-            <thead>
-              <tr>
-                <th>订单ID</th>
-                <th>下单时间</th>
-                <th>商品详情</th>
-                <th>总金额</th>
-                <th class="column-status">状态</th>
-                <th class="column-actions">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="order in filteredOrders" :key="order.id">
-                <td>
-                  <strong>#{{ order.id }}</strong>
-                </td>
-                <td>{{ formatTimestamp(order.timestamp) }}</td>
-                <td>
-                  <ul class="item-list">
-                    <li v-for="item in order.items" :key="item.id">
-                      {{ item.product_name }} x {{ item.quantity }}
-                      <!-- 同一个商品可能在一张订单里出现两行（进套装 / 散着，spec 4.5）。
-                           不标出来，摊主配货时会以为系统重复计数了。 -->
-                      <span v-if="item.lot_name" class="item-lot">{{ item.lot_name }}</span>
-                    </li>
-                  </ul>
-                </td>
-                <td>
-                  <!-- 只在真打折时显示删除线：加价（实收 > 原价）显示删除线会被读成「便宜了」。 -->
-                  <span v-if="order.final_amount < order.gross_amount" class="struck">
-                    {{ formatYuan(order.gross_amount) }}
-                  </span>
-                  <strong>{{ formatYuan(order.final_amount) }}</strong>
-                </td>
-                <td>
-                  <n-tag :type="tagType(order.status)" size="large" round>{{
-                    statusText(order.status)
-                  }}</n-tag>
-                </td>
-                <td>
-                  <n-dropdown
-                    :options="actionOptions(order.status)"
-                    @select="(key) => changeStatus(order.id, key)"
-                  >
-                    <n-button size="large">操作</n-button>
-                  </n-dropdown>
-                </td>
-              </tr>
-            </tbody>
-          </n-table>
-        </div>
+        <n-data-table
+          :columns="columns"
+          :data="filteredOrders"
+          :row-key="rowKey"
+          :scroll-x="1120"
+          size="small"
+        />
 
         <template #empty>
           <EmptyState
@@ -164,20 +87,21 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, h, onMounted, onUnmounted, type VNodeChild } from 'vue'
 import { useEventDetailStore } from '@/stores/eventDetailStore'
 import {
-  NSelect,
-  NTable,
-  NTag,
-  NDropdown,
   NButton,
+  NDataTable,
+  NDropdown,
   NInput,
   NInputNumber,
+  NSelect,
+  NTag,
+  type DataTableColumns,
   type DropdownOption,
 } from 'naive-ui'
 import type { Schemas } from '@/api/client'
-import { PageShell, SectionCard, AsyncState, EmptyState } from '@/components/ui'
+import { PageShell, SectionCard, AsyncState, EmptyState, Money } from '@/components/ui'
 import HelpBubble from '@/components/shared/HelpBubble.vue'
 import { useFeedback } from '@/composables/useFeedback'
 import ReceiptModal from '@/components/vendor/ReceiptModal.vue'
@@ -187,13 +111,13 @@ import { formatYuan, toCents, type Cents } from '@/utils/money'
 const props = defineProps<{ id: number }>()
 
 const store = useEventDetailStore()
-const statusFilter = ref('all') // 筛选器的状态
-const minAmount = ref<number | null>(null) // 最小金额
-const maxAmount = ref<number | null>(null) // 最大金额
-const productNameFilter = ref('') // 商品名称筛选
 const fb = useFeedback()
-const isFilterCollapsed = ref(false)
-const isListCollapsed = ref(false)
+
+const statusFilter = ref('all')
+const minAmount = ref<number | null>(null)
+const maxAmount = ref<number | null>(null)
+const productNameFilter = ref('')
+
 const statusOptions = [
   { label: '所有订单', value: 'all' },
   { label: '待处理', value: 'pending' },
@@ -201,11 +125,18 @@ const statusOptions = [
   { label: '已取消', value: 'cancelled' },
 ]
 
+const hasFilters = computed(
+  () =>
+    statusFilter.value !== 'all' ||
+    minAmount.value !== null ||
+    maxAmount.value !== null ||
+    Boolean(productNameFilter.value)
+)
+
 // 计算属性，根据筛选器动态过滤订单
 const filteredOrders = computed(() => {
   let orders = store.allOrders
 
-  // 状态筛选
   if (statusFilter.value !== 'all') {
     orders = orders.filter((order) => order.status === statusFilter.value)
   }
@@ -220,7 +151,6 @@ const filteredOrders = computed(() => {
     orders = orders.filter((order) => order.final_amount <= max)
   }
 
-  // 商品名称筛选
   if (productNameFilter.value.trim()) {
     const keyword = productNameFilter.value.trim().toLowerCase()
     orders = orders.filter((order) =>
@@ -231,6 +161,155 @@ const filteredOrders = computed(() => {
   return orders
 })
 
+// --- 表格列 ---
+function rowKey(order: Schemas['OrderResponse']) {
+  return order.id
+}
+
+function statusText(status: Schemas['OrderStatus']) {
+  const map: Record<Schemas['OrderStatus'], string> = {
+    pending: '待处理',
+    completed: '已完成',
+    cancelled: '已取消',
+  }
+  return map[status] || status
+}
+
+function tagType(status: Schemas['OrderStatus']) {
+  if (status === 'pending') return 'warning'
+  if (status === 'completed') return 'success'
+  if (status === 'cancelled') return 'default'
+  return 'default'
+}
+
+function renderAmount(order: Schemas['OrderResponse']): VNodeChild {
+  const nodes: VNodeChild[] = []
+  // 只在真打折（实收 < 原价）时显示原价：加价显示删除线会被读成「便宜了」。
+  if (order.gross_amount !== order.final_amount) {
+    nodes.push(h(Money, { value: order.gross_amount, strike: true, size: 'sm' }))
+    nodes.push(' ')
+  }
+  nodes.push(h(Money, { value: order.final_amount }))
+  return h('span', { class: 'amount-cell' }, nodes)
+}
+
+const columns: DataTableColumns<Schemas['OrderResponse']> = [
+  {
+    type: 'expand',
+    width: 44,
+    renderExpand: (order) => renderExpand(order),
+  },
+  {
+    title: '单号',
+    key: 'id',
+    width: 84,
+    render: (order) => h('strong', `#${order.id}`),
+  },
+  {
+    title: '时间',
+    key: 'timestamp',
+    width: 168,
+    render: (order) => formatTimestamp(order.timestamp),
+  },
+  {
+    title: '状态',
+    key: 'status',
+    width: 96,
+    render: (order) =>
+      h(
+        NTag,
+        { type: tagType(order.status), size: 'small', round: true },
+        {
+          default: () => statusText(order.status),
+        }
+      ),
+  },
+  {
+    title: '原价 → 实收',
+    key: 'amount',
+    width: 168,
+    render: (order) => renderAmount(order),
+  },
+  {
+    title: '已退',
+    key: 'refunded_amount',
+    width: 110,
+    // 没有退货时显示「—」而不是「¥0.00」，避免被当成真的退过钱。
+    render: (order) =>
+      order.refunded_amount === 0
+        ? h('span', { class: 'refunded-cell muted-dash' }, '—')
+        : h('span', { class: 'refunded-cell' }, [h(Money, { value: order.refunded_amount })]),
+  },
+  {
+    title: '渠道',
+    key: 'channel',
+    width: 110,
+    render: (order) => order.channel || '—',
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 96,
+    fixed: 'right',
+    render: (order) =>
+      h(
+        NDropdown,
+        {
+          options: actionOptions(order.status),
+          trigger: 'click',
+          onSelect: (key: string | number) => changeStatus(order.id, key as Schemas['OrderStatus']),
+        },
+        { default: () => h(NButton, { size: 'small' }, { default: () => '操作' }) }
+      ),
+  },
+]
+
+function renderExpand(order: Schemas['OrderResponse']): VNodeChild {
+  const items = order.items.map((item) =>
+    h('div', { class: 'expand-item', key: item.id }, [
+      h('span', { class: 'expand-item__name' }, item.product_name),
+      h('span', { class: 'expand-item__qty' }, `×${item.quantity}`),
+      item.lot_name ? h('span', { class: 'expand-item__lot' }, item.lot_name) : null,
+      h('span', { class: 'expand-item__paid' }, [
+        '实付 ',
+        h(Money, { value: item.paid_amount, size: 'sm' }),
+      ]),
+      h('span', { class: 'expand-item__refund' }, `已退 ${item.refunded_qty}`),
+    ])
+  )
+
+  const lots = order.lots.map((lot) =>
+    h('span', { class: 'expand-lot', key: lot.id }, `${lot.name} · ${formatYuan(lot.price)}`)
+  )
+
+  return h('div', { class: 'expand-panel' }, [
+    h('div', { class: 'expand-panel__title' }, '商品明细'),
+    items.length
+      ? h('div', { class: 'expand-items' }, items)
+      : h('p', { class: 'expand-empty' }, '无商品行'),
+    h('div', { class: 'expand-panel__title' }, '套装'),
+    lots.length
+      ? h('div', { class: 'expand-lots' }, lots)
+      : h('p', { class: 'expand-empty' }, '未使用套装'),
+  ])
+}
+
+function actionOptions(status: Schemas['OrderStatus']) {
+  const opts: DropdownOption[] = []
+  if (status !== 'pending') opts.push({ label: '设为待处理', key: 'pending' })
+  if (status !== 'completed') opts.push({ label: '设为已完成', key: 'completed' })
+  if (status !== 'cancelled') opts.push({ label: '设为已取消', key: 'cancelled' })
+  return opts
+}
+
+function clearFilters() {
+  statusFilter.value = 'all'
+  minAmount.value = null
+  maxAmount.value = null
+  productNameFilter.value = ''
+}
+
+// --- 操作 ---
 const showReceiptModal = ref(false)
 const pendingOrder = ref<Schemas['OrderResponse'] | null>(null)
 
@@ -288,43 +367,16 @@ async function onReceiptConfirm(payload: {
   }
 }
 
-// --- 辅助函数 ---
-function statusText(status: Schemas['OrderStatus']) {
-  const map: Record<Schemas['OrderStatus'], string> = {
-    pending: '待处理',
-    completed: '已完成',
-    cancelled: '已取消',
-  }
-  return map[status] || status
-}
-function tagType(status: Schemas['OrderStatus']) {
-  if (status === 'pending') return 'warning'
-  if (status === 'completed') return 'success'
-  if (status === 'cancelled') return 'default'
-  return 'default'
-}
-
-function actionOptions(status: Schemas['OrderStatus']) {
-  const opts: DropdownOption[] = []
-  if (status !== 'pending') opts.push({ label: '设为待处理', key: 'pending' })
-  if (status !== 'completed') opts.push({ label: '设为已完成', key: 'completed' })
-  if (status !== 'cancelled') opts.push({ label: '设为已取消', key: 'cancelled' })
-  return opts
-}
-
-function clearFilters() {
-  statusFilter.value = 'all'
-  minAmount.value = null
-  maxAmount.value = null
-  productNameFilter.value = ''
+function reload() {
+  return store.fetchAllOrdersForEvent(props.id)
 }
 
 // --- 生命周期 ---
 onMounted(() => {
-  store.fetchAllOrdersForEvent(props.id)
+  reload()
 })
 onUnmounted(() => {
-  store.resetStore() // 离开时重置store
+  store.resetStore() // 离开时重置 store
 })
 </script>
 
@@ -336,218 +388,139 @@ onUnmounted(() => {
   gap: var(--space-sm);
   margin-bottom: var(--space-lg);
 }
+
 .page-hint {
   margin: 0;
   color: var(--text-muted);
   font-size: var(--font-base);
 }
-.filter-section,
+
 .list-section {
   margin-bottom: var(--space-2xl);
 }
 
-.filter-content {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-lg);
-}
-
-.filter-row {
+.filter-bar {
   display: flex;
   align-items: center;
-  gap: var(--space-lg);
   flex-wrap: wrap;
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
 }
 
-.filter-content label {
-  font-size: var(--font-base);
-  font-weight: var(--weight-medium);
-  color: var(--primary-text-color);
-  white-space: nowrap;
-  min-width: 90px;
-}
-
-.status-select {
-  min-width: 200px;
-  flex: 1;
-  max-width: 300px;
+.filter-status {
+  width: 160px;
 }
 
 .amount-range {
   display: flex;
   align-items: center;
-  gap: var(--space-md);
-  flex: 1;
+  gap: var(--space-sm);
 }
 
-.amount-input {
-  flex: 1;
-  min-width: 120px;
-  max-width: 200px;
+.filter-amount {
+  width: 150px;
 }
 
 .range-separator {
   color: var(--text-muted);
-  font-weight: var(--weight-medium);
 }
 
-.product-input {
+.filter-product {
   flex: 1;
-  max-width: 25rem;
+  min-width: 12rem;
+  max-width: 20rem;
 }
 
-.clear-btn {
-  align-self: flex-start;
-  margin-left: var(--space-2xl);
+/* --- 行展开 --- */
+.expand-panel {
+  padding: var(--space-sm) var(--space-lg);
 }
 
-/* --- 表格样式 --- */
-.order-table {
-  width: 100%;
-  margin-top: 0;
-  border-collapse: collapse;
-  border-spacing: 0;
-  text-align: left;
-  font-size: var(--font-base);
-}
-.order-table th {
-  padding: var(--space-md) var(--space-lg);
-  background-color: var(--card-bg-color);
-  color: var(--primary-text-color);
+.expand-panel__title {
+  margin: var(--space-xs) 0 var(--space-sm);
+  color: var(--text-muted);
+  font-size: var(--font-sm);
   font-weight: var(--weight-bold);
-  border-bottom: 2px solid var(--accent-color);
-  white-space: nowrap;
-}
-.order-table tbody tr:hover {
-  background-color: var(--accent-color-light);
-}
-.order-table th:first-child,
-.order-table td:first-child {
-  padding-left: 0;
-}
-.order-table th:last-child,
-.order-table td:last-child {
-  text-align: right;
-  padding-right: 0;
 }
 
-/* 套装归属标签：与 OrderCard.vue 保持一致，避免摊主以为系统重复计数 */
-.item-lot {
-  margin-left: var(--space-xs);
+.expand-items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.expand-item {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  font-size: var(--font-sm);
+}
+
+.expand-item__name {
+  font-weight: var(--weight-medium);
+  color: var(--primary-text-color);
+}
+
+.expand-item__qty {
+  font-weight: var(--weight-bold);
+  color: var(--accent-color);
+}
+
+/* 套装归属标签：同一个商品可能在一张订单里出现两行（进套装 / 散着，spec 4.5）。 */
+.expand-item__lot,
+.expand-lot {
   padding: 0 var(--space-sm);
   border-radius: var(--radius-sm);
   background-color: var(--accent-color-light);
   color: var(--accent-color);
   font-size: var(--font-xs);
-  line-height: 1.6;
-  white-space: nowrap;
 }
 
-/* 打折前的原价，只在实收低于原价时出现 */
-.struck {
-  margin-right: var(--space-sm);
+.expand-item__paid,
+.expand-item__refund {
+  color: var(--text-muted);
+}
+
+.expand-lots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.expand-empty {
+  margin: 0;
   color: var(--text-disabled);
-  text-decoration: line-through;
-  font-weight: var(--weight-regular);
+  font-size: var(--font-sm);
 }
 
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.muted-dash {
+  color: var(--text-disabled);
 }
 
-/* 响应式布局 */
 @media (--phone) {
-  .filter-content {
-    gap: var(--space-lg);
-  }
-
-  .filter-row {
-    flex-direction: column;
+  .page-hint-row {
     align-items: flex-start;
-    gap: var(--space-sm);
   }
 
-  .filter-content label {
-    font-size: var(--font-sm);
-    min-width: auto;
-  }
-
-  .status-select,
-  .product-input {
-    max-width: none;
+  .filter-status,
+  .filter-amount,
+  .filter-product {
     width: 100%;
+    max-width: none;
   }
 
   .amount-range {
     width: 100%;
-    flex-wrap: wrap;
   }
 
-  .amount-input {
-    max-width: none;
+  .filter-amount {
+    flex: 1;
     min-width: 0;
   }
 
   .clear-btn {
-    margin-left: 0;
     width: 100%;
-  }
-
-  .order-table {
-    font-size: var(--font-sm);
-    min-width: 600px;
-  }
-
-  .order-table th,
-  .order-table td {
-    padding: var(--space-sm);
-  }
-
-  .item-list {
-    font-size: var(--font-sm);
-  }
-}
-
-@media (--phone) {
-  .filter-content {
-    gap: var(--space-md);
-  }
-
-  .filter-row {
-    gap: var(--space-sm);
-  }
-
-  .filter-content label {
-    font-size: var(--font-sm);
-  }
-
-  .amount-input {
-    flex: 1 1 calc(50% - 1rem);
-  }
-
-  .order-table {
-    font-size: var(--font-xs);
-    min-width: 550px;
-  }
-
-  .order-table th,
-  .order-table td {
-    padding: var(--space-sm) var(--space-xs);
-  }
-
-  .order-table th {
-    font-size: var(--font-xs);
-  }
-
-  .item-list {
-    padding-left: var(--space-lg);
-    margin: 0;
-    font-size: var(--font-xs);
-  }
-
-  .item-list li {
-    margin-bottom: var(--space-xs);
   }
 }
 </style>
