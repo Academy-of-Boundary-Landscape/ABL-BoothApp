@@ -50,7 +50,7 @@ pub fn router() -> OpenApiRouter<AppState> {
 }
 
 #[derive(Serialize, ToSchema)]
-struct LotResponse {
+pub(crate) struct LotResponse {
     id: i64,
     event_id: i64,
     name: String,
@@ -214,6 +214,55 @@ async fn write_candidates(conn: &mut SqliteConnection, lot_id: i64, ids: &[i64])
     Ok(())
 }
 
+/// 建一个套装并写入候选集，**`create_lot` 与 import 共用**。
+///
+/// 调用方负责开事务、提交，以及 `require_event_open`——这样本函数既能被
+/// `create_lot` 用，也能在 import 的同一批事务里被逐个调用。
+///
+/// 名称不在这里校验/裁剪：`create_lot` 走 `validate_payload` 拿到裁剪后的名字，
+/// import 用的是源套装在库里已经存好的名字。两处都不该在共用函数里再改一次。
+pub(crate) async fn insert_lot(
+    conn: &mut SqliteConnection,
+    event_id: i64,
+    name: &str,
+    pick_count: i64,
+    total_price: i64,
+    allow_repeat: bool,
+    candidate_ids: &[i64],
+) -> ApiResult<LotResponse> {
+    validate_numbers(pick_count, total_price)?;
+    let candidates = validate_candidates(conn, event_id, candidate_ids).await?;
+    validate_candidate_count(allow_repeat, pick_count, candidates.len())?;
+    let ids: Vec<i64> = candidates.iter().map(|c| c.id).collect();
+    let owner = candidates[0].owner_society_id;
+    let owner_name = candidates[0].owner_society_name.clone();
+
+    let lot_id: i64 = sqlx::query_scalar(
+        "INSERT INTO lots (event_id, name, pick_count, total_price, allow_repeat)
+         VALUES (?, ?, ?, ?, ?) RETURNING id",
+    )
+    .bind(event_id)
+    .bind(name)
+    .bind(pick_count)
+    .bind(total_price)
+    .bind(allow_repeat as i64)
+    .fetch_one(&mut *conn)
+    .await?;
+    write_candidates(conn, lot_id, &ids).await?;
+
+    Ok(LotResponse {
+        id: lot_id,
+        event_id,
+        name: name.to_string(),
+        pick_count,
+        total_price,
+        allow_repeat,
+        candidate_ids: ids,
+        owner_society_id: owner,
+        owner_society_name: owner_name,
+    })
+}
+
 /// `list_lots` 那条 JOIN 的行形状。抽成别名是为了过 `clippy::type_complexity`，
 /// 语义与内联元组完全一样。
 ///
@@ -325,40 +374,19 @@ async fn create_lot(
 
     let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
     crate::api::guard::require_event_open(&mut tx, event_id).await?;
-    let candidates = validate_candidates(&mut tx, event_id, &payload.candidate_ids).await?;
-    validate_candidate_count(payload.allow_repeat, payload.pick_count, candidates.len())?;
-    let ids: Vec<i64> = candidates.iter().map(|c| c.id).collect();
-    let owner = candidates[0].owner_society_id;
-    let owner_name = candidates[0].owner_society_name.clone();
-
-    let lot_id: i64 = sqlx::query_scalar(
-        "INSERT INTO lots (event_id, name, pick_count, total_price, allow_repeat)
-         VALUES (?, ?, ?, ?, ?) RETURNING id",
+    let lot = insert_lot(
+        &mut tx,
+        event_id,
+        &name,
+        payload.pick_count,
+        payload.total_price,
+        payload.allow_repeat,
+        &payload.candidate_ids,
     )
-    .bind(event_id)
-    .bind(&name)
-    .bind(payload.pick_count)
-    .bind(payload.total_price)
-    .bind(payload.allow_repeat as i64)
-    .fetch_one(&mut *tx)
     .await?;
-    write_candidates(&mut tx, lot_id, &ids).await?;
     tx.commit().await?;
 
-    Ok((
-        StatusCode::CREATED,
-        Json(LotResponse {
-            id: lot_id,
-            event_id,
-            name,
-            pick_count: payload.pick_count,
-            total_price: payload.total_price,
-            allow_repeat: payload.allow_repeat,
-            candidate_ids: ids,
-            owner_society_id: owner,
-            owner_society_name: owner_name,
-        }),
-    ))
+    Ok((StatusCode::CREATED, Json(lot)))
 }
 
 /// 整体替换一个套装的配置：候选集整组重写，不是追加。

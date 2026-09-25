@@ -12,12 +12,16 @@ use axum::{
     response::Json,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::{query, query_as, query_scalar, FromRow, SqlitePool};
+use sqlx::{query, query_as, query_scalar, FromRow, Sqlite, SqlitePool, Transaction};
 use utoipa::ToSchema;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::{
-    api::{guard::check_write_permission, openapi::ApiErrorBody},
+    api::{
+        guard::check_write_permission,
+        lot::{insert_lot, LotResponse},
+        openapi::ApiErrorBody,
+    },
     domain::{
         ledger::{onsite_balance, onsite_balances, post_journal, JournalKind, Location, StockLeg},
         money::Money,
@@ -30,6 +34,7 @@ use crate::{
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(list_event_products, add_product_to_event))
+        .routes(routes!(import_products))
         .routes(routes!(restock_product))
         .routes(routes!(update_product, delete_product))
 }
@@ -163,6 +168,84 @@ async fn load_one(pool: &SqlitePool, id: i64) -> ApiResult<EventProductResponse>
     Ok(EventProductResponse::from_row(row, stocked_qty, onsite_qty))
 }
 
+/// 建一个场次商品 + `initial_stock > 0` 时记首批进货，**`add_product_to_event`
+/// 与 `POST /products/import` 共用**——保证「建商品 + 首批进货」只有一份实现。
+///
+/// 调用方负责开事务、提交，以及 `require_event_open`。
+///
+/// ⚠️ 收的是 `&mut Transaction` 而不是 `&mut SqliteConnection`：里面要调
+/// `post_journal`，而它只接受事务（`domain/ledger.rs`）。brief 的接口写的是
+/// `SqliteConnection`，那样调不到 `post_journal`；见 task-1-report 的偏离记录。
+/// 语义不变：两处调用点都在自己的 `BEGIN IMMEDIATE` 事务里。
+///
+/// 单位价格式：分。
+pub(crate) async fn insert_event_product(
+    tx: &mut Transaction<'_, Sqlite>,
+    event_id: i64,
+    master_product_id: i64,
+    unit_price: i64,
+    initial_stock: i64,
+) -> ApiResult<i64> {
+    // `owner_society_id` 从 master_products 抄一份**快照**。之后改全局商品库的归属
+    // 不影响已有展会的账——否则展会结算完之后有人改了归属，冻结的账就跟着变（spec 3.1）。
+    let master: Option<(String, String, i64)> =
+        query_as("SELECT product_code, name, owner_society_id FROM master_products WHERE id = ?")
+            .bind(master_product_id)
+            .fetch_optional(&mut **tx)
+            .await?;
+    let (product_code, name, owner_society_id) =
+        master.ok_or_else(|| ApiError::NotFound("Product not found in master catalog".into()))?;
+
+    // 预先查重，否则撞 (event_id, master_product_id) UNIQUE 约束会走 ApiError::Db → 500。
+    // 错误信息带上商品名：导入时摊主是照着名字勾的，只报一个 id 帮不上忙。
+    let dup: Option<i64> =
+        query_scalar("SELECT id FROM event_products WHERE event_id = ? AND master_product_id = ?")
+            .bind(event_id)
+            .bind(master_product_id)
+            .fetch_optional(&mut **tx)
+            .await?;
+    if dup.is_some() {
+        return Err(ApiError::Conflict(format!("商品「{name}」已经在本场")));
+    }
+
+    let new_id: i64 = query_scalar(
+        "INSERT INTO event_products
+           (event_id, master_product_id, owner_society_id, product_code, name, unit_price)
+         VALUES (?, ?, ?, ?, ?, ?)
+         RETURNING id",
+    )
+    .bind(event_id)
+    .bind(master_product_id)
+    .bind(owner_society_id)
+    .bind(&product_code)
+    .bind(&name)
+    .bind(unit_price)
+    .fetch_one(&mut **tx)
+    .await?;
+
+    // initial_stock 为 0 时不记 journal（post_journal 会拒绝空 journal）。
+    if initial_stock > 0 {
+        post_journal(
+            tx,
+            event_id,
+            JournalKind::Restock,
+            None,
+            None,
+            Some("开场进货"),
+            &[StockLeg {
+                event_product_id: new_id,
+                from: Location::External,
+                to: Location::OnSite,
+                qty: initial_stock,
+            }],
+            &[],
+        )
+        .await?;
+    }
+
+    Ok(new_id)
+}
+
 // ==========================================
 // 1. 获取场次商品列表 (Public)
 // ==========================================
@@ -251,26 +334,13 @@ async fn add_product_to_event(
         return Err(ApiError::NotFound("Event not found".into()));
     }
 
-    let master: Option<(i64, String, String, f64, i64)> = query_as(
-        "SELECT id, product_code, name, default_price, owner_society_id
-         FROM master_products WHERE product_code = ?",
-    )
-    .bind(&payload.product_code)
-    .fetch_optional(&state.db)
-    .await?;
-    let (master_id, product_code, name, default_price, owner_society_id) = master
-        .ok_or_else(|| ApiError::NotFound("Product code not found in master catalog".into()))?;
-
-    // 预先查重，否则撞 (event_id, master_product_id) UNIQUE 约束会走 ApiError::Db → 500。
-    let dup: Option<i64> =
-        query_scalar("SELECT id FROM event_products WHERE event_id = ? AND master_product_id = ?")
-            .bind(event_id)
-            .bind(master_id)
+    let master: Option<(i64, f64)> =
+        query_as("SELECT id, default_price FROM master_products WHERE product_code = ?")
+            .bind(&payload.product_code)
             .fetch_optional(&state.db)
             .await?;
-    if dup.is_some() {
-        return Err(ApiError::Conflict("Product already in this event".into()));
-    }
+    let (master_id, default_price) = master
+        .ok_or_else(|| ApiError::NotFound("Product code not found in master catalog".into()))?;
 
     // unit_price 缺省用 default_price。default_price 列还是 REAL（元），要换算成分：
     // 商品库的列没跟着改成整数分，因为 `.boothpack` 的跨版本兼容要靠它。
@@ -284,52 +354,206 @@ async fn add_product_to_event(
         None => (default_price * 100.0).round() as i64,
     };
 
-    // 建商品 + 首批进货必须在同一个事务里。initial_stock 为 0 时不记 journal
-    // （post_journal 会拒绝空 journal）。
+    // 建商品 + 首批进货必须在同一个事务里，走和 import 同一个 `insert_event_product`。
     let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
     crate::api::guard::require_event_open(&mut tx, event_id).await?;
-
-    // owner_society_id 从 master_products 抄一份**快照**。之后改全局商品库的归属
-    // 不影响已有展会的账——否则展会结算完之后有人改了归属，冻结的账就跟着变
-    // （spec 3.1）。
-    let new_id: i64 = query_scalar(
-        "INSERT INTO event_products
-           (event_id, master_product_id, owner_society_id, product_code, name, unit_price)
-         VALUES (?, ?, ?, ?, ?, ?)
-         RETURNING id",
+    let new_id = insert_event_product(
+        &mut tx,
+        event_id,
+        master_id,
+        unit_price,
+        payload.initial_stock,
     )
-    .bind(event_id)
-    .bind(master_id)
-    .bind(owner_society_id)
-    .bind(&product_code)
-    .bind(&name)
-    .bind(unit_price)
-    .fetch_one(&mut *tx)
     .await?;
-
-    if payload.initial_stock > 0 {
-        post_journal(
-            &mut tx,
-            event_id,
-            JournalKind::Restock,
-            None,
-            None,
-            Some("开场进货"),
-            &[StockLeg {
-                event_product_id: new_id,
-                from: Location::External,
-                to: Location::OnSite,
-                qty: payload.initial_stock,
-            }],
-            &[],
-        )
-        .await?;
-    }
-
     tx.commit().await?;
 
     let product = load_one(&state.db, new_id).await?;
     Ok((StatusCode::CREATED, Json(product)))
+}
+
+// ==========================================
+// 2.5 批量导入商品与套装 (Admin/Vendor)
+// ==========================================
+//
+// 前端「从商品库选」与「从上一场导入」共用这一个端点：前者 `lots` 为空。
+// 整个请求在**一个 `BEGIN IMMEDIATE` 事务**里完成，任一商品/套装失败整批回滚——
+// 摊主改完重试，不会留下半份名单。
+
+#[derive(Deserialize, ToSchema)]
+#[schema(as = ProductImportRequest)]
+struct ImportRequest {
+    /// 要上架的商品。可省略（只导入套装时）。
+    #[serde(default)]
+    products: Vec<ImportProduct>,
+    /// 要从别的展会复制的套装。可省略（只上架商品时）。
+    #[serde(default)]
+    lots: Vec<ImportLot>,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[schema(as = ProductImportItem)]
+struct ImportProduct {
+    master_product_id: i64,
+    /// 单位：分。
+    #[schema(value_type = Money)]
+    unit_price: i64,
+    initial_stock: i64,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[schema(as = LotImportItem)]
+struct ImportLot {
+    /// 源套装 id（**必须属于别的展会**）。
+    source_lot_id: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+#[schema(as = ProductImportResponse)]
+struct ImportResponse {
+    products: Vec<EventProductResponse>,
+    lots: Vec<LotResponse>,
+}
+
+/// 源套装的不可变快照。只读这四项，候选单独查。
+#[derive(Debug, FromRow)]
+struct SourceLotRow {
+    event_id: i64,
+    name: String,
+    pick_count: i64,
+    total_price: i64,
+    allow_repeat: i64,
+}
+
+/// 批量把商品上架到某场展会，并可选地从别的展会复制套装。需要管理员或本场摊主。
+///
+/// **单事务**：任一商品重复上架（409，写明商品名，**不跳过**）、任一候选商品映射不到
+/// （400，写明套装名与商品名）、展会已结算（409），都会让整批回滚。套装映射按
+/// `master_product_id`：本请求刚建的商品与目标展会原本就有的商品都算“在本场”。
+#[utoipa::path(
+    post,
+    path = "/events/{event_id}/products/import",
+    tag = "products",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    request_body = ImportRequest,
+    security(("bearer" = [])),
+    responses(
+        (status = 200, body = ImportResponse, description = "整批成功；商品与新建套装的完整响应"),
+        (status = 400, body = ApiErrorBody, description = "请求为空、单价/库存为负、源套装属于本场或候选商品映射不到"),
+        (status = 401, body = ApiErrorBody, description = "未登录或令牌无效"),
+        (status = 403, body = ApiErrorBody, description = "无权访问这场展会"),
+        (status = 404, body = ApiErrorBody, description = "展会或源套装不存在"),
+        (status = 409, body = ApiErrorBody, description = "商品已在本场（不跳过）或展会已结算"),
+    ),
+)]
+async fn import_products(
+    State(state): State<AppState>,
+    claims: Claims,
+    Path(event_id): Path<i64>,
+    Json(payload): Json<ImportRequest>,
+) -> ApiResult<(StatusCode, Json<ImportResponse>)> {
+    check_write_permission(&claims, event_id)?;
+
+    if payload.products.is_empty() && payload.lots.is_empty() {
+        return Err(ApiError::BadRequest(
+            "导入请求至少要有一件商品或一个套装".into(),
+        ));
+    }
+    // 数字校验放在事务外：这些都是请求自身的形状错误，不必白拿写锁。
+    for p in &payload.products {
+        if p.unit_price < 0 {
+            return Err(ApiError::BadRequest("单价不能为负".into()));
+        }
+        if p.initial_stock < 0 {
+            return Err(ApiError::BadRequest("进货数量不能为负".into()));
+        }
+    }
+
+    let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
+    crate::api::guard::require_event_open(&mut tx, event_id).await?;
+
+    // 先商品，再套装：套装的候选可以映射到本请求刚建出来的商品。
+    let mut new_product_ids: Vec<i64> = Vec::with_capacity(payload.products.len());
+    for p in &payload.products {
+        let id = insert_event_product(
+            &mut tx,
+            event_id,
+            p.master_product_id,
+            p.unit_price,
+            p.initial_stock,
+        )
+        .await?;
+        new_product_ids.push(id);
+    }
+
+    let mut lots: Vec<LotResponse> = Vec::with_capacity(payload.lots.len());
+    for l in &payload.lots {
+        let source: Option<SourceLotRow> = query_as(
+            "SELECT event_id, name, pick_count, total_price, allow_repeat
+             FROM lots WHERE id = ?",
+        )
+        .bind(l.source_lot_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let source = source.ok_or_else(|| ApiError::NotFound("套装不存在".into()))?;
+        if source.event_id == event_id {
+            return Err(ApiError::BadRequest("不能从本场导入".into()));
+        }
+
+        // 源候选 → master_product_id → 目标展会同 master_product_id 的 event_product。
+        // 刚建的商品已经在同一个事务里可见，所以这里不必额外维护映射表。
+        let candidates: Vec<(i64, String)> = query_as(
+            "SELECT ep.master_product_id, ep.name
+             FROM lot_candidates lc
+             JOIN event_products ep ON ep.id = lc.event_product_id
+             WHERE lc.lot_id = ?
+             ORDER BY lc.event_product_id",
+        )
+        .bind(l.source_lot_id)
+        .fetch_all(&mut *tx)
+        .await?;
+
+        let mut target_ids: Vec<i64> = Vec::with_capacity(candidates.len());
+        for (master_product_id, product_name) in &candidates {
+            let target: Option<i64> = query_scalar(
+                "SELECT id FROM event_products WHERE event_id = ? AND master_product_id = ?",
+            )
+            .bind(event_id)
+            .bind(master_product_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+            let target = target.ok_or_else(|| {
+                ApiError::BadRequest(format!(
+                    "套装「{}」的候选商品「{}」不在本场",
+                    source.name, product_name
+                ))
+            })?;
+            target_ids.push(target);
+        }
+
+        // 沿用源套装的 name / pick_count / total_price / allow_repeat，
+        // 校验走 create_lot 的同一套函数（同一货主等）。
+        let lot = insert_lot(
+            &mut tx,
+            event_id,
+            &source.name,
+            source.pick_count,
+            source.total_price,
+            source.allow_repeat != 0,
+            &target_ids,
+        )
+        .await?;
+        lots.push(lot);
+    }
+
+    tx.commit().await?;
+
+    // 提交后再取商品响应：`load_one` 需要聚合余额与累计进货，是新事务的读。
+    let mut products: Vec<EventProductResponse> = Vec::with_capacity(new_product_ids.len());
+    for id in new_product_ids {
+        products.push(load_one(&state.db, id).await?);
+    }
+
+    Ok((StatusCode::OK, Json(ImportResponse { products, lots })))
 }
 
 // ==========================================
@@ -786,6 +1010,333 @@ mod tests {
             .unwrap();
         assert_eq!(res.status(), StatusCode::CONFLICT, "冻结后不能删商品");
     }
+
+    // ==========================================
+    // import：批量上架 + 从上一场复制套装
+    // ==========================================
+
+    /// 源展会 2：master A(1)/C(3) 各上架一次（event_product 10/11，**同属本社团**），
+    /// 外加一个候选为二者的套装。返回 `(source_lot_id, source_ep_a, source_ep_c)`。
+    ///
+    /// 两个候选必须同一货主：`insert_lot` 会走 `validate_candidates`，
+    /// 跨货主的套装源展会自己就建不出来（`create_lot` 就拒了）。
+    async fn seed_source_event(pool: &sqlx::SqlitePool) -> (i64, i64, i64) {
+        sqlx::query(
+            "INSERT INTO events (id, name, event_date, status)
+             VALUES (2, '上一场', '2026-09-01', '进行中')",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO master_products (id, product_code, name, default_price, owner_society_id)
+             VALUES (3, 'C', '挂件C', 18.0, 1)",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO event_products
+               (id, event_id, master_product_id, owner_society_id, product_code, name, unit_price)
+             VALUES (10, 2, 1, 1, 'A', '本子A', 2800),
+                    (11, 2, 3, 1, 'C', '挂件C', 1800)",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        let lot_id =
+            crate::test_support::seed_lot_repeat(pool, 2, "上一场任选2件40", 2, 4000, &[10, 11])
+                .await;
+        (lot_id, 10, 11)
+    }
+
+    /// 空的目标展会 3，用来验证「从别场导入」。
+    async fn seed_empty_target(pool: &sqlx::SqlitePool) {
+        sqlx::query(
+            "INSERT INTO events (id, name, event_date, status)
+             VALUES (3, '本场', '2026-10-01', '进行中')",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn import_products_and_lot_from_previous_event() {
+        let (router, _dir, pool) = test_router_with().await;
+        seed_event_and_product(&pool).await;
+        let (lot_id, _, _) = seed_source_event(&pool).await;
+        seed_empty_target(&pool).await;
+        let token = admin_token();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                "/api/events/3/products/import",
+                Some(&token),
+                json!({
+                    "products": [
+                        {"master_product_id": 1, "unit_price": 2800, "initial_stock": 4},
+                        {"master_product_id": 3, "unit_price": 1800, "initial_stock": 0}
+                    ],
+                    "lots": [{"source_lot_id": lot_id}]
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = read_json(res).await;
+
+        let products = body["products"].as_array().unwrap();
+        assert_eq!(products.len(), 2);
+        let a = products
+            .iter()
+            .find(|p| p["master_product_id"] == 1)
+            .unwrap();
+        let c = products
+            .iter()
+            .find(|p| p["master_product_id"] == 3)
+            .unwrap();
+        assert_eq!(a["unit_price"], 2800, "沿用请求里的本次售价");
+        assert_eq!(a["onsite_qty"], 4);
+        assert_eq!(a["stocked_qty"], 4);
+        assert_eq!(c["unit_price"], 1800);
+        assert_eq!(c["onsite_qty"], 0, "库存 0 不预填");
+        assert_eq!(c["stocked_qty"], 0);
+
+        let target_a = a["id"].as_i64().unwrap();
+        let target_c = c["id"].as_i64().unwrap();
+        let lots = body["lots"].as_array().unwrap();
+        assert_eq!(lots.len(), 1);
+        assert_eq!(lots[0]["name"], "上一场任选2件40");
+        assert_eq!(lots[0]["pick_count"], 2);
+        assert_eq!(lots[0]["total_price"], 4000);
+        assert_eq!(lots[0]["allow_repeat"], true, "allow_repeat 必须保留");
+        let mut cands: Vec<i64> = lots[0]["candidate_ids"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_i64().unwrap())
+            .collect();
+        cands.sort_unstable();
+        let mut expected = vec![target_a, target_c];
+        expected.sort_unstable();
+        assert_eq!(cands, expected, "候选必须映射成目标展会的 event_product id");
+    }
+
+    #[tokio::test]
+    async fn import_maps_lot_to_existing_target_product() {
+        // Review Focus 1：目标展会原本就有 A，请求只带 C + 套装 {A, C}。
+        // A 必须映射到目标已有的 event_product，套装照常建出。
+        let (router, _dir, pool) = test_router_with().await;
+        seed_event_and_product(&pool).await;
+        let (lot_id, _, _) = seed_source_event(&pool).await;
+        seed_empty_target(&pool).await;
+        sqlx::query(
+            "INSERT INTO event_products
+               (id, event_id, master_product_id, owner_society_id, product_code, name, unit_price)
+             VALUES (20, 3, 1, 1, 'A', '本子A', 3000)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let token = admin_token();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                "/api/events/3/products/import",
+                Some(&token),
+                json!({"products": [{"master_product_id": 3, "unit_price": 1800, "initial_stock": 0}],
+                       "lots": [{"source_lot_id": lot_id}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = read_json(res).await;
+        let c_id = body["products"][0]["id"].as_i64().unwrap();
+        let mut cands: Vec<i64> = body["lots"][0]["candidate_ids"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_i64().unwrap())
+            .collect();
+        cands.sort_unstable();
+        let mut expected = vec![20, c_id];
+        expected.sort_unstable();
+        assert_eq!(cands, expected, "已在本场的 A 用 20，新导入的 C 用新 id");
+    }
+
+    #[tokio::test]
+    async fn import_rolls_back_all_on_lot_failure() {
+        // Review Focus 5：套装有一件候选既不在本场也不在请求里 → 400，
+        // 已经建好的商品与首批进货 journal 都必须跟着回滚。
+        let (router, _dir, pool) = test_router_with().await;
+        seed_event_and_product(&pool).await;
+        let (lot_id, _, _) = seed_source_event(&pool).await;
+        seed_empty_target(&pool).await;
+        let token = admin_token();
+        let journals_before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journals")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        // 只导入 A；套装还需要 C（源 11 / master 3，本场没有、请求也没带）。
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                "/api/events/3/products/import",
+                Some(&token),
+                json!({"products": [{"master_product_id": 1, "unit_price": 2800, "initial_stock": 3}],
+                       "lots": [{"source_lot_id": lot_id}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        let body = read_json(res).await;
+        let error = body["error"].as_str().unwrap();
+        assert!(
+            error.contains("上一场任选2件40"),
+            "要说清是哪个套装：{error}"
+        );
+        assert!(error.contains("挂件C"), "要说清是哪个候选：{error}");
+
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM event_products WHERE event_id = 3")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(count, 0, "整批回滚：半路建出来的商品也不能留下");
+        let journals_after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journals")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(journals_after, journals_before, "首批进货 journal 也要回滚");
+    }
+
+    #[tokio::test]
+    async fn import_duplicate_product_conflicts() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _ep_a, _ep_b) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+        let before: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM event_products WHERE event_id = ?")
+                .bind(event_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/products/import"),
+                Some(&token),
+                json!({"products": [{"master_product_id": 1, "unit_price": 1000, "initial_stock": 5}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+        let body = read_json(res).await;
+        assert!(
+            body["error"].as_str().unwrap().contains("本子A"),
+            "重复上架的错误必须含商品名：{body}"
+        );
+
+        let after: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM event_products WHERE event_id = ?")
+                .bind(event_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(after, before, "409 不能有任何写入");
+    }
+
+    #[tokio::test]
+    async fn import_rejected_when_event_settled() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _, _) = seed_event_and_product(&pool).await;
+        sqlx::query("UPDATE events SET status = '已结算' WHERE id = ?")
+            .bind(event_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let token = admin_token();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/products/import"),
+                Some(&token),
+                json!({"products": [{"master_product_id": 1, "unit_price": 1000, "initial_stock": 1}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn import_rejects_lot_from_same_event() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, _) = seed_event_and_product(&pool).await;
+        let lot_id =
+            crate::test_support::seed_lot_repeat(&pool, event_id, "本场套装", 1, 1000, &[ep_a])
+                .await;
+        let token = admin_token();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/products/import"),
+                Some(&token),
+                json!({"lots": [{"source_lot_id": lot_id}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        let body = read_json(res).await;
+        assert!(
+            body["error"].as_str().unwrap().contains("不能从本场导入"),
+            "{body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn import_zero_stock_writes_no_journal() {
+        let (router, _dir, pool) = test_router_with().await;
+        seed_event_and_product(&pool).await;
+        seed_empty_target(&pool).await;
+        let before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journals")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let token = admin_token();
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                "/api/events/3/products/import",
+                Some(&token),
+                json!({"products": [{"master_product_id": 1, "unit_price": 2800, "initial_stock": 0}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = read_json(res).await;
+        assert_eq!(body["products"][0]["onsite_qty"], 0);
+        assert_eq!(body["products"][0]["stocked_qty"], 0);
+        let after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journals")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(after, before, "initial_stock = 0 不写 journal");
+    }
 }
 
 /// ③b 形状快照：钉住每个路由的 JSON 形状（键 + 类型），类型化前后必须一行不改照样绿。
@@ -1018,6 +1569,95 @@ mod shape_tests {
             &format!("/api/products/{ep_a}"),
             Some(&t),
             json!({}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::CONFLICT, json!({"error": "string"}))
+        );
+    }
+
+    /// 目标展会 1（有 A/B/C）+ 源展会 2（上架了 C、配了一个只含 C 的套装，
+    /// 供 import 复制）。C 带图片/分类/标签，单商品的形状快照才钉得住 string。
+    async fn seeded_import() -> (Router, tempfile::TempDir, i64, i64) {
+        let (router, dir, pool) = test_router_with().await;
+        let (event_id, _ep_a, _ep_b) = seed_event_and_product(&pool).await;
+        sqlx::query(
+            "INSERT INTO master_products
+               (id, product_code, name, default_price, owner_society_id, image_url, category, tags)
+             VALUES (3, 'C', '挂件C', 15.0, 1, '/uploads/products/c.png', '挂件', '原创')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO events (id, name, event_date, status)
+             VALUES (2, '上一场', '2026-09-01', '进行中')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO event_products
+               (id, event_id, master_product_id, owner_society_id, product_code, name, unit_price)
+             VALUES (10, 2, 3, 1, 'C', '挂件C', 1500)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let lot_id =
+            crate::test_support::seed_lot_repeat(&pool, 2, "上一场套装", 1, 1000, &[10]).await;
+        (router, dir, event_id, lot_id)
+    }
+
+    fn import_lot_shape() -> Value {
+        json!({
+            "id": "int", "event_id": "int", "name": "string", "pick_count": "int",
+            "total_price": "int", "allow_repeat": "bool",
+            "candidate_ids": ["int"], "owner_society_id": "int", "owner_society_name": "string",
+        })
+    }
+
+    #[tokio::test]
+    async fn shape_import_products_and_lots() {
+        let (router, _dir, event_id, lot_id) = seeded_import().await;
+        let t = admin_token();
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/products/import"),
+            Some(&t),
+            json!({"products": [{"master_product_id": 3, "unit_price": 1500, "initial_stock": 0}],
+                   "lots": [{"source_lot_id": lot_id}]}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(
+            shape_of(&body),
+            json!({"products": [product_row_single()], "lots": [import_lot_shape()]})
+        );
+
+        // 错误分支：两样都空 → 400
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/products/import"),
+            Some(&t),
+            json!({}),
+        )
+        .await;
+        assert_eq!(
+            (s, shape_of(&body)),
+            (StatusCode::BAD_REQUEST, json!({"error": "string"}))
+        );
+
+        // 错误分支：重复上架 → 409（C 已经在上面那次导入进了本场）
+        let (s, body) = call(
+            &router,
+            "POST",
+            &format!("/api/events/{event_id}/products/import"),
+            Some(&t),
+            json!({"products": [{"master_product_id": 3, "unit_price": 1500, "initial_stock": 0}]}),
         )
         .await;
         assert_eq!(

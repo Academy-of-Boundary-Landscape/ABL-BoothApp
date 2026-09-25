@@ -497,6 +497,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/events/{event_id}/products/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 批量把商品上架到某场展会，并可选地从别的展会复制套装。需要管理员或本场摊主。
+         * @description **单事务**：任一商品重复上架（409，写明商品名，**不跳过**）、任一候选商品映射不到
+         *     （400，写明套装名与商品名）、展会已结算（409），都会让整批回滚。套装映射按
+         *     `master_product_id`：本请求刚建的商品与目标展会原本就有的商品都算“在本场”。
+         */
+        post: operations["products.import_products"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/events/{event_id}/products/{id}/restock": {
         parameters: {
             query?: never;
@@ -1490,6 +1512,13 @@ export interface components {
         LogoutResponse: {
             message: string;
         };
+        LotImportItem: {
+            /**
+             * Format: int64
+             * @description 源套装 id（**必须属于别的展会**）。
+             */
+            source_lot_id: number;
+        };
         LotPayload: {
             /**
              * @description 老客户端不带这个字段，`serde(default)` 落到 false——**默认限 1**，
@@ -1681,6 +1710,13 @@ export interface components {
             product_price: components["schemas"]["Money"];
             /** Format: int64 */
             quantity: number;
+            /** @description 这一行已经退给顾客多少钱（分，`SUM(refunds.refund_amount)`）。 */
+            refunded_amount: components["schemas"]["Money"];
+            /**
+             * Format: int64
+             * @description 这一行已经退了几件（`SUM(refunds.qty)`，无退货为 0）。
+             */
+            refunded_qty: number;
         };
         /**
          * @description 订单上的一个套装**实例**。
@@ -1713,6 +1749,14 @@ export interface components {
         OrderResponse: components["schemas"]["OrderRow"] & {
             items: components["schemas"]["OrderItemResponse"][];
             lots: components["schemas"]["OrderLotResponse"][];
+            /**
+             * @description 这张订单已退给顾客的总额（分）= 其 items 的 `refunded_amount` 之和。
+             *
+             *     放在顶层而不是 `OrderRow`：`OrderRow` 是 `SELECT *` 的 `FromRow`，
+             *     给它加列会直接炸（global.md 的实现层修正）。摊主列表按订单看「已退」，
+             *     不该自己把行加一遍。
+             */
+            refunded_amount: components["schemas"]["Money"];
         };
         OrderRow: {
             channel?: string | null;
@@ -1792,6 +1836,24 @@ export interface components {
             tags: string;
             /** @description 单位：分。 */
             unit_price: components["schemas"]["Money"];
+        };
+        ProductImportItem: {
+            /** Format: int64 */
+            initial_stock: number;
+            /** Format: int64 */
+            master_product_id: number;
+            /** @description 单位：分。 */
+            unit_price: components["schemas"]["Money"];
+        };
+        ProductImportRequest: {
+            /** @description 要从别的展会复制的套装。可省略（只上架商品时）。 */
+            lots?: components["schemas"]["LotImportItem"][];
+            /** @description 要上架的商品。可省略（只导入套装时）。 */
+            products?: components["schemas"]["ProductImportItem"][];
+        };
+        ProductImportResponse: {
+            lots: components["schemas"]["LotResponse"][];
+            products: components["schemas"]["ProductEventProduct"][];
         };
         ProductRestockRequest: {
             note?: string | null;
@@ -4025,6 +4087,78 @@ export interface operations {
                 };
             };
             /** @description 该商品已经在本场展会或展会已结算 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "products.import_products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 展会 id */
+                event_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductImportRequest"];
+            };
+        };
+        responses: {
+            /** @description 整批成功；商品与新建套装的完整响应 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductImportResponse"];
+                };
+            };
+            /** @description 请求为空、单价/库存为负、源套装属于本场或候选商品映射不到 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 未登录或令牌无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 无权访问这场展会 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 展会或源套装不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 商品已在本场（不跳过）或展会已结算 */
             409: {
                 headers: {
                     [name: string]: unknown;

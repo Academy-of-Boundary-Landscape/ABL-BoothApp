@@ -91,6 +91,13 @@ struct OrderResponse {
     order: OrderRow,
     items: Vec<OrderItemResponse>,
     lots: Vec<OrderLotResponse>,
+    /// 这张订单已退给顾客的总额（分）= 其 items 的 `refunded_amount` 之和。
+    ///
+    /// 放在顶层而不是 `OrderRow`：`OrderRow` 是 `SELECT *` 的 `FromRow`，
+    /// 给它加列会直接炸（global.md 的实现层修正）。摊主列表按订单看「已退」，
+    /// 不该自己把行加一遍。
+    #[schema(value_type = Money)]
+    refunded_amount: i64,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -107,6 +114,11 @@ struct OrderItemResponse {
     allocated_amount: i64,
     #[schema(value_type = Money)]
     paid_amount: i64,
+    /// 这一行已经退了几件（`SUM(refunds.qty)`，无退货为 0）。
+    refunded_qty: i64,
+    /// 这一行已经退给顾客多少钱（分，`SUM(refunds.refund_amount)`）。
+    #[schema(value_type = Money)]
+    refunded_amount: i64,
     /// 这一行进了哪个套装。`None` = 散卖。
     ///
     /// 同一个商品可能在一张订单里出现两次（2 件进套装、1 件散着，spec 4.5），
@@ -127,6 +139,8 @@ struct OrderItemRow {
     product_name: String,
     product_image_url: Option<String>,
     lot_name: Option<String>,
+    refunded_qty: i64,
+    refunded_amount: i64,
 }
 
 impl From<OrderItemRow> for OrderItemResponse {
@@ -140,6 +154,8 @@ impl From<OrderItemRow> for OrderItemResponse {
             product_image_url: row.product_image_url,
             allocated_amount: row.allocated_amount,
             paid_amount: row.paid_amount,
+            refunded_qty: row.refunded_qty,
+            refunded_amount: row.refunded_amount,
             lot_name: row.lot_name,
         }
     }
@@ -190,7 +206,9 @@ const ITEMS_BY_ORDER: &str = "
 SELECT ol.id, ol.order_id, ol.event_product_id, ol.qty, ol.unit_price,
        ol.allocated_amount, ol.paid_amount,
        ep.name AS product_name, mp.image_url AS product_image_url,
-       olo.name AS lot_name
+       olo.name AS lot_name,
+       (SELECT COALESCE(SUM(r.qty), 0) FROM refunds r WHERE r.order_line_id = ol.id) AS refunded_qty,
+       (SELECT COALESCE(SUM(r.refund_amount), 0) FROM refunds r WHERE r.order_line_id = ol.id) AS refunded_amount
 FROM order_lines ol
 JOIN event_products ep ON ep.id = ol.event_product_id
 JOIN master_products mp ON mp.id = ep.master_product_id
@@ -203,7 +221,9 @@ const ITEMS_BY_EVENT: &str = "
 SELECT ol.id, ol.order_id, ol.event_product_id, ol.qty, ol.unit_price,
        ol.allocated_amount, ol.paid_amount,
        ep.name AS product_name, mp.image_url AS product_image_url,
-       olo.name AS lot_name
+       olo.name AS lot_name,
+       (SELECT COALESCE(SUM(r.qty), 0) FROM refunds r WHERE r.order_line_id = ol.id) AS refunded_qty,
+       (SELECT COALESCE(SUM(r.refund_amount), 0) FROM refunds r WHERE r.order_line_id = ol.id) AS refunded_amount
 FROM order_lines ol
 JOIN event_products ep ON ep.id = ol.event_product_id
 JOIN master_products mp ON mp.id = ep.master_product_id
@@ -258,7 +278,13 @@ async fn load_order_response(pool: &SqlitePool, order_id: i64) -> ApiResult<Orde
         .map(Into::into)
         .collect();
 
-    Ok(OrderResponse { order, items, lots })
+    let refunded_amount = items.iter().map(|i| i.refunded_amount).sum();
+    Ok(OrderResponse {
+        order,
+        items,
+        lots,
+        refunded_amount,
+    })
 }
 
 // ==========================================
@@ -384,6 +410,9 @@ async fn create_order(
             product_image_url: p.image_url.clone(),
             allocated_amount: line.allocated.cents(),
             paid_amount: line.allocated.cents(),
+            // 刚下的单不可能有退货；后续读回时由 ITEMS_BY_ORDER 的聚合子查询给真值。
+            refunded_qty: 0,
+            refunded_amount: 0,
             lot_name: line.lot_index.map(|k| priced.lots[k].name.clone()),
         });
     }
@@ -434,6 +463,7 @@ async fn create_order(
             order,
             items,
             lots: lots_response,
+            refunded_amount: 0,
         }),
     ))
 }
@@ -516,10 +546,13 @@ async fn list_orders(
         .into_iter()
         .map(|order| {
             let oid = order.id;
+            let items = items_map.remove(&oid).unwrap_or_default();
+            let refunded_amount = items.iter().map(|i| i.refunded_amount).sum();
             OrderResponse {
                 order,
-                items: items_map.remove(&oid).unwrap_or_default(),
+                items,
                 lots: lots_map.remove(&oid).unwrap_or_default(),
+                refunded_amount,
             }
         })
         .collect();
@@ -1794,6 +1827,88 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn order_response_carries_refunded_totals() {
+        // spec 5.2：列表/单个/状态更新后的订单都要能直接读出「已退」。
+        // 一单两行，退其中一行的 1 件：该行带退款额，另一行是 0，
+        // 顶层 refunded_amount 等于各行之 和。
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, ep_a, ep_b) = seed_event_and_product(&pool).await;
+        let token = admin_token();
+        let order_id = place(
+            &router,
+            event_id,
+            json!([{"product_id": ep_b, "quantity": 2}, {"product_id": ep_a, "quantity": 1}]),
+        )
+        .await;
+
+        // 只有已完成的订单能退货。
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "PUT",
+                &format!("/api/events/{event_id}/orders/{order_id}/status"),
+                Some(&token),
+                json!({"status": "completed", "channel": "微信"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let line_b: i64 = sqlx::query_scalar(
+            "SELECT id FROM order_lines WHERE order_id = ? AND event_product_id = ? ORDER BY id",
+        )
+        .bind(order_id)
+        .bind(ep_b)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        // ep_b 单价 2000、买 2 件、实付 4000；退 1 件不指定退款额 →
+        // 按剩余均分得到 2000。这就是这一行的 refunded_amount。
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/orders/{order_id}/refunds"),
+                Some(&token),
+                json!({"channel": "微信",
+                       "lines": [{"order_line_id": line_b, "qty": 1, "destination": "现场仓"}]}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+
+        let res = router
+            .clone()
+            .oneshot(json_request(
+                "GET",
+                &format!("/api/events/{event_id}/orders"),
+                Some(&token),
+                json!(null),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = read_json(res).await;
+        let order = &body[0];
+        assert_eq!(order["refunded_amount"], 2000, "顶层 = 各行之 和");
+
+        let items = order["items"].as_array().unwrap();
+        let refunded = items
+            .iter()
+            .find(|i| i["product_id"] == ep_b)
+            .expect("找到 B 那一行");
+        let untouched = items
+            .iter()
+            .find(|i| i["product_id"] == ep_a)
+            .expect("找到 A 那一行");
+        assert_eq!(refunded["refunded_qty"], 1);
+        assert_eq!(refunded["refunded_amount"], 2000);
+        assert_eq!(untouched["refunded_qty"], 0);
+        assert_eq!(untouched["refunded_amount"], 0);
+    }
+
+    #[tokio::test]
     async fn unapplying_a_lot_puts_the_money_back_on_the_real_owner() {
         // 这是整条通道存在的理由。对照组写在断言里：只改实收不拆，
         // 代卖社团仍然只拿 30，多出的 10 会挂在本社团头上。
@@ -2220,10 +2335,12 @@ mod shape_tests {
             "id": "int", "event_id": "int", "status": "string", "channel": channel,
             "gross_amount": "int", "solved_amount": "int", "final_amount": "int",
             "timestamp": "string", "completed_at": completed_at,
+            "refunded_amount": "int",
             "items": [{
                 "id": "int", "product_id": "int", "quantity": "int", "product_name": "string",
                 "product_price": "int", "product_image_url": "string",
-                "allocated_amount": "int", "paid_amount": "int", "lot_name": "null|string",
+                "allocated_amount": "int", "paid_amount": "int",
+                "refunded_qty": "int", "refunded_amount": "int", "lot_name": "null|string",
             }],
             "lots": lots,
         })
