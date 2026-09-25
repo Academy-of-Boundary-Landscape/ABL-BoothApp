@@ -3,187 +3,215 @@
   货主块（【货】【钱】【我垫付】【调整】与我应转给）、底部合计与时间戳，外加 xlsx 导出。
   垫付 / 结算调整 / 收摊清点三个可编辑区块留在 `AdminEventSettlement.vue`，不在本组件内。
 
+  版式对齐 `settlement.xlsx` 的语义：货主块 = 「结算汇总」，展开的商品明细 = 「货主明细」，
+  收摊清点栏 = 「结算汇总」下半段；这些表都保留语义化 `<table>`（报表要与 xlsx 对得上，
+  不是数据表格）。`账本流水` / `订单明细` 两个纯流水 sheet 只读接口里没有，只在 xlsx 导出里。
+
   数据自己从 `settlementStore` 取（`refresh` 会一并拉垫付与调整列表，管理端编辑区块共用），
   错误态交给 `AsyncState`——页面不再手写 `n-alert type="error"`。
+  `showWarnings=false` 时把对账警示条留给调用方（管理端要把它提到页内首位）；
+  `showChannels=false` 时把清点栏留给调用方（管理端有可编辑的清点区块）。
 -->
 <template>
   <div class="settlement-report">
-    <div class="report-toolbar">
-      <n-space class="report-actions">
-        <n-button :disabled="!store.report" @click="reloadReport">刷新</n-button>
-        <n-button type="primary" ghost :disabled="!store.report" @click="exportXlsx">
-          导出 Excel
-        </n-button>
-      </n-space>
-    </div>
+    <SectionCard title="结算单">
+      <template #extra>
+        <n-space class="report-actions">
+          <n-button :disabled="!store.report" @click="reloadReport">刷新</n-button>
+          <n-button type="primary" ghost :disabled="!store.report" @click="exportXlsx">
+            导出 Excel
+          </n-button>
+        </n-space>
+      </template>
 
-    <!-- warnings 必须最显眼：这里非空意味着业务表加出来的数和账本对不上，
-         也就是某笔账记错了。不折叠、不放底部，逐条列在整张单最上方。 -->
-    <n-alert
-      v-if="store.report && store.report.warnings.length"
-      type="error"
-      :bordered="false"
-      title="这张结算单和账本对不上，先别急着导出"
-      class="warnings-block"
-    >
-      <p v-for="(w, i) in store.report.warnings" :key="i" class="warning-line">⚠ {{ w }}</p>
-      <p class="warning-line muted">说明某笔账记错了，核对无误后再导出。</p>
-    </n-alert>
+      <SettlementWarnings v-if="showWarnings" :warnings="store.report?.warnings ?? []" />
 
-    <AsyncState
-      :loading="store.isLoading && !store.report"
-      :error="store.error"
-      :keep-content="Boolean(store.report)"
-      loading-text="正在加载结算数据..."
-      @retry="reloadReport"
-    >
-      <!-- ── 结算单主体（母 spec 第 7 节）───────────────────────── -->
-      <section v-if="store.report" class="block report-block">
-        <div v-for="s in store.report.societies" :key="s.society_id" class="society-card">
-          <div class="society-head">
-            <span class="society-name">货主：{{ s.name }}</span>
-            <n-tag v-if="s.is_home" size="small" type="success" round>本社团</n-tag>
-          </div>
+      <AsyncState
+        :loading="store.isLoading && !store.report"
+        :error="store.error"
+        :keep-content="Boolean(store.report)"
+        loading-text="正在加载结算数据..."
+        @retry="reloadReport"
+      >
+        <!-- ── 结算单主体（母 spec 第 7 节）───────────────────────── -->
+        <section v-if="store.report" class="report-body">
+          <div v-for="s in store.report.societies" :key="s.society_id" class="society-card">
+            <div class="society-head">
+              <span class="society-name">货主：{{ s.name }}</span>
+              <n-tag v-if="s.is_home" size="small" type="success" round>本社团</n-tag>
+            </div>
 
-          <!-- 【货】收起时是合计，点「展开明细」到每个商品。 -->
-          <div class="society-line">
-            <span class="line-tag">【货】</span>
-            <span class="line-body">
-              带去 {{ s.totals.brought_in }} → 卖出 {{ s.totals.sold }} / 赠送
-              {{ s.totals.gifted }} / 报废 {{ s.totals.scrapped }} / 带回
-              {{ s.totals.taken_back }}
-              <template v-if="s.totals.on_site">／现场仓 {{ s.totals.on_site }}</template>
-              <span class="variance">盘点差异 {{ s.totals.variance }}</span>
-              <!-- 未盘点时不能安静地按账面推算，必须标出来。 -->
-              <n-tag
-                v-if="!store.report.stocktaken"
-                size="small"
-                type="warning"
-                class="stocktake-tag"
-              >
-                未盘点，剩余数为账面推算
-              </n-tag>
-              <n-button text size="tiny" class="detail-toggle" @click="toggleGoods(s.society_id)">
-                {{ expanded[s.society_id] ? '收起明细' : `展开明细（${s.goods.length} 项）` }}
-              </n-button>
-            </span>
-          </div>
+            <!-- 【货】收起时是合计，点「展开明细」到每个商品。 -->
+            <div class="society-line">
+              <span class="line-tag">【货】</span>
+              <span class="line-body">
+                带去 {{ s.totals.brought_in }} → 卖出 {{ s.totals.sold }} / 赠送
+                {{ s.totals.gifted }} / 报废 {{ s.totals.scrapped }} / 带回
+                {{ s.totals.taken_back }}
+                <template v-if="s.totals.on_site">／现场仓 {{ s.totals.on_site }}</template>
+                <span class="variance">盘点差异 {{ s.totals.variance }}</span>
+                <!-- 未盘点时不能安静地按账面推算，必须标出来。 -->
+                <n-tag
+                  v-if="!store.report.stocktaken"
+                  size="small"
+                  type="warning"
+                  class="stocktake-tag"
+                >
+                  未盘点，剩余数为账面推算
+                </n-tag>
+                <n-button text size="tiny" class="detail-toggle" @click="toggleGoods(s.society_id)">
+                  {{ expanded[s.society_id] ? '收起明细' : `展开明细（${s.goods.length} 项）` }}
+                </n-button>
+              </span>
+            </div>
 
-          <div v-if="expanded[s.society_id]" class="goods-detail">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>商品</th>
-                  <th class="text-right">带去</th>
-                  <th class="text-right">卖出</th>
-                  <th class="text-right">赠送</th>
-                  <th class="text-right">报废</th>
-                  <th class="text-right">差异</th>
-                  <th class="text-right">带回</th>
-                  <th class="text-right">现场仓</th>
-                  <th class="text-right">原价</th>
-                  <th class="text-right">折让</th>
-                  <th class="text-right">净额</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="g in s.goods" :key="g.event_product_id">
-                  <td>{{ g.product_code }} {{ g.name }}</td>
-                  <td class="text-right">{{ g.brought_in }}</td>
-                  <td class="text-right">{{ g.sold }}</td>
-                  <td class="text-right">{{ g.gifted }}</td>
-                  <td class="text-right">{{ g.scrapped }}</td>
-                  <td class="text-right">{{ g.variance }}</td>
-                  <td class="text-right">{{ g.taken_back }}</td>
-                  <td class="text-right">{{ g.on_site }}</td>
-                  <td class="text-right amount-cell">{{ formatYuan(g.gross) }}</td>
-                  <td class="text-right amount-cell">{{ formatSigned(g.lot_discount) }}</td>
-                  <td class="text-right amount-cell">{{ formatYuan(g.allocated) }}</td>
-                </tr>
-                <tr v-if="!s.goods.length">
-                  <td colspan="11"><EmptyState compact title="这个货主没有上架商品" /></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+            <div v-if="expanded[s.society_id]" class="goods-detail">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>商品</th>
+                    <th class="text-right">带去</th>
+                    <th class="text-right">卖出</th>
+                    <th class="text-right">赠送</th>
+                    <th class="text-right">报废</th>
+                    <th class="text-right">差异</th>
+                    <th class="text-right">带回</th>
+                    <th class="text-right">现场仓</th>
+                    <th class="text-right">原价</th>
+                    <th class="text-right">折让</th>
+                    <th class="text-right">净额</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="g in s.goods" :key="g.event_product_id">
+                    <td>{{ g.product_code }} {{ g.name }}</td>
+                    <td class="text-right">{{ g.brought_in }}</td>
+                    <td class="text-right">{{ g.sold }}</td>
+                    <td class="text-right">{{ g.gifted }}</td>
+                    <td class="text-right">{{ g.scrapped }}</td>
+                    <td class="text-right">{{ g.variance }}</td>
+                    <td class="text-right">{{ g.taken_back }}</td>
+                    <td class="text-right">{{ g.on_site }}</td>
+                    <td class="text-right amount-cell">{{ formatYuan(g.gross) }}</td>
+                    <td class="text-right amount-cell">{{ formatSigned(g.lot_discount) }}</td>
+                    <td class="text-right amount-cell">{{ formatYuan(g.allocated) }}</td>
+                  </tr>
+                  <tr v-if="!s.goods.length">
+                    <td colspan="11"><EmptyState compact title="这个货主没有上架商品" /></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
 
-          <div class="society-line">
-            <span class="line-tag">【钱】</span>
-            <span class="line-body">
-              商品原价 {{ formatYuan(s.gross) }} · Lot折让 {{ formatSigned(s.lot_discount) }} ·
-              {{ manualDiscountLabel(s.manual_discount) }} {{ formatSigned(s.manual_discount) }} →
-              净额 {{ formatYuan(s.net) }}
-              <!-- 这两项是「我应转给」的加项，xlsx 里有、网页上原来漏了。
-                   非零时才出现，否则默认全 0 的行会淹没真正的数字。 -->
-              <template v-if="s.refund_kept"> · 退货保留 {{ formatYuan(s.refund_kept) }}</template>
-              <template v-if="s.gift_self_paid">
-                · 自掏赠品 {{ formatYuan(s.gift_self_paid) }}
-              </template>
-            </span>
-          </div>
-
-          <div class="society-line">
-            <span class="line-tag">【我垫付】</span>
-            <span class="line-body">
-              <template v-if="s.advances.length">
-                {{ advanceSummary(s.advances) }} = {{ formatSigned(s.advances_total) }}
-              </template>
-              <template v-else>（无）</template>
-            </span>
-          </div>
-
-          <div class="society-line">
-            <span class="line-tag">【调整】</span>
-            <span class="line-body">
-              <template v-if="s.adjustments.length">
-                {{ adjustmentSummary(s.adjustments) }}
-                <!-- 单条明细时合计和它上面那句完全一样，没必要念两遍；
-                     多条时才需要合计，且合计也必须说人话，不能露原始符号。 -->
-                <template v-if="s.adjustments.length > 1">
-                  = {{ describeReportAdjustment(s.adjustments_total) }}
+            <div class="society-line">
+              <span class="line-tag">【钱】</span>
+              <span class="line-body">
+                商品原价 {{ formatYuan(s.gross) }} · Lot折让 {{ formatSigned(s.lot_discount) }} ·
+                {{ manualDiscountLabel(s.manual_discount) }} {{ formatSigned(s.manual_discount) }} →
+                净额 {{ formatYuan(s.net) }}
+                <!-- 这两项是「我应转给」的加项，xlsx 里有、网页上原来漏了。
+                     非零时才出现，否则默认全 0 的行会淹没真正的数字。 -->
+                <template v-if="s.refund_kept">
+                  · 退货保留 {{ formatYuan(s.refund_kept) }}</template
+                >
+                <template v-if="s.gift_self_paid">
+                  · 自掏赠品 {{ formatYuan(s.gift_self_paid) }}
                 </template>
-              </template>
-              <template v-else>（无）</template>
-            </span>
+              </span>
+            </div>
+
+            <div class="society-line">
+              <span class="line-tag">【我垫付】</span>
+              <span class="line-body">
+                <template v-if="s.advances.length">
+                  {{ advanceSummary(s.advances) }} = {{ formatSigned(s.advances_total) }}
+                </template>
+                <template v-else>（无）</template>
+              </span>
+            </div>
+
+            <div class="society-line">
+              <span class="line-tag">【调整】</span>
+              <span class="line-body">
+                <template v-if="s.adjustments.length">
+                  {{ adjustmentSummary(s.adjustments) }}
+                  <!-- 单条明细时合计和它上面那句完全一样，没必要念两遍；
+                       多条时才需要合计，且合计也必须说人话，不能露原始符号。 -->
+                  <template v-if="s.adjustments.length > 1">
+                    = {{ describeReportAdjustment(s.adjustments_total) }}
+                  </template>
+                </template>
+                <template v-else>（无）</template>
+              </span>
+            </div>
+
+            <!-- 这一块唯一要被记住的数字，视觉上压过其它行。 -->
+            <div class="transfer-row">
+              我应转给{{ s.name }}：
+              <span class="transfer-amount">{{ formatYuan(s.transfer) }}</span>
+            </div>
           </div>
 
-          <!-- 这一块唯一要被记住的数字，视觉上压过其它行。 -->
-          <div class="transfer-row">
-            我应转给{{ s.name }}：
-            <span class="transfer-amount">{{ formatYuan(s.transfer) }}</span>
+          <!-- 收摊清点栏：对应 xlsx「结算汇总」sheet 下半段。只读；管理端的可编辑版本在
+               `AdminEventSettlement.vue` 里，所以那边传 `show-channels=false` 避免重复。 -->
+          <section v-if="showChannels && store.report.channels.length" class="channels-block">
+            <h3 class="channels-title">收摊清点</h3>
+            <div class="goods-detail">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>渠道</th>
+                    <th class="text-right">账面应有</th>
+                    <th class="text-right">实际到手</th>
+                    <th class="text-right">差额</th>
+                    <th>是否清点</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="c in store.report.channels" :key="c.channel">
+                    <td>{{ c.channel }}</td>
+                    <td class="text-right amount-cell">{{ formatYuan(c.book) }}</td>
+                    <td class="text-right amount-cell">{{ formatYuan(c.actual) }}</td>
+                    <td class="text-right amount-cell">{{ formatYuan(c.diff) }}</td>
+                    <td>{{ c.counted ? '已清点' : '未清点' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <div class="report-totals">
+            <span
+              >实际到手合计 <strong>{{ formatYuan(store.report.actual_total) }}</strong></span
+            >
+            <span
+              >Σ 我应转给 <strong>{{ formatYuan(store.report.transfer_total) }}</strong></span
+            >
+            <span
+              >摊主留存 <strong>{{ formatYuan(store.report.vendor_retained) }}</strong></span
+            >
           </div>
-        </div>
 
-        <div class="report-totals">
-          <span
-            >实际到手合计 <strong>{{ formatYuan(store.report.actual_total) }}</strong></span
-          >
-          <span
-            >Σ 我应转给 <strong>{{ formatYuan(store.report.transfer_total) }}</strong></span
-          >
-          <span
-            >摊主留存 <strong>{{ formatYuan(store.report.vendor_retained) }}</strong></span
-          >
-        </div>
-
-        <!-- 两个时间戳平铺，不加警告语气。generated_at（此刻）和 last_changed_at
-             （最新 journal 的时间）几乎恒不相等，按字面提示「导出前请刷新」会基本
-             常亮；常亮的警告会训练人忽略警告，而这一页顶部有个真正不能被稀释的
-             红色 warnings 块。摊主自己看得出新旧。 -->
-        <p class="report-meta">
-          生成于 {{ store.report.generated_at }} · 账本最后变动于
-          {{ store.report.last_changed_at || '（无记录）' }}
-        </p>
-      </section>
-    </AsyncState>
+          <!-- 两个时间戳平铺，不加警告语气。generated_at（此刻）和 last_changed_at
+               （最新 journal 的时间）几乎恒不相等，按字面提示「导出前请刷新」会基本
+               常亮；常亮的警告会训练人忽略警告，而这一页顶部有个真正不能被稀释的
+               红色 warnings 块。摊主自己看得出新旧。 -->
+          <p class="report-meta">
+            生成于 {{ store.report.generated_at }} · 账本最后变动于
+            {{ store.report.last_changed_at || '（无记录）' }}
+          </p>
+        </section>
+      </AsyncState>
+    </SectionCard>
   </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from 'vue'
-import { NAlert, NButton, NSpace, NTag } from 'naive-ui'
+import { NButton, NSpace, NTag } from 'naive-ui'
 import { useSettlementStore } from '@/stores/settlementStore'
-import { AsyncState, EmptyState } from '@/components/ui'
+import { AsyncState, EmptyState, SectionCard } from '@/components/ui'
+import SettlementWarnings from '@/components/settlement/SettlementWarnings.vue'
 import { useFeedback } from '@/composables/useFeedback'
 import { formatYuan, cents, type Cents } from '@/utils/money'
 import { describeReportAdjustment, manualDiscountLabel } from '@/utils/settlementSigns'
@@ -193,7 +221,22 @@ import { writeFile } from '@tauri-apps/plugin-fs'
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 import type { Schemas } from '@/api/client'
 
-const props = defineProps<{ eventId: number }>()
+const props = withDefaults(
+  defineProps<{
+    eventId: number
+    /**
+     * 是否在组件内渲染对账警示条。管理端要把它提到页内首位（编辑区块之上），
+     * 所以传 false，由管理端用同一个 `SettlementWarnings` 渲染。
+     */
+    showWarnings?: boolean
+    /**
+     * 是否渲染只读的收摊清点栏（xlsx「结算汇总」sheet 的下半段）。
+     * 管理端自己有可编辑的清点区块，传 false 避免重复。
+     */
+    showChannels?: boolean
+  }>(),
+  { showWarnings: true, showChannels: true }
+)
 
 const store = useSettlementStore()
 const fb = useFeedback()
@@ -317,40 +360,11 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* 只读组件没有自己的页头；刷新 / 导出靠右，与管理端原来的工具栏一致。 */
-.report-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-lg);
-  flex-wrap: wrap;
-  margin-bottom: var(--space-lg);
-}
 .report-actions {
   flex: 0 0 auto;
 }
 
-/* warnings 是「业务表加出来的数和账本对不上」，n-alert 自带红底，这里只压间距。 */
-.warnings-block {
-  margin-bottom: var(--space-lg);
-}
-.warning-line {
-  margin: var(--space-xs) 0;
-  line-height: 1.6;
-  /* stylelint-disable-next-line declaration-property-value-keyword-no-deprecated -- 保留原关键字，不做行为变更 */
-  word-break: break-word;
-}
-.warning-line.muted {
-  color: var(--text-muted);
-}
-
 /* ── 结算单主体 ── */
-.report-block {
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  padding: var(--space-lg) var(--space-xl);
-  background-color: var(--card-bg-color);
-}
 .society-card {
   border-bottom: 1px solid var(--border-color);
   padding-bottom: var(--space-md);
@@ -400,6 +414,15 @@ onUnmounted(() => {
   border-radius: var(--radius-sm);
   overflow-x: auto;
 }
+.channels-block {
+  margin-bottom: var(--space-md);
+}
+.channels-title {
+  margin: 0 0 var(--space-sm);
+  font-size: var(--font-md);
+  font-weight: var(--weight-bold);
+  color: var(--primary-text-color);
+}
 .transfer-row {
   margin-top: var(--space-sm);
   padding-top: var(--space-sm);
@@ -436,10 +459,6 @@ onUnmounted(() => {
   line-height: 1.6;
 }
 
-.block {
-  margin-bottom: var(--space-2xl);
-}
-
 .data-table {
   width: 100%;
   border-collapse: collapse;
@@ -466,5 +485,13 @@ onUnmounted(() => {
 .amount-cell {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* 手机上把主要可点区域抬到 44px（「能用」标准）。 */
+@media (--phone) {
+  .report-actions :deep(.n-button),
+  .detail-toggle {
+    min-height: 44px;
+  }
 }
 </style>

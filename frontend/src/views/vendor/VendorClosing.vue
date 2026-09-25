@@ -1,8 +1,8 @@
 <!--
   摊主 · 收摊（spec §3.6 / §5.6）。
-  未结算 → `ClosingWizard`（步骤由后端状态推出，不存本地 step）；
+  未结算 → `ClosingWizard`（手机优先页面，步骤由后端状态推出，不存本地 step）；
   已结算（或向导里刚 `settled`）→ 原地换成只读结算单 `SettlementReportView`，
-  不再停在「账本已冻结」屏。窄屏收摊的重设计留给 Task 4 P4。
+  不再停在「账本已冻结」屏。
 -->
 <template>
   <PageShell embedded width="wide">
