@@ -96,7 +96,7 @@
 
             <div class="bottom-row">
               <div class="price-wrapper">
-                <span class="value">{{ formatYuan(product.unit_price) }}</span>
+                <Money :value="product.unit_price" size="lg" />
               </div>
 
               <div class="action-icon" v-if="!editable && product.onsite_qty > 0"></div>
@@ -113,7 +113,7 @@ import { computed, ref, watch } from 'vue'
 import draggable from 'vuedraggable'
 import { NCard, NImage, NSkeleton } from 'naive-ui'
 import { useThemeStore } from '@/stores/themeStore'
-import { formatYuan } from '@/utils/money'
+import { Money } from '@/components/ui'
 import type { Schemas } from '@/api/client'
 
 const themeStore = useThemeStore()
@@ -202,7 +202,7 @@ function handleDragEnd() {
 }
 
 /* 小号卡片：缩字、缩按钮、缩内边距 —— 否则在 3:4 + 110px 宽时
-   bottom-row 的 ¥15.00 会被 32px 加号按钮挤到省略号 (15...) */
+   bottom-row 的 ¥15.00 会被加号按钮挤到省略号 (15...) */
 .card-size-small .info-box {
   padding: var(--space-sm) var(--space-sm);
   gap: var(--space-xs);
@@ -215,24 +215,20 @@ function handleDragEnd() {
 .card-size-small .bottom-row {
   gap: var(--space-sm);
 }
-.card-size-small .currency {
-  font-size: var(--font-xs);
-}
-.card-size-small .value {
+.card-size-small .price-wrapper :deep(.money.lg) {
   font-size: var(--font-base);
-  font-weight: var(--weight-bold);
 }
 .card-size-small .action-icon {
-  width: 26px;
-  height: 26px;
+  width: 36px;
+  height: 36px;
 }
 .card-size-small .action-icon::before {
-  width: 11px;
+  width: 14px;
   height: 2px;
 }
 .card-size-small .action-icon::after {
   width: 2px;
-  height: 11px;
+  height: 14px;
 }
 
 .product-card {
@@ -504,20 +500,11 @@ function handleDragEnd() {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.currency {
-  font-size: var(--font-xs);
-  margin-right: var(--space-xs);
-}
-.value {
-  font-size: var(--font-lg);
-  font-weight: var(--weight-bold);
-  font-family: sans-serif;
-}
 
 .action-icon {
   flex-shrink: 0;
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   background: var(--accent-color);
   box-shadow: var(--shadow-sm);
@@ -536,12 +523,12 @@ function handleDragEnd() {
   transform: translate(-50%, -50%);
 }
 .action-icon::before {
-  width: 14px;
-  height: 2.5px;
+  width: 18px;
+  height: 3px;
 }
 .action-icon::after {
-  width: 2.5px;
-  height: 14px;
+  width: 3px;
+  height: 18px;
 }
 .action-icon:active {
   transform: scale(0.88);

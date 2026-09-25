@@ -1,5 +1,6 @@
 <template>
   <Transition name="fade">
+    <!-- ui-boundary-ignore: 全屏收款码展示页，不是对话框 -->
     <div v-if="show" class="payment-overlay">
       <div class="payment-card">
         <!-- 顶部：金额 -->

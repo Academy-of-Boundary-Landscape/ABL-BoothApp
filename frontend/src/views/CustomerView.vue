@@ -1,67 +1,69 @@
 <template>
-  <div class="customer-view">
+  <div class="customer-view" :class="{ 'customer-view--cartbar': !cartAsSidebar }">
     <!-- ================================================================
-         传统模式：Sidebar + ProductGrid + Cart
+         点单模式：分类侧栏（平板/桌面）+ 商品网格
     ================================================================= -->
     <template v-if="!isVisionMode">
-      <!-- Sidebar：分类 -->
-      <div class="sidebar" v-if="!isMobile">
-        <div class="sidebar-header">
-          <span class="header-title">商品分类</span>
-        </div>
+      <!-- 分类侧栏：手机不渲染（改用工具栏横滚分类） -->
+      <aside v-if="showSidebar" class="category-sidebar">
+        <div class="category-sidebar__title">商品分类</div>
 
-        <n-scrollbar class="sidebar-scroll" content-class="sidebar-content">
-          <div
-            class="menu-item"
-            :class="{ active: selectedCategory === '' }"
+        <n-scrollbar class="category-sidebar__scroll" content-class="category-sidebar__content">
+          <button
+            type="button"
+            class="category-item"
+            :class="{ 'is-active': selectedCategory === '' }"
             @click="selectedCategory = ''"
           >
-            <span class="menu-text">全部</span>
-            <div class="active-indicator" v-if="selectedCategory === ''"></div>
-          </div>
+            <span class="category-item__text">全部</span>
+            <span v-if="selectedCategory === ''" class="category-item__dot" />
+          </button>
 
-          <div
+          <button
             v-for="cat in categoryOptions"
             :key="cat"
-            class="menu-item"
-            :class="{ active: selectedCategory === cat }"
+            type="button"
+            class="category-item"
+            :class="{ 'is-active': selectedCategory === cat }"
             @click="selectedCategory = cat"
           >
-            <span class="menu-text">{{ cat }}</span>
-            <div class="active-indicator" v-if="selectedCategory === cat"></div>
-          </div>
+            <span class="category-item__text">{{ cat }}</span>
+            <span v-if="selectedCategory === cat" class="category-item__dot" />
+          </button>
         </n-scrollbar>
-      </div>
+      </aside>
 
       <!-- 中间：商品展示 -->
-      <div class="product-panel">
-        <!-- 工具栏：分类(mobile) + 视图控制 + 模式切换 -->
+      <section class="product-panel">
+        <!-- 工具栏：管理控件 + 模式切换 + 快捷入口 -->
         <div class="toolbar">
-          <!-- Mobile 分类横滚 -->
-          <div class="toolbar-categories" v-if="isMobile">
-            <div
+          <!-- 手机：分类横滚 -->
+          <div v-if="isPhone" class="toolbar__categories">
+            <button
+              type="button"
               class="cat-chip"
-              :class="{ active: selectedCategory === '' }"
+              :class="{ 'is-active': selectedCategory === '' }"
               @click="selectedCategory = ''"
             >
               全部
-            </div>
-            <div
+            </button>
+            <button
               v-for="cat in categoryOptions"
               :key="cat"
+              type="button"
               class="cat-chip"
-              :class="{ active: selectedCategory === cat }"
+              :class="{ 'is-active': selectedCategory === cat }"
               @click="selectedCategory = cat"
             >
               {{ cat }}
-            </div>
+            </button>
           </div>
 
-          <div class="toolbar-row">
+          <div class="toolbar__row">
             <!-- 管理控件：默认折叠，点齿轮展开 -->
-            <div class="toolbar-left" v-if="showAdminControls">
-              <span class="toolbar-label">视图</span>
-              <div class="slider-wrap">
+            <div v-if="showAdminControls" class="toolbar__left">
+              <span class="toolbar__label">视图</span>
+              <div class="toolbar__slider">
                 <n-slider
                   v-model:value="cardSizeIndex"
                   :min="0"
@@ -73,18 +75,20 @@
               </div>
             </div>
 
-            <div class="toolbar-center">
+            <div class="toolbar__center">
               <div class="mode-toggle">
                 <button
+                  type="button"
                   class="mode-btn"
-                  :class="{ active: !isVisionMode }"
+                  :class="{ 'is-active': !isVisionMode }"
                   @click="isVisionMode = false"
                 >
                   商品列表
                 </button>
                 <button
+                  type="button"
                   class="mode-btn"
-                  :class="{ active: isVisionMode }"
+                  :class="{ 'is-active': isVisionMode }"
                   @click="isVisionMode = true"
                 >
                   拍照识别
@@ -92,7 +96,7 @@
               </div>
             </div>
 
-            <div class="toolbar-right">
+            <div class="toolbar__right">
               <router-link
                 v-if="canReturnToVendor"
                 class="nav-chip vendor-return"
@@ -111,10 +115,11 @@
                 {{ isEditMode ? '保存顺序' : '调整顺序' }}
               </n-button>
               <button
+                type="button"
                 class="admin-toggle-btn"
-                :class="{ active: showAdminControls }"
-                @click="toggleAdminControls"
+                :class="{ 'is-active': showAdminControls }"
                 title="展开/折叠管理控件"
+                @click="toggleAdminControls"
               >
                 ⚙
               </button>
@@ -122,7 +127,7 @@
           </div>
 
           <!-- 管理控件展开时：导航快捷入口 -->
-          <div class="toolbar-nav" v-if="showAdminControls">
+          <div v-if="showAdminControls" class="toolbar__nav">
             <router-link to="/admin" class="nav-chip">管理后台</router-link>
             <router-link to="/vendor" class="nav-chip">摊主页面</router-link>
             <router-link to="/" class="nav-chip">展会选择</router-link>
@@ -130,62 +135,71 @@
         </div>
 
         <!-- 标签筛选 -->
-        <div v-if="allTags.length > 0" class="tag-filter-bar">
-          <span
+        <div v-if="allTags.length > 0" class="tag-filter">
+          <button
             v-for="tag in allTags"
             :key="tag"
+            type="button"
             class="tag-chip"
-            :class="{ active: selectedTag === tag }"
+            :class="{ 'is-active': selectedTag === tag }"
             @click="selectedTag = selectedTag === tag ? null : tag"
           >
             {{ tag }}
-          </span>
+          </button>
         </div>
 
-        <!-- 商品列表 -->
+        <!-- 商品列表：加载 / 错误 / 空态统一走 AsyncState -->
         <div class="product-scroll">
-          <n-spin :show="store.isLoading" content-class="spin-content">
+          <AsyncState
+            :loading="store.isLoading"
+            :error="store.error"
+            :empty="mutableProducts.length === 0"
+            loading-text="正在加载商品…"
+            @retry="store.fetchProductsForEvent()"
+          >
             <ProductGrid
-              v-if="mutableProducts.length > 0"
               v-model:products="mutableProducts"
               :card-size="cardSize"
               :editable="isEditMode"
               @add-to-cart="store.addToCart"
               @order-changed="saveOrderToLocal"
             />
-            <EmptyState v-else icon="🌵" title="暂无商品" />
-          </n-spin>
+            <template #empty>
+              <EmptyState icon="🌵" title="暂无商品" desc="摊主还没有上架商品，稍后再来看看吧。" />
+            </template>
+          </AsyncState>
         </div>
-      </div>
+      </section>
     </template>
 
     <!-- ================================================================
-         Vision 模式：取景 + 结果
+         拍照识别模式：取景 + 识别结果
     ================================================================= -->
-    <div v-if="isVisionMode" class="vision-panel">
-      <!-- Vision 模式也有工具栏，保持切换入口 -->
+    <section v-else class="vision-panel">
       <div class="toolbar">
-        <div class="toolbar-row">
-          <div class="toolbar-left"></div>
-          <div class="toolbar-center">
+        <div class="toolbar__row">
+          <div class="toolbar__left toolbar__left--empty" />
+          <div class="toolbar__center">
             <div class="mode-toggle">
               <button
+                type="button"
                 class="mode-btn"
-                :class="{ active: !isVisionMode }"
+                :class="{ 'is-active': !isVisionMode }"
                 @click="isVisionMode = false"
               >
                 商品列表
               </button>
               <button
+                type="button"
                 class="mode-btn"
-                :class="{ active: isVisionMode }"
+                :class="{ 'is-active': isVisionMode }"
                 @click="isVisionMode = true"
               >
                 拍照识别
               </button>
             </div>
           </div>
-          <div class="toolbar-right">
+          <div class="toolbar__right">
             <router-link
               v-if="canReturnToVendor"
               class="nav-chip vendor-return"
@@ -207,11 +221,12 @@
           @select="onVisionSelect"
         />
       </div>
-    </div>
+    </section>
 
-    <!-- ======== 购物车（两种模式共用） ======== -->
-    <div class="cart-panel-desktop" v-if="!isMobile">
+    <!-- ======== 购物车：宽屏侧栏；平板竖屏 / 手机为底部可展开条 ======== -->
+    <div v-if="cartAsSidebar" class="cart-sidebar">
       <ShoppingCart
+        variant="sidebar"
         :cart="store.cart"
         :total="store.cartTotal"
         :payable="store.cartSummary.payable"
@@ -226,7 +241,8 @@
     </div>
 
     <ShoppingCart
-      v-if="isMobile"
+      v-else
+      variant="bar"
       :cart="store.cart"
       :total="store.cartTotal"
       :payable="store.cartSummary.payable"
@@ -251,15 +267,15 @@
       <div v-if="showAttractScreen" class="attract-screen">
         <div class="attract-content">
           <p class="attract-welcome">欢迎光临</p>
-          <h1 class="attract-event" v-if="store.activeEvent?.name">{{ store.activeEvent.name }}</h1>
+          <h1 v-if="store.activeEvent?.name" class="attract-event">{{ store.activeEvent.name }}</h1>
 
           <div class="attract-modes">
-            <button class="attract-mode-btn" @click="enterWithMode(false)">
+            <button type="button" class="attract-mode-btn" @click="enterWithMode(false)">
               <span class="attract-mode-icon">&#9783;</span>
               <span class="attract-mode-label">浏览点单</span>
               <span class="attract-mode-desc">翻看商品列表，点击加入购物车</span>
             </button>
-            <button class="attract-mode-btn" @click="enterWithMode(true)">
+            <button type="button" class="attract-mode-btn" @click="enterWithMode(true)">
               <span class="attract-mode-icon">&#9862;</span>
               <span class="attract-mode-label">拍照识别</span>
               <span class="attract-mode-desc">对准商品拍一拍，自动识别下单</span>
@@ -295,7 +311,7 @@
           <template v-else>
             <span class="guide-step"><span class="guide-num">1</span>点击商品加入购物车</span>
             <span class="guide-arrow">›</span>
-            <span class="guide-step"><span class="guide-num">2</span>右侧查看已选</span>
+            <span class="guide-step"><span class="guide-num">2</span>查看已选</span>
             <span class="guide-arrow">›</span>
             <span class="guide-step"><span class="guide-num">3</span>结算付款</span>
           </template>
@@ -319,10 +335,10 @@ import ProductGrid from '@/components/customer/ProductGrid.vue'
 import ShoppingCart from '@/components/customer/ShoppingCart.vue'
 import PaymentModal from '@/components/customer/PaymentModal.vue'
 import VisionSearch from '@/components/shared/VisionSearch.vue'
-import { EmptyState } from '@/components/ui'
+import { AsyncState, EmptyState } from '@/components/ui'
 import { cents, formatYuan, type Cents } from '@/utils/money'
 import type { Schemas } from '@/api/client'
-import { NScrollbar, NSpin, NSlider, NButton } from 'naive-ui'
+import { NScrollbar, NSlider, NButton } from 'naive-ui'
 
 const props = defineProps<{ id: string }>()
 const store = useCustomerStore()
@@ -331,6 +347,13 @@ const { isConnected } = useConnectionCheck()
 
 // 只有能进这个展会摊主端的会话才显示「回摊主端」（§3.7）；不登录自助点单的平板不显示。
 const canReturnToVendor = computed(() => authStore.canAccessVendorPage(props.id))
+
+// ===================== 布局断点 =====================
+// 目标（spec §5.7 / §7）：平板横屏（≥1025）三栏；平板竖屏（641–1024）购物车改底部条；
+// 手机（≤640）沿用竖屏形态（无侧栏 + 底部条）。
+const { isPhone, isTablet } = useViewport()
+const showSidebar = computed(() => !isPhone.value)
+const cartAsSidebar = computed(() => !isTablet.value)
 
 // ===================== 模式切换 =====================
 const isVisionMode = ref(false)
@@ -359,7 +382,7 @@ function onVisionSelect(hit: Schemas['VisionSearchResult']) {
   store.addToCart(product)
 }
 
-// ===================== 传统模式 =====================
+// ===================== 点单模式 =====================
 const showPaymentModal = ref(false)
 const orderTotal = ref<Cents>(cents(0))
 const isCheckingOut = ref(false)
@@ -382,12 +405,10 @@ function onCardSizeUserChange() {
   userTouchedCardSize.value = true
 }
 
-const { isPhone } = useViewport()
-const isMobile = isPhone
 function syncLayout() {
-  if (!userTouchedCardSize.value) cardSizeIndex.value = isMobile.value ? 0 : 1
+  if (!userTouchedCardSize.value) cardSizeIndex.value = isPhone.value ? 0 : 1
 }
-watch(isMobile, syncLayout)
+watch(isPhone, syncLayout)
 
 onMounted(() => {
   store.setupStoreForEvent(props.id)
@@ -605,8 +626,9 @@ function closePaymentModal() {
 <style scoped>
 /* ===================== 根容器 ===================== */
 .customer-view {
-  --sidebar-w: 180px;
-  --cart-w: 280px;
+  --sidebar-w: 196px;
+  --cart-w: 300px;
+  --cart-bar-h: 60px;
 
   display: flex;
   height: 100%;
@@ -615,65 +637,78 @@ function closePaymentModal() {
   color: var(--primary-text-color);
 }
 
-/* ===================== Sidebar（仅桌面） ===================== */
-.sidebar {
+/* ===================== 分类侧栏（平板 / 桌面） ===================== */
+.category-sidebar {
   flex: 0 0 var(--sidebar-w);
   width: var(--sidebar-w);
   min-height: 0;
-  background: var(--card-bg-color);
-  border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
+  background: var(--card-bg-color);
+  border-right: 1px solid var(--border-color);
 }
-.sidebar-header {
-  height: 48px;
+.category-sidebar__title {
+  flex-shrink: 0;
+  height: 56px;
   display: flex;
   align-items: center;
   padding: 0 var(--space-lg);
-  font-weight: var(--weight-bold);
-  font-size: var(--font-md);
   border-bottom: 1px solid var(--border-color);
-  flex-shrink: 0;
+  font-size: var(--font-md);
+  font-weight: var(--weight-bold);
 }
-.sidebar-scroll {
+.category-sidebar__scroll {
   flex: 1;
   min-height: 0;
 }
-
-:deep(.sidebar-content) {
+:deep(.category-sidebar__content) {
   display: flex;
   flex-direction: column;
-  padding: var(--space-sm);
   gap: var(--space-xs);
+  padding: var(--space-sm);
 }
-.menu-item {
-  padding: var(--space-sm) var(--space-md);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  font-size: var(--font-base);
-  color: var(--text-muted);
+.category-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  transition: all 0.15s;
+  gap: var(--space-sm);
+  width: 100%;
+  min-height: 48px;
+  padding: var(--space-sm) var(--space-md);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--secondary-text-color);
+  font-size: var(--font-base);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
 }
-.menu-item:hover {
+.category-item:hover {
   background-color: var(--bg-secondary);
   color: var(--primary-text-color);
 }
-.menu-item.active {
+.category-item.is-active {
   background-color: color-mix(in srgb, var(--accent-color) 18%, transparent);
   color: var(--accent-color);
   font-weight: var(--weight-bold);
 }
-.active-indicator {
+.category-item__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.category-item__dot {
+  flex-shrink: 0;
   width: 4px;
   height: 14px;
   border-radius: var(--radius-sm);
   background-color: var(--accent-color);
 }
 
-/* ===================== 中间面板（传统 & Vision 共用结构） ===================== */
+/* ===================== 中间面板（点单 & 识别共用结构） ===================== */
 .product-panel,
 .vision-panel {
   flex: 1;
@@ -689,8 +724,7 @@ function closePaymentModal() {
   border-bottom: 1px solid color-mix(in srgb, var(--border-color) 60%, transparent);
   background: var(--bg-color);
 }
-
-.toolbar-categories {
+.toolbar__categories {
   display: flex;
   gap: var(--space-sm);
   padding: var(--space-sm) var(--space-md) 0;
@@ -699,152 +733,167 @@ function closePaymentModal() {
 }
 .cat-chip {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   padding: var(--space-xs) var(--space-md);
+  border: 1px solid transparent;
   border-radius: var(--radius-pill);
-  font-size: var(--font-sm);
-  cursor: pointer;
   background: var(--bg-secondary);
   color: var(--text-muted);
-  border: 1px solid transparent;
+  font-size: var(--font-sm);
+  cursor: pointer;
   transition: all 0.15s;
 }
-.cat-chip.active {
+.cat-chip.is-active {
   background: var(--accent-color);
   color: var(--text-white);
+  font-weight: var(--weight-bold);
 }
 
-.toolbar-row {
+.toolbar__row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-sm) var(--space-md);
+  flex-wrap: wrap;
   gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
 }
-
-.toolbar-left {
+.toolbar__left {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  background: var(--card-bg-color);
   padding: var(--space-xs) var(--space-md);
-  border-radius: var(--radius-pill);
   border: 1px solid var(--border-color);
+  border-radius: var(--radius-pill);
+  background: var(--card-bg-color);
 }
-.toolbar-label {
+.toolbar__left--empty {
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+.toolbar__label {
   font-size: var(--font-sm);
   color: var(--text-muted);
 }
-.slider-wrap {
-  width: 72px;
+.toolbar__slider {
+  width: 88px;
 }
-
-.toolbar-center {
+.toolbar__center {
   flex-shrink: 0;
 }
-.toolbar-right {
+.toolbar__right {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
 }
 
 .admin-toggle-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 1px solid var(--border-color);
-  background: var(--bg-secondary);
-  color: var(--text-muted);
-  font-size: var(--font-base);
-  cursor: pointer;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
   flex-shrink: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-size: var(--font-md);
+  cursor: pointer;
+  transition: all 0.2s;
 }
-.admin-toggle-btn.active {
+.admin-toggle-btn.is-active {
   background: var(--accent-color);
-  color: var(--text-white);
   border-color: var(--accent-color);
+  color: var(--text-white);
 }
 
-.toolbar-nav {
+.toolbar__nav {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-sm);
   padding: 0 var(--space-md) var(--space-sm);
 }
 .nav-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   padding: var(--space-xs) var(--space-md);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-pill);
-  font-size: var(--font-sm);
   background: var(--bg-secondary);
   color: var(--text-muted);
+  font-size: var(--font-sm);
   text-decoration: none;
-  border: 1px solid var(--border-color);
   transition: all 0.15s;
 }
 .nav-chip:hover {
   background: var(--accent-color);
-  color: var(--text-white);
   border-color: var(--accent-color);
+  color: var(--text-white);
 }
 
 /* 模式切换 */
 .mode-toggle {
   display: flex;
   gap: var(--space-xs);
-  background: var(--bg-secondary);
   padding: var(--space-xs);
-  border-radius: var(--radius-pill);
   border: 1px solid var(--border-color);
+  border-radius: var(--radius-pill);
+  background: var(--bg-secondary);
 }
 .mode-btn {
+  min-height: 44px;
+  padding: var(--space-xs) var(--space-lg);
   border: none;
-  background: transparent;
-  padding: var(--space-xs) var(--space-md);
   border-radius: var(--radius-pill);
-  font-size: var(--font-sm);
-  cursor: pointer;
+  background: transparent;
   color: var(--text-muted);
-  transition: all 0.15s;
+  font-size: var(--font-sm);
   white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.15s;
 }
-.mode-btn.active {
+.mode-btn.is-active {
   background: var(--accent-color);
   color: var(--text-white);
   font-weight: var(--weight-bold);
 }
 
 /* ===== 标签筛选栏 ===== */
-.tag-filter-bar {
+.tag-filter {
   display: flex;
   gap: var(--space-sm);
+  flex-shrink: 0;
   padding: var(--space-sm) var(--space-md);
   overflow-x: auto;
-  flex-shrink: 0;
   scrollbar-width: none;
 }
-.tag-filter-bar::-webkit-scrollbar {
+.tag-filter::-webkit-scrollbar {
   display: none;
 }
-
 .tag-chip {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   padding: var(--space-xs) var(--space-md);
-  border-radius: var(--radius-pill);
   border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-pill);
   background: var(--card-bg-color);
-  color: var(--text-color);
+  color: var(--secondary-text-color);
   font-size: var(--font-sm);
+  white-space: nowrap;
   cursor: pointer;
   user-select: none;
   transition: all 0.15s;
-  white-space: nowrap;
 }
 .tag-chip:hover {
   border-color: var(--accent-color);
 }
-.tag-chip.active {
+.tag-chip.is-active {
   background: var(--accent-color);
   border-color: var(--accent-color);
   color: var(--text-white);
@@ -860,11 +909,7 @@ function closePaymentModal() {
   padding: var(--space-sm) var(--space-md);
 }
 
-.spin-content {
-  min-height: 100%;
-}
-
-/* ===== Vision 面板 body ===== */
+/* ===== 识别面板 body ===== */
 .vision-panel__body {
   flex: 1;
   min-height: 0;
@@ -874,13 +919,20 @@ function closePaymentModal() {
   flex-direction: column;
 }
 
-/* ===================== 购物车（桌面） ===================== */
-.cart-panel-desktop {
+/* ===================== 购物车（宽屏侧栏） ===================== */
+.cart-sidebar {
   flex: 0 0 var(--cart-w);
   width: var(--cart-w);
   min-height: 0;
   border-left: 1px solid var(--border-color);
   background: var(--card-bg-color);
+}
+
+/* 底部购物车条：给内容区留出被条盖住的空间（含 iPhone 安全区） */
+.customer-view--cartbar .product-scroll,
+.customer-view--cartbar .vision-panel__body {
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- 为底部购物车条（组件私有布局变量）+ iPhone 安全区留白，非间距刻度 */
+  padding-bottom: calc(var(--cart-bar-h) + var(--space-xl) + env(safe-area-inset-bottom, 0px));
 }
 
 /* ===================== 闲置吸引屏 ===================== */
@@ -940,13 +992,13 @@ function closePaymentModal() {
   flex-direction: column;
   align-items: center;
   gap: var(--space-sm);
+  min-width: 200px;
   padding: var(--space-xl) var(--space-2xl);
   border: 2px solid var(--border-color);
   border-radius: var(--radius-md);
   background: var(--card-bg-color);
   cursor: pointer;
   transition: all 0.2s;
-  min-width: 180px;
 }
 .attract-mode-btn:hover,
 .attract-mode-btn:active {
@@ -967,9 +1019,9 @@ function closePaymentModal() {
 }
 
 .attract-mode-desc {
+  max-width: 160px;
   font-size: var(--font-sm);
   color: var(--text-muted);
-  max-width: 140px;
   line-height: 1.4;
 }
 
@@ -993,17 +1045,22 @@ function closePaymentModal() {
   left: 50%;
   transform: translateX(-50%);
   z-index: 8000;
-  padding: var(--space-md) var(--space-xl);
-  background: var(--card-bg-color);
-  border: 1.5px solid var(--border-color);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
-  cursor: pointer;
-  user-select: none;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--space-sm);
+  padding: var(--space-md) var(--space-xl);
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--card-bg-color);
+  box-shadow: var(--shadow-lg);
+  cursor: pointer;
+  user-select: none;
+}
+
+/* 底部有购物车条时，引导条上移让位 */
+.customer-view--cartbar .guide-toast {
+  bottom: calc(var(--cart-bar-h) + var(--space-xl) + env(safe-area-inset-bottom));
 }
 
 .guide-mode-label {
@@ -1023,11 +1080,11 @@ function closePaymentModal() {
 .guide-steps {
   display: flex;
   align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
   gap: var(--space-sm);
   font-size: var(--font-sm);
-  color: var(--text-color);
-  flex-wrap: wrap;
-  justify-content: center;
+  color: var(--secondary-text-color);
 }
 
 .guide-step {
@@ -1040,6 +1097,7 @@ function closePaymentModal() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   width: 20px;
   height: 20px;
   border-radius: 50%;
@@ -1047,7 +1105,6 @@ function closePaymentModal() {
   color: var(--text-white);
   font-size: var(--font-xs);
   font-weight: var(--weight-bold);
-  flex-shrink: 0;
 }
 
 .guide-arrow {
@@ -1100,7 +1157,14 @@ function closePaymentModal() {
   }
 }
 
-/* ===================== Mobile ===================== */
+/* ===================== 平板 ===================== */
+@media (--tablet) {
+  .customer-view {
+    --sidebar-w: 164px;
+  }
+}
+
+/* ===================== 手机 ===================== */
 @media (--phone) {
   .customer-view {
     flex-direction: column;
@@ -1112,24 +1176,25 @@ function closePaymentModal() {
     min-height: 0;
   }
 
-  .product-scroll {
-    /* 给底部悬浮购物车留空间 */
-    /* stylelint-disable-next-line declaration-property-value-allowed-list -- iPhone 底部安全区适配，env() 无法用 space token 表达 */
-    padding-bottom: calc(var(--space-xl) * 3 + env(safe-area-inset-bottom, 0px));
+  .toolbar__row {
+    gap: var(--space-xs);
   }
 
-  .vision-panel__body {
-    /* stylelint-disable-next-line declaration-property-value-allowed-list -- iPhone 底部安全区适配，env() 无法用 space token 表达 */
-    padding-bottom: calc(var(--space-xl) * 3 + env(safe-area-inset-bottom, 0px));
+  .toolbar__center {
+    order: 3;
+    width: 100%;
   }
 
-  .toolbar-left .slider-wrap {
-    width: 60px;
+  .mode-toggle {
+    width: 100%;
   }
 
-  .toolbar-right :deep(.n-button) {
-    padding: 0 var(--space-sm);
-    font-size: var(--font-xs);
+  .mode-btn {
+    flex: 1;
+  }
+
+  .toolbar__right {
+    margin-left: auto;
   }
 }
 </style>
