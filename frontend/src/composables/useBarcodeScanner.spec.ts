@@ -151,7 +151,7 @@ describe('useBarcodeScanner', () => {
     scanner.stop()
   })
 
-  it('pause 期间不 detect、不上报；resume 后恢复', async () => {
+  it('pause 期间不 detect、不上报；resume 后 detect 恢复且同码仍在画面不重复上报', async () => {
     const detector = makeDetector()
     detector.detect.mockResolvedValue([{ rawValue: 'A' }])
     mocks.loadDetector.mockResolvedValue(detector)
@@ -169,6 +169,73 @@ describe('useBarcodeScanner', () => {
     expect(detector.detect.mock.calls.length).toBe(calls)
 
     scanner.resume()
+    await tick(100)
+    // detect 恢复了，但 A 一直可见：按码状态被推到 resume 时刻，不再重复上报。
+    expect(detector.detect.mock.calls.length).toBeGreaterThan(calls)
+    expect(onCode).toHaveBeenCalledTimes(1)
+    scanner.stop()
+  })
+
+  it('同帧两个码：各自只上报 1 次，连续多帧不重复', async () => {
+    const detector = makeDetector()
+    detector.detect.mockResolvedValue([
+      { rawValue: '9784061234567' },
+      { rawValue: '1920123456789' },
+    ])
+    mocks.loadDetector.mockResolvedValue(detector)
+
+    const { scanner, onCode } = makeScanner({ intervalMs: 100 })
+    await scanner.start()
+    for (let i = 0; i < 10; i++) await tick(100)
+
+    expect(onCode.mock.calls.map((c) => c[0])).toEqual(['9784061234567', '1920123456789'])
+    scanner.stop()
+  })
+
+  it('同帧两个码：一个离开 ≥3 帧且 ≥1500ms 后回来 → 只有它重报一次', async () => {
+    const detector = makeDetector()
+    mocks.loadDetector.mockResolvedValue(detector)
+
+    const { scanner, onCode } = makeScanner({ intervalMs: 100, cooldownMs: 1500 })
+    await scanner.start()
+
+    detector.detect.mockResolvedValue([{ rawValue: 'A' }, { rawValue: 'B' }])
+    await tick(100) // t=100 上报 A、B
+    expect(onCode).toHaveBeenCalledTimes(2)
+
+    // 只有 B 留在画面，A 连续 16 帧未见（≥ goneFrames 且过 cooldown）。
+    detector.detect.mockResolvedValue([{ rawValue: 'B' }])
+    for (let i = 0; i < 16; i++) await tick(100)
+    expect(onCode).toHaveBeenCalledTimes(2)
+
+    detector.detect.mockResolvedValue([{ rawValue: 'A' }, { rawValue: 'B' }])
+    await tick(100)
+    expect(onCode.mock.calls.map((c) => c[0])).toEqual(['A', 'B', 'A'])
+    scanner.stop()
+  })
+
+  it('resume 后同码仍在画面 → 不再上报（多件选择弹窗不会立刻重弹）', async () => {
+    const detector = makeDetector()
+    detector.detect.mockResolvedValue([{ rawValue: 'A' }])
+    mocks.loadDetector.mockResolvedValue(detector)
+
+    const { scanner, onCode } = makeScanner({ intervalMs: 100, cooldownMs: 1500 })
+    await scanner.start()
+    await tick(100) // t=100 上报 A
+    expect(onCode).toHaveBeenCalledTimes(1)
+
+    // 模拟命中多件：暂停 → 用户选完 / 取消 → resume，期间商品一直在画面里。
+    scanner.pause()
+    await tick(100)
+    await tick(100)
+    scanner.resume()
+    for (let i = 0; i < 10; i++) await tick(100)
+    expect(onCode).toHaveBeenCalledTimes(1)
+
+    // 必须离开画面够久再回来才会再报。
+    detector.detect.mockResolvedValue([])
+    for (let i = 0; i < 16; i++) await tick(100)
+    detector.detect.mockResolvedValue([{ rawValue: 'A' }])
     await tick(100)
     expect(onCode).toHaveBeenCalledTimes(2)
     scanner.stop()

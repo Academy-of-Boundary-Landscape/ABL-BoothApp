@@ -280,11 +280,16 @@
          扫码模式：连续扫描条码直接加购
     ================================================================= -->
     <section v-else class="scan-panel">
+      <!-- 结算确认 / 付款 / 成功屏打开时卸载面板：这期间不该再扫码加购，卸载同时释放摄像头。
+           关闭后只要还停在 scan 模式就会重新挂载。 -->
       <BarcodeScanPanel
+        v-if="!showConfirm && !showPaymentModal && !showSuccess"
         :products="store.products || []"
         :cart="store.cart"
         @add="store.addToCart"
         @close="setMode('list')"
+        @activity="onPanelActivity"
+        @choosing="panelChoosing = $event"
       />
     </section>
 
@@ -525,6 +530,8 @@ function onVisionSelect(hit: Schemas['VisionSearchResult']) {
 // （售罄判断 → 加购 → 轻提示）。命中多件时用选择弹窗，与面板行为一致。
 const fb = useFeedback()
 const scanGunCandidates = ref<Schemas['ProductEventProduct'][]>([])
+/** 扫码面板是否正停在多件选择弹窗：开着时扫码枪也不能加购。 */
+const panelChoosing = ref(false)
 const scanGunHandler = useScanResultHandler({
   products: () => store.products || [],
   cart: () => store.cart,
@@ -562,9 +569,27 @@ const isCheckingOut = ref(false)
 const selectedCategory = ref('')
 const isEditMode = ref(false)
 
-// 结算确认 / 付款弹窗 / 成功屏打开时暂停扫码枪：这几屏都不该再往购物车里加东西。
+// 面板被卸载（切走模式 / 进入结算流程）时多件选择状态随之失效：
+// 残留的 true 会让扫码枪一直停用。
+watch([mode, showConfirm, showPaymentModal, showSuccess], () => {
+  if (
+    mode.value !== 'scan' ||
+    showConfirm.value ||
+    showPaymentModal.value ||
+    showSuccess.value
+  ) {
+    panelChoosing.value = false
+  }
+})
+
+// 结算确认 / 付款弹窗 / 成功屏打开时暂停扫码枪；扫码面板的多件选择弹窗开着时也暂停，
+// 免得在弹窗背后把商品加进购物车。
 const scanGunEnabled = computed(
-  () => !showConfirm.value && !showPaymentModal.value && !showSuccess.value
+  () =>
+    !showConfirm.value &&
+    !showPaymentModal.value &&
+    !showSuccess.value &&
+    !panelChoosing.value
 )
 useScanGun({ onCode: onScanGunCode, enabled: scanGunEnabled })
 const showAdminControls = ref(localStorage.getItem('customer_admin_controls') === 'true')
@@ -715,6 +740,11 @@ function resetIdleTimer() {
     mode.value = 'list' // 回到默认的商品列表模式
     selectedTag.value = null
   }, IDLE_TIMEOUT_MS)
+}
+
+/** 扫码面板每处理一个非 ignored 的扫描结果就续期一次，扫一摞也不会中途跳吸引屏。 */
+function onPanelActivity() {
+  resetIdleTimer()
 }
 
 function dismissAttractScreen() {

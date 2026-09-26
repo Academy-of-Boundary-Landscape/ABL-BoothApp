@@ -11,6 +11,13 @@ import type { Ref } from 'vue'
 const DEFAULT_MAX_INTERVAL_MS = 50
 const DEFAULT_MIN_LENGTH = 4
 
+/**
+ * 纯修饰键。扫码枪输出大写字母时会先按下 Shift（`AB-001` 里出现多次），
+ * 这些按键不产生字符、也不代表一次扫描开始；若当成普通功能键 reset，
+ * 缓冲区会被清空，整串码也就丢了。CapsLock / Control / Alt / Meta 同理忽略。
+ */
+const MODIFIER_KEYS = new Set(['Shift', 'CapsLock', 'Control', 'Alt', 'Meta', 'AltGraph'])
+
 /** 事件目标在可编辑控件里时完全不处理（输入框 / 文本域 / 下拉 / contenteditable）。 */
 function isEditableTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null
@@ -50,6 +57,9 @@ export function useScanGun(opts: ScanGunOptions): void {
 
     const key = event.key
 
+    // 修饰键不参与缓冲，也不打断已经开始的输入。
+    if (MODIFIER_KEYS.has(key)) return
+
     if (key === 'Enter') {
       if (buffer.length >= minLength) {
         const code = buffer
@@ -62,7 +72,7 @@ export function useScanGun(opts: ScanGunOptions): void {
       return
     }
 
-    // 只收可打印单字符；功能键 / 修饰键把缓冲打断。
+    // 只收可打印单字符；功能键把缓冲打断（修饰键在上面已提前忽略）。
     if (key.length !== 1) {
       reset()
       return

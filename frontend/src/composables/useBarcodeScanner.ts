@@ -40,6 +40,17 @@ export interface BarcodeScanner {
   stop(): void
 }
 
+/**
+ * 去重状态必须**按码**记录，而不是只记「最后一个码」：日本书的 ISBN（978…）和
+ * 价格码（192…）经常同帧进入取景框，只记最后一个会让两个码交替刷新，每个码
+ * 每帧都被当成「新码」重新上报。
+ */
+interface CodeState {
+  lastReportedAt: number
+  /** 连续多少帧没再看到这个码。 */
+  goneCount: number
+}
+
 export function useBarcodeScanner(opts: BarcodeScannerOptions): BarcodeScanner {
   const intervalMs = opts.intervalMs ?? DEFAULT_INTERVAL_MS
   const cooldownMs = opts.cooldownMs ?? DEFAULT_COOLDOWN_MS
@@ -58,9 +69,10 @@ export function useBarcodeScanner(opts: BarcodeScannerOptions): BarcodeScanner {
   /** start / stop 的世代号：取引擎期间被 stop，resolve 后不得复活。 */
   let generation = 0
 
-  let lastCode = ''
-  let lastReportedAt = 0
-  let goneCount = 0
+  /**
+   * 每个码各自维护「上次上报时间 + 连续未见帧数」。
+   */
+  const codeStates = new Map<string, CodeState>()
 
   function stopTimer() {
     if (timer !== null) {
@@ -76,36 +88,37 @@ export function useBarcodeScanner(opts: BarcodeScannerOptions): BarcodeScanner {
     }, intervalMs)
   }
 
-  function report(code: string, now: number) {
-    if (paused || !running.value) return
-    lastCode = code
-    lastReportedAt = now
-    goneCount = 0
-    opts.onCode(code)
-  }
-
   function process(rawValues: readonly string[]) {
     if (paused || !running.value) return
     const now = Date.now()
     const seen = new Set(rawValues)
-    if (lastCode !== '') {
-      if (!seen.has(lastCode)) {
-        // 该码本帧不在画面：累计「连续未见」帧数。
-        goneCount++
-      } else {
-        // 该码本帧仍在画面：只有「此前连续未见够久（确已离开）且距上次上报够久」
-        // 才视为重新出现并再报；一直可见时永不再报。
-        if (goneCount >= goneFrames && now - lastReportedAt >= cooldownMs) {
-          report(lastCode, now)
-        }
-        // 无论是否再报，一旦重新可见就把离开计数清零，避免同一段离开被反复消费。
-        goneCount = 0
-      }
+
+    // 本帧没看到的已知码：累计「连续未见」帧数。
+    for (const [code, state] of codeStates) {
+      if (!seen.has(code)) state.goneCount++
     }
+
+    // 本帧看到的码按 detect 返回顺序逐个判断。
     for (const code of rawValues) {
-      if (code === lastCode) continue
-      // 不同的码立即上报。
-      report(code, now)
+      // 上一轮 onCode 里可能触发 pause（多件命中）：之后不再处理同一帧剩余的码。
+      if (paused || !running.value) return
+
+      const state = codeStates.get(code)
+      if (!state) {
+        // 首次出现 → 立即上报。
+        codeStates.set(code, { lastReportedAt: now, goneCount: 0 })
+        opts.onCode(code)
+        continue
+      }
+      if (state.goneCount >= goneFrames && now - state.lastReportedAt >= cooldownMs) {
+        // 确认离开过，且距上次上报够久 → 视为重新出现，再报一次。
+        state.lastReportedAt = now
+        state.goneCount = 0
+        opts.onCode(code)
+      } else {
+        // 本帧仍在画面：清零离开计数，避免同一段离开被反复消费。
+        state.goneCount = 0
+      }
     }
   }
 
@@ -173,10 +186,14 @@ export function useBarcodeScanner(opts: BarcodeScannerOptions): BarcodeScanner {
   function resume(): void {
     if (!running.value) return
     paused = false
-    // 恢复后防重复状态清零：暂停期间画面变化无法判断。
-    lastCode = ''
-    lastReportedAt = 0
-    goneCount = 0
+    // 恢复后不重新上报仍在画面里的已知码：把它们的计时推到当前，必须真正离开
+    // 画面（≥ goneFrames）再回来（≥ cooldownMs）才算一次新的扫描。否则多件选择
+    // 弹窗关闭后商品还在镜头里，会立刻再次命中、再次弹窗。
+    const now = Date.now()
+    for (const state of codeStates.values()) {
+      state.lastReportedAt = now
+      state.goneCount = 0
+    }
     startTimer()
   }
 
@@ -186,9 +203,7 @@ export function useBarcodeScanner(opts: BarcodeScannerOptions): BarcodeScanner {
     stopTimer()
     running.value = false
     loading.value = false
-    lastCode = ''
-    lastReportedAt = 0
-    goneCount = 0
+    codeStates.clear()
   }
 
   onScopeDispose(stop)

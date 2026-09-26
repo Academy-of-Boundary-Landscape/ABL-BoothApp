@@ -16,6 +16,7 @@ use zip::{write::FileOptions, ZipArchive, ZipWriter};
 
 use crate::{
     api::guard::AdminOnly, api::openapi::ApiErrorBody, db::models::MasterProduct, state::AppState,
+    utils::barcode::normalize_barcode,
 };
 
 // 日志前缀，方便从大堆 stdout/stderr 里 grep 出来。
@@ -670,7 +671,9 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
                 .bind(&prod.image_url)
                 .bind(prod.is_active)
                 .bind(&prod.tags)
-                .bind(&prod.barcode)
+                // 统一走 normalize_barcode：空串 / 纯分隔符 → NULL（COALESCE 保留本机值），
+                // `978-4-…` 去掉连字符后再入库。
+                .bind(prod.barcode.as_deref().and_then(normalize_barcode))
                 .bind(owner_society_id)
                 .execute(&mut *tx)
                 .await;
@@ -1083,6 +1086,89 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(barcode.as_deref(), Some("2222222222222"));
+    }
+
+    /// 包里 `"barcode": ""` 规范化后是 NULL，`COALESCE` 不能拿它清掉本机已有值。
+    #[tokio::test]
+    async fn import_keeps_local_barcode_when_the_pack_sends_an_empty_string() {
+        let (router, _dir, pool) = test_router_with().await;
+        sqlx::query(
+            "INSERT INTO master_products (product_code, name, default_price, tags, barcode)
+             VALUES ('A', '本子A', 30.0, '', '4901234567894')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let pack = make_pack(json!({
+            "products": [{
+                "id": 1, "product_code": "A", "name": "本子A", "default_price": 30.0,
+                "image_url": null, "category": null, "is_active": true, "tags": "",
+                "barcode": "", "image_count": null, "owner_society_id": 1
+            }],
+            "societies": [],
+            "product_owners": []
+        }));
+        let res = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/sync/import-products-raw")
+                    .header("authorization", format!("Bearer {}", admin_token()))
+                    .header("content-type", "application/zip")
+                    .body(Body::from(pack))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let barcode: Option<String> =
+            sqlx::query_scalar("SELECT barcode FROM master_products WHERE product_code = 'A'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            barcode.as_deref(),
+            Some("4901234567894"),
+            "空串规范化成 NULL 后必须由 COALESCE 保留本机已有值"
+        );
+    }
+
+    /// 带连字符的 ISBN 在入库前会被 normalize_barcode 去掉连字符。
+    #[tokio::test]
+    async fn import_normalizes_hyphenated_barcode_before_persisting() {
+        let (router, _dir, pool) = test_router_with().await;
+
+        let pack = make_pack(json!({
+            "products": [{
+                "id": 1, "product_code": "A", "name": "本子A", "default_price": 30.0,
+                "image_url": null, "category": null, "is_active": true, "tags": "",
+                "barcode": "978-4-06-123456-7", "image_count": null, "owner_society_id": 1
+            }],
+            "societies": [],
+            "product_owners": []
+        }));
+        let res = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/sync/import-products-raw")
+                    .header("authorization", format!("Bearer {}", admin_token()))
+                    .header("content-type", "application/zip")
+                    .body(Body::from(pack))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let barcode: Option<String> =
+            sqlx::query_scalar("SELECT barcode FROM master_products WHERE product_code = 'A'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(barcode.as_deref(), Some("9784061234567"));
     }
 
     #[tokio::test]

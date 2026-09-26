@@ -167,7 +167,7 @@ describe('useCamera', () => {
     expect(cam.stream.value).toBe(streamB)
   })
 
-  it('start 成功后再 flip 成功 → 第一个流的 track 恰好 stop 一次，只剩第二个流活着', async () => {
+  it('start 成功后再 flip 成功 → 旧 track 在第二次 getUserMedia 之前已 stop，只剩第二个流活着', async () => {
     const trackA = makeTrack()
     const streamA = makeStream(trackA)
     const trackB = makeTrack()
@@ -184,11 +184,35 @@ describe('useCamera', () => {
     await expect(cam.flip()).resolves.toBe(true)
     expect(cam.facing.value).toBe('user')
 
-    // 第一个流的 track 恰好被 stop 一次；第二个流仍在用，未被 stop。
+    // 先停旧流：trackA.stop 必须发生在第二次 getUserMedia 之前，很多 Android 设备
+    // 不能同时开两个摄像头（否则新流 NotReadableError）。
+    expect(trackA.stop.mock.invocationCallOrder[0]).toBeLessThan(
+      gum.mock.invocationCallOrder[1]
+    )
     expect(trackA.stop).toHaveBeenCalledOnce()
     expect(trackB.stop).not.toHaveBeenCalled()
     expect(cam.isActive.value).toBe(true)
     expect(cam.stream.value).toBe(streamB)
+  })
+
+  it('flip 时 getUserMedia 失败 → 旧流已停、无活 track、isActive false、error 非空', async () => {
+    const trackA = makeTrack()
+    const gum = vi
+      .fn()
+      .mockResolvedValueOnce(makeStream(trackA))
+      .mockRejectedValueOnce(new Error('NotReadableError'))
+    setMediaDevices(gum)
+    const { cam } = makeCamera('environment')
+
+    await expect(cam.start()).resolves.toBe(true)
+    expect(cam.isActive.value).toBe(true)
+
+    await expect(cam.flip()).resolves.toBe(false)
+
+    expect(trackA.stop).toHaveBeenCalledOnce()
+    expect(cam.stream.value).toBeNull()
+    expect(cam.isActive.value).toBe(false)
+    expect(cam.error.value).not.toBe('')
   })
 
   it('非安全上下文 → start 返回 false、error 非空、不调用 getUserMedia', async () => {

@@ -112,6 +112,10 @@ export function useCamera(opts: { facing: Facing; constraints?: MediaTrackConstr
   }
 
   async function flip(): Promise<boolean> {
+    // 先停旧流再切朝向：很多 Android 设备不能同时打开两个摄像头，先 start 新流会
+    // 抛 NotReadableError（拍照识别的「翻转」就回退了）；而且旧流不先停，翻转失败时
+    // 摄像头指示灯会一直亮着。stop() 会清掉 stream 并让新 start 拿到新的 requestId。
+    stop()
     facing.value = facing.value === 'user' ? 'environment' : 'user'
     return start()
   }

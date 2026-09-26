@@ -97,4 +97,42 @@ describe('useScanGun', () => {
     expect(onCode).not.toHaveBeenCalled()
     scope.stop()
   })
+
+  it('大写字母前的 Shift 不进缓冲也不打断 → 完整收到 A01', () => {
+    const { onCode } = makeGun({ minLength: 3 })
+    // 真实扫码枪：Shift(down) A 0 1 Enter，每键 10ms。
+    for (const key of ['Shift', 'A', '0', '1']) {
+      press(key)
+      vi.advanceTimersByTime(10)
+    }
+    press('Enter')
+
+    expect(onCode).toHaveBeenCalledTimes(1)
+    expect(onCode).toHaveBeenCalledWith('A01')
+  })
+
+  it('含多次 Shift 的 AB-001 完整收到', () => {
+    const { onCode } = makeGun()
+    for (const key of ['Shift', 'A', 'Shift', 'B', '-', '0', '0', '1']) {
+      press(key)
+      vi.advanceTimersByTime(10)
+    }
+    press('Enter')
+
+    expect(onCode).toHaveBeenCalledTimes(1)
+    expect(onCode).toHaveBeenCalledWith('AB-001')
+  })
+
+  it('CapsLock / Control 等修饰键不进缓冲也不打断', () => {
+    const { onCode } = makeGun()
+    press('CapsLock')
+    vi.advanceTimersByTime(10)
+    press('Control')
+    vi.advanceTimersByTime(10)
+    typeFast('A001')
+    press('Enter')
+
+    expect(onCode).toHaveBeenCalledTimes(1)
+    expect(onCode).toHaveBeenCalledWith('A001')
+  })
 })

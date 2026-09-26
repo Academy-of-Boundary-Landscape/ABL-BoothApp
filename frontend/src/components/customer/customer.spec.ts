@@ -471,3 +471,140 @@ describe('CustomerView 扫码枪', () => {
     wrapper.unmount()
   })
 })
+
+describe('CustomerView 扫码面板与结算 / 闲置', () => {
+  /** 扫码面板替身：只声明 emits，便于在父组件测试里手动触发 activity / choosing。 */
+  const ScanPanelStub = {
+    name: 'BarcodeScanPanel',
+    props: {
+      products: { type: Array, default: () => [] },
+      cart: { type: Array, default: () => [] },
+      single: { type: Boolean, default: false },
+    },
+    emits: ['add', 'code', 'close', 'activity', 'choosing'],
+    template: `<div class="barcode-scan-stub" />`,
+  }
+
+  function press(code: string) {
+    for (const ch of code) {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: ch, bubbles: true, cancelable: true })
+      )
+    }
+    window.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    )
+  }
+
+  function mountWithScan() {
+    // 扫码入口要求安全上下文 + getUserMedia。
+    vi.stubGlobal('isSecureContext', true)
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia: vi.fn() },
+    })
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useCustomerStore()
+    const wrapper = mount(CustomerView, {
+      props: { id: '3' },
+      global: {
+        plugins: [pinia],
+        stubs: {
+          BarcodeScanPanel: ScanPanelStub,
+          ProductGrid: true,
+          VisionSearch: true,
+          PaymentModal: true,
+          OrderConfirmPanel: true,
+          RouterLink: { template: '<a class="router-link-stub"><slot /></a>' },
+        },
+      },
+    })
+    return { wrapper, store }
+  }
+
+  /** 从吸引屏进入扫码模式，等面板挂载。 */
+  async function enterScanMode(wrapper: VueWrapper) {
+    await flushPromises()
+    const scanButtons = wrapper.findAll('button').filter((b) => b.text().includes('扫码'))
+    await scanButtons[scanButtons.length - 1].trigger('click')
+    await flushPromises()
+  }
+
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, 'mediaDevices')
+  })
+
+  it('scan 模式下打开结算确认面板 → 扫码面板被卸载，取消后重新渲染', async () => {
+    const { wrapper, store } = mountWithScan()
+    await enterScanMode(wrapper)
+    expect(wrapper.findComponent({ name: 'BarcodeScanPanel' }).exists()).toBe(true)
+
+    store.cart = [{ ...makeProduct(), quantity: 1 }]
+    await nextTick()
+    await wrapper.find('.bar-checkout-btn').trigger('click')
+    await nextTick()
+
+    expect(wrapper.findComponent({ name: 'OrderConfirmPanel' }).props('show')).toBe(true)
+    expect(wrapper.findComponent({ name: 'BarcodeScanPanel' }).exists()).toBe(false)
+
+    // 取消结算后仍在 scan 模式 → 面板重新挂载。
+    wrapper.findComponent({ name: 'OrderConfirmPanel' }).vm.$emit('cancel')
+    await nextTick()
+    expect(wrapper.findComponent({ name: 'BarcodeScanPanel' }).exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('扫码面板 emit activity → 闲置计时器被重置，60 秒内不跳吸引屏', async () => {
+    vi.useFakeTimers()
+    try {
+      const { wrapper } = mountWithScan()
+      await vi.advanceTimersByTimeAsync(0)
+      await nextTick()
+
+      const scanButtons = wrapper.findAll('button').filter((b) => b.text().includes('扫码'))
+      await scanButtons[scanButtons.length - 1].trigger('click')
+      await vi.advanceTimersByTimeAsync(0)
+      await nextTick()
+
+      const panel = wrapper.findComponent({ name: 'BarcodeScanPanel' })
+      expect(panel.exists()).toBe(true)
+
+      // 进入扫码时 resetIdleTimer 起算，60s 会跳吸引屏；40s 处扫码续期一次。
+      await vi.advanceTimersByTimeAsync(40000)
+      panel.vm.$emit('activity')
+      await vi.advanceTimersByTimeAsync(40000)
+      expect(wrapper.find('.attract-screen').exists()).toBe(false)
+
+      // 再超过 60s 不续期 → 吸引屏如期出现，证明计时器确实在走。
+      await vi.advanceTimersByTimeAsync(21000)
+      expect(wrapper.find('.attract-screen').exists()).toBe(true)
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('扫码面板多件选择中 → 扫码枪停用；结束后恢复加购', async () => {
+    const { wrapper, store } = mountWithScan()
+    await enterScanMode(wrapper)
+    // 进入 scan 模式会重新拉商品，等拉完再注入本场商品。
+    store.products = [makeProduct({ barcode: '4901234567894', onsite_qty: 5 })]
+    await nextTick()
+
+    const panel = wrapper.findComponent({ name: 'BarcodeScanPanel' })
+    panel.vm.$emit('choosing', true)
+    await nextTick()
+
+    press('4901234567894')
+    await nextTick()
+    expect(store.cart).toHaveLength(0)
+
+    panel.vm.$emit('choosing', false)
+    await nextTick()
+    press('4901234567894')
+    await nextTick()
+    expect(store.cart).toHaveLength(1)
+    wrapper.unmount()
+  })
+})

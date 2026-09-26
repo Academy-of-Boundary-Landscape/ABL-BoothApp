@@ -69,6 +69,26 @@ vi.mock('@/composables/useCamera', async () => {
 
 vi.mock('@/utils/scanBeep', () => ({ playScanBeep: vi.fn() }))
 
+/** jsdom 没有 ResizeObserver：记录实例，测试里手动触发回调模拟转屏。 */
+const resizeObserverMock = vi.hoisted(() => ({
+  instances: [] as Array<{
+    cb: ResizeObserverCallback
+    observe: ReturnType<typeof vi.fn>
+    disconnect: ReturnType<typeof vi.fn>
+  }>,
+}))
+
+class ResizeObserverStub {
+  cb: ResizeObserverCallback
+  observe = vi.fn()
+  disconnect = vi.fn()
+  unobserve = vi.fn()
+  constructor(cb: ResizeObserverCallback) {
+    this.cb = cb
+    resizeObserverMock.instances.push(this)
+  }
+}
+
 function makeProduct(
   overrides: Partial<Schemas['ProductEventProduct']> = {}
 ): Schemas['ProductEventProduct'] {
@@ -108,13 +128,21 @@ async function scan(code: string) {
 
 beforeEach(() => {
   scannerMock.opts = null
-  scannerMock.start.mockResolvedValue(undefined)
-  cameraMock.start.mockResolvedValue(true)
-  cameraMock.flip.mockResolvedValue(true)
+  scannerMock.start.mockReset().mockResolvedValue(undefined)
+  scannerMock.pause.mockReset()
+  scannerMock.resume.mockReset()
+  scannerMock.stop.mockReset()
+  cameraMock.start.mockReset().mockResolvedValue(true)
+  cameraMock.stop.mockReset()
+  cameraMock.flip.mockReset().mockResolvedValue(true)
+  cameraMock.setTorch.mockReset()
   vi.mocked(playScanBeep).mockClear()
+  resizeObserverMock.instances = []
+  vi.stubGlobal('ResizeObserver', ResizeObserverStub)
 })
 
 afterEach(() => {
+  vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
 
@@ -222,6 +250,41 @@ describe('BarcodeScanPanel 命中处理', () => {
     expect(wrapper.emitted('add')).toBeUndefined()
     expect(wrapper.find('.scan-hint').text()).toBe('将条码对准取景框')
     expect(scannerMock.pause).not.toHaveBeenCalled()
+    // ignored 不算一次有效扫描，不 emit activity。
+    expect(wrapper.emitted('activity')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('命中 / 未命中都会 emit activity（续期闲置计时器），ignored 除外', async () => {
+    const wrapper = mountPanel([makeProduct({ barcode: '4901234567894' })])
+    await flushPromises()
+
+    await scan('4901234567894')
+    expect(wrapper.emitted('activity')).toHaveLength(1)
+
+    await scan('0000000000000') // 未找到
+    expect(wrapper.emitted('activity')).toHaveLength(2)
+
+    await scan('1920123456789') // ignored
+    expect(wrapper.emitted('activity')).toHaveLength(2)
+    wrapper.unmount()
+  })
+
+  it('多件命中 → emit choosing true；选完一件后 emit choosing false', async () => {
+    const first = makeProduct({ id: 1, name: '版本A', barcode: '4901234567894' })
+    const second = makeProduct({ id: 2, name: '版本B', barcode: '4901234567894' })
+    const wrapper = mountPanel([first, second])
+    await flushPromises()
+
+    await scan('4901234567894')
+    expect(wrapper.emitted('choosing')?.at(-1)).toEqual([true])
+
+    const candidateEls = document.body.querySelectorAll<HTMLElement>('.scan-candidate')
+    candidateEls[0].click()
+    await nextTick()
+    await flushPromises()
+
+    expect(wrapper.emitted('choosing')?.at(-1)).toEqual([false])
     wrapper.unmount()
   })
 })
@@ -283,6 +346,71 @@ describe('BarcodeScanPanel 前后摄镜像', () => {
     await nextTick()
     expect(wrapper.find('.scan-video').classes()).toContain('scan-video--mirrored')
 
+    wrapper.unmount()
+  })
+})
+
+describe('BarcodeScanPanel 转后台 / 恢复', () => {
+  it('多件弹窗开着切后台再回来 → 摄像头启动后立即 pause，不恢复扫描', async () => {
+    const first = makeProduct({ id: 1, barcode: '4901234567894' })
+    const second = makeProduct({ id: 2, barcode: '4901234567894' })
+    const wrapper = mountPanel([first, second])
+    await flushPromises()
+
+    await scan('4901234567894')
+    expect(scannerMock.pause).toHaveBeenCalledTimes(1)
+
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await nextTick()
+    expect(scannerMock.stop).toHaveBeenCalled()
+    expect(cameraMock.stop).toHaveBeenCalled()
+
+    scannerMock.pause.mockClear()
+    scannerMock.start.mockClear()
+    cameraMock.start.mockClear()
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+
+    expect(cameraMock.start).toHaveBeenCalled()
+    expect(scannerMock.start).toHaveBeenCalled()
+    expect(scannerMock.pause).toHaveBeenCalled()
+
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+    wrapper.unmount()
+  })
+})
+
+describe('BarcodeScanPanel 取景框对齐', () => {
+  it('ResizeObserver 观察取景视口，回调后框尺寸跟随视口', async () => {
+    const wrapper = mountPanel([])
+    await flushPromises()
+
+    const viewport = wrapper.find('.scan-viewport').element as HTMLElement
+    expect(resizeObserverMock.instances.length).toBeGreaterThan(0)
+    const obs = resizeObserverMock.instances[resizeObserverMock.instances.length - 1]
+    expect(obs.observe).toHaveBeenCalledWith(viewport)
+
+    // jsdom 没有布局：手动给出尺寸，模拟转屏后 ResizeObserver 回调。
+    viewport.getBoundingClientRect = () =>
+      ({
+        width: 500,
+        height: 400,
+        top: 0,
+        left: 0,
+        right: 500,
+        bottom: 400,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }) as DOMRect
+    obs.cb([], obs as unknown as ResizeObserver)
+    await nextTick()
+
+    const frame = wrapper.find('.scan-frame').element as HTMLElement
+    expect(frame.style.width).toBe('400px') // 500 * 0.8
+    expect(frame.style.height).toBe('160px') // 宽 * 0.4
     wrapper.unmount()
   })
 })

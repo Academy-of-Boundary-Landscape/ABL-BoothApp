@@ -107,6 +107,10 @@ const emit = defineEmits<{
   (e: 'add', product: Schemas['ProductEventProduct']): void
   (e: 'code', code: string): void
   (e: 'close'): void
+  /** 每处理一个非 ignored 的扫描结果就发一次：父组件据此续期闲置计时器。 */
+  (e: 'activity'): void
+  /** 多件选择弹窗开关：开着时父组件应停用扫码枪，避免在弹窗背后继续加购。 */
+  (e: 'choosing', value: boolean): void
 }>()
 
 // ===================== 取景框布局 =====================
@@ -239,6 +243,10 @@ function pushRecent(product: Schemas['ProductEventProduct']) {
 }
 
 const candidates = ref<Schemas['ProductEventProduct'][]>([])
+watch(
+  () => candidates.value.length,
+  (len) => emit('choosing', len > 0)
+)
 
 const handler = useScanResultHandler({
   products: () => props.products,
@@ -261,12 +269,16 @@ function handleCode(code: string) {
   // 单次模式（表单「扫码填入」）：只认码，不匹配、不加购，也不闪框 / 出声。
   if (props.single) {
     if (matchBarcode(code, props.products).kind === 'ignored') return
+    emit('activity')
     emit('code', code)
     scanner.pause()
     return
   }
 
   const outcome = handler.handleCode(code)
+  // ignored（价格码等）不算一次有效扫描，不续期闲置计时器。
+  if (outcome.kind === 'ignored') return
+  emit('activity')
   switch (outcome.kind) {
     case 'added':
       handleAdded(outcome.product)
@@ -280,8 +292,6 @@ function handleCode(code: string) {
     case 'multiple':
       scanner.pause()
       candidates.value = outcome.products
-      break
-    case 'ignored':
       break
   }
 }
@@ -309,6 +319,8 @@ async function startEverything() {
   if (!ok) return
   updateViewportSize()
   await scanner.start()
+  // 多件选择弹窗还开着（例如切后台再回来）时不能恢复扫描：弹窗背后扫到码会重复触发。
+  if (candidates.value.length > 0) scanner.pause()
 }
 
 function handleVisibilityChange() {
@@ -324,13 +336,28 @@ function handleClose() {
   emit('close')
 }
 
+// 转屏 / 布局变化后视口尺寸会变，取景框和 ROI 换算必须跟着更新，
+// 否则屏幕上的框和实际解码区域会错位。
+let resizeObs: ResizeObserver | null = null
+
 onMounted(() => {
   document.addEventListener('visibilitychange', handleVisibilityChange)
+  if (typeof ResizeObserver !== 'undefined') {
+    resizeObs = new ResizeObserver(updateViewportSize)
+    if (viewportRef.value) resizeObs.observe(viewportRef.value)
+  }
   void startEverything()
+})
+
+// 取景视口可能在错误态之后才出现，ref 变了要重新 observe。
+watch(viewportRef, (el) => {
+  if (el && resizeObs) resizeObs.observe(el)
 })
 
 onUnmounted(() => {
   document.removeEventListener('visibilitychange', handleVisibilityChange)
+  resizeObs?.disconnect()
+  resizeObs = null
   clearTimeout(flashTimer ?? undefined)
 })
 </script>
@@ -445,6 +472,8 @@ onUnmounted(() => {
 
 .scan-frame {
   position: relative;
+  /* 取景框尺寸由 JS 精确给定，不能被 flex 容器压缩，否则屏幕上的框会小于解码 ROI。 */
+  flex-shrink: 0;
   border-radius: var(--radius-md);
   /* stylelint-disable-next-line declaration-property-value-allowed-list -- 取景框：用超大 spread 阴影实现框外遮罩，非通用阴影 */
   box-shadow: 0 0 0 9999px var(--overlay-color);
@@ -482,11 +511,17 @@ onUnmounted(() => {
   border-radius: 0 0 var(--radius-md) 0;
 }
 
+/* 提示行绝对定位：不参与 overlay 的垂直居中，取景框才能始终居中。 */
 .scan-hint {
-  margin: var(--space-lg) 0 0;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--space-lg);
+  margin: 0;
   color: var(--text-white);
   font-size: var(--font-md);
   font-weight: var(--weight-bold);
+  text-align: center;
   text-shadow: 0 1px 4px var(--overlay-color);
 }
 .scan-hint.is-error {
