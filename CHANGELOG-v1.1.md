@@ -1,6 +1,6 @@
 # v1.1.0 Changelog
 
-> v1.1.1 的变更记录在 [docs/releases/v1.1.1.md](docs/releases/v1.1.1.md)。
+> v1.1.1 的变更记录在 [docs/releases/v1.1.1.md](docs/releases/v1.1.1.md)；v1.2 见 [CHANGELOG-v1.2.md](CHANGELOG-v1.2.md)。
 
 > **这是一次重量级更新。** 跨越数月开发、上百处改动，摊盒从"能用"进化到"好用"。</br>
 > 如果你是从 v1.0.x 升级，强烈建议先导出当前商品包（.boothpack）做一次备份。
