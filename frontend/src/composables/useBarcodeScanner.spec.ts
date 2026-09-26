@@ -36,9 +36,7 @@ function makeScanner(opts?: { intervalMs?: number; cooldownMs?: number; goneFram
   scopes.push(scope)
   const onCode = vi.fn<(code: string) => void>()
   const video: Ref<HTMLVideoElement | null> = ref(makeVideo())
-  const scanner = scope.run(() =>
-    useBarcodeScanner({ video, roi: () => ROI, onCode, ...opts })
-  )!
+  const scanner = scope.run(() => useBarcodeScanner({ video, roi: () => ROI, onCode, ...opts }))!
   return { scanner, onCode, video, scope }
 }
 

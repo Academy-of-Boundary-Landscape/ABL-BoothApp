@@ -118,7 +118,12 @@
       size="md"
       @update:show="showScanModal = $event"
     >
-      <BarcodeScanPanel :products="[]" single @code="onScannedCode" @close="showScanModal = false" />
+      <BarcodeScanPanel
+        :products="[]"
+        single
+        @code="onScannedCode"
+        @close="showScanModal = false"
+      />
     </AppModal>
   </SectionCard>
 </template>

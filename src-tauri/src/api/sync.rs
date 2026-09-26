@@ -1031,12 +1031,11 @@ mod tests {
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
 
-        let (name, barcode): (String, Option<String>) = sqlx::query_as(
-            "SELECT name, barcode FROM master_products WHERE product_code = 'A'",
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+        let (name, barcode): (String, Option<String>) =
+            sqlx::query_as("SELECT name, barcode FROM master_products WHERE product_code = 'A'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert_eq!(name, "旧包改名", "其他字段照常被包覆盖");
         assert_eq!(
             barcode.as_deref(),

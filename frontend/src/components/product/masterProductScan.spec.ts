@@ -60,7 +60,9 @@ function makeMasterProduct(): Schemas['MasterProduct'] {
 }
 
 function bodyButton(text: string): HTMLButtonElement {
-  const btn = [...document.body.querySelectorAll('button')].find((b) => b.textContent?.trim() === text)
+  const btn = [...document.body.querySelectorAll('button')].find(
+    (b) => b.textContent?.trim() === text
+  )
   if (!btn) throw new Error(`找不到按钮：${text}`)
   return btn as HTMLButtonElement
 }
@@ -104,9 +106,7 @@ describe('商品表单「扫码填入」', () => {
     })
     await flushPromises()
 
-    const scanButton = wrapper
-      .findAll('button')
-      .find((b) => b.text().trim() === '扫码填入')
+    const scanButton = wrapper.findAll('button').find((b) => b.text().trim() === '扫码填入')
     expect(scanButton).toBeDefined()
     await scanButton!.trigger('click')
     await nextTick()

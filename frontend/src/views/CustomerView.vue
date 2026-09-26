@@ -498,8 +498,8 @@ async function refreshVisionAvailability() {
 
 // 扫码不依赖后端模型，只要求安全上下文与 getUserMedia；没有摄像头 / 非 HTTPS 时置灰。
 const SCAN_UNAVAILABLE_HINT = '需要 HTTPS 连接才能使用摄像头'
-const scanAvailable = computed(
-  () => Boolean(window.isSecureContext && navigator.mediaDevices?.getUserMedia)
+const scanAvailable = computed(() =>
+  Boolean(window.isSecureContext && navigator.mediaDevices?.getUserMedia)
 )
 
 // 切换模式时重新展示引导
@@ -572,12 +572,7 @@ const isEditMode = ref(false)
 // 面板被卸载（切走模式 / 进入结算流程）时多件选择状态随之失效：
 // 残留的 true 会让扫码枪一直停用。
 watch([mode, showConfirm, showPaymentModal, showSuccess], () => {
-  if (
-    mode.value !== 'scan' ||
-    showConfirm.value ||
-    showPaymentModal.value ||
-    showSuccess.value
-  ) {
+  if (mode.value !== 'scan' || showConfirm.value || showPaymentModal.value || showSuccess.value) {
     panelChoosing.value = false
   }
 })
@@ -585,11 +580,7 @@ watch([mode, showConfirm, showPaymentModal, showSuccess], () => {
 // 结算确认 / 付款弹窗 / 成功屏打开时暂停扫码枪；扫码面板的多件选择弹窗开着时也暂停，
 // 免得在弹窗背后把商品加进购物车。
 const scanGunEnabled = computed(
-  () =>
-    !showConfirm.value &&
-    !showPaymentModal.value &&
-    !showSuccess.value &&
-    !panelChoosing.value
+  () => !showConfirm.value && !showPaymentModal.value && !showSuccess.value && !panelChoosing.value
 )
 useScanGun({ onCode: onScanGunCode, enabled: scanGunEnabled })
 const showAdminControls = ref(localStorage.getItem('customer_admin_controls') === 'true')

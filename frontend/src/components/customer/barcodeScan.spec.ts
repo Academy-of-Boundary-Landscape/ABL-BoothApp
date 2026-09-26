@@ -326,9 +326,7 @@ describe('BarcodeScanPanel 摄像头不可用', () => {
     expect(wrapper.find('.barcode-scan__error-text').text()).toContain('无法访问摄像头')
     expect(wrapper.find('.scan-viewport').exists()).toBe(false)
 
-    const back = wrapper
-      .findAll('button')
-      .find((b) => b.text().includes('返回商品列表'))
+    const back = wrapper.findAll('button').find((b) => b.text().includes('返回商品列表'))
     await back?.trigger('click')
     expect(wrapper.emitted('close')).toHaveLength(1)
     wrapper.unmount()

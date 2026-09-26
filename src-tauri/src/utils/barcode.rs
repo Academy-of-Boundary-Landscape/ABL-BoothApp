@@ -19,10 +19,7 @@ pub fn normalize_barcode(raw: &str) -> Option<String> {
         .chars()
         .all(|c| c.is_ascii_digit() || c == ' ' || c == '-')
     {
-        let cleaned: String = trimmed
-            .chars()
-            .filter(|c| *c != ' ' && *c != '-')
-            .collect();
+        let cleaned: String = trimmed.chars().filter(|c| *c != ' ' && *c != '-').collect();
         // 纯分隔符（如 "-" 或 " - "）：清洗后没有内容，和空串一样存 NULL。
         if cleaned.is_empty() {
             None
@@ -48,10 +45,7 @@ mod tests {
 
     #[test]
     fn keeps_non_digit_codes_verbatim_after_trim() {
-        assert_eq!(
-            normalize_barcode("ab-12 C"),
-            Some("ab-12 C".to_string())
-        );
+        assert_eq!(normalize_barcode("ab-12 C"), Some("ab-12 C".to_string()));
     }
 
     #[test]

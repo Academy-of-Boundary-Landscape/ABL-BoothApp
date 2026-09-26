@@ -1348,10 +1348,12 @@ mod tests {
         let (router, _dir, pool) = test_router_with().await;
         let (event_id, _, _) = seed_event_and_product(&pool).await;
         // A 有商业条码，B 没有 → 同一份列表里 null 与非 null 都要出现
-        sqlx::query("UPDATE master_products SET barcode = '4901234567894' WHERE product_code = 'A'")
-            .execute(&pool)
-            .await
-            .unwrap();
+        sqlx::query(
+            "UPDATE master_products SET barcode = '4901234567894' WHERE product_code = 'A'",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
 
         let res = router
             .oneshot(json_request(

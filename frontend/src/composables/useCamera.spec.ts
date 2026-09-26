@@ -186,9 +186,7 @@ describe('useCamera', () => {
 
     // 先停旧流：trackA.stop 必须发生在第二次 getUserMedia 之前，很多 Android 设备
     // 不能同时开两个摄像头（否则新流 NotReadableError）。
-    expect(trackA.stop.mock.invocationCallOrder[0]).toBeLessThan(
-      gum.mock.invocationCallOrder[1]
-    )
+    expect(trackA.stop.mock.invocationCallOrder[0]).toBeLessThan(gum.mock.invocationCallOrder[1])
     expect(trackA.stop).toHaveBeenCalledOnce()
     expect(trackB.stop).not.toHaveBeenCalled()
     expect(cam.isActive.value).toBe(true)

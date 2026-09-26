@@ -171,7 +171,10 @@ mod tests {
         // 重建中又来一张图：不能开第二个任务，但也不能丢
         assert!(!s.try_start_rebuilding().await);
 
-        assert!(s.finish_rebuild(Ok(done(3))).await, "挂起的请求要求再跑一轮");
+        assert!(
+            s.finish_rebuild(Ok(done(3))).await,
+            "挂起的请求要求再跑一轮"
+        );
         let snap = s.snapshot().await;
         assert!(snap.is_rebuilding, "补跑期间仍是重建中");
         assert_eq!(snap.index_size, 3);
@@ -192,7 +195,10 @@ mod tests {
         let snap = s.snapshot().await;
         assert!(!snap.is_rebuilding);
         assert_eq!(snap.reason.as_deref(), Some("VISION_REBUILD_FAILED"));
-        assert_eq!(snap.last_rebuild_error.as_deref(), Some("model file not found"));
+        assert_eq!(
+            snap.last_rebuild_error.as_deref(),
+            Some("model file not found")
+        );
         assert!(snap.is_ready, "失败不影响已有索引继续可用");
 
         assert!(s.try_start_rebuilding().await);

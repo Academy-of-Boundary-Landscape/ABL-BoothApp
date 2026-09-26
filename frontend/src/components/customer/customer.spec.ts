@@ -387,9 +387,13 @@ describe('CustomerView 拍照识别入口', () => {
 describe('CustomerView 扫码枪', () => {
   function press(code: string) {
     for (const ch of code) {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true, cancelable: true }))
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: ch, bubbles: true, cancelable: true })
+      )
     }
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    window.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    )
   }
 
   function mountCustomer() {

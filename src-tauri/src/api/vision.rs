@@ -1506,7 +1506,8 @@ mod shape_tests {
         )
         .await;
         assert_eq!(s, StatusCode::ACCEPTED);
-        let raw = std::fs::read_to_string(dir.path().join("models/vision/vision_model.json")).unwrap();
+        let raw =
+            std::fs::read_to_string(dir.path().join("models/vision/vision_model.json")).unwrap();
         let cfg: Value = serde_json::from_str(&raw).unwrap();
         assert_eq!(cfg["runtime"]["execution_provider"], "cpu");
         assert_eq!(cfg["active_model_id"], "dinov2_small_fp16");
@@ -1529,7 +1530,9 @@ mod shape_tests {
         let mut body = json!(null);
         for _ in 0..100 {
             tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-            body = call(&router, "GET", "/api/vision/status", None, json!(null)).await.1;
+            body = call(&router, "GET", "/api/vision/status", None, json!(null))
+                .await
+                .1;
             if body["reason"] == "VISION_REBUILD_FAILED" {
                 break;
             }
