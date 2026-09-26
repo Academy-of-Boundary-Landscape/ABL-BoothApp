@@ -20,6 +20,7 @@ use crate::{
     db::models::MasterProduct,
     error::{ApiError, ApiResult},
     state::AppState,
+    utils::barcode::normalize_barcode,
     utils::file::{delete_file, save_upload_file},
 };
 
@@ -109,6 +110,8 @@ struct ListQuery {
 #[allow(dead_code)]
 struct CreateMasterProductForm {
     product_code: String,
+    /// 商业条码（JAN/EAN-13 等）；可选，不传或空串存 NULL。
+    barcode: Option<String>,
     name: String,
     /// 元，不是分（老字段，`f64`）。
     default_price: String,
@@ -125,6 +128,8 @@ struct CreateMasterProductForm {
 #[allow(dead_code)]
 struct UpdateMasterProductForm {
     product_code: Option<String>,
+    /// 商业条码；**出现**才覆盖（空串 → NULL），不出现保持原值。
+    barcode: Option<String>,
     name: Option<String>,
     /// 元，不是分（老字段，`f64`）。
     default_price: Option<String>,
@@ -227,6 +232,7 @@ async fn create_product(
     let mut default_price: f64 = 0.0;
     let mut category: Option<String> = None;
     let mut tags = String::new();
+    let mut barcode: Option<String> = None;
     let mut owner_raw: Option<String> = None;
     let mut image_path: Option<String> = None;
 
@@ -247,6 +253,7 @@ async fn create_product(
             let value = field.text().await.unwrap_or_default();
             match field_name.as_str() {
                 "product_code" => product_code = value,
+                "barcode" => barcode = normalize_barcode(&value),
                 "name" => name = value,
                 "default_price" => default_price = value.parse().unwrap_or(0.0),
                 "category" => category = if value.is_empty() { None } else { Some(value) },
@@ -268,8 +275,8 @@ async fn create_product(
 
     let result = query_as::<_, MasterProduct>(
         r#"
-        INSERT INTO master_products (product_code, name, default_price, category, image_url, tags, owner_society_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO master_products (product_code, name, default_price, category, image_url, tags, barcode, owner_society_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING *
         "#,
     )
@@ -279,6 +286,7 @@ async fn create_product(
     .bind(category)
     .bind(image_path)
     .bind(tags)
+    .bind(barcode)
     .bind(owner)
     .fetch_one(&state.db)
     .await;
@@ -336,6 +344,8 @@ async fn update_product(
     let mut default_price = old_product.default_price;
     let mut category = old_product.category;
     let mut tags = old_product.tags;
+    // 「出现才覆盖」：初始为原值，表单里没有 `barcode` 字段时保持不变。
+    let mut barcode = old_product.barcode;
     let old_owner = old_product.owner_society_id;
     let mut owner_raw: Option<String> = None;
     let mut image_path = old_product.image_url;
@@ -358,6 +368,7 @@ async fn update_product(
             let value = field.text().await.unwrap_or_default();
             match field_name.as_str() {
                 "product_code" => product_code = value,
+                "barcode" => barcode = normalize_barcode(&value),
                 "name" => name = value,
                 "default_price" => {
                     if !value.is_empty() {
@@ -388,7 +399,7 @@ async fn update_product(
         r#"
         UPDATE master_products
         SET product_code = ?, name = ?, default_price = ?, category = ?, image_url = ?, tags = ?,
-            owner_society_id = ?
+            barcode = ?, owner_society_id = ?
         WHERE id = ?
         RETURNING *
         "#,
@@ -399,6 +410,7 @@ async fn update_product(
     .bind(category)
     .bind(image_path)
     .bind(tags)
+    .bind(barcode)
     .bind(owner)
     .bind(id)
     .fetch_one(&state.db)
@@ -924,6 +936,7 @@ mod shape_tests {
             "category": "null|string",
             "is_active": "bool",
             "tags": "string",
+            "barcode": "null",
             "image_count": "int",
             "owner_society_id": "int",
         })
@@ -940,6 +953,7 @@ mod shape_tests {
             "category": category,
             "is_active": "bool",
             "tags": tags,
+            "barcode": "null",
             "image_count": "null",
             "owner_society_id": "int",
         })
@@ -1413,5 +1427,114 @@ mod shape_tests {
         let ep = read_json(res).await;
         assert_eq!(ep["owner_society_id"], 2);
         assert_eq!(ep["owner_society_name"], "黄昏堂");
+    }
+
+    // ---- 商业条码：新建 / 编辑的读写与规范化 ----
+
+    #[tokio::test]
+    async fn creating_a_product_normalizes_its_barcode_and_defaults_to_null() {
+        let (router, _dir, pool) = test_router_with().await;
+        let t = admin_token();
+
+        let (s, body) = multipart_call(
+            &router,
+            "POST",
+            "/api/master-products",
+            Some(&t),
+            &[
+                ("product_code", "B1", None),
+                ("name", "带条码", None),
+                ("default_price", "10", None),
+                ("barcode", " 978-4-06-123456-7 ", None),
+            ],
+        )
+        .await;
+        assert_eq!(s, StatusCode::CREATED, "{body}");
+        assert_eq!(body["barcode"], "9784061234567");
+        let in_db: Option<String> =
+            sqlx::query_scalar("SELECT barcode FROM master_products WHERE product_code = 'B1'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(in_db.as_deref(), Some("9784061234567"));
+
+        // 表单没有 barcode 字段 → NULL
+        let (s, body) = multipart_call(
+            &router,
+            "POST",
+            "/api/master-products",
+            Some(&t),
+            &[
+                ("product_code", "B2", None),
+                ("name", "没条码", None),
+                ("default_price", "10", None),
+            ],
+        )
+        .await;
+        assert_eq!(s, StatusCode::CREATED, "{body}");
+        assert!(body["barcode"].is_null(), "{body}");
+    }
+
+    #[tokio::test]
+    async fn editing_a_product_replaces_barcode_with_empty_and_keeps_it_when_absent() {
+        let (router, _dir, pool) = test_router_with().await;
+        let t = admin_token();
+        let (_, created) = multipart_call(
+            &router,
+            "POST",
+            "/api/master-products",
+            Some(&t),
+            &[
+                ("product_code", "B3", None),
+                ("name", "有条码", None),
+                ("default_price", "10", None),
+                ("barcode", "4901234567894", None),
+            ],
+        )
+        .await;
+        let id = created["id"].as_i64().unwrap();
+
+        // 出现空串 → 规范化成 None → 清成 NULL
+        let (s, body) = multipart_call(
+            &router,
+            "PUT",
+            &format!("/api/master-products/{id}"),
+            Some(&t),
+            &[("barcode", "", None)],
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK, "{body}");
+        assert!(body["barcode"].is_null(), "{body}");
+        let in_db: Option<String> =
+            sqlx::query_scalar("SELECT barcode FROM master_products WHERE id = ?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(in_db, None);
+
+        // 再写回去
+        let (s, body) = multipart_call(
+            &router,
+            "PUT",
+            &format!("/api/master-products/{id}"),
+            Some(&t),
+            &[("barcode", " 4901234567894 ", None)],
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK, "{body}");
+        assert_eq!(body["barcode"], "4901234567894");
+
+        // 不带 barcode 字段 → 原值不变
+        let (s, body) = multipart_call(
+            &router,
+            "PUT",
+            &format!("/api/master-products/{id}"),
+            Some(&t),
+            &[("name", "改名", None)],
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK, "{body}");
+        assert_eq!(body["barcode"], "4901234567894");
     }
 }

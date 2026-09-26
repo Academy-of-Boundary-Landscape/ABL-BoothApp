@@ -21,6 +21,16 @@
             </div>
 
             <div class="form-group">
+              <label for="create-barcode">商业条码（可选）:</label>
+              <n-input
+                id="create-barcode"
+                v-model:value="createFormData.barcode"
+                placeholder="JAN / ISBN 等，没有就留空"
+                clearable
+              />
+            </div>
+
+            <div class="form-group">
               <label for="create-name">商品名称:</label>
               <n-input
                 id="create-name"
@@ -114,6 +124,8 @@ import { IMAGE_UPLOAD_LIMIT_MB, normalizeUploadError } from '@/utils/upload'
 /** 表单内部状态：价格是元（数字）、标签是数组，与 multipart 契约的字符串字段不同。 */
 interface CreateFormState {
   product_code: string
+  /** 商业条码；空串提交表示不填。 */
+  barcode: string
   name: string
   default_price: number | null
   category: string
@@ -132,6 +144,7 @@ const isFormCollapsed = ref(false)
 
 const createFormData = ref<CreateFormState>({
   product_code: '',
+  barcode: '',
   name: '',
   default_price: null,
   category: '',
@@ -161,6 +174,8 @@ async function handleCreate() {
     }
 
     formData.append('product_code', code)
+    // 总是提交（空串表示不填）；后端规范化后为空会存 NULL。
+    formData.append('barcode', String(createFormData.value.barcode ?? '').trim())
     formData.append('name', name)
     formData.append('default_price', String(price))
     if (category) formData.append('category', category)
@@ -178,6 +193,7 @@ async function handleCreate() {
 
     createFormData.value = {
       product_code: '',
+      barcode: '',
       name: '',
       default_price: null,
       category: '',

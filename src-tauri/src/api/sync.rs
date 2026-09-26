@@ -650,8 +650,8 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
 
         let res = query(
                     r#"
-                    INSERT INTO master_products (product_code, name, default_price, category, image_url, is_active, tags, owner_society_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO master_products (product_code, name, default_price, category, image_url, is_active, tags, barcode, owner_society_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(product_code) DO UPDATE SET
                         name = excluded.name,
                         default_price = excluded.default_price,
@@ -659,6 +659,7 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
                         image_url = excluded.image_url,
                         is_active = excluded.is_active,
                         tags = excluded.tags,
+                        barcode = COALESCE(excluded.barcode, master_products.barcode),
                         owner_society_id = excluded.owner_society_id
                     "#,
                 )
@@ -669,6 +670,7 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
                 .bind(&prod.image_url)
                 .bind(prod.is_active)
                 .bind(&prod.tags)
+                .bind(&prod.barcode)
                 .bind(owner_society_id)
                 .execute(&mut *tx)
                 .await;
@@ -989,6 +991,98 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(homes, 1, "导入新建社团时 is_home 必须恒为 0");
+    }
+
+    /// 旧包没有 `barcode` 字段：serde 默认成 None，`COALESCE` 不能拿 NULL 清掉本机已有值。
+    #[tokio::test]
+    async fn import_keeps_local_barcode_when_the_pack_omits_it() {
+        let (router, _dir, pool) = test_router_with().await;
+        sqlx::query(
+            "INSERT INTO master_products (product_code, name, default_price, tags, barcode)
+             VALUES ('A', '本子A', 30.0, '', '4901234567894')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let pack = make_pack(json!({
+            "products": [{
+                "id": 1, "product_code": "A", "name": "旧包改名", "default_price": 30.0,
+                "image_url": null, "category": null, "is_active": true, "tags": "",
+                "image_count": null, "owner_society_id": 1
+            }],
+            "societies": [],
+            "product_owners": []
+        }));
+        let res = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/sync/import-products-raw")
+                    .header("authorization", format!("Bearer {}", admin_token()))
+                    .header("content-type", "application/zip")
+                    .body(Body::from(pack))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let (name, barcode): (String, Option<String>) = sqlx::query_as(
+            "SELECT name, barcode FROM master_products WHERE product_code = 'A'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(name, "旧包改名", "其他字段照常被包覆盖");
+        assert_eq!(
+            barcode.as_deref(),
+            Some("4901234567894"),
+            "包里没有 barcode 不能清空本机已有值"
+        );
+    }
+
+    /// 新包带 `barcode` → 覆盖本机值。
+    #[tokio::test]
+    async fn import_updates_barcode_when_the_pack_has_one() {
+        let (router, _dir, pool) = test_router_with().await;
+        sqlx::query(
+            "INSERT INTO master_products (product_code, name, default_price, tags, barcode)
+             VALUES ('A', '本子A', 30.0, '', '1111111111111')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let pack = make_pack(json!({
+            "products": [{
+                "id": 1, "product_code": "A", "name": "本子A", "default_price": 30.0,
+                "image_url": null, "category": null, "is_active": true, "tags": "",
+                "barcode": "2222222222222", "image_count": null, "owner_society_id": 1
+            }],
+            "societies": [],
+            "product_owners": []
+        }));
+        let res = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/sync/import-products-raw")
+                    .header("authorization", format!("Bearer {}", admin_token()))
+                    .header("content-type", "application/zip")
+                    .body(Body::from(pack))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let barcode: Option<String> =
+            sqlx::query_scalar("SELECT barcode FROM master_products WHERE product_code = 'A'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(barcode.as_deref(), Some("2222222222222"));
     }
 
     #[tokio::test]
