@@ -392,7 +392,7 @@ describe('CustomerView 扫码枪', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
   }
 
-  it('吸引屏显示时扫码枪命中 → 先撤掉吸引屏再加购', async () => {
+  function mountCustomer() {
     const pinia = createPinia()
     setActivePinia(pinia)
     const store = useCustomerStore()
@@ -404,10 +404,16 @@ describe('CustomerView 扫码枪', () => {
           ProductGrid: true,
           VisionSearch: true,
           PaymentModal: true,
+          OrderConfirmPanel: true,
           RouterLink: { template: '<a class="router-link-stub"><slot /></a>' },
         },
       },
     })
+    return { wrapper, store }
+  }
+
+  it('吸引屏显示时扫码枪命中 → 先撤掉吸引屏再加购', async () => {
+    const { wrapper, store } = mountCustomer()
     await flushPromises()
 
     // setupStoreForEvent 的拉取完成后，注入本场商品。
@@ -420,6 +426,48 @@ describe('CustomerView 扫码枪', () => {
     expect(store.cart).toHaveLength(1)
     expect(store.cart[0].product_code).toBe('P001')
     expect(wrapper.find('.attract-screen').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('确认面板打开时扫码枪命中 → 购物车不变', async () => {
+    const { wrapper, store } = mountCustomer()
+    await flushPromises()
+
+    const product = makeProduct({ barcode: '4901234567894', onsite_qty: 5 })
+    store.products = [product]
+    store.cart = [{ ...product, quantity: 2 }]
+    await nextTick()
+
+    // 打开结算确认面板。
+    await wrapper.find('.bar-checkout-btn').trigger('click')
+    const panel = wrapper.findComponent({ name: 'OrderConfirmPanel' })
+    expect(panel.props('show')).toBe(true)
+
+    press('4901234567894')
+    await nextTick()
+
+    // 扫码枪被 enabled=false 挡住：没有加购、数量不变。
+    expect(store.cart).toHaveLength(1)
+    expect(store.cart[0].quantity).toBe(2)
+    wrapper.unmount()
+  })
+
+  it('购物车已占满库存 → 扫码枪不加购、不弹「库存不足」', async () => {
+    const { wrapper, store } = mountCustomer()
+    await flushPromises()
+
+    const product = makeProduct({ barcode: '4901234567894', onsite_qty: 5 })
+    store.products = [product]
+    store.cart = [{ ...product, quantity: 5 }]
+    await nextTick()
+
+    mocks.fbAlert.mockClear()
+    press('4901234567894')
+    await nextTick()
+
+    expect(store.cart).toHaveLength(1)
+    expect(store.cart[0].quantity).toBe(5)
+    expect(mocks.fbAlert).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 })

@@ -124,16 +124,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { defineAsyncComponent, ref } from 'vue'
 import { NButton, NInput, NInputNumber, NSelect } from 'naive-ui'
 import { AppModal, SectionCard } from '@/components/ui'
 
-import BarcodeScanPanel from '@/components/customer/BarcodeScanPanel.vue'
 import ImageUploader from '@/components/shared/ImageUploader.vue'
 import SocietySelect from '@/components/shared/SocietySelect.vue'
 import { useProductStore } from '@/stores/productStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { IMAGE_UPLOAD_LIMIT_MB, normalizeUploadError } from '@/utils/upload'
+
+// 扫码面板内含 barcode-detector / zxing-wasm：动态 import，避免被打进主包 / 首屏。
+const BarcodeScanPanel = defineAsyncComponent(
+  () => import('@/components/customer/BarcodeScanPanel.vue')
+)
 
 /** 表单内部状态：价格是元（数字）、标签是数组，与 multipart 契约的字符串字段不同。 */
 interface CreateFormState {

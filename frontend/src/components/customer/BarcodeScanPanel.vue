@@ -29,7 +29,14 @@
         class="scan-viewport"
         :class="{ 'is-flash-green': flash === 'green', 'is-flash-red': flash === 'red' }"
       >
-        <video ref="videoRef" class="scan-video" autoplay playsinline muted />
+        <video
+          ref="videoRef"
+          class="scan-video"
+          :class="{ 'scan-video--mirrored': facing === 'user' }"
+          autoplay
+          playsinline
+          muted
+        />
         <div class="scan-overlay">
           <div class="scan-frame" :style="frameStyle">
             <span class="scan-frame__corner scan-frame__corner--tl" />
@@ -88,10 +95,12 @@ import type { Schemas } from '@/api/client'
 const props = withDefaults(
   defineProps<{
     products: Schemas['ProductEventProduct'][]
+    /** 购物车当前内容：命中时用于判断同商品是否已被加满库存。 */
+    cart?: { id: number; quantity: number }[]
     /** 单次模式：扫到第一个非 ignored 的码就 emit `code` 并停止，不做匹配 / 加购。 */
     single?: boolean
   }>(),
-  { single: false }
+  { single: false, cart: () => [] }
 )
 
 const emit = defineEmits<{
@@ -165,6 +174,7 @@ function computeRoi(): ScanRoi {
 const {
   stream,
   error: cameraError,
+  facing,
   torchSupported,
   torchOn,
   start: startCameraStream,
@@ -232,6 +242,7 @@ const candidates = ref<Schemas['ProductEventProduct'][]>([])
 
 const handler = useScanResultHandler({
   products: () => props.products,
+  cart: () => props.cart,
   addToCart: (product) => emit('add', product),
   notify: (message, kind) => {
     // 成功不加提示行（框闪绿 + 提示音 + 最近记录已足够），失败写明原因。
@@ -261,6 +272,7 @@ function handleCode(code: string) {
       handleAdded(outcome.product)
       break
     case 'sold_out':
+    case 'out_of_stock':
     case 'not_found':
       triggerFlash('red')
       playScanBeep(false)
@@ -277,7 +289,7 @@ function handleCode(code: string) {
 function pickCandidate(product: Schemas['ProductEventProduct']) {
   const outcome = handler.resolveProduct(product)
   if (outcome.kind === 'added') handleAdded(product)
-  else if (outcome.kind === 'sold_out') {
+  else if (outcome.kind === 'sold_out' || outcome.kind === 'out_of_stock') {
     triggerFlash('red')
     playScanBeep(false)
   }
@@ -330,6 +342,9 @@ onUnmounted(() => {
   gap: var(--space-sm);
   height: 100%;
   min-height: 0;
+  /* 与商品列表模式一致：左右 var(--space-md) 页边距，避免工具栏 / 最近扫描贴屏幕边缘。 */
+  padding: var(--space-sm) var(--space-md);
+  box-sizing: border-box;
 }
 
 .barcode-scan__toolbar {
@@ -411,6 +426,11 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/* 前置摄像头（翻转后）预览做水平镜像，与 VisionSearch 一致。 */
+.scan-video--mirrored {
+  transform: scaleX(-1);
 }
 
 .scan-overlay {

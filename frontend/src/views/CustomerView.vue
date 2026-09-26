@@ -280,7 +280,12 @@
          扫码模式：连续扫描条码直接加购
     ================================================================= -->
     <section v-else class="scan-panel">
-      <BarcodeScanPanel :products="store.products || []" @add="store.addToCart" @close="setMode('list')" />
+      <BarcodeScanPanel
+        :products="store.products || []"
+        :cart="store.cart"
+        @add="store.addToCart"
+        @close="setMode('list')"
+      />
     </section>
 
     <!-- ======== 购物车：宽屏侧栏；平板竖屏 / 手机为底部可展开条 ======== -->
@@ -522,6 +527,7 @@ const fb = useFeedback()
 const scanGunCandidates = ref<Schemas['ProductEventProduct'][]>([])
 const scanGunHandler = useScanResultHandler({
   products: () => store.products || [],
+  cart: () => store.cart,
   addToCart: (product) => store.addToCart(product),
   notify: (message, kind) => {
     if (kind === 'success') fb.success(message)
@@ -545,8 +551,6 @@ function onScanGunCandidatesShow(show: boolean) {
   if (!show) scanGunCandidates.value = []
 }
 
-useScanGun({ onCode: onScanGunCode })
-
 // ===================== 点单模式 =====================
 const showPaymentModal = ref(false)
 const showConfirm = ref(false)
@@ -557,6 +561,12 @@ const orderTotal = ref<Cents>(cents(0))
 const isCheckingOut = ref(false)
 const selectedCategory = ref('')
 const isEditMode = ref(false)
+
+// 结算确认 / 付款弹窗 / 成功屏打开时暂停扫码枪：这几屏都不该再往购物车里加东西。
+const scanGunEnabled = computed(
+  () => !showConfirm.value && !showPaymentModal.value && !showSuccess.value
+)
+useScanGun({ onCode: onScanGunCode, enabled: scanGunEnabled })
 const showAdminControls = ref(localStorage.getItem('customer_admin_controls') === 'true')
 function toggleAdminControls() {
   showAdminControls.value = !showAdminControls.value

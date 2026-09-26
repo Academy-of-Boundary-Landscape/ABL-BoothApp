@@ -248,7 +248,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { defineAsyncComponent, ref, watch } from 'vue'
 import {
   NButton,
   NInput,
@@ -265,7 +265,6 @@ import {
 import { AppModal } from '@/components/ui'
 import { useFeedback } from '@/composables/useFeedback'
 
-import BarcodeScanPanel from '@/components/customer/BarcodeScanPanel.vue'
 import ImageUploader from '@/components/shared/ImageUploader.vue'
 import SocietySelect from '@/components/shared/SocietySelect.vue'
 import ImageCropper from '@/components/shared/ImageCropper.vue'
@@ -286,6 +285,11 @@ import {
   showUploadDialog,
   resizeImageFile,
 } from '@/utils/upload'
+
+// 扫码面板内含 barcode-detector / zxing-wasm：动态 import，避免被打进主包 / 首屏。
+const BarcodeScanPanel = defineAsyncComponent(
+  () => import('@/components/customer/BarcodeScanPanel.vue')
+)
 
 const GALLERY_RESIZE_PX = 512
 

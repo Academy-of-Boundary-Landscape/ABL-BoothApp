@@ -167,6 +167,30 @@ describe('useCamera', () => {
     expect(cam.stream.value).toBe(streamB)
   })
 
+  it('start 成功后再 flip 成功 → 第一个流的 track 恰好 stop 一次，只剩第二个流活着', async () => {
+    const trackA = makeTrack()
+    const streamA = makeStream(trackA)
+    const trackB = makeTrack()
+    const streamB = makeStream(trackB)
+    const gum = vi.fn().mockResolvedValueOnce(streamA).mockResolvedValueOnce(streamB)
+    setMediaDevices(gum)
+    const { cam } = makeCamera('environment')
+
+    await expect(cam.start()).resolves.toBe(true)
+    expect(cam.stream.value).toBe(streamA)
+    expect(cam.facing.value).toBe('environment')
+    expect(trackA.stop).not.toHaveBeenCalled()
+
+    await expect(cam.flip()).resolves.toBe(true)
+    expect(cam.facing.value).toBe('user')
+
+    // 第一个流的 track 恰好被 stop 一次；第二个流仍在用，未被 stop。
+    expect(trackA.stop).toHaveBeenCalledOnce()
+    expect(trackB.stop).not.toHaveBeenCalled()
+    expect(cam.isActive.value).toBe(true)
+    expect(cam.stream.value).toBe(streamB)
+  })
+
   it('非安全上下文 → start 返回 false、error 非空、不调用 getUserMedia', async () => {
     setSecure(false)
     const gum = vi.fn()

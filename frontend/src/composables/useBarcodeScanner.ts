@@ -90,12 +90,15 @@ export function useBarcodeScanner(opts: BarcodeScannerOptions): BarcodeScanner {
     const seen = new Set(rawValues)
     if (lastCode !== '') {
       if (!seen.has(lastCode)) {
+        // 该码本帧不在画面：累计「连续未见」帧数。
         goneCount++
       } else {
-        // 同码仍在画面：离开够久或冷却已过才再报一次，否则忽略。
-        if (goneCount >= goneFrames || now - lastReportedAt >= cooldownMs) {
+        // 该码本帧仍在画面：只有「此前连续未见够久（确已离开）且距上次上报够久」
+        // 才视为重新出现并再报；一直可见时永不再报。
+        if (goneCount >= goneFrames && now - lastReportedAt >= cooldownMs) {
           report(lastCode, now)
         }
+        // 无论是否再报，一旦重新可见就把离开计数清零，避免同一段离开被反复消费。
         goneCount = 0
       }
     }
@@ -116,7 +119,9 @@ export function useBarcodeScanner(opts: BarcodeScannerOptions): BarcodeScanner {
     if (!canvas) canvas = document.createElement('canvas')
     canvas.width = w
     canvas.height = h
-    const ctx = canvas.getContext('2d')
+    // 每帧 drawImage 后立刻 detect 会读取像素：声明 willReadFrequently 避免
+    // 浏览器反复回读 GPU 画面时的 console 警告，并让实现走 CPU 后备路径。
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
     // jsdom 没有 canvas 实现时 getContext 返回 null：跳过绘制但仍把画面交给 detect。
     ctx?.drawImage(video, roi.x, roi.y, roi.w, roi.h, 0, 0, w, h)
     return canvas

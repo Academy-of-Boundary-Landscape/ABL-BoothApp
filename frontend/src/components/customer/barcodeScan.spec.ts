@@ -4,6 +4,7 @@ import { nextTick } from 'vue'
 import type { Ref } from 'vue'
 import BarcodeScanPanel from '@/components/customer/BarcodeScanPanel.vue'
 import { AppModal } from '@/components/ui'
+import { playScanBeep } from '@/utils/scanBeep'
 import { cents } from '@/utils/money'
 import type { Schemas } from '@/api/client'
 
@@ -39,6 +40,7 @@ const cameraMock = vi.hoisted(() => ({
   flip: vi.fn(),
   setTorch: vi.fn(),
   error: null as Ref<string> | null,
+  facing: null as Ref<'user' | 'environment'> | null,
 }))
 
 vi.mock('@/composables/useCamera', async () => {
@@ -46,11 +48,13 @@ vi.mock('@/composables/useCamera', async () => {
   return {
     useCamera: () => {
       const error = ref('')
+      const facing = ref<'user' | 'environment'>('environment')
       cameraMock.error = error
+      cameraMock.facing = facing
       return {
         stream: shallowRef(null),
         isActive: ref(false),
-        facing: ref('environment'),
+        facing,
         error,
         torchSupported: ref(false),
         torchOn: ref(false),
@@ -87,9 +91,12 @@ function makeProduct(
   }
 }
 
-function mountPanel(products: Schemas['ProductEventProduct'][]): VueWrapper {
+function mountPanel(
+  products: Schemas['ProductEventProduct'][],
+  cart: { id: number; quantity: number }[] = []
+): VueWrapper {
   return mount(BarcodeScanPanel, {
-    props: { products },
+    props: { products, cart },
   })
 }
 
@@ -104,6 +111,7 @@ beforeEach(() => {
   scannerMock.start.mockResolvedValue(undefined)
   cameraMock.start.mockResolvedValue(true)
   cameraMock.flip.mockResolvedValue(true)
+  vi.mocked(playScanBeep).mockClear()
 })
 
 afterEach(() => {
@@ -124,7 +132,7 @@ describe('BarcodeScanPanel 命中处理', () => {
     wrapper.unmount()
   })
 
-  it('已售罄 → 不 emit add，提示行出现「已售罄」', async () => {
+  it('已售罄 → 不 emit add，提示行出现「已售罄」，不弹窗', async () => {
     const product = makeProduct({ barcode: '4901234567894', onsite_qty: 0 })
     const wrapper = mountPanel([product])
     await flushPromises()
@@ -133,6 +141,36 @@ describe('BarcodeScanPanel 命中处理', () => {
 
     expect(wrapper.emitted('add')).toBeUndefined()
     expect(wrapper.find('.scan-hint').text()).toContain('本子A 已售罄')
+    expect(wrapper.findComponent(AppModal).props('show')).toBe(false)
+    expect(playScanBeep).toHaveBeenCalledWith(false)
+    wrapper.unmount()
+  })
+
+  it('购物车已占满库存 → 不 emit add、提示「库存不足」、失败音、不弹窗', async () => {
+    const product = makeProduct({ barcode: '4901234567894', onsite_qty: 3 })
+    const wrapper = mountPanel([product], [{ id: product.id, quantity: 3 }])
+    await flushPromises()
+
+    await scan('4901234567894')
+
+    expect(wrapper.emitted('add')).toBeUndefined()
+    expect(wrapper.find('.scan-hint').text()).toContain('本子A 库存不足')
+    expect(wrapper.findComponent(AppModal).props('show')).toBe(false)
+    expect(playScanBeep).toHaveBeenCalledWith(false)
+    expect(playScanBeep).not.toHaveBeenCalledWith(true)
+    wrapper.unmount()
+  })
+
+  it('购物车数量超过库存也按「库存不足」处理', async () => {
+    const product = makeProduct({ barcode: '4901234567894', onsite_qty: 2 })
+    const wrapper = mountPanel([product], [{ id: product.id, quantity: 5 }])
+    await flushPromises()
+
+    await scan('4901234567894')
+
+    expect(wrapper.emitted('add')).toBeUndefined()
+    expect(wrapper.find('.scan-hint').text()).toContain('本子A 库存不足')
+    expect(wrapper.findComponent(AppModal).props('show')).toBe(false)
     wrapper.unmount()
   })
 
@@ -230,6 +268,21 @@ describe('BarcodeScanPanel 摄像头不可用', () => {
       .find((b) => b.text().includes('返回商品列表'))
     await back?.trigger('click')
     expect(wrapper.emitted('close')).toHaveLength(1)
+    wrapper.unmount()
+  })
+})
+
+describe('BarcodeScanPanel 前后摄镜像', () => {
+  it('后摄不加镜像；翻转成 user 后视频加水平镜像样式', async () => {
+    const wrapper = mountPanel([])
+    await flushPromises()
+
+    expect(wrapper.find('.scan-video').classes()).not.toContain('scan-video--mirrored')
+
+    if (cameraMock.facing) cameraMock.facing.value = 'user'
+    await nextTick()
+    expect(wrapper.find('.scan-video').classes()).toContain('scan-video--mirrored')
+
     wrapper.unmount()
   })
 })

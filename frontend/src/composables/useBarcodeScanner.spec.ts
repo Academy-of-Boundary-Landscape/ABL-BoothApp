@@ -73,39 +73,65 @@ describe('useBarcodeScanner', () => {
     scanner.stop()
   })
 
-  it('消失 ≥3 帧后再出现 → 再上报', async () => {
+  it('离开 ≥3 帧且距上次上报 ≥1500ms 后再出现 → 再上报', async () => {
     const detector = makeDetector()
     mocks.loadDetector.mockResolvedValue(detector)
 
-    const { scanner, onCode } = makeScanner({ intervalMs: 100 })
+    const { scanner, onCode } = makeScanner({ intervalMs: 100, cooldownMs: 1500 })
     await scanner.start()
 
     detector.detect.mockResolvedValue([{ rawValue: 'A' }])
-    await tick(100) // 上报 A
+    await tick(100) // t=100 上报 A
+    expect(onCode).toHaveBeenCalledTimes(1)
+
+    // 连续 16 帧没看到 A（≥ goneFrames），时间也走过 cooldown（t 到 1700）。
+    detector.detect.mockResolvedValue([])
+    for (let i = 0; i < 16; i++) await tick(100)
+    expect(onCode).toHaveBeenCalledTimes(1)
+
+    detector.detect.mockResolvedValue([{ rawValue: 'A' }])
+    await tick(100) // t=1800 再次出现
+    expect(onCode).toHaveBeenCalledTimes(2)
+    expect(onCode).toHaveBeenLastCalledWith('A')
+    scanner.stop()
+  })
+
+  it('离开 ≥3 帧但距上次上报 <1500ms 就再出现 → 不上报', async () => {
+    const detector = makeDetector()
+    mocks.loadDetector.mockResolvedValue(detector)
+
+    const { scanner, onCode } = makeScanner({ intervalMs: 100, cooldownMs: 1500 })
+    await scanner.start()
+
+    detector.detect.mockResolvedValue([{ rawValue: 'A' }])
+    await tick(100) // t=100 上报 A
     expect(onCode).toHaveBeenCalledTimes(1)
 
     detector.detect.mockResolvedValue([])
     await tick(100)
     await tick(100)
-    await tick(100) // 连续 3 帧没看到 A
-    expect(onCode).toHaveBeenCalledTimes(1)
+    await tick(100) // t=400，连续 3 帧未见
 
     detector.detect.mockResolvedValue([{ rawValue: 'A' }])
-    await tick(100)
-    expect(onCode).toHaveBeenCalledTimes(2)
+    await tick(100) // t=500 再出现，距上次仅 400ms
+    expect(onCode).toHaveBeenCalledTimes(1)
+
+    // 之后一直可见也不再上报：重新出现那一下没够 cooldown，就算此段结束。
+    for (let i = 0; i < 20; i++) await tick(100)
+    expect(onCode).toHaveBeenCalledTimes(1)
     scanner.stop()
   })
 
-  it('持续可见超过 cooldownMs → 再上报', async () => {
+  it('持续可见 10 秒只上报 1 次', async () => {
     const detector = makeDetector()
     detector.detect.mockResolvedValue([{ rawValue: 'A' }])
     mocks.loadDetector.mockResolvedValue(detector)
 
     const { scanner, onCode } = makeScanner({ intervalMs: 200, cooldownMs: 1500 })
     await scanner.start()
-    for (let i = 0; i < 10; i++) await tick(200)
+    for (let i = 0; i < 50; i++) await tick(200) // 10 秒
 
-    expect(onCode).toHaveBeenCalledTimes(2)
+    expect(onCode).toHaveBeenCalledTimes(1)
     scanner.stop()
   })
 
