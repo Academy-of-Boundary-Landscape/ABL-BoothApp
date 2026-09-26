@@ -22,12 +22,15 @@
 
             <div class="form-group">
               <label for="create-barcode">商业条码（可选）:</label>
-              <n-input
-                id="create-barcode"
-                v-model:value="createFormData.barcode"
-                placeholder="JAN / ISBN 等，没有就留空"
-                clearable
-              />
+              <div class="barcode-field">
+                <n-input
+                  id="create-barcode"
+                  v-model:value="createFormData.barcode"
+                  placeholder="JAN / ISBN 等，没有就留空"
+                  clearable
+                />
+                <n-button size="small" @click="showScanModal = true">扫码填入</n-button>
+              </div>
             </div>
 
             <div class="form-group">
@@ -107,19 +110,34 @@
 
       <p v-if="createError" class="form-error">{{ createError }}</p>
     </form>
+
+    <!-- 扫码填入：单次模式，扫到码写进条码输入框 -->
+    <AppModal
+      :show="showScanModal"
+      title="扫码填入条码"
+      size="md"
+      @update:show="showScanModal = $event"
+    >
+      <BarcodeScanPanel :products="[]" single @code="onScannedCode" @close="showScanModal = false" />
+    </AppModal>
   </SectionCard>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { defineAsyncComponent, ref } from 'vue'
 import { NButton, NInput, NInputNumber, NSelect } from 'naive-ui'
-import { SectionCard } from '@/components/ui'
+import { AppModal, SectionCard } from '@/components/ui'
 
 import ImageUploader from '@/components/shared/ImageUploader.vue'
 import SocietySelect from '@/components/shared/SocietySelect.vue'
 import { useProductStore } from '@/stores/productStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { IMAGE_UPLOAD_LIMIT_MB, normalizeUploadError } from '@/utils/upload'
+
+// 扫码面板内含 barcode-detector / zxing-wasm：动态 import，避免被打进主包 / 首屏。
+const BarcodeScanPanel = defineAsyncComponent(
+  () => import('@/components/customer/BarcodeScanPanel.vue')
+)
 
 /** 表单内部状态：价格是元（数字）、标签是数组，与 multipart 契约的字符串字段不同。 */
 interface CreateFormState {
@@ -153,6 +171,13 @@ const createFormData = ref<CreateFormState>({
 })
 
 const createFormFile = ref<File | undefined>(undefined)
+
+// 扫码填入：单次扫码面板 → 条码输入框。
+const showScanModal = ref(false)
+function onScannedCode(code: string) {
+  createFormData.value.barcode = code
+  showScanModal.value = false
+}
 
 function handleInvalidFile(message: string) {
   createError.value = message
@@ -237,6 +262,16 @@ async function handleCreate() {
 .form-group {
   display: flex;
   flex-direction: column;
+}
+
+.barcode-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.barcode-field :deep(.n-input) {
+  flex: 1;
 }
 
 label {

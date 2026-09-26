@@ -314,18 +314,25 @@ describe('CustomerView 拍照识别入口', () => {
     })
   }
 
-  function visionButtons(wrapper: VueWrapper) {
-    return wrapper.findAll('button').filter((b) => b.text().includes('拍照识别'))
+  function buttonsWithText(wrapper: VueWrapper, text: string) {
+    return wrapper.findAll('button').filter((b) => b.text().includes(text))
   }
 
-  it('识别未就绪时，吸引屏和工具栏的入口都置灰', async () => {
+  function visionButtons(wrapper: VueWrapper) {
+    return buttonsWithText(wrapper, '拍照识别')
+  }
+
+  function scanButtons(wrapper: VueWrapper) {
+    return buttonsWithText(wrapper, '扫码')
+  }
+
+  it('识别未就绪时，吸引屏链接和工具栏的拍照识别入口都置灰', async () => {
     mocks.getVisionStatus.mockResolvedValue({ is_ready: false })
     const wrapper = mountCustomer()
     await flushPromises()
     const btns = visionButtons(wrapper)
     expect(btns.length).toBe(2)
     for (const b of btns) expect(b.attributes('disabled')).toBeDefined()
-    expect(wrapper.find('.attract-screen').text()).toContain('拍照识别暂不可用')
     wrapper.unmount()
   })
 
@@ -344,6 +351,123 @@ describe('CustomerView 拍照识别入口', () => {
     const btns = visionButtons(wrapper)
     expect(btns.length).toBe(2)
     for (const b of btns) expect(b.attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('非安全上下文 / 无 getUserMedia 时，扫码入口（工具栏 + 吸引屏）都置灰', async () => {
+    mocks.getVisionStatus.mockResolvedValue({ is_ready: true })
+    const wrapper = mountCustomer()
+    await flushPromises()
+
+    const btns = scanButtons(wrapper)
+    expect(btns.length).toBe(2)
+    for (const b of btns) expect(b.attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('安全上下文且有 getUserMedia 时，扫码入口可用', async () => {
+    mocks.getVisionStatus.mockResolvedValue({ is_ready: true })
+    vi.stubGlobal('isSecureContext', true)
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia: vi.fn() },
+    })
+    const wrapper = mountCustomer()
+    await flushPromises()
+
+    const btns = scanButtons(wrapper)
+    expect(btns.length).toBe(2)
+    for (const b of btns) expect(b.attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+    // 清掉测试注入的 own property，避免影响后续用例。
+    Reflect.deleteProperty(navigator, 'mediaDevices')
+  })
+})
+
+describe('CustomerView 扫码枪', () => {
+  function press(code: string) {
+    for (const ch of code) {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true, cancelable: true }))
+    }
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  }
+
+  function mountCustomer() {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useCustomerStore()
+    const wrapper = mount(CustomerView, {
+      props: { id: '3' },
+      global: {
+        plugins: [pinia],
+        stubs: {
+          ProductGrid: true,
+          VisionSearch: true,
+          PaymentModal: true,
+          OrderConfirmPanel: true,
+          RouterLink: { template: '<a class="router-link-stub"><slot /></a>' },
+        },
+      },
+    })
+    return { wrapper, store }
+  }
+
+  it('吸引屏显示时扫码枪命中 → 先撤掉吸引屏再加购', async () => {
+    const { wrapper, store } = mountCustomer()
+    await flushPromises()
+
+    // setupStoreForEvent 的拉取完成后，注入本场商品。
+    store.products = [makeProduct({ barcode: '4901234567894', onsite_qty: 5 })]
+    expect(wrapper.find('.attract-screen').exists()).toBe(true)
+
+    press('4901234567894')
+    await nextTick()
+
+    expect(store.cart).toHaveLength(1)
+    expect(store.cart[0].product_code).toBe('P001')
+    expect(wrapper.find('.attract-screen').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('确认面板打开时扫码枪命中 → 购物车不变', async () => {
+    const { wrapper, store } = mountCustomer()
+    await flushPromises()
+
+    const product = makeProduct({ barcode: '4901234567894', onsite_qty: 5 })
+    store.products = [product]
+    store.cart = [{ ...product, quantity: 2 }]
+    await nextTick()
+
+    // 打开结算确认面板。
+    await wrapper.find('.bar-checkout-btn').trigger('click')
+    const panel = wrapper.findComponent({ name: 'OrderConfirmPanel' })
+    expect(panel.props('show')).toBe(true)
+
+    press('4901234567894')
+    await nextTick()
+
+    // 扫码枪被 enabled=false 挡住：没有加购、数量不变。
+    expect(store.cart).toHaveLength(1)
+    expect(store.cart[0].quantity).toBe(2)
+    wrapper.unmount()
+  })
+
+  it('购物车已占满库存 → 扫码枪不加购、不弹「库存不足」', async () => {
+    const { wrapper, store } = mountCustomer()
+    await flushPromises()
+
+    const product = makeProduct({ barcode: '4901234567894', onsite_qty: 5 })
+    store.products = [product]
+    store.cart = [{ ...product, quantity: 5 }]
+    await nextTick()
+
+    mocks.fbAlert.mockClear()
+    press('4901234567894')
+    await nextTick()
+
+    expect(store.cart).toHaveLength(1)
+    expect(store.cart[0].quantity).toBe(5)
+    expect(mocks.fbAlert).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 })
