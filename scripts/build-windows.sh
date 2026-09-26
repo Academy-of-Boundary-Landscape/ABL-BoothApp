@@ -83,14 +83,19 @@ tauri-env win npx tauri build --runner cargo-xwin --target "$TARGET" --bundles n
 
 # --- 收拢产物 ------------------------------------------------------------------
 BUNDLE_DIR="$REPO_ROOT/src-tauri/target/$TARGET/release/bundle/nsis"
-SRC_EXE="$(find "$BUNDLE_DIR" -maxdepth 1 -name '*-setup.exe' | head -1)"
-[ -n "$SRC_EXE" ] || die "没找到 NSIS 安装包，看上面的构建输出"
+# 按版本号精确匹配：bundle 目录不会清理旧产物，`*-setup.exe | head -1` 曾经挑中
+# 同目录里残留的旧版本安装包（连同它的 .sig），发布前才发现。
+SRC_EXE="$(find "$BUNDLE_DIR" -maxdepth 1 -name "*_${VERSION}_x64-setup.exe" | head -1)"
+[ -n "$SRC_EXE" ] || die "没找到版本 $VERSION 的 NSIS 安装包（*_${VERSION}_x64-setup.exe），看上面的构建输出"
 
 mkdir -p "$REPO_ROOT/dist"
 cp -f "$SRC_EXE" "$REPO_ROOT/dist/$OUT_NAME"
 ok "dist/$OUT_NAME  ($(du -h "$REPO_ROOT/dist/$OUT_NAME" | cut -f1))"
 
 if [ -f "$SRC_EXE.sig" ]; then
+  # .sig 的 trusted comment 里写着它签的文件名；和本次版本对不上就是拿错了产物
+  base64 -d "$SRC_EXE.sig" | grep -q "file:.*_${VERSION}_x64-setup.exe" \
+    || die ".sig 签的不是版本 $VERSION 的安装包：$(base64 -d "$SRC_EXE.sig" | grep trusted)"
   cp -f "$SRC_EXE.sig" "$REPO_ROOT/dist/$OUT_NAME.sig"
   ok "dist/$OUT_NAME.sig"
   echo
