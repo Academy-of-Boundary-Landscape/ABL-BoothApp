@@ -29,10 +29,17 @@ const timeline = [
   },
   {
     type: 'success',
-    time: '2025年12月 - 至今',
+    time: '2025年12月 - 2026年5月',
     icon: '🚀',
     title: '重构：Tauri 本地应用',
     content: '使用 <b>Rust</b> 重写后端，基于 <b>Tauri v2</b> 构建。实现了 Win/Android 双平台高性能、零依赖、离线运行。'
+  },
+  {
+    type: 'success',
+    time: '2026年9月',
+    icon: '📒',
+    title: 'v1.2：复式账本',
+    content: '重写账本为<b>复式记账</b>，货和钱都有来去。新增套装优惠、收摊结算与寄售分账、条码扫描，并按展会生命周期重新设计了管理后台与摊主端。'
   }
 ]
 </script>

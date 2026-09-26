@@ -66,6 +66,50 @@
       </div>
     </section>
 
+    <!-- ⭐ v1.2.0：新账本 -->
+    <section class="bk-section bk-vision-spotlight">
+      <div class="bk-vision-badge">🆕 v1.2.0</div>
+      <header class="bk-section-header">
+        <h2 class="bk-h2">📒 从「能记账」到「记得清账」</h2>
+        <p class="bk-sub">
+          v1.2 重写了账本：每一件货、每一分钱都有来处和去处。<br/>
+          套装优惠、退货、收摊盘点、寄售分账，都建立在它上面。
+        </p>
+      </header>
+
+      <div class="bk-vision-grid">
+        <div class="bk-vision-card">
+          <div class="bk-vision-emoji">🎁</div>
+          <h3 class="bk-h3">套装自动算最省</h3>
+          <p class="bk-p">「任选 3 张 20」「新刊 + 立牌 50」，购物车自动求出最省的组合，并写明省了多少。</p>
+        </div>
+
+        <div class="bk-vision-card">
+          <div class="bk-vision-emoji">🧾</div>
+          <h3 class="bk-h3">四步收摊，一张结算单</h3>
+          <p class="bk-p">清点订单 → 盘点 → 带回 → 结算。每个社团该分多少、我应转给谁多少，一目了然。</p>
+        </div>
+
+        <div class="bk-vision-card">
+          <div class="bk-vision-emoji">▦</div>
+          <h3 class="bk-h3">扫码加购</h3>
+          <p class="bk-p">摄像头连续扫条码，或直接插扫码枪。商业条码和自己贴的编号标签都认，全程离线。</p>
+        </div>
+
+        <div class="bk-vision-card">
+          <div class="bk-vision-emoji">🧭</div>
+          <h3 class="bk-h3">按展会生命周期组织</h3>
+          <p class="bk-p">展会工作台按「展前 / 现场 / 收摊」分组；「从上一场导入」一次搬过商品和套装。</p>
+        </div>
+      </div>
+
+      <div class="bk-vision-cta">
+        <a class="bk-btn bk-btn-primary" href="/releases/v1.2.0">
+          📖 v1.2 更新了什么
+        </a>
+      </div>
+    </section>
+
     <!-- ⭐ v1.1.0 头号新功能：AI 拍照识别 -->
     <section class="bk-section bk-vision-spotlight">
       <div class="bk-vision-badge">⭐ v1.1.0 新功能</div>
@@ -99,7 +143,7 @@
         <div class="bk-vision-card">
           <div class="bk-vision-emoji">🔌</div>
           <h3 class="bk-h3">本地推理 / 硬件加速</h3>
-          <p class="bk-p">模型下载后完全离线推理，不依赖网络。Android 端启用 NNAPI，桌面端支持 DirectML。</p>
+          <p class="bk-p">模型下载后完全离线推理，不依赖网络。桌面端支持 DirectML 显卡加速，Android 端走 CPU。</p>
         </div>
       </div>
 
@@ -148,8 +192,8 @@
         <div class="bk-node">
           <div class="bk-node-head bk-host">管理端（电脑 / 平板 / 手机）</div>
           <div class="bk-node-body">
-            <div class="bk-node-title">全局控制台</div>
-            <div class="bk-node-desc">商品录入 · 库存设置 · 订单管理 · 报表导出</div>
+            <div class="bk-node-title">管理后台</div>
+            <div class="bk-node-desc">商品库 · 展会与套装 · 订单统计 · 结算单</div>
           </div>
         </div>
 
@@ -162,7 +206,7 @@
             <div class="bk-node-head bk-customer">顾客端（平板）</div>
             <div class="bk-node-body">
               <div class="bk-node-title">自助点单机</div>
-              <div class="bk-node-desc">大图浏览 · 自助加购 · 扫码支付</div>
+              <div class="bk-node-desc">大图浏览 · 扫码 / 拍照加购 · 扫码支付</div>
             </div>
           </div>
 
@@ -170,7 +214,7 @@
             <div class="bk-node-head bk-vendor">摊主端（手机）</div>
             <div class="bk-node-body">
               <div class="bk-node-title">配货提醒器</div>
-              <div class="bk-node-desc">接单提醒 · 确认收款 · 配货提示</div>
+              <div class="bk-node-desc">接单提醒 · 确认收款 · 退货 · 收摊</div>
             </div>
           </div>
         </div>
@@ -187,19 +231,19 @@
         <!-- 横屏 1：统计 -->
         <figure class="bk-shot bk-shot--landscape">
         <img src="/images/stat.png" alt="统计报表页面截图" loading="lazy" />
-        <figcaption>统计报表：流水、热销、库存变化一目了然</figcaption>
+        <figcaption>现场统计：销售额趋势与各商品销量</figcaption>
         </figure>
 
         <!-- 横屏 2：顾客 -->
         <figure class="bk-shot bk-shot--landscape">
         <img src="/images/customer.png" alt="顾客自助点单页面截图" loading="lazy" />
-        <figcaption>顾客端：大图浏览 + 自助加购 + 扫码支付</figcaption>
+        <figcaption>顾客端：自助加购，套装优惠自动套用并写明省了多少</figcaption>
         </figure>
 
         <!-- 竖屏：摊主 -->
         <figure class="bk-shot bk-shot--portrait">
         <img src="/images/vendor.png" alt="摊主配货页面截图" loading="lazy" />
-        <figcaption>摊主端：接单提醒、确认收款、配货提示</figcaption>
+        <figcaption>摊主端：接单提醒、确认收款、退货与收摊</figcaption>
         </figure>
     </div>
     </section>

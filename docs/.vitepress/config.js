@@ -20,6 +20,7 @@ export default defineConfig({
         nav: [
           { text: '主页', link: '/' },
           { text: '快速上手', link: '/guide/getting-started' },
+          { text: 'v1.2 更新', link: '/releases/v1.2.0' },
           { text: 'FAQ', link: '/faq/' },
           { text: '联系与支持', link: '/support/contact' }
         ],
@@ -30,40 +31,53 @@ export default defineConfig({
         {
           text: '快速上手',
           items: [
-            {
-              text: '5 分钟极速上手',
-              link: '/guide/getting-started'
-            }
-          ]
-        },
-        {
-          text: '核心功能',
-          items: [
-            {
-              text: '🆕 AI 拍照识别',
-              link: '/guide/vision-search'
-            }
-          ]
-        },
-        {
-          text: '设计理念',
-          items: [
-            { text: '原子化与独立部署',
-              link: '/guide/philosophy'
-            },
-            {
-              text: '离线与支付问题',
-              link: '/guide/why-offline'
-            },
-            { text: '适用边界', link: '/guide/boundary' },
+            { text: '5 分钟极速上手', link: '/guide/getting-started' },
+            { text: '🆕 从 v1.1 升级到 v1.2', link: '/guide/upgrade-v1.2' }
           ]
         },
         {
           text: '使用指南',
           items: [
+            { text: '推荐工作流', link: '/guide/workflow' },
             { text: '组网与连接', link: '/guide/network' },
-            { text: '工作流说明', link: '/guide/workflow' },
+            { text: '🆕 套装与优惠', link: '/guide/lots' },
+            { text: '🆕 收摊与结算', link: '/guide/closing' },
             { text: '导出与复盘', link: '/guide/export' }
+          ]
+        },
+        {
+          text: '核心功能',
+          items: [
+            { text: 'AI 拍照识别', link: '/guide/vision-search' },
+            { text: '🆕 条码扫描', link: '/guide/barcode-scan' },
+            { text: '局域网 HTTPS', link: '/guide/lan-https' },
+            { text: '自动更新', link: '/guide/auto-update' }
+          ]
+        },
+        {
+          text: '设计理念',
+          items: [
+            { text: '原子化与独立部署', link: '/guide/philosophy' },
+            { text: '离线与支付问题', link: '/guide/why-offline' },
+            { text: '适用边界', link: '/guide/boundary' }
+          ]
+        },
+        {
+          text: '版本说明',
+          items: [
+            { text: 'v1.2.0', link: '/releases/v1.2.0' },
+            { text: 'v1.1.1', link: '/releases/v1.1.1' },
+            { text: 'v1.1.0', link: '/releases/v1.1.0' }
+          ]
+        }
+      ],
+      '/releases/': [
+        {
+          text: '版本说明',
+          items: [
+            { text: 'v1.2.0', link: '/releases/v1.2.0' },
+            { text: 'v1.1.1', link: '/releases/v1.1.1' },
+            { text: 'v1.1.0', link: '/releases/v1.1.0' }
           ]
         }
       ],
@@ -119,6 +133,7 @@ export default defineConfig({
         nav: [
           { text: 'Home', link: '/en/' },
           { text: 'Getting Started', link: '/en/guide/getting-started' },
+          { text: 'v1.2', link: '/en/releases/v1.2.0' },
           { text: 'FAQ', link: '/en/faq/' },
           { text: 'Support', link: '/en/support/contact' }
         ],
@@ -138,10 +153,24 @@ export default defineConfig({
             {
               text: 'User Guide',
               items: [
-                { text: 'Network Setup', link: '/en/guide/network' },
-                { text: 'Workflow Guide', link: '/en/guide/workflow' },
+                { text: '🆕 Upgrading from v1.1', link: '/en/guide/upgrade-v1.2' },
+                { text: 'Recommended Workflow', link: '/en/guide/workflow' },
+                { text: 'Networking & Connection', link: '/en/guide/network' },
+                { text: '🆕 Bundles & Discounts', link: '/en/guide/lots' },
+                { text: '🆕 Closing & Settlement', link: '/en/guide/closing' },
+                { text: '🆕 Barcode Scanning', link: '/en/guide/barcode-scan' },
                 { text: 'Export & Review', link: '/en/guide/export' }
               ]
+            },
+            {
+              text: 'Release Notes',
+              items: [{ text: 'v1.2.0', link: '/en/releases/v1.2.0' }]
+            }
+          ],
+          '/en/releases/': [
+            {
+              text: 'Release Notes',
+              items: [{ text: 'v1.2.0', link: '/en/releases/v1.2.0' }]
             }
           ],
 
@@ -197,6 +226,7 @@ export default defineConfig({
         nav: [
           { text: 'ホーム', link: '/ja/' },
           { text: 'クイックスタート', link: '/ja/guide/getting-started' },
+          { text: 'v1.2', link: '/ja/releases/v1.2.0' },
           { text: 'FAQ', link: '/ja/faq/' },
           { text: 'サポート', link: '/ja/support/contact' }
         ],
@@ -216,10 +246,24 @@ export default defineConfig({
             {
               text: 'ユーザーガイド',
               items: [
-                { text: 'ネットワーク設定', link: '/ja/guide/network' },
-                { text: 'ワークフロー', link: '/ja/guide/workflow' },
-                { text: 'エクスポートとレビュー', link: '/ja/guide/export' }
+                { text: '🆕 v1.1 から v1.2 へのアップグレード', link: '/ja/guide/upgrade-v1.2' },
+                { text: 'おすすめのワークフロー', link: '/ja/guide/workflow' },
+                { text: 'ネットワークと接続', link: '/ja/guide/network' },
+                { text: '🆕 セットと割引', link: '/ja/guide/lots' },
+                { text: '🆕 撤収と精算', link: '/ja/guide/closing' },
+                { text: '🆕 バーコードスキャン', link: '/ja/guide/barcode-scan' },
+                { text: 'エクスポートと振り返り', link: '/ja/guide/export' }
               ]
+            },
+            {
+              text: 'リリースノート',
+              items: [{ text: 'v1.2.0', link: '/ja/releases/v1.2.0' }]
+            }
+          ],
+          '/ja/releases/': [
+            {
+              text: 'リリースノート',
+              items: [{ text: 'v1.2.0', link: '/ja/releases/v1.2.0' }]
             }
           ],
 
@@ -235,13 +279,13 @@ export default defineConfig({
               text: 'カテゴリ',
               items: [
                 { text: 'ネットワーク接続', link: '/ja/faq/network' },
-                { text: '運用', link: '/ja/faq/operation' },
+                { text: '当日の運営', link: '/ja/faq/operation' },
                 { text: 'トラブル対応', link: '/ja/faq/incidents' },
-                { text: '画像とUI', link: '/ja/faq/images-ui' },
-                { text: 'データ移行', link: '/ja/faq/data-migration' },
-                { text: '上級テクニック', link: '/ja/faq/advanced' },
-                { text: 'ハードウェア推奨', link: '/ja/faq/hardware' },
-                { text: 'コミュニティ', link: '/ja/faq/community' }
+                { text: '画像表示', link: '/ja/faq/images-ui' },
+                { text: 'データの安全と移行', link: '/ja/faq/data-migration' },
+                { text: '応用テクニック', link: '/ja/faq/advanced' },
+                { text: 'ハードウェアの推奨', link: '/ja/faq/hardware' },
+                { text: 'コミュニティとオープンソース', link: '/ja/faq/community' }
               ]
             }
           ],
