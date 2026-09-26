@@ -13,6 +13,11 @@
     <!-- 对账警示条：页内首位。数据来自结算单的 warnings。 -->
     <SettlementWarnings :warnings="warnings" />
 
+    <div class="page-hint-row">
+      <p class="page-hint">结算后仍可补录垫付、结算调整与收摊清点；结算单在页面最下方。</p>
+      <HelpBubble page="event-settlement" />
+    </div>
+
     <!-- 垫付 -->
     <SectionCard title="垫付" class="block">
       <p class="block-note">展会结算之后，这两项仍然可以增删</p>
@@ -172,6 +177,7 @@ import type { Schemas } from '@/api/client'
 import { PageShell, EmptyState, SectionCard } from '@/components/ui'
 import SettlementReportView from '@/components/settlement/SettlementReportView.vue'
 import SettlementWarnings from '@/components/settlement/SettlementWarnings.vue'
+import HelpBubble from '@/components/shared/HelpBubble.vue'
 import { useFeedback } from '@/composables/useFeedback'
 
 const props = defineProps<{ id: string | number }>()
@@ -481,6 +487,19 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.page-hint-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
+}
+
+.page-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-base);
+}
+
 .block {
   margin-bottom: var(--space-xl);
 }

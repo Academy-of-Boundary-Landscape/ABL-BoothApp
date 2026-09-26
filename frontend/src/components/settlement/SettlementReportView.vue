@@ -106,7 +106,7 @@
             <div class="society-line">
               <span class="line-tag">【钱】</span>
               <span class="line-body">
-                商品原价 {{ formatYuan(s.gross) }} · Lot折让 {{ formatSigned(s.lot_discount) }} ·
+                商品原价 {{ formatYuan(s.gross) }} · 套装折让 {{ formatSigned(s.lot_discount) }} ·
                 {{ manualDiscountLabel(s.manual_discount) }} {{ formatSigned(s.manual_discount) }} →
                 净额 {{ formatYuan(s.net) }}
                 <!-- 这两项是「我应转给」的加项，xlsx 里有、网页上原来漏了。

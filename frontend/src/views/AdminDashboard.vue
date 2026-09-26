@@ -82,7 +82,7 @@ const guideSteps = computed(() => [
   },
   {
     key: 'ongoing',
-    label: '4. 将展会状态改为「进行中」',
+    label: '4. 在展会工作台点「开始展会」',
     done: hasOngoingEvent.value,
     to: '/admin/events',
   },

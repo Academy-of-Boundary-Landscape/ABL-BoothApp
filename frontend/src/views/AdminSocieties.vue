@@ -2,6 +2,7 @@
   <PageShell
     title="社团管理"
     subtitle="社团是货主的单位。每个商品都归属一个社团，「本社团」有且只有一个。"
+    help="societies"
     width="content"
   >
     <main class="page-body">

@@ -78,6 +78,13 @@
               WAL + 原子事务，多人同时下单不再丢数据。</span
             >
           </n-timeline-item>
+          <n-timeline-item type="success" title="v1.2：复式账本" time="2026年9月">
+            <span class="text-muted"
+              >账本重写为复式记账，货和钱都有来处和去处；新增套装与最优折扣、收摊向导与结算单（寄售分账）、
+              退货 / 赠送 / 报废、条码扫描与扫码枪；管理后台按展会生命周期重新组织，摊主端改为订单 /
+              库存 / 收摊三个 tab。</span
+            >
+          </n-timeline-item>
         </n-timeline>
       </SectionCard>
 

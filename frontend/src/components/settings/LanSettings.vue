@@ -59,7 +59,7 @@
         <n-button type="primary" :loading="isFetching" @click="fetchServerInfo">
           {{ isFetching ? '获取中...' : '获取局域网二维码' }}
         </n-button>
-        <span class="hint">生成当前局域网的访问二维码，给顾客手机或摊主平板扫</span>
+        <span class="hint">生成当前局域网的访问二维码，给点单平板和摊主手机扫</span>
       </div>
       <n-alert v-if="fetchError" type="error" :bordered="false">{{ fetchError }}</n-alert>
       <div v-if="serverInfo" class="qr-grid">

@@ -13,7 +13,7 @@
         <div class="ai-spotlight-body">
           <div class="ai-spotlight-emoji">📸</div>
           <div class="ai-spotlight-text">
-            <div class="ai-spotlight-badge">v1.1 新功能</div>
+            <div class="ai-spotlight-badge">可选功能</div>
             <div class="ai-spotlight-title">试试 AI 拍照识别</div>
             <div class="ai-spotlight-desc">
               让顾客拿手机对准商品拍张照，自动识别加入购物车。专为"帮朋友看摊 /

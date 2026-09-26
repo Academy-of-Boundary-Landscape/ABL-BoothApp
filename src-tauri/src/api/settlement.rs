@@ -1411,7 +1411,7 @@ fn write_summary_sheet(
     let headers = [
         "货主",
         "商品原价",
-        "Lot折让",
+        "套装折让",
         "手工折让",
         "净额",
         "退货保留",

@@ -1,13 +1,15 @@
 <template>
   <PageShell embedded width="full">
-    <!-- 说明：工作台子页是 embedded（外壳已有页头），PageShell 的 help 气泡不会渲染；
-         共享的 helpContent 没有 event-lots 条目，本文件不能扩共享配置。这段说明保留在页面上，
-         同时把「同货主」规则放进 LotDrawer 的字段说明。 -->
-    <p class="page-hint">
-      套装 = 从一组候选商品里按一个总价卖。选「这几样各 1 件凑齐」就是甲+乙合购； 选「任选 N
-      件、可以拿同款」就是同一本也能买 3 本。
-      <strong>候选商品必须属于同一个货主</strong>——替别的社团让价不是摊主能单方面决定的。
-    </p>
+    <!-- 工作台子页是 embedded（外壳已有页头），PageShell 的 help 气泡不会渲染，
+         所以和「展前 · 商品」一样把 HelpBubble 挂在页内说明旁边。 -->
+    <div class="page-hint-row">
+      <p class="page-hint">
+        套装 = 从一组候选商品里按一个总价卖。选「这几样各 1 件凑齐」就是甲+乙合购； 选「任选 N
+        件、可以拿同款」就是同一本也能买 3 本。
+        <strong>候选商品必须属于同一个货主</strong>——替别的社团让价不是摊主能单方面决定的。
+      </p>
+      <HelpBubble page="event-lots" />
+    </div>
 
     <SectionCard title="套装列表">
       <template #extra>
@@ -55,6 +57,7 @@ import { useFeedback } from '@/composables/useFeedback'
 import { useLotStore } from '@/stores/lotStore'
 import { useEventDetailStore } from '@/stores/eventDetailStore'
 import LotDrawer from '@/components/event-prep/LotDrawer.vue'
+import HelpBubble from '@/components/shared/HelpBubble.vue'
 import type { Schemas } from '@/api/client'
 
 const props = defineProps<{ id: number }>()
@@ -183,8 +186,15 @@ onUnmounted(() => {
 
 <style scoped>
 /* 页头改 embedded 后，原副标题挪到内容区顶部；保证文字不丢。 */
+.page-hint-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
+}
+
 .page-hint {
-  margin: 0 0 var(--space-lg);
+  margin: 0;
   color: var(--text-muted);
   font-size: var(--font-base);
   line-height: 1.6;
