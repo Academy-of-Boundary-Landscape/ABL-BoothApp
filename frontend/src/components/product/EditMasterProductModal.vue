@@ -23,11 +23,14 @@
                   </div>
                   <div class="form-group">
                     <label>商业条码（可选）:</label>
-                    <n-input
-                      v-model:value="localProduct.barcode"
-                      placeholder="JAN / ISBN 等，没有就留空"
-                      clearable
-                    />
+                    <div class="barcode-field">
+                      <n-input
+                        v-model:value="localProduct.barcode"
+                        placeholder="JAN / ISBN 等，没有就留空"
+                        clearable
+                      />
+                      <n-button size="small" @click="showScanModal = true">扫码填入</n-button>
+                    </div>
                   </div>
                   <div class="form-group">
                     <label>商品名称:</label>
@@ -232,6 +235,16 @@
       </div>
     </template>
   </AppModal>
+
+  <!-- 扫码填入：单次模式，扫到码写进条码输入框 -->
+  <AppModal
+    :show="showScanModal"
+    title="扫码填入条码"
+    size="md"
+    @update:show="showScanModal = $event"
+  >
+    <BarcodeScanPanel :products="[]" single @code="onScannedCode" @close="showScanModal = false" />
+  </AppModal>
 </template>
 
 <script setup lang="ts">
@@ -252,6 +265,7 @@ import {
 import { AppModal } from '@/components/ui'
 import { useFeedback } from '@/composables/useFeedback'
 
+import BarcodeScanPanel from '@/components/customer/BarcodeScanPanel.vue'
 import ImageUploader from '@/components/shared/ImageUploader.vue'
 import SocietySelect from '@/components/shared/SocietySelect.vue'
 import ImageCropper from '@/components/shared/ImageCropper.vue'
@@ -301,6 +315,13 @@ const editError = ref('')
 const localProduct = ref<EditableProduct | null>(null)
 const editFormFile = ref<File | undefined>(undefined)
 const isImageRemovedForEdit = ref(false)
+
+// 扫码填入：单次扫码面板 → 条码输入框。
+const showScanModal = ref(false)
+function onScannedCode(code: string) {
+  if (localProduct.value) localProduct.value.barcode = code
+  showScanModal.value = false
+}
 
 // ===== 基本信息 Tab =====
 watch(
@@ -588,6 +609,16 @@ async function handleDeleteImage(img: Schemas['MasterProductImageDto']) {
 .form-group {
   display: flex;
   flex-direction: column;
+}
+
+.barcode-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.barcode-field :deep(.n-input) {
+  flex: 1;
 }
 label {
   margin-bottom: var(--space-sm);

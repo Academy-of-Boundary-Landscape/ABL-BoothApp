@@ -3,7 +3,7 @@
     <!-- ================================================================
          点单模式：分类侧栏（平板/桌面）+ 商品网格
     ================================================================= -->
-    <template v-if="!isVisionMode">
+    <template v-if="mode === 'list'">
       <!-- 分类侧栏：只在横屏宽屏渲染；竖屏平板与手机改用工具栏里的横滑分类 -->
       <aside v-if="showSidebar" class="category-sidebar">
         <div class="category-sidebar__title">商品分类</div>
@@ -55,21 +55,31 @@
               <div class="mode-toggle">
                 <button
                   type="button"
-                  class="mode-btn"
-                  :class="{ 'is-active': !isVisionMode }"
-                  @click="isVisionMode = false"
+                  class="mode-btn mode-btn--primary"
+                  :class="{ 'is-active': isMode('list') }"
+                  @click="setMode('list')"
                 >
                   商品列表
                 </button>
                 <button
                   type="button"
-                  class="mode-btn"
-                  :class="{ 'is-active': isVisionMode }"
+                  class="mode-btn mode-btn--secondary"
+                  :class="{ 'is-active': isMode('vision') }"
                   :disabled="!visionAvailable"
                   :title="visionAvailable ? undefined : VISION_UNAVAILABLE_HINT"
-                  @click="isVisionMode = true"
+                  @click="setMode('vision')"
                 >
-                  拍照识别
+                  📷 拍照识别
+                </button>
+                <button
+                  type="button"
+                  class="mode-btn mode-btn--secondary"
+                  :class="{ 'is-active': isMode('scan') }"
+                  :disabled="!scanAvailable"
+                  :title="scanAvailable ? undefined : SCAN_UNAVAILABLE_HINT"
+                  @click="setMode('scan')"
+                >
+                  ▦ 扫码
                 </button>
               </div>
             </div>
@@ -193,7 +203,7 @@
     <!-- ================================================================
          拍照识别模式：取景 + 识别结果
     ================================================================= -->
-    <section v-else class="vision-panel">
+    <section v-else-if="mode === 'vision'" class="vision-panel">
       <div class="toolbar">
         <div class="toolbar__row">
           <div class="toolbar__left toolbar__left--empty" />
@@ -201,21 +211,31 @@
             <div class="mode-toggle">
               <button
                 type="button"
-                class="mode-btn"
-                :class="{ 'is-active': !isVisionMode }"
-                @click="isVisionMode = false"
+                class="mode-btn mode-btn--primary"
+                :class="{ 'is-active': isMode('list') }"
+                @click="setMode('list')"
               >
                 商品列表
               </button>
               <button
                 type="button"
-                class="mode-btn"
-                :class="{ 'is-active': isVisionMode }"
+                class="mode-btn mode-btn--secondary"
+                :class="{ 'is-active': isMode('vision') }"
                 :disabled="!visionAvailable"
                 :title="visionAvailable ? undefined : VISION_UNAVAILABLE_HINT"
-                @click="isVisionMode = true"
+                @click="setMode('vision')"
               >
-                拍照识别
+                📷 拍照识别
+              </button>
+              <button
+                type="button"
+                class="mode-btn mode-btn--secondary"
+                :class="{ 'is-active': isMode('scan') }"
+                :disabled="!scanAvailable"
+                :title="scanAvailable ? undefined : SCAN_UNAVAILABLE_HINT"
+                @click="setMode('scan')"
+              >
+                ▦ 扫码
               </button>
             </div>
           </div>
@@ -254,6 +274,13 @@
           @search-error="refreshVisionAvailability"
         />
       </div>
+    </section>
+
+    <!-- ================================================================
+         扫码模式：连续扫描条码直接加购
+    ================================================================= -->
+    <section v-else class="scan-panel">
+      <BarcodeScanPanel :products="store.products || []" @add="store.addToCart" @close="setMode('list')" />
     </section>
 
     <!-- ======== 购物车：宽屏侧栏；平板竖屏 / 手机为底部可展开条 ======== -->
@@ -307,6 +334,28 @@
       @close="closePaymentModal"
     />
 
+    <!-- ======== 扫码枪命中多件：选择一件（与扫码面板同一形态） ======== -->
+    <AppModal
+      :show="scanGunCandidates.length > 0"
+      title="选择商品"
+      size="sm"
+      :closable="false"
+      @update:show="onScanGunCandidatesShow"
+    >
+      <div class="gun-candidates">
+        <button
+          v-for="product in scanGunCandidates"
+          :key="product.id"
+          type="button"
+          class="gun-candidate"
+          @click="pickScanGunCandidate(product)"
+        >
+          <span class="gun-candidate__name">{{ product.name }}</span>
+          <span class="gun-candidate__code">{{ product.product_code }}</span>
+        </button>
+      </div>
+    </AppModal>
+
     <!-- ======== 下单成功：告诉顾客单号，几秒后回吸引屏等下一位 ======== -->
     <Transition name="fade">
       <div v-if="showSuccess" class="success-screen" @click="finishSuccess">
@@ -327,24 +376,34 @@
           <h1 v-if="store.activeEvent?.name" class="attract-event">{{ store.activeEvent.name }}</h1>
 
           <div class="attract-modes">
-            <button type="button" class="attract-mode-btn" @click="enterWithMode(false)">
+            <button type="button" class="attract-mode-btn" @click="enterWithMode('list')">
               <span class="attract-mode-icon">&#9783;</span>
-              <span class="attract-mode-label">浏览点单</span>
+              <span class="attract-mode-label">开始点单</span>
               <span class="attract-mode-desc">翻看商品列表，点击加入购物车</span>
             </button>
+          </div>
+
+          <p class="attract-quick">
             <button
               type="button"
-              class="attract-mode-btn"
+              class="attract-link"
               :disabled="!visionAvailable"
-              @click="enterWithMode(true)"
+              :title="visionAvailable ? undefined : VISION_UNAVAILABLE_HINT"
+              @click="enterWithMode('vision')"
             >
-              <span class="attract-mode-icon">&#9862;</span>
-              <span class="attract-mode-label">拍照识别</span>
-              <span class="attract-mode-desc">
-                {{ visionAvailable ? '对准商品拍一拍，自动识别下单' : VISION_UNAVAILABLE_HINT }}
-              </span>
+              拍照识别
             </button>
-          </div>
+            <span class="attract-quick__sep">·</span>
+            <button
+              type="button"
+              class="attract-link"
+              :disabled="!scanAvailable"
+              :title="scanAvailable ? undefined : SCAN_UNAVAILABLE_HINT"
+              @click="enterWithMode('scan')"
+            >
+              扫码
+            </button>
+          </p>
 
           <p class="attract-sub" @click="dismissAttractScreen">— 或点击此处直接开始 —</p>
         </div>
@@ -363,7 +422,9 @@
 <script setup lang="ts">
 import { useFeedback } from '@/composables/useFeedback'
 import { useViewport } from '@/composables/useViewport'
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { useScanGun } from '@/composables/useScanGun'
+import { useScanResultHandler } from '@/composables/useScanResultHandler'
+import { ref, onMounted, onUnmounted, computed, defineAsyncComponent, watch } from 'vue'
 import { useCustomerStore } from '@/stores/customerStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useConnectionCheck } from '@/composables/useConnectionCheck'
@@ -373,7 +434,7 @@ import PaymentModal from '@/components/customer/PaymentModal.vue'
 import OrderConfirmPanel from '@/components/customer/OrderConfirmPanel.vue'
 import VisionSearch from '@/components/shared/VisionSearch.vue'
 import { getVisionStatus } from '@/services/vision'
-import { AsyncState, EmptyState } from '@/components/ui'
+import { AsyncState, EmptyState, AppModal } from '@/components/ui'
 import { cents, type Cents } from '@/utils/money'
 import type { Schemas } from '@/api/client'
 import { NScrollbar, NSlider, NButton } from 'naive-ui'
@@ -395,8 +456,22 @@ const cartAsSidebar = computed(() => !isTablet.value)
 const showSidebar = cartAsSidebar
 
 // ===================== 模式切换 =====================
-const isVisionMode = ref(false)
+// 商品列表是主视图；拍照识别 / 扫码是次级面板，进入后有「返回商品列表」。
+type CustomerMode = 'list' | 'vision' | 'scan'
+const mode = ref<CustomerMode>('list')
+// 模板里 v-if 会把 mode 收窄；用函数读写避免「看起来不可能」的比较报错。
+function setMode(next: CustomerMode) {
+  mode.value = next
+}
+function isMode(target: CustomerMode): boolean {
+  return mode.value === target
+}
 const numericEventId = computed(() => parseInt(props.id, 10) || undefined)
+
+// 扫码面板首次打开时才动态加载（内含 barcode-detector / zxing-wasm），首屏不受影响。
+const BarcodeScanPanel = defineAsyncComponent(
+  () => import('@/components/customer/BarcodeScanPanel.vue')
+)
 
 // 识别没就绪（没装模型、索引为空、运行库加载失败、或这个版本没编进识别）时入口置灰，
 // 免得顾客拍完照才看到「请先在管理后台安装模型」。
@@ -408,11 +483,17 @@ async function refreshVisionAvailability() {
   } catch {
     visionAvailable.value = false
   }
-  if (!visionAvailable.value) isVisionMode.value = false
+  if (!visionAvailable.value && mode.value === 'vision') mode.value = 'list'
 }
 
+// 扫码不依赖后端模型，只要求安全上下文与 getUserMedia；没有摄像头 / 非 HTTPS 时置灰。
+const SCAN_UNAVAILABLE_HINT = '需要 HTTPS 连接才能使用摄像头'
+const scanAvailable = computed(
+  () => Boolean(window.isSecureContext && navigator.mediaDevices?.getUserMedia)
+)
+
 // 切换模式时重新展示引导
-watch(isVisionMode, () => {
+watch(mode, () => {
   if (!showAttractScreen.value) triggerGuide()
 })
 
@@ -433,6 +514,38 @@ function onVisionSelect(hit: Schemas['VisionSearchResult']) {
   }
   store.addToCart(product)
 }
+
+// ===================== 扫码枪 =====================
+// 任何 mode 下都监听键盘：扫码枪「极短间隔字符 + 回车」命中后走与扫码面板相同的处理
+// （售罄判断 → 加购 → 轻提示）。命中多件时用选择弹窗，与面板行为一致。
+const fb = useFeedback()
+const scanGunCandidates = ref<Schemas['ProductEventProduct'][]>([])
+const scanGunHandler = useScanResultHandler({
+  products: () => store.products || [],
+  addToCart: (product) => store.addToCart(product),
+  notify: (message, kind) => {
+    if (kind === 'success') fb.success(message)
+    else fb.error(message)
+  },
+})
+
+function onScanGunCode(code: string) {
+  // 吸引屏挡着时先撤掉，让购物车的变化可见。
+  if (showAttractScreen.value) dismissAttractScreen()
+  const outcome = scanGunHandler.handleCode(code)
+  if (outcome.kind === 'multiple') scanGunCandidates.value = outcome.products
+}
+
+function pickScanGunCandidate(product: Schemas['ProductEventProduct']) {
+  scanGunCandidates.value = []
+  scanGunHandler.resolveProduct(product)
+}
+
+function onScanGunCandidatesShow(show: boolean) {
+  if (!show) scanGunCandidates.value = []
+}
+
+useScanGun({ onCode: onScanGunCode })
 
 // ===================== 点单模式 =====================
 const showPaymentModal = ref(false)
@@ -589,7 +702,7 @@ function resetIdleTimer() {
   idleTimer = setTimeout(() => {
     showAttractScreen.value = true
     store.clearCart() // 顾客之间自动清空购物车
-    isVisionMode.value = false // 回到默认的商品列表模式
+    mode.value = 'list' // 回到默认的商品列表模式
     selectedTag.value = null
   }, IDLE_TIMEOUT_MS)
 }
@@ -603,8 +716,8 @@ function dismissAttractScreen() {
   triggerGuide()
 }
 
-function enterWithMode(vision: boolean) {
-  isVisionMode.value = vision
+function enterWithMode(next: CustomerMode) {
+  mode.value = next
   dismissAttractScreen()
 }
 
@@ -675,7 +788,7 @@ let successTimer: ReturnType<typeof setTimeout> | null = null
 function closePaymentModal() {
   showPaymentModal.value = false
   store.clearCart()
-  isVisionMode.value = false
+  mode.value = 'list'
   // 付款完成是一个自然的「交接点」：先亮一下单号，再回到吸引屏等待下一位顾客
   showSuccess.value = true
   clearTimeout(successTimer ?? undefined)
@@ -769,7 +882,8 @@ function finishSuccess() {
 
 /* ===================== 中间面板（点单 & 识别共用结构） ===================== */
 .product-panel,
-.vision-panel {
+.vision-panel,
+.scan-panel {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -924,6 +1038,16 @@ function finishSuccess() {
   color: var(--text-white);
   font-weight: var(--weight-bold);
 }
+/* 次级按钮（拍照识别 / 扫码）：比「商品列表」主按钮小一级 */
+.mode-btn--secondary {
+  min-height: 34px;
+  padding: var(--space-xs) var(--space-md);
+  font-size: var(--font-xs);
+}
+.mode-btn--secondary.is-active {
+  background: color-mix(in srgb, var(--accent-color) 18%, transparent);
+  color: var(--accent-color);
+}
 
 /* ===== 标签筛选栏 ===== */
 .tag-filter {
@@ -993,9 +1117,40 @@ function finishSuccess() {
 
 /* 底部购物车条：给内容区留出被条盖住的空间（含 iPhone 安全区） */
 .customer-view--cartbar .product-scroll,
-.customer-view--cartbar .vision-panel__body {
+.customer-view--cartbar .vision-panel__body,
+.customer-view--cartbar .scan-panel {
   /* stylelint-disable-next-line declaration-property-value-allowed-list -- 为底部购物车条（组件私有布局变量）+ iPhone 安全区留白，非间距刻度 */
   padding-bottom: calc(var(--cart-bar-h) + var(--space-xl) + env(safe-area-inset-bottom, 0px));
+}
+
+/* ===================== 扫码枪多件命中：候选列表 ===================== */
+.gun-candidates {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+.gun-candidate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--card-bg-color);
+  cursor: pointer;
+  text-align: left;
+}
+.gun-candidate:hover {
+  border-color: var(--accent-color);
+}
+.gun-candidate__name {
+  color: var(--primary-text-color);
+  font-size: var(--font-base);
+}
+.gun-candidate__code {
+  color: var(--text-disabled);
+  font-size: var(--font-sm);
 }
 
 /* ===================== 闲置吸引屏 ===================== */
@@ -1102,6 +1257,35 @@ function finishSuccess() {
 }
 .attract-sub:hover {
   opacity: 0.8;
+}
+
+/* 吸引屏：次级入口（拍照识别 / 扫码）小字链接 */
+.attract-quick {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  margin: var(--space-lg) 0 0;
+}
+.attract-link {
+  padding: var(--space-xs) var(--space-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  text-decoration: underline;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.attract-link:not(:disabled):hover {
+  color: var(--accent-color);
+}
+.attract-link:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.attract-quick__sep {
+  color: var(--text-muted);
 }
 
 /* ===================== 引导横幅（网格上方，占位不遮挡） ===================== */
@@ -1247,7 +1431,8 @@ function finishSuccess() {
   }
 
   .product-panel,
-  .vision-panel {
+  .vision-panel,
+  .scan-panel {
     flex: 1;
     min-height: 0;
   }
