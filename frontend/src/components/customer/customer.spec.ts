@@ -36,6 +36,7 @@ const mocks = vi.hoisted(() => ({
   apiDelete: vi.fn(),
   fbAlert: vi.fn(),
   searchByImage: vi.fn(),
+  getVisionStatus: vi.fn(),
 }))
 
 vi.mock('@/api/client', () => {
@@ -81,6 +82,7 @@ vi.mock('@/composables/useFeedback', () => ({
 
 vi.mock('@/services/vision', () => ({
   searchByImage: mocks.searchByImage,
+  getVisionStatus: mocks.getVisionStatus,
 }))
 
 function makeProduct(
@@ -290,6 +292,58 @@ describe('CustomerView 下单流程', () => {
     pay.vm.$emit('close')
     await nextTick()
     expect(wrapper.find('.success-screen').text()).toContain('#42')
+    wrapper.unmount()
+  })
+})
+
+describe('CustomerView 拍照识别入口', () => {
+  function mountCustomer(): VueWrapper {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    return mount(CustomerView, {
+      props: { id: '3' },
+      global: {
+        plugins: [pinia],
+        stubs: {
+          ProductGrid: true,
+          VisionSearch: true,
+          PaymentModal: true,
+          RouterLink: { template: '<a class="router-link-stub"><slot /></a>' },
+        },
+      },
+    })
+  }
+
+  function visionButtons(wrapper: VueWrapper) {
+    return wrapper.findAll('button').filter((b) => b.text().includes('拍照识别'))
+  }
+
+  it('识别未就绪时，吸引屏和工具栏的入口都置灰', async () => {
+    mocks.getVisionStatus.mockResolvedValue({ is_ready: false })
+    const wrapper = mountCustomer()
+    await flushPromises()
+    const btns = visionButtons(wrapper)
+    expect(btns.length).toBe(2)
+    for (const b of btns) expect(b.attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.attract-screen').text()).toContain('拍照识别暂不可用')
+    wrapper.unmount()
+  })
+
+  it('这个版本没编进识别（接口 404）也置灰', async () => {
+    mocks.getVisionStatus.mockRejectedValue(new Error('404'))
+    const wrapper = mountCustomer()
+    await flushPromises()
+    for (const b of visionButtons(wrapper)) expect(b.attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('就绪时入口可用', async () => {
+    mocks.getVisionStatus.mockResolvedValue({ is_ready: true })
+    const wrapper = mountCustomer()
+    await flushPromises()
+    const btns = visionButtons(wrapper)
+    expect(btns.length).toBe(2)
+    for (const b of btns) expect(b.attributes('disabled')).toBeUndefined()
     wrapper.unmount()
   })
 })

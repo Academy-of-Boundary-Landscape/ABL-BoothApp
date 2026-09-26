@@ -65,6 +65,8 @@
                   type="button"
                   class="mode-btn"
                   :class="{ 'is-active': isVisionMode }"
+                  :disabled="!visionAvailable"
+                  :title="visionAvailable ? undefined : VISION_UNAVAILABLE_HINT"
                   @click="isVisionMode = true"
                 >
                   拍照识别
@@ -209,6 +211,8 @@
                 type="button"
                 class="mode-btn"
                 :class="{ 'is-active': isVisionMode }"
+                :disabled="!visionAvailable"
+                :title="visionAvailable ? undefined : VISION_UNAVAILABLE_HINT"
                 @click="isVisionMode = true"
               >
                 拍照识别
@@ -247,6 +251,7 @@
           :event-id="numericEventId"
           :top-k="5"
           @select="onVisionSelect"
+          @search-error="refreshVisionAvailability"
         />
       </div>
     </section>
@@ -327,10 +332,17 @@
               <span class="attract-mode-label">浏览点单</span>
               <span class="attract-mode-desc">翻看商品列表，点击加入购物车</span>
             </button>
-            <button type="button" class="attract-mode-btn" @click="enterWithMode(true)">
+            <button
+              type="button"
+              class="attract-mode-btn"
+              :disabled="!visionAvailable"
+              @click="enterWithMode(true)"
+            >
               <span class="attract-mode-icon">&#9862;</span>
               <span class="attract-mode-label">拍照识别</span>
-              <span class="attract-mode-desc">对准商品拍一拍，自动识别下单</span>
+              <span class="attract-mode-desc">
+                {{ visionAvailable ? '对准商品拍一拍，自动识别下单' : VISION_UNAVAILABLE_HINT }}
+              </span>
             </button>
           </div>
 
@@ -360,6 +372,7 @@ import ShoppingCart from '@/components/customer/ShoppingCart.vue'
 import PaymentModal from '@/components/customer/PaymentModal.vue'
 import OrderConfirmPanel from '@/components/customer/OrderConfirmPanel.vue'
 import VisionSearch from '@/components/shared/VisionSearch.vue'
+import { getVisionStatus } from '@/services/vision'
 import { AsyncState, EmptyState } from '@/components/ui'
 import { cents, type Cents } from '@/utils/money'
 import type { Schemas } from '@/api/client'
@@ -384,6 +397,19 @@ const showSidebar = cartAsSidebar
 // ===================== 模式切换 =====================
 const isVisionMode = ref(false)
 const numericEventId = computed(() => parseInt(props.id, 10) || undefined)
+
+// 识别没就绪（没装模型、索引为空、运行库加载失败、或这个版本没编进识别）时入口置灰，
+// 免得顾客拍完照才看到「请先在管理后台安装模型」。
+const VISION_UNAVAILABLE_HINT = '拍照识别暂不可用'
+const visionAvailable = ref(false)
+async function refreshVisionAvailability() {
+  try {
+    visionAvailable.value = (await getVisionStatus()).is_ready
+  } catch {
+    visionAvailable.value = false
+  }
+  if (!visionAvailable.value) isVisionMode.value = false
+}
 
 // 切换模式时重新展示引导
 watch(isVisionMode, () => {
@@ -442,6 +468,7 @@ watch(isPhone, syncLayout)
 
 onMounted(() => {
   store.setupStoreForEvent(props.id)
+  refreshVisionAvailability()
   syncLayout()
   ACTIVITY_EVENTS.forEach((e) => window.addEventListener(e, onUserActivity, { passive: true }))
 })
@@ -568,6 +595,7 @@ function resetIdleTimer() {
 }
 
 function dismissAttractScreen() {
+  refreshVisionAvailability()
   showAttractScreen.value = false
   selectedTag.value = null
   resetIdleTimer()
@@ -887,6 +915,10 @@ function finishSuccess() {
   cursor: pointer;
   transition: all 0.15s;
 }
+.mode-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .mode-btn.is-active {
   background: var(--accent-color);
   color: var(--text-white);
@@ -1031,8 +1063,12 @@ function finishSuccess() {
   cursor: pointer;
   transition: all 0.2s;
 }
-.attract-mode-btn:hover,
-.attract-mode-btn:active {
+.attract-mode-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.attract-mode-btn:not(:disabled):hover,
+.attract-mode-btn:not(:disabled):active {
   border-color: var(--accent-color);
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);

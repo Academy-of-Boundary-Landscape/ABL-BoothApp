@@ -69,6 +69,11 @@ pub fn init_runtime(path: Option<&Path>) -> Result<(), String> {
         .clone()
 }
 
+/// ONNX Runtime 加载失败的原因；还没尝试加载或加载成功时为 `None`。
+pub fn runtime_load_error() -> Option<String> {
+    ORT_RUNTIME.get().and_then(|r| r.clone().err())
+}
+
 /// 系统 GPU 列表（启动时探测一次）
 static GPU_DEVICES: std::sync::OnceLock<Vec<GpuDevice>> = std::sync::OnceLock::new();
 

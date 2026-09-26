@@ -774,6 +774,18 @@ async fn process_import_bytes(state: AppState, data: Bytes, t0: Instant) -> Resp
         )
             .into_response();
     }
+    // 新导入的识别图还没有 embedding，补一轮增量，否则拍照识别认不出这些商品。
+    // 重建已在跑时会挂起、跑完再补，不会丢。
+    #[cfg(feature = "vision")]
+    if images_count > 0 {
+        state.vision_runtime.clone().start_rebuild_task(
+            state.db.clone(),
+            state.upload_dir.clone(),
+            false,
+            None,
+        );
+    }
+
     log::warn!(
         "{} import: done — products={} images={} (commit took {:?}, total {:?})",
         TAG,

@@ -277,6 +277,16 @@ pub fn run() {
                 {
                     log::warn!("[Vision] install_builtin_models failed: {}", e);
                 }
+                // v1.1.x 把每张拍照搜索的查询图都存进了 uploads/vision/query，没有任何
+                // 记录引用它们，而且顾客端用前置摄像头、多半拍到人脸。现在已不再落盘，
+                // 这里把老版本攒下的清掉。
+                let query_dir = state.upload_dir.join("vision").join("query");
+                if query_dir.exists() {
+                    match tokio::fs::remove_dir_all(&query_dir).await {
+                        Ok(_) => log::info!("[Vision] removed stale query images: {:?}", query_dir),
+                        Err(e) => log::warn!("[Vision] remove {:?} failed: {}", query_dir, e),
+                    }
+                }
             });
 
             if let Err(e) =

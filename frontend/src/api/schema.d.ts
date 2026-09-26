@@ -1008,23 +1008,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/vision/feedback": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** 保存一次以图搜图的用户反馈（正确/纠错），并把图片加入识别索引。 */
-        post: operations["vision.save_feedback"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/vision/models": {
         parameters: {
             query?: never;
@@ -2182,25 +2165,6 @@ export interface components {
             gpu_devices: components["schemas"]["VisionGpuDevice"][];
             platform: string;
         };
-        /** @description 仅用于 OpenAPI 文档：`/feedback` 的 multipart 表单字段。 */
-        VisionFeedbackForm: {
-            /** @description 用户选中的商品 id，必填。 */
-            chosen_master_product_id: string;
-            /**
-             * Format: binary
-             * @description 反馈图片，必填。
-             */
-            image: string;
-            /** @description `1`/`true`/`TRUE`/`True` 表示识别正确，缺省正确。 */
-            is_correct?: string | null;
-        };
-        VisionFeedbackResponse: {
-            /** Format: int64 */
-            image_id: number;
-            image_url: string;
-            kind: string;
-            ok: boolean;
-        };
         VisionGpuDevice: {
             /** Format: int32 */
             device_id: number;
@@ -2302,6 +2266,8 @@ export interface components {
             is_ready: boolean;
             is_rebuilding: boolean;
             last_rebuild_at?: string | null;
+            /** @description 最近一次重建失败的原因（下一次成功后清空） */
+            last_rebuild_error?: string | null;
             model_id: string;
             model_version: string;
             reason?: string | null;
@@ -2309,6 +2275,8 @@ export interface components {
             rebuild_processed: number;
             /** Format: int64 */
             rebuild_total: number;
+            /** @description ONNX Runtime 加载失败的原因；有值时识别整体不可用，`is_ready` 恒为 false */
+            runtime_error?: string | null;
         };
     };
     responses: never;
@@ -6259,56 +6227,6 @@ export interface operations {
                 };
                 content: {
                     "text/plain": string;
-                };
-            };
-        };
-    };
-    "vision.save_feedback": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "multipart/form-data": components["schemas"]["VisionFeedbackForm"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["VisionFeedbackResponse"];
-                };
-            };
-            /** @description 缺少图片或 chosen_master_product_id */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorBody"];
-                };
-            };
-            /** @description 商品不存在 */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorBody"];
-                };
-            };
-            /** @description 上传或数据库失败 */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorBody"];
                 };
             };
         };

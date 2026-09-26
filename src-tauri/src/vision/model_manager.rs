@@ -102,6 +102,20 @@ impl ModelManager {
         self.config.read().await.as_ref().map(|c| c.runtime.clone())
     }
 
+    /// 修改推理设备并落盘。内存里这份配置是所有读路径的来源，而 activate_model
+    /// 也会把它整份写回文件，所以只写文件不改内存会被下一次激活覆盖掉。
+    pub async fn set_execution_provider(&self, ep: &str) -> Result<(), String> {
+        let mut guard = self.config.write().await;
+        let config = guard
+            .as_mut()
+            .ok_or_else(|| "vision config not loaded".to_string())?;
+        let mut next = config.clone();
+        next.runtime.execution_provider = ep.to_string();
+        download::save_runtime_config(&self.app_data_dir, &next).await?;
+        *config = next;
+        Ok(())
+    }
+
     // ========== 模型安装 ==========
 
     /// 创建模型下载任务
@@ -248,8 +262,10 @@ impl ModelManager {
             return Err(format!("Model not installed: {}", model_id));
         }
 
-        // 设置重建中状态
-        state_manager.set_rebuilding(true).await;
+        // 重建进行中切模型，旧任务结束时会把状态写回旧模型的。让用户等它跑完。
+        if state_manager.snapshot().await.is_rebuilding {
+            return Err("索引正在构建中，请等构建完成再切换模型".to_string());
+        }
 
         // 更新配置
         {
@@ -291,6 +307,7 @@ impl ModelManager {
                 reason: Some("VISION_REBUILD_REQUIRED".to_string()),
                 rebuild_processed: 0,
                 rebuild_total: 0,
+                last_rebuild_error: None,
             })
             .await;
 

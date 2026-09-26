@@ -141,7 +141,6 @@ impl RebuildExecutor {
             .map(|meta| meta.updated_at);
 
         Ok(RebuildResult {
-            embedded_count,
             index_version,
             index_size,
             last_rebuild_at,
@@ -178,7 +177,6 @@ impl RebuildExecutor {
 /// 重建结果
 #[derive(Debug)]
 pub struct RebuildResult {
-    pub embedded_count: i64,
     pub index_version: i64,
     pub index_size: i64,
     pub last_rebuild_at: Option<String>,

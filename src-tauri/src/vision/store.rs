@@ -141,15 +141,6 @@ impl VisionStore {
         Ok(result.0)
     }
 
-    pub async fn master_product_exists(&self, master_product_id: i64) -> Result<bool, sqlx::Error> {
-        let exists: Option<(i64,)> = sqlx::query_as("SELECT id FROM master_products WHERE id = ?")
-            .bind(master_product_id)
-            .fetch_optional(&self.db)
-            .await?;
-
-        Ok(exists.is_some())
-    }
-
     pub async fn insert_master_product_image(
         &self,
         master_product_id: i64,

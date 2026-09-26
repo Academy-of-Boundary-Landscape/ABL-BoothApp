@@ -5,16 +5,26 @@ use std::path::Path;
 use tokio::fs;
 use uuid::Uuid;
 
+/// 上传文件落盘时允许保留的扩展名。静态服务按扩展名给 Content-Type，
+/// 放过 `.html` / `.svg` 就等于让上传者在本站同源下放一个能跑脚本的页面。
+const ALLOWED_IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "bmp", "avif"];
+
+fn safe_image_ext(original_file_name: Option<&str>) -> String {
+    original_file_name
+        .and_then(|name| std::path::Path::new(name).extension())
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .filter(|e| ALLOWED_IMAGE_EXTS.contains(&e.as_str()))
+        .unwrap_or_else(|| "jpg".to_string())
+}
+
 pub async fn save_upload_bytes(
     base_dir: &Path,
     data: &[u8],
     original_file_name: Option<&str>,
     sub_folder: Option<&str>,
 ) -> Result<String, String> {
-    let ext = original_file_name
-        .and_then(|name| std::path::Path::new(name).extension())
-        .and_then(|e| e.to_str())
-        .unwrap_or("jpg");
+    let ext = safe_image_ext(original_file_name);
 
     let new_filename = format!("{}.{}", Uuid::new_v4(), ext);
 
@@ -87,6 +97,17 @@ pub async fn delete_file(base_dir: &Path, relative_path: &str) -> std::io::Resul
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn upload_keeps_only_raster_image_extensions() {
+        use super::safe_image_ext;
+        assert_eq!(safe_image_ext(Some("a.PNG")), "png");
+        assert_eq!(safe_image_ext(Some("a.webp")), "webp");
+        assert_eq!(safe_image_ext(Some("evil.html")), "jpg");
+        assert_eq!(safe_image_ext(Some("evil.svg")), "jpg");
+        assert_eq!(safe_image_ext(Some("noext")), "jpg");
+        assert_eq!(safe_image_ext(None), "jpg");
+    }
+
     use super::*;
 
     #[tokio::test]

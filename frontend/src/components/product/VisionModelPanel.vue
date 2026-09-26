@@ -316,7 +316,9 @@ const hasInstalledModel = computed(() => models.value.some((m) => m.installed))
 
 const statusText = computed(() => {
   if (status.value.is_rebuilding) return '正在构建索引...'
+  if (status.value.runtime_error) return '运行库加载失败'
   if (status.value.is_ready) return '就绪'
+  if (status.value.reason === 'VISION_REBUILD_FAILED') return '构建失败'
   if (status.value.reason === 'VISION_INDEX_EMPTY') return '索引为空'
   if (status.value.reason === 'VISION_REBUILD_REQUIRED') return '需要重建'
   if (!activeModel.value) return '未激活模型'
@@ -334,6 +336,20 @@ interface NextAction {
 const nextAction = computed<NextAction | null>(() => {
   if (loadError.value) return null
   if (status.value.is_rebuilding) return null
+  if (status.value.runtime_error) {
+    return {
+      type: 'warning',
+      text:
+        `AI 识别的运行库加载失败，识别功能已停用（其余功能不受影响）。` +
+        `重新安装摊盒通常可以解决。详情：${status.value.runtime_error}`,
+    }
+  }
+  if (status.value.last_rebuild_error) {
+    return {
+      type: 'warning',
+      text: `上次构建索引失败：${status.value.last_rebuild_error}`,
+    }
+  }
   if (status.value.is_ready) return null
   if (!hasInstalledModel.value) {
     return {
@@ -432,8 +448,13 @@ function startRebuildPoll() {
       isRebuilding.value = false
       rebuildProcessed.value = 0
       rebuildTotal.value = 0
-      actionMsg.value = `索引构建完成，共 ${status.value.index_size ?? 0} 条嵌入`
-      actionMsgType.value = 'success'
+      if (status.value.last_rebuild_error) {
+        actionMsg.value = `索引构建失败：${status.value.last_rebuild_error}`
+        actionMsgType.value = 'error'
+      } else {
+        actionMsg.value = `索引构建完成，共 ${status.value.index_size ?? 0} 条嵌入`
+        actionMsgType.value = 'success'
+      }
     }
   }, 1000)
 }
@@ -539,9 +560,14 @@ async function handleDelete(modelId: string) {
 }
 
 // ===== 生命周期 =====
-onMounted(() => {
-  refreshStatus()
+onMounted(async () => {
   loadEpSetting()
+  await refreshStatus()
+  // 进页面时已经在构建（比如刚传完识别图、刚导入商品包）：接上进度轮询
+  if (status.value.is_rebuilding) {
+    isRebuilding.value = true
+    startRebuildPoll()
+  }
 })
 onBeforeUnmount(() => {
   stopRebuildPoll()

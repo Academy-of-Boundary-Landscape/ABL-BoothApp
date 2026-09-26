@@ -44,8 +44,11 @@ export function confirmLargeFile(fileSizeMb: number): Promise<boolean> {
 }
 
 /**
- * 将图片强制拉伸到 size×size 正方形，返回压缩后的 File。
- * 用于 AI 识别图等不需要保持宽高比的场景。
+ * 将图片居中裁切成正方形再缩放到 size×size，返回压缩后的 File。
+ * 用于 AI 识别图与拍照查询图。
+ *
+ * 必须裁切而不是拉伸：后端预处理（`vision/model.rs` 的 fast_crop_resize）也是居中裁切，
+ * 相机拍的查询图本来就是正方形；拉伸会让相册图、跳过裁剪的识别图变形，和查询图对不上。
  *
  * 尺寸已经正好是目标时，或图片加载失败时，原样返回输入；因此输入是 Blob 时
  * 返回值也可能是 Blob。
@@ -71,10 +74,15 @@ export function resizeImageFile(
       const canvas = document.createElement('canvas')
       canvas.width = size
       canvas.height = size
+      const side = Math.min(width, height)
+      const sx = (width - side) / 2
+      const sy = (height - side) / 2
       // canvas 必定能拿到 2d 上下文；原实现直接解引用，null 时会抛错，这里保持同样语义。
-      canvas.getContext('2d')!.drawImage(img, 0, 0, size, size)
+      canvas.getContext('2d')!.drawImage(img, sx, sy, side, side, 0, 0, size, size)
       URL.revokeObjectURL(img.src)
-      const fileName = (file instanceof File ? file.name : '') || 'image.jpg'
+      // 内容已是 JPEG，扩展名跟着改（原名可能是 .png/.heic）
+      const baseName = (file instanceof File ? file.name : '').replace(/\.[^.]*$/, '')
+      const fileName = `${baseName || 'image'}.jpg`
       canvas.toBlob(
         (blob) =>
           resolve(

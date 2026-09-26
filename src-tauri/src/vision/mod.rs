@@ -99,6 +99,7 @@ impl VisionRuntime {
                         },
                         rebuild_processed: 0,
                         rebuild_total: 0,
+                        last_rebuild_error: None,
                     })
                     .await;
             }
@@ -223,6 +224,8 @@ impl VisionRuntime {
             .map_err(|e| format!("spawn_blocking join error: {}", e))?
     }
 
+    /// 在后台起一个重建任务。已有重建在跑时不会并发开第二个，而是挂起，
+    /// 等当前这轮结束后补跑一轮增量（见 `StateManager::finish_rebuild`）。
     pub fn start_rebuild_task(
         self: Arc<Self>,
         db: SqlitePool,
@@ -231,93 +234,88 @@ impl VisionRuntime {
         only_image_ids: Option<Vec<i64>>,
     ) {
         tokio::spawn(async move {
-            let state = self.state.clone();
-            let model_manager = self.model_manager.clone();
-            let session_cache = self.session_cache.clone();
-
             // 原子性 check-and-set：防止并发重复重建
-            if !state.try_start_rebuilding().await {
+            if !self.state.try_start_rebuilding().await {
                 return;
             }
 
-            let snapshot = state.snapshot().await;
-
-            let manifest = match model_manager
-                .get_manifest_for_model(&snapshot.model_id)
-                .await
-            {
-                Some(m) => m,
-                None => {
-                    state.set_rebuilding(false).await;
-                    log::warn!("Rebuild failed: active model not found");
-                    return;
+            let mut force_full = force_full;
+            let mut only_image_ids = only_image_ids;
+            loop {
+                let result = self
+                    .run_rebuild_pass(&db, &upload_dir, force_full, only_image_ids.take())
+                    .await;
+                if let Err(e) = &result {
+                    log::warn!("[Vision] Rebuild failed: {}", e);
                 }
-            };
-
-            let model_path = download::model_abs_path(model_manager.app_data_dir(), &manifest);
-            if !model_path.exists() {
-                state.set_rebuilding(false).await;
-                log::warn!(
-                    "Rebuild failed: model file not found: {}",
-                    model_path.display()
-                );
-                return;
-            }
-
-            let ep_pref = model_manager
-                .get_runtime_config()
-                .await
-                .map(|c| c.execution_provider)
-                .unwrap_or_else(|| "auto".to_string());
-            let session = match session_cache
-                .get_or_load_with_check(
-                    &manifest.model_id,
-                    &manifest.model_version,
-                    &model_path,
-                    manifest.clone(),
-                    ep_pref,
-                )
-                .await
-            {
-                Ok(s) => s,
-                Err(e) => {
-                    state.set_rebuilding(false).await;
-                    log::warn!("Rebuild failed: {}", e);
-                    return;
+                if !self.state.finish_rebuild(result).await {
+                    break;
                 }
-            };
-
-            let executor = RebuildExecutor::new_for_task(upload_dir.clone(), db.clone());
-            match executor
-                .run(force_full, only_image_ids, snapshot, &session, &state)
-                .await
-            {
-                Ok(result) => {
-                    state
-                        .set(state::VisionStatusSnapshot {
-                            model_id: manifest.model_id,
-                            model_version: manifest.model_version,
-                            index_version: result.index_version,
-                            index_size: result.index_size,
-                            is_ready: result.index_size > 0,
-                            is_rebuilding: false,
-                            last_rebuild_at: result.last_rebuild_at,
-                            reason: if result.embedded_count > 0 {
-                                None
-                            } else {
-                                Some("VISION_INDEX_EMPTY".to_string())
-                            },
-                            rebuild_processed: 0,
-                            rebuild_total: 0,
-                        })
-                        .await;
-                }
-                Err(e) => {
-                    state.set_rebuilding(false).await;
-                    log::warn!("Rebuild failed: {}", e);
-                }
+                // 挂起的请求可能来自任意几张图，统一补一轮「缺 embedding 的全部补上」
+                force_full = false;
             }
         });
+    }
+
+    async fn run_rebuild_pass(
+        &self,
+        db: &SqlitePool,
+        upload_dir: &std::path::Path,
+        force_full: bool,
+        only_image_ids: Option<Vec<i64>>,
+    ) -> Result<VisionStatusSnapshot, String> {
+        let snapshot = self.state.snapshot().await;
+
+        let manifest = self
+            .model_manager
+            .get_manifest_for_model(&snapshot.model_id)
+            .await
+            .ok_or_else(|| format!("当前激活的模型不存在：{}", snapshot.model_id))?;
+
+        let model_path = download::model_abs_path(self.model_manager.app_data_dir(), &manifest);
+        if !model_path.exists() {
+            return Err(format!("模型文件不存在：{}", model_path.display()));
+        }
+
+        let ep_pref = self
+            .model_manager
+            .get_runtime_config()
+            .await
+            .map(|c| c.execution_provider)
+            .unwrap_or_else(|| "auto".to_string());
+        let session = self
+            .session_cache
+            .get_or_load_with_check(
+                &manifest.model_id,
+                &manifest.model_version,
+                &model_path,
+                manifest.clone(),
+                ep_pref,
+            )
+            .await?;
+
+        let executor = RebuildExecutor::new_for_task(upload_dir.to_path_buf(), db.clone());
+        let result = executor
+            .run(force_full, only_image_ids, snapshot, &session, &self.state)
+            .await?;
+
+        Ok(VisionStatusSnapshot {
+            model_id: manifest.model_id,
+            model_version: manifest.model_version,
+            index_version: result.index_version,
+            index_size: result.index_size,
+            is_ready: result.index_size > 0,
+            is_rebuilding: false,
+            last_rebuild_at: result.last_rebuild_at,
+            reason: if result.index_size > 0 {
+                None
+            } else {
+                Some("VISION_INDEX_EMPTY".to_string())
+            },
+            rebuild_processed: 0,
+            rebuild_total: 0,
+            last_rebuild_error: None,
+        })
     }
 
     pub fn start_incremental_for_images(

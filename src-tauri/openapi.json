@@ -5470,66 +5470,6 @@
         ]
       }
     },
-    "/vision/feedback": {
-      "post": {
-        "tags": [
-          "vision"
-        ],
-        "summary": "保存一次以图搜图的用户反馈（正确/纠错），并把图片加入识别索引。",
-        "operationId": "vision.save_feedback",
-        "requestBody": {
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/VisionFeedbackForm"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/VisionFeedbackResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "缺少图片或 chosen_master_product_id",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorBody"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "商品不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorBody"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "上传或数据库失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/vision/models": {
       "get": {
         "tags": [
@@ -8771,56 +8711,6 @@
           }
         }
       },
-      "VisionFeedbackForm": {
-        "type": "object",
-        "description": "仅用于 OpenAPI 文档：`/feedback` 的 multipart 表单字段。",
-        "required": [
-          "image",
-          "chosen_master_product_id"
-        ],
-        "properties": {
-          "chosen_master_product_id": {
-            "type": "string",
-            "description": "用户选中的商品 id，必填。"
-          },
-          "image": {
-            "type": "string",
-            "format": "binary",
-            "description": "反馈图片，必填。"
-          },
-          "is_correct": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "`1`/`true`/`TRUE`/`True` 表示识别正确，缺省正确。"
-          }
-        }
-      },
-      "VisionFeedbackResponse": {
-        "type": "object",
-        "required": [
-          "ok",
-          "image_id",
-          "image_url",
-          "kind"
-        ],
-        "properties": {
-          "image_id": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "image_url": {
-            "type": "string"
-          },
-          "kind": {
-            "type": "string"
-          },
-          "ok": {
-            "type": "boolean"
-          }
-        }
-      },
       "VisionGpuDevice": {
         "type": "object",
         "required": [
@@ -9195,6 +9085,13 @@
               "null"
             ]
           },
+          "last_rebuild_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "最近一次重建失败的原因（下一次成功后清空）"
+          },
           "model_id": {
             "type": "string"
           },
@@ -9214,6 +9111,13 @@
           "rebuild_total": {
             "type": "integer",
             "format": "int64"
+          },
+          "runtime_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ONNX Runtime 加载失败的原因；有值时识别整体不可用，`is_ready` 恒为 false"
           }
         }
       }
