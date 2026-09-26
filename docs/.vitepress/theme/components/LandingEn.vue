@@ -66,6 +66,94 @@
       </div>
     </section>
 
+    <!-- ⭐ v1.2.0: the new ledger -->
+    <section class="bk-section bk-vision-spotlight">
+      <div class="bk-vision-badge">🆕 v1.2.0</div>
+      <header class="bk-section-header">
+        <h2 class="bk-h2">📒 From "keeping records" to "keeping the books straight"</h2>
+        <p class="bk-sub">
+          v1.2 rewrote the ledger: every item and every yuan has a source and a destination.<br/>
+          Bundle deals, refunds, closing stocktake and consignment settlement are all built on top of it.
+        </p>
+      </header>
+
+      <div class="bk-vision-grid">
+        <div class="bk-vision-card">
+          <div class="bk-vision-emoji">🎁</div>
+          <h3 class="bk-h3">Bundles find the best deal</h3>
+          <p class="bk-p">"Any 3 cards for ¥20", "New book + standee for ¥50" — the cart works out the cheapest combination and shows how much the customer saved.</p>
+        </div>
+
+        <div class="bk-vision-card">
+          <div class="bk-vision-emoji">🧾</div>
+          <h3 class="bk-h3">Close in four steps, one settlement sheet</h3>
+          <p class="bk-p">Recount orders → Stocktake → Take back → Settle. How much each circle gets and how much you owe whom, all at a glance.</p>
+        </div>
+
+        <div class="bk-vision-card">
+          <div class="bk-vision-emoji">▦</div>
+          <h3 class="bk-h3">Scan to add to cart</h3>
+          <p class="bk-p">Scan barcodes continuously with the camera, or just plug in a barcode scanner. Works with retail barcodes and your own number labels, fully offline.</p>
+        </div>
+
+        <div class="bk-vision-card">
+          <div class="bk-vision-emoji">🧭</div>
+          <h3 class="bk-h3">Organized around the event lifecycle</h3>
+          <p class="bk-p">The Event workbench is grouped into Pre-event / On-site / Closing; "Import from previous event" carries over products and bundles in one go.</p>
+        </div>
+      </div>
+
+      <div class="bk-vision-cta">
+        <a class="bk-btn bk-btn-primary" href="/en/releases/v1.2.0">
+          📖 What's new in v1.2
+        </a>
+      </div>
+    </section>
+
+    <!-- ⭐ v1.1.0 headline feature: AI photo recognition -->
+    <section class="bk-section bk-vision-spotlight">
+      <div class="bk-vision-badge">⭐ New in v1.1.0</div>
+      <header class="bk-section-header">
+        <h2 class="bk-h2">📸 AI photo recognition — tuned for anime &amp; doujin goods</h2>
+        <p class="bk-sub">
+          Point the camera at an item, take a photo, and it's recognized and added to the cart.<br/>
+          No barcode stickers, no SKUs to memorize.
+        </p>
+      </header>
+
+      <div class="bk-vision-grid">
+        <div class="bk-vision-card">
+          <div class="bk-vision-emoji">🖼️</div>
+          <h3 class="bk-h3">No labels needed</h3>
+          <p class="bk-p">Doujin goods come in small runs and lineups change often; stickering every item is tedious and ugly. The product photo itself becomes the "label".</p>
+        </div>
+
+        <div class="bk-vision-card">
+          <div class="bk-vision-emoji">🤝</div>
+          <h3 class="bk-h3">Easy when minding a friend's booth</h3>
+          <p class="bk-p">Don't know your friend's products? No problem — one photo gives you the name, price and stock. Zero learning curve.</p>
+        </div>
+
+        <div class="bk-vision-card">
+          <div class="bk-vision-emoji">⚡</div>
+          <h3 class="bk-h3">Customer self-checkout</h3>
+          <p class="bk-p">Put a tablet at the front of the booth: customers snap, add to cart and pay by QR code themselves. You just collect the money.</p>
+        </div>
+
+        <div class="bk-vision-card">
+          <div class="bk-vision-emoji">🔌</div>
+          <h3 class="bk-h3">Local inference / hardware acceleration</h3>
+          <p class="bk-p">Once the model is downloaded, inference runs fully offline. The desktop app supports DirectML GPU acceleration; Android runs on CPU.</p>
+        </div>
+      </div>
+
+      <div class="bk-vision-cta">
+        <a class="bk-btn bk-btn-primary" href="/guide/vision-search">
+          📖 How to enable it (Chinese)
+        </a>
+      </div>
+    </section>
+
     <section class="bk-section bk-solution">
       <header class="bk-section-header">
         <h2 class="bk-h2">✅ Our answer: Local app + LAN sync</h2>
@@ -104,8 +192,8 @@
         <div class="bk-node">
           <div class="bk-node-head bk-host">Admin (PC / tablet / phone)</div>
           <div class="bk-node-body">
-            <div class="bk-node-title">Global dashboard</div>
-            <div class="bk-node-desc">Product entry · Stock settings · Order management · Report export</div>
+            <div class="bk-node-title">Admin console</div>
+            <div class="bk-node-desc">Product library · Events &amp; bundles · Order stats · Settlement sheet</div>
           </div>
         </div>
 
@@ -118,7 +206,7 @@
             <div class="bk-node-head bk-customer">Customer (tablet)</div>
             <div class="bk-node-body">
               <div class="bk-node-title">Self-service ordering</div>
-              <div class="bk-node-desc">Large images · add-to-cart · QR payments</div>
+              <div class="bk-node-desc">Large images · scan / photo to add · QR payments</div>
             </div>
           </div>
 
@@ -126,7 +214,7 @@
             <div class="bk-node-head bk-vendor">Vendor (phone)</div>
             <div class="bk-node-body">
               <div class="bk-node-title">Fulfillment notifier</div>
-              <div class="bk-node-desc">Order alerts · payment confirmation · picking guidance</div>
+              <div class="bk-node-desc">Order alerts · confirm payment · refunds · closing</div>
             </div>
           </div>
         </div>
@@ -143,19 +231,19 @@
         <!-- Landscape 1: Stats -->
         <figure class="bk-shot bk-shot--landscape">
           <img src="/images/stat.png" alt="Statistics dashboard screenshot" loading="lazy" />
-          <figcaption>Statistics: revenue, best sellers, and stock changes at a glance</figcaption>
+          <figcaption>On-site stats: sales trend and per-product sales</figcaption>
         </figure>
 
         <!-- Landscape 2: Customer -->
         <figure class="bk-shot bk-shot--landscape">
           <img src="/images/customer.png" alt="Customer ordering screen screenshot" loading="lazy" />
-          <figcaption>Customer: large images + self-service cart + QR payment</figcaption>
+          <figcaption>Customer: self-service cart; bundle deals apply automatically and show how much you saved</figcaption>
         </figure>
 
         <!-- Portrait: Vendor -->
         <figure class="bk-shot bk-shot--portrait">
           <img src="/images/vendor.png" alt="Vendor picking screen screenshot" loading="lazy" />
-          <figcaption>Vendor: order alerts, payment confirmation, and picking prompts</figcaption>
+          <figcaption>Vendor: order alerts, payment confirmation, refunds and closing</figcaption>
         </figure>
       </div>
     </section>
@@ -313,6 +401,77 @@
   padding: 1.2rem 1.1rem;
 }
 .bk-highlight .bk-h3{ margin-bottom: .4rem; color: var(--vp-c-brand); }
+
+/* Vision Spotlight (v1.1.0 highlight) */
+.bk-vision-spotlight{
+  position: relative;
+  background: linear-gradient(135deg,
+    color-mix(in oklab, var(--vp-c-brand) 12%, transparent),
+    color-mix(in oklab, var(--vp-c-brand) 4%, transparent));
+  border: 2px solid color-mix(in oklab, var(--vp-c-brand) 40%, var(--vp-c-divider));
+  border-radius: 24px;
+  padding: 2.5rem 1.8rem 2rem;
+  margin-top: 3.75rem;
+}
+.bk-vision-badge{
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--vp-c-brand);
+  color: white;
+  font-weight: 800;
+  font-size: 0.85rem;
+  padding: 0.4rem 1rem;
+  border-radius: 999px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+  white-space: nowrap;
+}
+.bk-vision-grid{
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1.75rem;
+}
+@media (max-width: 960px){
+  .bk-vision-grid{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 520px){
+  .bk-vision-grid{ grid-template-columns: 1fr; }
+}
+.bk-vision-card{
+  background: var(--vp-c-bg);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 14px;
+  padding: 1.3rem 1.1rem;
+  text-align: center;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.bk-vision-card:hover{
+  transform: translateY(-3px);
+  box-shadow: 0 10px 28px rgba(0,0,0,0.08);
+}
+.bk-vision-emoji{
+  font-size: 2.2rem;
+  margin-bottom: 0.5rem;
+  line-height: 1;
+}
+.bk-vision-card .bk-h3{
+  margin-bottom: 0.5rem;
+  color: var(--vp-c-brand);
+}
+.bk-vision-cta{
+  display: flex;
+  justify-content: center;
+  margin-top: 1.75rem;
+}
+.bk-vision-quote{
+  text-align: center;
+  margin: 1.25rem 0 0;
+  color: var(--vp-c-text-2);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
 
 /* Workflow */
 .bk-workflow{

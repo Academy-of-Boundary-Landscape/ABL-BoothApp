@@ -1,38 +1,47 @@
 ---
-title: Unexpected Situations
+title: Incidents
 ---
 
-# Unexpected Situations
+# Incidents
 
-Don't panic. At the stall, things like misclicks, wrong orders, or dead batteries happen—most are "reversible".
+Don't panic. Slips, wrong orders and dead batteries happen at every booth, and most of it can be undone.
 
-## Customer placed a wrong order / How do I cancel an order?
+## A customer placed the wrong order / I want to cancel an order
 
-On the vendor's order fulfillment page:
+In the Vendor view under **Orders → Pending** (「订单 → 待处理」):
 
-- **Do NOT click "Complete"**
-- Simply click the red **"Cancel"** button
+- **Don't tap Finish packing** (「完成配货」)
+- Tap **Cancel** (「取消」) on that order
 
-The order will be voided, and the locked inventory will be automatically returned.
+The order is discarded and the reserved stock is returned automatically.
 
-## I accidentally clicked "Complete" and want to undo it. What should I do?
+## I accidentally tapped "Finish" and want to undo it
 
-Don't panic:
+Don't worry:
 
-1. Go to the host device's "Order Management" page
-2. Find the order that was mistakenly completed
-3. Change its status to **"Cancelled"**
+1. In the Admin console, open this event's **On-site · Orders** (「现场 · 订单」)
+2. Find the order you completed by mistake
+3. Under **Actions** (「操作」), choose **Set as cancelled** (「设为已取消」)
 
-The system will:
+The system reverses both the goods and the money for that order: stock is added back, the amount is taken off the Payment channel, and sales are corrected.
 
-- Return the inventory
-- Correct the sales statistics
+A cancelled order can't change status again, and **can't go back to Pending**. If the customer only returned some of the items, use **Refund** (「退货」) in the Vendor view instead of cancelling the whole order.
 
-## What if the host device suddenly runs out of battery / crashes?
+## The host device ran out of battery / froze
 
-TanHe uses SQLite with **real-time disk persistence**.  
-After restarting the device and software, all product information, historical orders, and inventory data will **automatically restore** to the moment before the crash.
+BoothKernel stores everything in SQLite and **writes to disk immediately**.  
+After restarting the device and the app, all products, past orders and stock data **come back automatically** exactly as they were before the crash.
 
-:::tip On-site Tip
-It's best to have a power bank or extension cord for the host device. Not because TanHe is unstable, but because on-site power can be unreliable.
+:::tip On-site advice
+Bring a power bank or power strip for the host. Not because BoothKernel is unstable, but because venue power just isn't reliable.
 :::
+
+## A customer wants to return something after buying
+
+In the Vendor view, find the order under **Orders → Completed** (「订单 → 已完成」) and tap **Refund** (「退货」). For each line, choose how many to return, whether the goods go back to On-site stock or are written off, and which Payment channel the refund comes from.
+**Refunds can't be undone**, so double-check before submitting. See [Closing & settlement](/en/guide/closing).
+
+## The event is already settled and I found a missing entry
+
+After settlement the ledger is frozen and orders can't be edited. For differences you find after getting home, add a **Settlement adjustment** or an **Advance** in the Admin console under **Closing · Settlement** (「收摊 · 结算」).
+If you recount payments against your bills, just submit the **Payment recount** again. These three can still be changed after settlement.

@@ -1,29 +1,29 @@
 ---
-title: Frequently Asked Questions (FAQ)
-description: Booth-Kernel (Booth) App FAQ and Troubleshooting Guide (Categorized by Scenario).
+title: FAQ
+description: Common questions and troubleshooting for the BoothKernel app, grouped by situation.
 ---
 
-# Frequently Asked Questions (FAQ)
+# FAQ
 
-This page compiles common issues encountered with the Booth-Kernel App and their solutions.
-First, please check the relevant page from the categories below. You should be able to resolve most issues within about a minute.
+This page collects common questions about BoothKernel and how to solve them.  
+Pick the category that matches your problem first; most things can be sorted out in a minute.
 
-## Quick Access
+## Quick links
 
-- 🌐 [Network Connection](./network)
-- 💰 [On-site Operations](./operation)
-- 🚨 [Sudden Incidents](./incidents)
-- 🖼️ [Image Display & UI](./images-ui)
-- 🔒 [Data Security & Migration](./data-migration)
-- 🧠 [Advanced Techniques](./advanced)
-- 🧰 [Hardware Recommendations](./hardware)
-- 🧩 [Community & Open Source](./community)
+- 🌐 [Network connection](./network)
+- 💰 [On-site operation](./operation)
+- 🚨 [Incidents](./incidents)
+- 🖼️ [Images & display](./images-ui)
+- 🔒 [Data safety & migration](./data-migration)
+- 🧠 [Advanced tips](./advanced)
+- 🧰 [Hardware](./hardware)
+- 🧩 [Community & open source](./community)
 
 ---
 
-## Still Can't Find a Solution?
+## Still stuck?
 
-The [Contact Us](../support/contact.md) page offers more support options:
-- **For program errors/bugs:** We recommend posting an Issue on GitHub (it's easier for developers to track and fix).
-- **For usage questions:** Join our user community group to share experiences about distribution activities.
-- Or, you can send feedback directly via email.
+The [Contact us](../support/contact.md) page has more support options:
+- If the app shows an error: please open an Issue on GitHub (easier for the developers to track and fix)
+- If you're unsure how to use something: join the user group and swap booth experience with others
+- Or just send us an email

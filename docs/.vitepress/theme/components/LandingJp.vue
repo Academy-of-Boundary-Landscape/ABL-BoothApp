@@ -66,6 +66,94 @@
       </div>
     </section>
 
+    <!-- ⭐ v1.2.0：新しい帳簿 -->
+    <section class="bk-section bk-vision-spotlight">
+      <div class="bk-vision-badge">🆕 v1.2.0</div>
+      <header class="bk-section-header">
+        <h2 class="bk-h2">📒「記録できる」から「帳尻が合う」へ</h2>
+        <p class="bk-sub">
+          v1.2 では帳簿を作り直しました。モノ 1 点、お金 1 円ごとに、どこから来てどこへ行ったかが残ります。<br/>
+          セット割引、返品、撤収時の棚卸し、委託販売の精算は、すべてこの帳簿の上に成り立っています。
+        </p>
+      </header>
+
+      <div class="bk-vision-grid">
+        <div class="bk-vision-card">
+          <div class="bk-vision-emoji">🎁</div>
+          <h3 class="bk-h3">セットは一番お得に自動計算</h3>
+          <p class="bk-p">「よりどり 3 枚で 20」「新刊 + アクスタで 50」。カートが一番お得な組み合わせを自動で求め、いくら得したかも表示します。</p>
+        </div>
+
+        <div class="bk-vision-card">
+          <div class="bk-vision-emoji">🧾</div>
+          <h3 class="bk-h3">4 ステップで撤収、精算書は 1 枚</h3>
+          <p class="bk-p">入金照合 → 棚卸し → 持ち帰り → 精算。各サークルの取り分と、誰にいくら送金すべきかがひと目で分かります。</p>
+        </div>
+
+        <div class="bk-vision-card">
+          <div class="bk-vision-emoji">▦</div>
+          <h3 class="bk-h3">バーコードスキャンでカート追加</h3>
+          <p class="bk-p">カメラで連続スキャン、またはバーコードリーダーを挿すだけ。市販の JAN / ISBN も自作の番号ラベルも読めて、すべてオフラインです。</p>
+        </div>
+
+        <div class="bk-vision-card">
+          <div class="bk-vision-emoji">🧭</div>
+          <h3 class="bk-h3">イベントの流れに沿った構成</h3>
+          <p class="bk-p">イベントワークベンチは「事前準備 / 当日 / 撤収」に分かれています。「前回のイベントから取り込む」で商品とセットを一度に引き継げます。</p>
+        </div>
+      </div>
+
+      <div class="bk-vision-cta">
+        <a class="bk-btn bk-btn-primary" href="/ja/releases/v1.2.0">
+          📖 v1.2 の新機能
+        </a>
+      </div>
+    </section>
+
+    <!-- ⭐ v1.1.0：AI 画像認識 -->
+    <section class="bk-section bk-vision-spotlight">
+      <div class="bk-vision-badge">⭐ v1.1.0 新機能</div>
+      <header class="bk-section-header">
+        <h2 class="bk-h2">📸 AI 画像認識 — 同人グッズ向けに最適化した商品認識</h2>
+        <p class="bk-sub">
+          商品にカメラを向けて 1 枚撮るだけで、自動で認識してカートに追加。<br/>
+          バーコードを貼る必要も、品番を覚える必要もありません。
+        </p>
+      </header>
+
+      <div class="bk-vision-grid">
+        <div class="bk-vision-card">
+          <div class="bk-vision-emoji">🖼️</div>
+          <h3 class="bk-h3">ラベル貼り不要</h3>
+          <p class="bk-p">同人グッズは少部数でラインナップもよく変わります。1 点ずつバーコードを貼るのは手間も見た目も悪いので、商品写真そのものを「ラベル」にします。</p>
+        </div>
+
+        <div class="bk-vision-card">
+          <div class="bk-vision-emoji">🤝</div>
+          <h3 class="bk-h3">友人のブースの手伝いでも</h3>
+          <p class="bk-p">友人の商品を知らなくても大丈夫。撮れば名前・価格・在庫が出るので、覚えることなくすぐに売り子に入れます。</p>
+        </div>
+
+        <div class="bk-vision-card">
+          <div class="bk-vision-emoji">⚡</div>
+          <h3 class="bk-h3">お客様がセルフ注文</h3>
+          <p class="bk-p">ブース前にタブレットを置けば、お客様が自分で撮って、カートに入れて、QR で支払い。売り子は受け取るだけです。</p>
+        </div>
+
+        <div class="bk-vision-card">
+          <div class="bk-vision-emoji">🔌</div>
+          <h3 class="bk-h3">ローカル推論 / ハードウェア加速</h3>
+          <p class="bk-p">モデルをダウンロードすれば推論は完全オフラインで、ネット不要。デスクトップ版は DirectML による GPU 加速に対応し、Android 版は CPU で動作します。</p>
+        </div>
+      </div>
+
+      <div class="bk-vision-cta">
+        <a class="bk-btn bk-btn-primary" href="/guide/vision-search">
+          📖 有効にする方法（中国語）
+        </a>
+      </div>
+    </section>
+
     <section class="bk-section bk-solution">
       <header class="bk-section-header">
         <h2 class="bk-h2">✅ 私たちの答え：ローカル App + LAN 接続</h2>
@@ -97,15 +185,15 @@
     <section class="bk-section">
       <header class="bk-section-header">
         <h2 class="bk-h2">🔄 現場ではどう動かす？</h2>
-        <p class="bk-sub">最小 2 台で運用可能。出店者・タブレットの増設にも柔軟に拡張できます。</p>
+        <p class="bk-sub">最小 2 台で運用可能。売り子やタブレットの増設にも柔軟に拡張できます。</p>
       </header>
 
       <div class="bk-workflow">
         <div class="bk-node">
           <div class="bk-node-head bk-host">管理端（PC / タブレット / スマホ）</div>
           <div class="bk-node-body">
-            <div class="bk-node-title">グローバルダッシュボード</div>
-            <div class="bk-node-desc">商品登録 ・ 在庫設定 ・ 注文管理 ・ レポート出力</div>
+            <div class="bk-node-title">管理画面</div>
+            <div class="bk-node-desc">商品マスタ ・ イベントとセット ・ 注文と統計 ・ 精算書</div>
           </div>
         </div>
 
@@ -118,15 +206,15 @@
             <div class="bk-node-head bk-customer">顧客端（タブレット）</div>
             <div class="bk-node-body">
               <div class="bk-node-title">セルフ注文端末</div>
-              <div class="bk-node-desc">大きな画像 ・ カート追加 ・ QR 決済</div>
+              <div class="bk-node-desc">大きな画像 ・ バーコード / 画像認識でカート追加 ・ QR 決済</div>
             </div>
           </div>
 
           <div class="bk-node">
-            <div class="bk-node-head bk-vendor">出店者端（スマホ）</div>
+            <div class="bk-node-head bk-vendor">売り子画面（スマホ）</div>
             <div class="bk-node-body">
               <div class="bk-node-title">ピッキング通知</div>
-              <div class="bk-node-desc">注文通知 ・ 入金確認 ・ ピッキング支援</div>
+              <div class="bk-node-desc">注文通知 ・ 入金確認 ・ 返品 ・ 撤収</div>
             </div>
           </div>
         </div>
@@ -136,26 +224,26 @@
     <section class="bk-section">
       <header class="bk-section-header">
         <h2 class="bk-h2">🎨 UI プレビュー</h2>
-        <p class="bk-sub">横向き 2 枚（顧客 / 統計）、縦向き 1 枚（出店者）。</p>
+        <p class="bk-sub">横向き 2 枚（顧客 / 統計）、縦向き 1 枚（売り子画面）。</p>
       </header>
 
       <div class="bk-shots3">
         <!-- 横向き 1：統計 -->
         <figure class="bk-shot bk-shot--landscape">
           <img src="/images/stat.png" alt="統計ダッシュボードのスクリーンショット" loading="lazy" />
-          <figcaption>統計：売上・人気商品・在庫推移が一目で分かる</figcaption>
+          <figcaption>当日の統計：売上の推移と商品ごとの販売数</figcaption>
         </figure>
 
         <!-- 横向き 2：顧客 -->
         <figure class="bk-shot bk-shot--landscape">
           <img src="/images/customer.png" alt="顧客向け注文画面のスクリーンショット" loading="lazy" />
-          <figcaption>顧客：大きな画像 + カート追加 + QR 決済</figcaption>
+          <figcaption>お客様注文画面：セルフでカート追加、セット割引は自動適用され、いくら得したかも表示</figcaption>
         </figure>
 
         <!-- 縦向き：出店者 -->
         <figure class="bk-shot bk-shot--portrait">
-          <img src="/images/vendor.png" alt="出店者向けピッキング画面のスクリーンショット" loading="lazy" />
-          <figcaption>出店者：注文通知、入金確認、ピッキング支援</figcaption>
+          <img src="/images/vendor.png" alt="売り子画面のスクリーンショット" loading="lazy" />
+          <figcaption>売り子画面：注文通知、入金確認、返品と撤収</figcaption>
         </figure>
       </div>
     </section>
@@ -441,4 +529,75 @@
 .bk-foot{ margin-top: 1.25rem; font-size: .92rem; color: var(--vp-c-text-2); }
 .bk-foot a{ color: var(--vp-c-text-2) !important; text-decoration: none; }
 .bk-foot a:hover{ color: var(--vp-c-brand) !important; }
+/* Vision Spotlight (v1.1.0 highlight) */
+.bk-vision-spotlight{
+  position: relative;
+  background: linear-gradient(135deg,
+    color-mix(in oklab, var(--vp-c-brand) 12%, transparent),
+    color-mix(in oklab, var(--vp-c-brand) 4%, transparent));
+  border: 2px solid color-mix(in oklab, var(--vp-c-brand) 40%, var(--vp-c-divider));
+  border-radius: 24px;
+  padding: 2.5rem 1.8rem 2rem;
+  margin-top: 3.75rem;
+}
+.bk-vision-badge{
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--vp-c-brand);
+  color: white;
+  font-weight: 800;
+  font-size: 0.85rem;
+  padding: 0.4rem 1rem;
+  border-radius: 999px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+  white-space: nowrap;
+}
+.bk-vision-grid{
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1.75rem;
+}
+@media (max-width: 960px){
+  .bk-vision-grid{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 520px){
+  .bk-vision-grid{ grid-template-columns: 1fr; }
+}
+.bk-vision-card{
+  background: var(--vp-c-bg);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 14px;
+  padding: 1.3rem 1.1rem;
+  text-align: center;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.bk-vision-card:hover{
+  transform: translateY(-3px);
+  box-shadow: 0 10px 28px rgba(0,0,0,0.08);
+}
+.bk-vision-emoji{
+  font-size: 2.2rem;
+  margin-bottom: 0.5rem;
+  line-height: 1;
+}
+.bk-vision-card .bk-h3{
+  margin-bottom: 0.5rem;
+  color: var(--vp-c-brand);
+}
+.bk-vision-cta{
+  display: flex;
+  justify-content: center;
+  margin-top: 1.75rem;
+}
+.bk-vision-quote{
+  text-align: center;
+  margin: 1.25rem 0 0;
+  color: var(--vp-c-text-2);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
 </style>

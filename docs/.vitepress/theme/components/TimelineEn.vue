@@ -29,10 +29,17 @@ const timeline = [
   },
   {
     type: 'success',
-    time: 'Dec 2025 – Present',
+    time: 'Dec 2025 – May 2026',
     icon: '🚀',
     title: 'Refactor: Tauri local application',
     content: 'Rewrote the backend in <b>Rust</b>, built with <b>Tauri v2</b>. Achieved high performance, zero external deps, and fully offline on Windows/Android.'
+  },
+  {
+    type: 'success',
+    time: 'Sep 2026',
+    icon: '📒',
+    title: 'v1.2: double-entry ledger',
+    content: 'Rewrote the ledger with <b>double-entry bookkeeping</b> — every item and every yuan has a source and a destination. Added bundle deals, closing &amp; consignment settlement, and barcode scanning, and redesigned the Admin console and Vendor view around the event lifecycle.'
   }
 ]
 </script>

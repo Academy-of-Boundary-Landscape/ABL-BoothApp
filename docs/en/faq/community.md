@@ -1,36 +1,37 @@
 ---
-title: Community & Open Source
+title: Community & open source
 ---
 
-# Community & Open Source
+# Community & open source
 
-This section primarily covers: download channels, update methods, feedback channels, and common questions related to open source.
+This page covers download channels, updates, where to send feedback, and common questions about open source.
 
 ## Where can I download the latest version?
 
-Please use the only official channel: the **GitHub Releases** page.  
-Any channel that requires payment for download or charges for "deployment services" is fraudulent. Please do not fall for it.
+There's only one official channel: the **GitHub Releases** page.  
+Any channel that charges for downloads or "setup services" is a scam. Don't fall for it.
 
 ## Can I update automatically?
 
-The Windows version has supported one-click automatic updates since v1.1.1: the app checks for new versions itself, then downloads and installs after you confirm.
+The Windows version supports one-click auto-update since v1.1.1: the app checks for new versions itself and downloads and installs after you confirm.
+See [Auto-update (Chinese)](/guide/auto-update).
 
-The Android version still requires manually downloading and installing the APK, due to platform restrictions.
+The Android version still needs you to download and install the APK manually, due to system restrictions.
 
-## Where should I report bugs or suggestions?
+## Where do I report bugs or send suggestions?
 
-- **Program errors**: It is highly recommended to submit an **Issue** on the GitHub repository (makes it easier for developers to track and fix).
-- **Usage questions/Casual chat**: Welcome to join the **User Discussion Group**.
+- App errors: please open an **Issue** on the GitHub repository (easier for the developers to track and fix)
+- Questions / chatting: join the **user group**
 
-## I'm a developer. Can I contribute code to the project?
+## I'm a developer. Can I contribute code?
 
-**Absolutely welcome!**  
-Whether it's fixing a small bug or developing a new feature module, your contributions will help more stall owners.  
-Welcome to submit a **Pull Request**.
+**Very welcome!**  
+Whether it's a small bug fix or a whole new feature, your contribution helps more booth owners.  
+Pull Requests are welcome.
 
 ## Can I modify the software and redistribute (or even sell) it?
 
-This project follows the **MIT License**. You do have the freedom to modify and distribute it.  
-However, as a free tool aimed at "lowering the barrier for fan creators to set up stalls," we **strongly discourage** packaging and selling it as commercial software.
+The project is under the **MIT License**, so you do have the freedom to modify and distribute it.  
+But as a free tool meant to "make it easier to run a doujin booth", we **strongly discourage** repackaging it as commercial software for sale.
 
-Please retain the original author information and respect the spirit of open source.
+Please keep the original author credits and respect the spirit of open source.
