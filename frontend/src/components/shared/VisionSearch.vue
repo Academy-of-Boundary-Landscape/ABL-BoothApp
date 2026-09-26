@@ -262,6 +262,7 @@ import { AppModal } from '@/components/ui'
 import { searchByImage } from '@/services/vision'
 import { getImageUrl } from '@/services/url'
 import { useFeedback } from '@/composables/useFeedback'
+import { useCamera } from '@/composables/useCamera'
 import { useViewport } from '@/composables/useViewport'
 import { resizeImageFile } from '@/utils/upload'
 import { ApiRequestError, errorMessage, type Schemas } from '@/api/client'
@@ -342,9 +343,29 @@ function clearImage() {
 const videoRef = ref<HTMLVideoElement | null>(null)
 const viewportRef = ref<HTMLDivElement | null>(null)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
+
+// 取流 / 翻转 / 补光灯 / 释放统一走 useCamera（spec §6.2），
+// 避免「取流进行中卸载」「连点翻转」时漏掉 track。
+const {
+  stream: cameraStream,
+  facing: currentFacing,
+  error: cameraError,
+  start: startCameraStream,
+  stop: stopCameraStream,
+  flip: flipCameraStream,
+} = useCamera({
+  facing: props.facingMode === 'environment' ? 'environment' : 'user',
+})
+
+// 模板与现有测试都用可写的 isCameraActive（外部可直接赋值），
+// 它跟随 composable 里的 stream：有流才算激活。
 const isCameraActive = ref(false)
-const currentStream = ref<MediaStream | null>(null)
-const currentFacing = ref(props.facingMode)
+watch(cameraStream, async (s) => {
+  isCameraActive.value = Boolean(s)
+  await nextTick()
+  if (videoRef.value) videoRef.value.srcObject = s
+  if (s) updateVpSize()
+})
 
 // 取景框：占 viewport 短边的 65%，正方形，居中
 const FRAME_RATIO = 0.65
@@ -369,54 +390,18 @@ const frameStyle = computed(() => {
 
 async function startCamera() {
   errorMsg.value = ''
-
-  // 防御性兜底：getUserMedia 仅在 secure context（HTTPS / localhost）可用。
-  // 摊主在 LAN 浏览器首次访问 https URL 但未接受证书时，
-  // 或意外通过 http URL 进入时，给清晰提示而不是浏览器内部错误。
-  if (
-    !window.isSecureContext ||
-    !navigator.mediaDevices ||
-    typeof navigator.mediaDevices.getUserMedia !== 'function'
-  ) {
-    errorMsg.value =
-      '当前页面不是安全连接，浏览器禁止访问摄像头。请确认 URL 以 https 开头，' +
-      '且首次访问时已点击「高级 → 继续访问」接受证书。' +
-      '如仍无法解决，请直接在主机的摊盒桌面应用内拍照。'
-    return
-  }
-
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: currentFacing.value, width: { ideal: 1280 }, height: { ideal: 960 } },
-      audio: false,
-    })
-    currentStream.value = stream
-    isCameraActive.value = true
-
-    // 等待 DOM 更新后绑定 video 并测量 viewport
-    await nextTick()
-    if (videoRef.value) {
-      videoRef.value.srcObject = stream
-    }
-    updateVpSize()
-  } catch (err) {
-    const e = err as { message?: string; name?: string }
-    errorMsg.value = '无法访问摄像头: ' + (e.message || e.name)
-  }
+  const ok = await startCameraStream()
+  if (!ok) errorMsg.value = cameraError.value
 }
 
 function stopCamera() {
-  if (currentStream.value) {
-    currentStream.value.getTracks().forEach((t) => t.stop())
-    currentStream.value = null
-  }
+  stopCameraStream()
   isCameraActive.value = false
 }
 
 async function switchCamera() {
-  currentFacing.value = currentFacing.value === 'user' ? 'environment' : 'user'
-  stopCamera()
-  await startCamera()
+  const ok = await flipCameraStream()
+  errorMsg.value = ok ? '' : cameraError.value
 }
 
 function captureFrame(): Promise<Blob | null> | null {
