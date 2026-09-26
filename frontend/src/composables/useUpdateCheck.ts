@@ -2,7 +2,6 @@ import { ref } from 'vue'
 import type { Ref } from 'vue'
 import { getVersion } from '@tauri-apps/api/app'
 import { open } from '@tauri-apps/plugin-shell'
-import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 import type { Update } from '@tauri-apps/plugin-updater'
 import type { Platform } from '@tauri-apps/plugin-os'
 import { copyLink } from '@/services/clipboard'
@@ -109,8 +108,9 @@ export function useUpdateCheck(): UpdateCheckState {
 
   // Android/iOS fallback: 沿用旧的 GitHub API 查版本（仅展示，不下载）
   const checkViaGithubApi = async (): Promise<void> => {
+    const { fetch } = await import('@tauri-apps/plugin-http')
     const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/releases/latest`
-    const response = await tauriFetch(url, {
+    const response = await fetch(url, {
       method: 'GET',
       headers: { 'User-Agent': 'Tauri-App-Updater' },
     })

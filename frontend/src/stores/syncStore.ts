@@ -1,8 +1,6 @@
 import { defineStore } from 'pinia'
 import { api, unwrap, ApiRequestError, type Schemas, errorMessage } from '@/api/client'
 import { ref } from 'vue'
-import { save as tauriSave } from '@tauri-apps/plugin-dialog'
-import { readFile as tauriReadFile, writeFile as tauriWriteFile } from '@tauri-apps/plugin-fs'
 
 function detectEnv() {
   const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined
@@ -93,7 +91,12 @@ export const useSyncStore = defineStore('sync', () => {
 
       // ✅ Tauri Desktop：保存对话框 + 写文件
       if (env.isTauriDesktop) {
-        const filePath = await tauriSave({
+        const [dialogModule, fsModule] = await Promise.all([
+          import('@tauri-apps/plugin-dialog'),
+          import('@tauri-apps/plugin-fs'),
+        ])
+
+        const filePath = await dialogModule.save({
           defaultPath: filename,
           filters: [{ name: 'Booth Pack', extensions: ['boothpack', 'zip'] }],
         })
@@ -105,7 +108,7 @@ export const useSyncStore = defineStore('sync', () => {
 
         // 把字节写入（parseAs blob 后 data 恒是 Blob）
         const bytes = new Uint8Array(await blob.arrayBuffer())
-        await tauriWriteFile(filePath, bytes)
+        await fsModule.writeFile(filePath, bytes)
         return { filename: filePath }
       }
 
@@ -113,13 +116,17 @@ export const useSyncStore = defineStore('sync', () => {
       if (env.isTauriMobile) {
         // 1) 尝试用 dialog.save + fs.writeFile（如果你的移动端插件支持）
         try {
-          const filePath = await tauriSave({
+          const [dialogModule, fsModule] = await Promise.all([
+            import('@tauri-apps/plugin-dialog'),
+            import('@tauri-apps/plugin-fs'),
+          ])
+          const filePath = await dialogModule.save({
             defaultPath: filename,
             filters: [{ name: 'Booth Pack', extensions: ['boothpack', 'zip'] }],
           })
           if (filePath) {
             const bytes = new Uint8Array(await blob.arrayBuffer())
-            await tauriWriteFile(filePath, bytes)
+            await fsModule.writeFile(filePath, bytes)
             return { filename: filePath }
           }
           // 若用户取消
@@ -239,8 +246,13 @@ export const useSyncStore = defineStore('sync', () => {
     const t0 = performance.now()
     feLog(`importProductsFromPath: start (path=${filePath})`)
     try {
+      const tA = performance.now()
+      const fsModule = await import('@tauri-apps/plugin-fs')
+      feLog(
+        `importProductsFromPath: import('@tauri-apps/plugin-fs') took ${(performance.now() - tA).toFixed(0)}ms`
+      )
       const tB = performance.now()
-      const data = await tauriReadFile(filePath) // 已经是 Uint8Array
+      const data = await fsModule.readFile(filePath) // 已经是 Uint8Array
       feLog(
         `importProductsFromPath: fs.readFile() took ${(performance.now() - tB).toFixed(0)}ms (size=${data.byteLength}B)`
       )
