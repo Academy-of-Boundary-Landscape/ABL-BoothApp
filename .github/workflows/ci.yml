@@ -193,6 +193,10 @@ jobs:
           New-Item -ItemType Directory -Force -Path resources | Out-Null
           New-Item -ItemType File -Force -Path resources/onnxruntime.dll | Out-Null
           New-Item -ItemType File -Force -Path resources/DirectML.dll | Out-Null
+          New-Item -ItemType File -Force -Path resources/vcruntime140.dll | Out-Null
+          New-Item -ItemType File -Force -Path resources/vcruntime140_1.dll | Out-Null
+          New-Item -ItemType File -Force -Path resources/msvcp140.dll | Out-Null
+          New-Item -ItemType File -Force -Path resources/msvcp140_1.dll | Out-Null
 
       # 钉死版本号，和 rust-toolchain.toml 的 channel 对齐——理由同 rust job 那一步。
       - uses: dtolnay/rust-toolchain@1.98.1
