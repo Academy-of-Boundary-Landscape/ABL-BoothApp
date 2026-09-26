@@ -23,6 +23,10 @@ pub struct MasterProduct {
     pub is_active: bool,
     #[serde(default)]
     pub tags: String, // 逗号分隔的标签，如 "博丽灵梦,红色,东方Project"
+    /// 商业条码（JAN/EAN-13、ISBN…）。没有就为 `None`，扫描时回落到 `product_code`。
+    /// `#[serde(default)]`：旧 `.boothpack` 没有这个字段，导入时不能被当成 `null` 覆盖本机已有值。
+    #[serde(default)]
+    pub barcode: Option<String>,
     // 由 list_products 的 LEFT JOIN + COUNT 计算得到的识别图数量；
     // 其它 SELECT * 的查询该列缺失时 sqlx::default() 返回 None
     #[serde(default)]

@@ -49,7 +49,7 @@ const EP_ROW_BY_ID: &str = r#"
 SELECT ep.id, ep.event_id, ep.master_product_id, ep.owner_society_id,
        s.name AS owner_society_name,
        ep.product_code, ep.name, ep.unit_price,
-       mp.image_url, mp.category, mp.tags
+       mp.image_url, mp.category, mp.tags, mp.barcode
 FROM event_products ep
 JOIN master_products mp ON mp.id = ep.master_product_id
 JOIN societies s ON s.id = ep.owner_society_id
@@ -61,7 +61,7 @@ const EP_ROWS_BY_EVENT: &str = r#"
 SELECT ep.id, ep.event_id, ep.master_product_id, ep.owner_society_id,
        s.name AS owner_society_name,
        ep.product_code, ep.name, ep.unit_price,
-       mp.image_url, mp.category, mp.tags
+       mp.image_url, mp.category, mp.tags, mp.barcode
 FROM event_products ep
 JOIN master_products mp ON mp.id = ep.master_product_id
 JOIN societies s ON s.id = ep.owner_society_id
@@ -82,6 +82,7 @@ struct EventProductRow {
     image_url: Option<String>,
     category: Option<String>,
     tags: String,
+    barcode: Option<String>,
 }
 
 /// 响应体。**没有 `current_stock` / `initial_stock`**：
@@ -104,6 +105,8 @@ struct EventProductResponse {
     image_url: Option<String>,
     category: Option<String>,
     tags: String,
+    /// 商业条码（`mp.barcode`）；没有就为 null，扫描时回落到 `product_code`。
+    barcode: Option<String>,
 }
 
 impl EventProductResponse {
@@ -122,6 +125,7 @@ impl EventProductResponse {
             image_url: row.image_url,
             category: row.category,
             tags: row.tags,
+            barcode: row.barcode,
         }
     }
 }
@@ -1337,6 +1341,35 @@ mod tests {
             .unwrap();
         assert_eq!(after, before, "initial_stock = 0 不写 journal");
     }
+
+    /// 点单页扫描靠本场商品列表本地匹配，所以列表元素必须带出 `mp.barcode`。
+    #[tokio::test]
+    async fn event_product_list_carries_the_master_barcode() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, _, _) = seed_event_and_product(&pool).await;
+        // A 有商业条码，B 没有 → 同一份列表里 null 与非 null 都要出现
+        sqlx::query("UPDATE master_products SET barcode = '4901234567894' WHERE product_code = 'A'")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let res = router
+            .oneshot(json_request(
+                "GET",
+                &format!("/api/events/{event_id}/products"),
+                None,
+                json!(null),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = read_json(res).await;
+        let rows = body.as_array().unwrap();
+        let a = rows.iter().find(|r| r["product_code"] == "A").unwrap();
+        let b = rows.iter().find(|r| r["product_code"] == "B").unwrap();
+        assert_eq!(a["barcode"], "4901234567894");
+        assert!(b["barcode"].is_null(), "{b}");
+    }
 }
 
 /// ③b 形状快照：钉住每个路由的 JSON 形状（键 + 类型），类型化前后必须一行不改照样绿。
@@ -1420,6 +1453,7 @@ mod shape_tests {
             "image_url": "null|string",
             "category": "null|string",
             "tags": "string",
+            "barcode": "null",
         })
     }
 
@@ -1439,6 +1473,7 @@ mod shape_tests {
             "image_url": "string",
             "category": "string",
             "tags": "string",
+            "barcode": "null",
         })
     }
 

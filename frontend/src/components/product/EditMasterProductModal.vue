@@ -22,6 +22,14 @@
                     <n-input v-model:value="localProduct.product_code" clearable required />
                   </div>
                   <div class="form-group">
+                    <label>商业条码（可选）:</label>
+                    <n-input
+                      v-model:value="localProduct.barcode"
+                      placeholder="JAN / ISBN 等，没有就留空"
+                      clearable
+                    />
+                  </div>
+                  <div class="form-group">
                     <label>商品名称:</label>
                     <n-input v-model:value="localProduct.name" clearable required />
                   </div>
@@ -364,6 +372,8 @@ async function handleUpdate() {
     }
 
     formData.append('product_code', code)
+    // 总是提交：空串让后端清成 NULL（「出现才覆盖」）。
+    formData.append('barcode', String(localProduct.value.barcode ?? '').trim())
     formData.append('name', name)
     formData.append('default_price', String(price))
     if (category) formData.append('category', category)

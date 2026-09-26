@@ -1293,6 +1293,8 @@ export interface components {
         };
         /** @description 仅用于 OpenAPI 文档：`create_product` 的 multipart 表单字段。 */
         CreateMasterProductForm: {
+            /** @description 商业条码（JAN/EAN-13 等）；可选，不传或空串存 NULL。 */
+            barcode?: string | null;
             category?: string | null;
             /** @description 元，不是分（老字段，`f64`）。 */
             default_price: string;
@@ -1654,6 +1656,11 @@ export interface components {
             total_price: components["schemas"]["Money"];
         };
         MasterProduct: {
+            /**
+             * @description 商业条码（JAN/EAN-13、ISBN…）。没有就为 `None`，扫描时回落到 `product_code`。
+             *     `#[serde(default)]`：旧 `.boothpack` 没有这个字段，导入时不能被当成 `null` 覆盖本机已有值。
+             */
+            barcode?: string | null;
             category?: string | null;
             /** Format: double */
             default_price: number;
@@ -1826,6 +1833,8 @@ export interface components {
          *     `onsite_qty` 是聚合余额，`stocked_qty` 是累计进货（前端库存条的分母）。
          */
         ProductEventProduct: {
+            /** @description 商业条码（`mp.barcode`）；没有就为 null，扫描时回落到 `product_code`。 */
+            barcode?: string | null;
             category?: string | null;
             /** Format: int64 */
             event_id: number;
@@ -2122,6 +2131,8 @@ export interface components {
         };
         /** @description 仅用于 OpenAPI 文档：`update_product` 的 multipart 表单字段。 */
         UpdateMasterProductForm: {
+            /** @description 商业条码；**出现**才覆盖（空串 → NULL），不出现保持原值。 */
+            barcode?: string | null;
             category?: string | null;
             /** @description 元，不是分（老字段，`f64`）。 */
             default_price?: string | null;
