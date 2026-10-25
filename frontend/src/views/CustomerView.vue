@@ -340,6 +340,7 @@
       :show="showPaymentModal"
       :order-id="orderId"
       :total="orderTotal"
+      :close-label="orderId === null ? '返回点单' : '完成'"
       :qr-code-urls="store.qrCodeUrls"
       @close="closePaymentModal"
     />
@@ -445,7 +446,7 @@ import OrderConfirmPanel from '@/components/customer/OrderConfirmPanel.vue'
 import VisionSearch from '@/components/shared/VisionSearch.vue'
 import { getVisionStatus } from '@/services/vision'
 import { AsyncState, EmptyState, AppModal } from '@/components/ui'
-import { cents, type Cents } from '@/utils/money'
+import { type Cents } from '@/utils/money'
 import type { Schemas } from '@/api/client'
 import { NScrollbar, NSlider, NButton } from 'naive-ui'
 
@@ -564,7 +565,7 @@ const showConfirm = ref(false)
 const showSuccess = ref(false)
 /** 刚下的那一单：收款页和成功屏都要把单号给顾客看 */
 const orderId = ref<number | null>(null)
-const orderTotal = ref<Cents>(cents(0))
+const orderTotal = ref<Cents | null>(null)
 const isCheckingOut = ref(false)
 const selectedCategory = ref('')
 const isEditMode = ref(false)
@@ -779,7 +780,13 @@ watch(
 
 // ===== 下单 =====
 function handleCheckout() {
-  if (isCheckingOut.value || !store.cart.length) return
+  if (isCheckingOut.value) return
+  if (!store.cart.length) {
+    orderId.value = null
+    orderTotal.value = null
+    showPaymentModal.value = true
+    return
+  }
   showConfirm.value = true
 }
 
@@ -818,6 +825,7 @@ let successTimer: ReturnType<typeof setTimeout> | null = null
 
 function closePaymentModal() {
   showPaymentModal.value = false
+  if (orderId.value === null) return
   store.clearCart()
   mode.value = 'list'
   // 付款完成是一个自然的「交接点」：先亮一下单号，再回到吸引屏等待下一位顾客

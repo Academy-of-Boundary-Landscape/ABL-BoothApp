@@ -41,6 +41,7 @@ use crate::{
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(create_order, list_orders))
+        .routes(routes!(quick_sale))
         .routes(routes!(update_order_status))
 }
 
@@ -51,6 +52,20 @@ pub fn router() -> OpenApiRouter<AppState> {
 #[derive(Deserialize, ToSchema)]
 struct CreateOrderRequest {
     items: Vec<CartItemRequest>,
+}
+
+/// 摊主已经核对到账后，快速记一整单。
+#[derive(Deserialize, ToSchema)]
+struct QuickSaleRequest {
+    items: Vec<CartItemRequest>,
+    channel: String,
+    /// 前端已经显示并经摊主确认的本单金额（分）；价格或优惠变动时拒绝。
+    #[schema(value_type = Money)]
+    expected_amount: i64,
+    /// 实际收到的金额（分）；省略时等于报价，手工让价规则与普通订单相同。
+    #[schema(value_type = Option<Money>)]
+    final_amount: Option<i64>,
+    request_id: uuid::Uuid,
 }
 
 /// 改订单状态的请求体。schema 名加 `Order` 前缀：`UpdateStatusRequest` 这种名字
@@ -312,21 +327,28 @@ async fn create_order(
 ) -> ApiResult<(StatusCode, Json<OrderResponse>)> {
     // 不需要展会守卫：下单要求更严的「进行中」，守卫在 ensure_event_selling，不能放宽成「不是已结算」
     let merged = merge_items(&payload.items)?;
-
-    // 展会状态放在事务之前，省得白拿写锁。
-    {
-        let mut conn = state.db.acquire().await?;
-        ensure_event_selling(&mut conn, event_id).await?;
-    }
-
-    // 防超卖是「查余额 → 插移动」两步，SQLite 单写者模型下仍然安全，前提是
-    // 两步在同一个 BEGIN IMMEDIATE 事务里——默认的 deferred 事务在第一次写之前不持写锁。
+    // 普通顾客下单保留原有权限与状态规则。
+    let mut conn = state.db.acquire().await?;
+    ensure_event_selling(&mut conn, event_id).await?;
+    drop(conn);
     let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
-    let resolved = resolve_cart(&mut tx, event_id, &merged).await?;
+    let response = insert_order_in_tx(&mut tx, event_id, &merged, None).await?;
+    tx.commit().await?;
+    Ok((StatusCode::CREATED, Json(response)))
+}
+
+/// 所有订单入口共用同一套库存、套装定价和销售流水写入。
+async fn insert_order_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    event_id: i64,
+    merged: &[(i64, i64)],
+    quick_sale_key: Option<&str>,
+) -> ApiResult<OrderResponse> {
+    let resolved = resolve_cart(&mut **tx, event_id, merged).await?;
 
     let mut stock_legs: Vec<StockLeg> = Vec::with_capacity(resolved.len());
     for r in &resolved {
-        let left = onsite_balance(&mut *tx, r.product.id).await?;
+        let left = onsite_balance(&mut **tx, r.product.id).await?;
         if left < r.qty {
             return Err(ApiError::Conflict(format!(
                 "「{}」库存不足",
@@ -343,19 +365,20 @@ async fn create_order(
 
     // 求解 + 分摊。**下单和 /quote 走的是同一份 price_cart**，所以顾客在购物车里
     // 看到的价和这里算出来的价不可能因为实现漂移而分叉。
-    let lots = load_lots(&mut tx, event_id).await?;
+    let lots = load_lots(&mut **tx, event_id).await?;
     let priced = price_cart(&cart_lines(&resolved), &lots)?;
 
     // 手工覆盖在「确认收款」那一步才发生（spec 4.3），所以下单时 final = solved。
     let order: OrderRow = query_as(
-        "INSERT INTO orders (event_id, status, gross_amount, solved_amount, final_amount)
-         VALUES (?, 'pending', ?, ?, ?) RETURNING *",
+        "INSERT INTO orders (event_id, status, gross_amount, solved_amount, final_amount, quick_sale_key)
+         VALUES (?, 'pending', ?, ?, ?, ?) RETURNING *",
     )
     .bind(event_id)
     .bind(priced.gross.cents())
     .bind(priced.solved.cents())
     .bind(priced.solved.cents())
-    .fetch_one(&mut *tx)
+    .bind(quick_sale_key)
+    .fetch_one(&mut **tx)
     .await?;
     let order_id = order.id;
 
@@ -370,7 +393,7 @@ async fn create_order(
         .bind(lot.lot_id)
         .bind(&lot.name)
         .bind(lot.price.cents())
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **tx)
         .await?;
         order_lot_ids.push(id);
     }
@@ -397,7 +420,7 @@ async fn create_order(
         .bind(line.allocated.cents())
         // 下单时 paid = allocated。手工折让要到「确认收款」那一步才摊进来（Task 7）。
         .bind(line.allocated.cents())
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **tx)
         .await?;
 
         let p = snapshot[&line.event_product_id];
@@ -421,7 +444,7 @@ async fn create_order(
     // 这是 `api/product.rs` 的「有流水才禁止删除」守卫仍然完备的前提
     // （②-1 交接段第 2 条）。
     post_journal(
-        &mut tx,
+        tx,
         event_id,
         JournalKind::Sale,
         Some(order_id),
@@ -431,8 +454,6 @@ async fn create_order(
         &[],
     )
     .await?;
-
-    tx.commit().await?;
 
     // 成分原价合计从 priced.lines 聚合，和分摊用的是同一组数。
     let lots_response: Vec<OrderLotResponse> = priced
@@ -457,15 +478,98 @@ async fn create_order(
         })
         .collect();
 
-    Ok((
-        StatusCode::CREATED,
-        Json(OrderResponse {
-            order,
-            items,
-            lots: lots_response,
-            refunded_amount: 0,
-        }),
-    ))
+    Ok(OrderResponse {
+        order,
+        items,
+        lots: lots_response,
+        refunded_amount: 0,
+    })
+}
+
+/// 快售与普通下单共用销售和收款逻辑，两本流水同事务提交。
+#[utoipa::path(
+    post,
+    path = "/events/{event_id}/quick-sales",
+    tag = "order",
+    params(("event_id" = i64, Path, description = "展会 id")),
+    request_body = QuickSaleRequest,
+    security(("bearer" = [])),
+    responses(
+        (status = 201, body = OrderResponse, description = "快售已记入订单与账本"),
+        (status = 200, body = OrderResponse, description = "同一请求的安全重试"),
+        (status = 400, body = ApiErrorBody, description = "商品或渠道无效"),
+        (status = 401, body = ApiErrorBody, description = "未登录"),
+        (status = 403, body = ApiErrorBody, description = "无权访问展会"),
+        (status = 409, body = ApiErrorBody, description = "库存不足、展会不在进行中或请求编号被复用"),
+    ),
+)]
+async fn quick_sale(
+    State(state): State<AppState>,
+    claims: Claims,
+    Path(event_id): Path<i64>,
+    Json(payload): Json<QuickSaleRequest>,
+) -> ApiResult<(StatusCode, Json<OrderResponse>)> {
+    check_write_permission(&claims, event_id)?;
+    if payload.expected_amount < 0 {
+        return Err(ApiError::BadRequest("商品金额不能为负".into()));
+    }
+    let channel = crate::domain::channel::normalize(&payload.channel)?;
+    let mut requested_items = merge_items(&payload.items)?;
+    requested_items.sort_unstable_by_key(|(product_id, _)| *product_id);
+    let key = payload.request_id.to_string();
+    let mut tx = state.db.begin_with("BEGIN IMMEDIATE").await?;
+
+    // 网络超时后客户端会用相同编号重发。必须先查已完成的写入，再检查展会状态：
+    // 收摊之后重试也应拿回原结果，不能报「展会已结束」让摊主误点第二笔。
+    let existing: Option<(i64, i64, Option<String>, i64, i64)> =
+        query_as("SELECT id, event_id, channel, solved_amount, final_amount FROM orders WHERE quick_sale_key = ?")
+            .bind(&key)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if let Some((order_id, original_event, original_channel, original_quote, original_final)) =
+        existing
+    {
+        let original_items: Vec<(i64, i64)> =
+            query_as("SELECT event_product_id, SUM(qty) FROM order_lines WHERE order_id = ? GROUP BY event_product_id ORDER BY event_product_id")
+                .bind(order_id)
+                .fetch_all(&mut *tx)
+                .await?;
+        if original_event != event_id
+            || original_items != requested_items
+            || original_channel.as_deref() != Some(channel.as_str())
+            || original_quote != payload.expected_amount
+            || original_final != payload.final_amount.unwrap_or(payload.expected_amount)
+        {
+            return Err(ApiError::Conflict("请求编号已用于另一笔销售".into()));
+        }
+        tx.commit().await?;
+        let order = load_order_response(&state.db, order_id).await?;
+        return Ok((StatusCode::OK, Json(order)));
+    }
+
+    ensure_event_selling(&mut tx, event_id).await?;
+    let pending = insert_order_in_tx(&mut tx, event_id, &requested_items, Some(&key)).await?;
+    if pending.order.solved_amount != payload.expected_amount {
+        return Err(ApiError::Conflict(
+            "价格或优惠已变化，请刷新商品后再记这笔销售".into(),
+        ));
+    }
+    let order_id = pending.order.id;
+    complete_order_in_tx(
+        &mut tx,
+        event_id,
+        order_id,
+        &UpdateStatusRequest {
+            status: "completed".into(),
+            channel: Some(channel),
+            final_amount: payload.final_amount,
+            unapply_lot_ids: None,
+        },
+    )
+    .await?;
+    tx.commit().await?;
+    let order = load_order_response(&state.db, order_id).await?;
+    Ok((StatusCode::CREATED, Json(order)))
 }
 
 // ==========================================
@@ -627,189 +731,7 @@ async fn update_order_status(
             return Err(ApiError::Conflict("订单已完成，不能重复完成".into()));
         }
         ("pending", "completed") => {
-            // completed 必须带 channel：钱那条腿 `社团往来 → 实收-<渠道>` 需要对手账户。
-            let raw = payload
-                .channel
-                .as_deref()
-                .ok_or_else(|| ApiError::BadRequest("完成订单必须提供收款渠道".into()))?;
-            // 渠道名会成为账户名的一部分，规范化必须在写库之前（domain/channel.rs 的模块注释）
-            let channel = crate::domain::channel::normalize(raw)?;
-
-            // 拆套装（spec 4.3 的辅助通道）。必须排在读 solved_amount 之前——
-            // 拆完 solved 会变，而手工折让是相对**新的** solved 算的。
-            if let Some(ids) = payload.unapply_lot_ids.as_deref() {
-                let mut ids = ids.to_vec();
-                ids.sort_unstable();
-                ids.dedup(); // 传重了不该变成「第二次找不到」的 400
-                for order_lot_id in &ids {
-                    let belongs: Option<i64> =
-                        query_scalar("SELECT id FROM order_lots WHERE id = ? AND order_id = ?")
-                            .bind(order_lot_id)
-                            .bind(order_id)
-                            .fetch_optional(&mut *tx)
-                            .await?;
-                    belongs
-                        .ok_or_else(|| ApiError::BadRequest("要拆的套装不属于这张订单".into()))?;
-
-                    // 成分行金额恢复成「单价 × 件数」，并解除归属。
-                    // **不重新求解**：纯拆解，结果唯一，也不依赖当前的 Lot 配置
-                    // （摊主可能刚把那个 Lot 改了或删了）。
-                    //
-                    // 这里是未检查乘法，但不可达：`unit_price`/`qty` 是下单时写进
-                    // `order_lines` 的快照，下单路径上 `price_cart` 已对同一组
-                    // (unit_price, qty) 跑过 `checked_mul_qty`，件数又受 `MAX_UNITS = 300`
-                    // 约束，能走到这里就已经证明乘不爆。不要改成 checked——那会多一条永远
-                    // 走不到的错误分支。真溢出的话 SQLite 会把 INTEGER 提升成 REAL，往
-                    // INTEGER 亲和性的列里写进一个浮点，后果比报错更隐蔽，所以这层依赖必须
-                    // 随 `price_cart` 的检查位置一起复核。
-                    query(
-                        "UPDATE order_lines
-                         SET allocated_amount = unit_price * qty, order_lot_id = NULL
-                         WHERE order_lot_id = ?",
-                    )
-                    .bind(order_lot_id)
-                    .execute(&mut *tx)
-                    .await?;
-
-                    query("DELETE FROM order_lots WHERE id = ?")
-                        .bind(order_lot_id)
-                        .execute(&mut *tx)
-                        .await?;
-                }
-
-                // solved 重新从各行聚合。**gross 不动**——原价合计不因为拆而改变。
-                // 货那一侧同样一个字不动（spec 4.3 第一条约束）。
-                query(
-                    "UPDATE orders SET solved_amount =
-                       (SELECT COALESCE(SUM(allocated_amount), 0)
-                        FROM order_lines WHERE order_id = ?)
-                     WHERE id = ?",
-                )
-                .bind(order_id)
-                .bind(order_id)
-                .execute(&mut *tx)
-                .await?;
-            }
-
-            let solved: i64 = query_scalar("SELECT solved_amount FROM orders WHERE id = ?")
-                .bind(order_id)
-                .fetch_one(&mut *tx)
-                .await?;
-            let final_amount = payload.final_amount.unwrap_or(solved);
-            // 这里和 domain/allocation.rs 的 apply_manual_adjustment 里那道 final_amount < 0 检查重复，
-            // 内层在这条路径上不可达。保留 handler 这一处，它更靠前、给出的错误更便宜；两处文案要一起改。
-            // **不要删内层那道**——那是纯函数自己的前置条件，还有别的调用方会来。
-            if final_amount < 0 {
-                return Err(ApiError::BadRequest("实收金额不能为负".into()));
-            }
-
-            // 手工折让摊进各行 → paid_amount。**按 id 排序读行**：分摊的取整规则
-            // 依赖稳定的顺序，同样的输入两次必须算出同一个结果（spec 4.5）。
-            let lines: Vec<(i64, i64, i64)> = query_as(
-                "SELECT id, allocated_amount, qty FROM order_lines WHERE order_id = ? ORDER BY id",
-            )
-            .bind(order_id)
-            .fetch_all(&mut *tx)
-            .await?;
-            let allocated: Vec<Money> = lines
-                .iter()
-                .map(|(_, a, _)| Money::from_cents(*a))
-                .collect();
-            let qty: Vec<i64> = lines.iter().map(|(_, _, q)| *q).collect();
-            let paid = apply_manual_adjustment(
-                &allocated,
-                &qty,
-                Money::from_cents(solved),
-                Money::from_cents(final_amount),
-            )?;
-            for ((line_id, _, _), p) in lines.iter().zip(&paid) {
-                query("UPDATE order_lines SET paid_amount = ? WHERE id = ?")
-                    .bind(p.cents())
-                    .bind(line_id)
-                    .execute(&mut *tx)
-                    .await?;
-            }
-
-            // 按货主分组，Σ 该货主各行的 **allocated_amount**。
-            // 用 allocated 而不是 paid 是 spec 4.4 的全部要点：代卖社团该得多少，
-            // 不受摊主当天做了什么人情的影响。
-            let owner_totals: Vec<(i64, i64)> = query_as(
-                "SELECT ep.owner_society_id, SUM(ol.allocated_amount)
-                 FROM order_lines ol
-                 JOIN event_products ep ON ep.id = ol.event_product_id
-                 WHERE ol.order_id = ?
-                 GROUP BY ep.owner_society_id",
-            )
-            .bind(order_id)
-            .fetch_all(&mut *tx)
-            .await?;
-
-            let mut money_legs: Vec<MoneyLeg> = owner_totals
-                .into_iter()
-                .map(|(owner_id, cents)| MoneyLeg {
-                    from: Account::SocietyDue(owner_id),
-                    to: Account::Received(channel.clone()),
-                    amount: Money::from_cents(cents),
-                })
-                .filter(|leg| !leg.amount.is_zero())
-                .collect();
-
-            // 手工折让/加价：**整笔落在本社团头上，不按货主分摊**（spec 4.4）。
-            // 这条规则不依赖订单里有没有本社团的行——整单都是代卖货、摊主说
-            // 「算你 15」，那 5 块一样落到本社团头上。
-            let diff = solved - final_amount;
-            if diff != 0 {
-                // 「本社团」有且只有一个，由 idx_societies_home 这个偏唯一索引保证，
-                // 且 api/society.rs 不允许把它降级成「没有本社团」。
-                // 没有时给一句能照着做的话，而不是 panic 成 500。
-                let home = home_society_id(&mut tx).await?;
-                // ⚠️ 金额恒取绝对值，方向由 from/to 表达（spec 4.4 末句）。
-                // 照「金额 = solved − final」直接传，加价时它是负数，而 post_journal
-                // 对非正金额直接返回「资金移动的金额必须为正」——每一张加价订单的
-                // 「完成」都会 400。
-                money_legs.push(if diff > 0 {
-                    MoneyLeg {
-                        from: Account::Received(channel.clone()),
-                        to: Account::SocietyDue(home),
-                        amount: Money::from_cents(diff),
-                    }
-                } else {
-                    MoneyLeg {
-                        from: Account::SocietyDue(home),
-                        to: Account::Received(channel.clone()),
-                        amount: Money::from_cents(-diff),
-                    }
-                });
-            }
-
-            // 全 0 金额（全赠品订单）时没有钱可记，跳过收款 journal 而不是
-            // 让 post_journal 拒绝「空的 journal」。
-            // ⚠️ 于是「订单是 completed」**不蕴含**「存在收款 journal」——
-            // ②-3 做结算对账时要按 orders.status 判定，不能按 journal 存在性。
-            if !money_legs.is_empty() {
-                post_journal(
-                    &mut tx,
-                    event_id,
-                    JournalKind::Receipt,
-                    Some(order_id),
-                    None,
-                    Some("收款"),
-                    &[],
-                    &money_legs,
-                )
-                .await?;
-            }
-
-            query(
-                "UPDATE orders SET status = 'completed', channel = ?, final_amount = ?,
-                        completed_at = CURRENT_TIMESTAMP
-                 WHERE id = ?",
-            )
-            .bind(&channel)
-            .bind(final_amount)
-            .bind(order_id)
-            .execute(&mut *tx)
-            .await?;
+            complete_order_in_tx(&mut tx, event_id, order_id, &payload).await?;
         }
         ("pending", "cancelled") | ("completed", "cancelled") => {
             // 同一个调用把货和钱两个 journal 一起冲掉（货回到现场仓、钱按反方向回滚）。
@@ -836,14 +758,386 @@ async fn update_order_status(
     Ok(Json(response))
 }
 
+/// 收款流水与完成状态在调用方事务内一起提交；快售也走这条规则。
+async fn complete_order_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    event_id: i64,
+    order_id: i64,
+    payload: &UpdateStatusRequest,
+) -> ApiResult<()> {
+    // completed 必须带 channel：钱那条腿 `社团往来 → 实收-<渠道>` 需要对手账户。
+    let raw = payload
+        .channel
+        .as_deref()
+        .ok_or_else(|| ApiError::BadRequest("完成订单必须提供收款渠道".into()))?;
+    // 渠道名会成为账户名的一部分，规范化必须在写库之前（domain/channel.rs 的模块注释）
+    let channel = crate::domain::channel::normalize(raw)?;
+
+    // 拆套装（spec 4.3 的辅助通道）。必须排在读 solved_amount 之前——
+    // 拆完 solved 会变，而手工折让是相对**新的** solved 算的。
+    if let Some(ids) = payload.unapply_lot_ids.as_deref() {
+        let mut ids = ids.to_vec();
+        ids.sort_unstable();
+        ids.dedup(); // 传重了不该变成「第二次找不到」的 400
+        for order_lot_id in &ids {
+            let belongs: Option<i64> =
+                query_scalar("SELECT id FROM order_lots WHERE id = ? AND order_id = ?")
+                    .bind(order_lot_id)
+                    .bind(order_id)
+                    .fetch_optional(&mut **tx)
+                    .await?;
+            belongs.ok_or_else(|| ApiError::BadRequest("要拆的套装不属于这张订单".into()))?;
+
+            // 成分行金额恢复成「单价 × 件数」，并解除归属。
+            // **不重新求解**：纯拆解，结果唯一，也不依赖当前的 Lot 配置
+            // （摊主可能刚把那个 Lot 改了或删了）。
+            //
+            // 这里是未检查乘法，但不可达：`unit_price`/`qty` 是下单时写进
+            // `order_lines` 的快照，下单路径上 `price_cart` 已对同一组
+            // (unit_price, qty) 跑过 `checked_mul_qty`，件数又受 `MAX_UNITS = 300`
+            // 约束，能走到这里就已经证明乘不爆。不要改成 checked——那会多一条永远
+            // 走不到的错误分支。真溢出的话 SQLite 会把 INTEGER 提升成 REAL，往
+            // INTEGER 亲和性的列里写进一个浮点，后果比报错更隐蔽，所以这层依赖必须
+            // 随 `price_cart` 的检查位置一起复核。
+            query(
+                "UPDATE order_lines
+                         SET allocated_amount = unit_price * qty, order_lot_id = NULL
+                         WHERE order_lot_id = ?",
+            )
+            .bind(order_lot_id)
+            .execute(&mut **tx)
+            .await?;
+
+            query("DELETE FROM order_lots WHERE id = ?")
+                .bind(order_lot_id)
+                .execute(&mut **tx)
+                .await?;
+        }
+
+        // solved 重新从各行聚合。**gross 不动**——原价合计不因为拆而改变。
+        // 货那一侧同样一个字不动（spec 4.3 第一条约束）。
+        query(
+            "UPDATE orders SET solved_amount =
+                       (SELECT COALESCE(SUM(allocated_amount), 0)
+                        FROM order_lines WHERE order_id = ?)
+                     WHERE id = ?",
+        )
+        .bind(order_id)
+        .bind(order_id)
+        .execute(&mut **tx)
+        .await?;
+    }
+
+    let solved: i64 = query_scalar("SELECT solved_amount FROM orders WHERE id = ?")
+        .bind(order_id)
+        .fetch_one(&mut **tx)
+        .await?;
+    let final_amount = payload.final_amount.unwrap_or(solved);
+    // 这里和 domain/allocation.rs 的 apply_manual_adjustment 里那道 final_amount < 0 检查重复，
+    // 内层在这条路径上不可达。保留 handler 这一处，它更靠前、给出的错误更便宜；两处文案要一起改。
+    // **不要删内层那道**——那是纯函数自己的前置条件，还有别的调用方会来。
+    if final_amount < 0 {
+        return Err(ApiError::BadRequest("实收金额不能为负".into()));
+    }
+
+    // 手工折让摊进各行 → paid_amount。**按 id 排序读行**：分摊的取整规则
+    // 依赖稳定的顺序，同样的输入两次必须算出同一个结果（spec 4.5）。
+    let lines: Vec<(i64, i64, i64)> = query_as(
+        "SELECT id, allocated_amount, qty FROM order_lines WHERE order_id = ? ORDER BY id",
+    )
+    .bind(order_id)
+    .fetch_all(&mut **tx)
+    .await?;
+    let allocated: Vec<Money> = lines
+        .iter()
+        .map(|(_, a, _)| Money::from_cents(*a))
+        .collect();
+    let qty: Vec<i64> = lines.iter().map(|(_, _, q)| *q).collect();
+    let paid = apply_manual_adjustment(
+        &allocated,
+        &qty,
+        Money::from_cents(solved),
+        Money::from_cents(final_amount),
+    )?;
+    for ((line_id, _, _), p) in lines.iter().zip(&paid) {
+        query("UPDATE order_lines SET paid_amount = ? WHERE id = ?")
+            .bind(p.cents())
+            .bind(line_id)
+            .execute(&mut **tx)
+            .await?;
+    }
+
+    // 按货主分组，Σ 该货主各行的 **allocated_amount**。
+    // 用 allocated 而不是 paid 是 spec 4.4 的全部要点：代卖社团该得多少，
+    // 不受摊主当天做了什么人情的影响。
+    let owner_totals: Vec<(i64, i64)> = query_as(
+        "SELECT ep.owner_society_id, SUM(ol.allocated_amount)
+                 FROM order_lines ol
+                 JOIN event_products ep ON ep.id = ol.event_product_id
+                 WHERE ol.order_id = ?
+                 GROUP BY ep.owner_society_id",
+    )
+    .bind(order_id)
+    .fetch_all(&mut **tx)
+    .await?;
+
+    let mut money_legs: Vec<MoneyLeg> = owner_totals
+        .into_iter()
+        .map(|(owner_id, cents)| MoneyLeg {
+            from: Account::SocietyDue(owner_id),
+            to: Account::Received(channel.clone()),
+            amount: Money::from_cents(cents),
+        })
+        .filter(|leg| !leg.amount.is_zero())
+        .collect();
+
+    // 手工折让/加价：**整笔落在本社团头上，不按货主分摊**（spec 4.4）。
+    // 这条规则不依赖订单里有没有本社团的行——整单都是代卖货、摊主说
+    // 「算你 15」，那 5 块一样落到本社团头上。
+    let diff = solved - final_amount;
+    if diff != 0 {
+        // 「本社团」有且只有一个，由 idx_societies_home 这个偏唯一索引保证，
+        // 且 api/society.rs 不允许把它降级成「没有本社团」。
+        // 没有时给一句能照着做的话，而不是 panic 成 500。
+        let home = home_society_id(&mut **tx).await?;
+        // ⚠️ 金额恒取绝对值，方向由 from/to 表达（spec 4.4 末句）。
+        // 照「金额 = solved − final」直接传，加价时它是负数，而 post_journal
+        // 对非正金额直接返回「资金移动的金额必须为正」——每一张加价订单的
+        // 「完成」都会 400。
+        money_legs.push(if diff > 0 {
+            MoneyLeg {
+                from: Account::Received(channel.clone()),
+                to: Account::SocietyDue(home),
+                amount: Money::from_cents(diff),
+            }
+        } else {
+            MoneyLeg {
+                from: Account::SocietyDue(home),
+                to: Account::Received(channel.clone()),
+                amount: Money::from_cents(-diff),
+            }
+        });
+    }
+
+    // 全 0 金额（全赠品订单）时没有钱可记，跳过收款 journal 而不是
+    // 让 post_journal 拒绝「空的 journal」。
+    // ⚠️ 于是「订单是 completed」**不蕴含**「存在收款 journal」——
+    // ②-3 做结算对账时要按 orders.status 判定，不能按 journal 存在性。
+    if !money_legs.is_empty() {
+        post_journal(
+            tx,
+            event_id,
+            JournalKind::Receipt,
+            Some(order_id),
+            None,
+            Some("收款"),
+            &[],
+            &money_legs,
+        )
+        .await?;
+    }
+
+    query(
+        "UPDATE orders SET status = 'completed', channel = ?, final_amount = ?,
+                        completed_at = CURRENT_TIMESTAMP
+                 WHERE id = ?",
+    )
+    .bind(&channel)
+    .bind(final_amount)
+    .bind(order_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use crate::test_support::{
         admin_token, json_request, place, read_json, seed_event_and_product, test_router_with,
+        vendor_token,
     };
     use axum::http::StatusCode;
     use serde_json::json;
     use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn quick_sale_records_one_completed_order_and_retries_do_not_sell_twice() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, product_id, _) = seed_event_and_product(&pool).await;
+        let token = vendor_token(event_id);
+        let uri = format!("/api/events/{event_id}/quick-sales");
+        let payload = json!({
+            "items": [{"product_id": product_id, "quantity": 1}],
+            "channel": "微信",
+            "expected_amount": 3000,
+            "request_id": "550e8400-e29b-41d4-a716-446655440000"
+        });
+
+        let first = router
+            .clone()
+            .oneshot(json_request("POST", &uri, Some(&token), payload.clone()))
+            .await
+            .unwrap();
+        assert_eq!(first.status(), StatusCode::CREATED);
+        let first_body = read_json(first).await;
+        assert_eq!(first_body["status"], "completed");
+        assert_eq!(first_body["final_amount"], 3000);
+        assert_eq!(first_body["channel"], "微信");
+
+        let retry = router
+            .clone()
+            .oneshot(json_request("POST", &uri, Some(&token), payload))
+            .await
+            .unwrap();
+        assert_eq!(retry.status(), StatusCode::OK);
+        assert_eq!(read_json(retry).await["id"], first_body["id"]);
+
+        let orders: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM orders WHERE event_id = ?")
+            .bind(event_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(orders, 1);
+        let onsite = crate::domain::ledger::onsite_balance(&pool, product_id)
+            .await
+            .unwrap();
+        assert_eq!(onsite, 9);
+        let receipts: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM journals WHERE order_id = ? AND kind = '收款'",
+        )
+        .bind(first_body["id"].as_i64().unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(receipts, 1);
+    }
+
+    #[tokio::test]
+    async fn quick_sale_rejects_a_stale_displayed_price_without_writing_an_order() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, product_id, _) = seed_event_and_product(&pool).await;
+        let token = vendor_token(event_id);
+        let res = router
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/quick-sales"),
+                Some(&token),
+                json!({
+                "items": [{"product_id": product_id, "quantity": 1}],
+                    "channel": "微信",
+                    "expected_amount": 2900,
+                    "request_id": "550e8400-e29b-41d4-a716-446655440001"
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+        let orders: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM orders")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(orders, 0);
+        assert_eq!(
+            crate::domain::ledger::onsite_balance(&pool, product_id)
+                .await
+                .unwrap(),
+            10
+        );
+    }
+
+    #[tokio::test]
+    async fn quick_sale_cart_uses_the_same_lot_discount_as_customer_quote() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, product_id, _) = seed_event_and_product(&pool).await;
+        let token = vendor_token(event_id);
+        sqlx::query(
+            "INSERT INTO lots (id, event_id, name, pick_count, total_price, allow_repeat)
+             VALUES (1, ?, '本子两本优惠', 2, 5000, 1)",
+        )
+        .bind(event_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO lot_candidates (lot_id, event_product_id) VALUES (1, ?)")
+            .bind(product_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let items = json!([{"product_id": product_id, "quantity": 2}]);
+        let quote = router
+            .clone()
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/quote"),
+                None,
+                json!({"items": items}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(quote.status(), StatusCode::OK);
+        assert_eq!(read_json(quote).await["solved_amount"], 5000);
+
+        let sale = router
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/quick-sales"),
+                Some(&token),
+                json!({
+                    "items": items,
+                    "channel": "支付宝",
+                    "expected_amount": 5000,
+                    "request_id": "550e8400-e29b-41d4-a716-446655440002"
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(sale.status(), StatusCode::CREATED);
+        let order = read_json(sale).await;
+        assert_eq!(order["final_amount"], 5000);
+        assert_eq!(order["lots"][0]["name"], "本子两本优惠");
+        assert_eq!(
+            crate::domain::ledger::onsite_balance(&pool, product_id)
+                .await
+                .unwrap(),
+            8
+        );
+    }
+
+    #[tokio::test]
+    async fn quick_sale_can_record_the_actual_amount_after_a_manual_reduction() {
+        let (router, _dir, pool) = test_router_with().await;
+        let (event_id, product_id, _) = seed_event_and_product(&pool).await;
+        let token = vendor_token(event_id);
+        let sale = router
+            .oneshot(json_request(
+                "POST",
+                &format!("/api/events/{event_id}/quick-sales"),
+                Some(&token),
+                json!({
+                    "items": [{"product_id": product_id, "quantity": 1}],
+                    "channel": "微信",
+                    "expected_amount": 3000,
+                    "final_amount": 2800,
+                    "request_id": "550e8400-e29b-41d4-a716-446655440003"
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(sale.status(), StatusCode::CREATED);
+        let order = read_json(sale).await;
+        assert_eq!(order["solved_amount"], 3000);
+        assert_eq!(order["final_amount"], 2800);
+        assert_eq!(order["items"][0]["paid_amount"], 2800);
+        let journal_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM journals WHERE order_id = ? AND kind = '收款'",
+        )
+        .bind(order["id"].as_i64().unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(journal_count, 1);
+    }
 
     #[tokio::test]
     async fn placing_an_order_moves_goods_out_of_the_onsite_warehouse_immediately() {

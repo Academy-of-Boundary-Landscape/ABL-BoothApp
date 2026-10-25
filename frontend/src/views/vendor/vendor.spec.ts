@@ -2,10 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
+import { NButton } from 'naive-ui'
 import router from '@/router'
 import { useOrderStore } from '@/stores/orderStore'
 import { useEventStore } from '@/stores/eventStore'
 import VendorClosing from '@/views/vendor/VendorClosing.vue'
+import VendorQuickSale from '@/views/vendor/VendorQuickSale.vue'
+import PaymentModal from '@/components/customer/PaymentModal.vue'
 import CustomerView from '@/views/CustomerView.vue'
 import RefundModal from '@/components/vendor/RefundModal.vue'
 import { cents } from '@/utils/money'
@@ -171,6 +174,7 @@ describe('摊主端路由', () => {
   })
 
   const CHILD_ROUTES = [
+    ['vendor-quick-sale', '/vendor/3/quick-sale'],
     ['vendor-orders', '/vendor/3/orders'],
     ['vendor-inventory', '/vendor/3/inventory'],
     ['vendor-closing', '/vendor/3/closing'],
@@ -356,6 +360,38 @@ describe('CustomerView 回摊主端', () => {
     mocks.canAccessVendorPage.mockReturnValue(false)
     const wrapper = mountCustomer()
     expect(wrapper.find('.vendor-return').exists()).toBe(false)
+  })
+})
+
+describe('VendorQuickSale 收款码', () => {
+  it('一键展示本场两个收款码，关闭后回到快售且不记账', async () => {
+    const eventStore = useEventStore()
+    eventStore.events = [makeEvent({ qrcode_urls: ['uploads/wechat.png', 'uploads/alipay.png'] })]
+    const wrapper = mount(VendorQuickSale, {
+      props: { id: '3' },
+      global: {
+        stubs: {
+          PageShell: { template: '<div><slot /></div>' },
+          ChannelSelect: true,
+          PaymentModal: true,
+          Teleport: true,
+        },
+      },
+    })
+    expect(wrapper.getComponent(PaymentModal).props('show')).toBe(false)
+    const postCallsBefore = mocks.apiPost.mock.calls.length
+
+    await wrapper.getComponent(NButton).trigger('click')
+    const payment = wrapper.getComponent(PaymentModal)
+    expect(payment.props('show')).toBe(true)
+    expect(payment.props('qrCodeUrls')).toEqual(['/uploads/wechat.png', '/uploads/alipay.png'])
+    expect(payment.props('total')).toBeNull()
+
+    payment.vm.$emit('close')
+    await flushPromises()
+    expect(wrapper.getComponent(PaymentModal).props('show')).toBe(false)
+    expect(mocks.apiPost.mock.calls.length).toBe(postCallsBefore)
+    wrapper.unmount()
   })
 })
 

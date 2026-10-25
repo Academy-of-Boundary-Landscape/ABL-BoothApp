@@ -44,6 +44,8 @@
     <div class="qr-upload-row">
       <ImageUploader
         label="微信收款码（可选）"
+        crop-enabled
+        crop-default-aspect="1:1"
         :initial-image-url="existingQrUrls[0]"
         v-model="newQrWechat"
         @image-removed="() => handleQrRemoved(0)"
@@ -51,12 +53,15 @@
       />
       <ImageUploader
         label="支付宝收款码（可选）"
+        crop-enabled
+        crop-default-aspect="1:1"
         :initial-image-url="existingQrUrls[1]"
         v-model="newQrAlipay"
         @image-removed="() => handleQrRemoved(1)"
         @invalid-file="handleInvalidFile"
       />
     </div>
+    <p class="qr-hint">上传后可按 1:1 裁剪，请保留完整二维码及四周白边。</p>
 
     <p v-if="errorMessage" class="form-error">{{ errorMessage }}</p>
   </n-form>
@@ -221,6 +226,12 @@ defineExpose({ submit, buildFormData })
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--space-lg);
+}
+
+.qr-hint {
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  margin: 0 0 var(--space-lg);
 }
 
 /* 编辑时表单里出现密码框，不需要额外的间距 hack；字段之间由 n-form-item 自身留白。 */

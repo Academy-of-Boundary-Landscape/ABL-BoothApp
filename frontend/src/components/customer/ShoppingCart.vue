@@ -37,11 +37,11 @@
             type="primary"
             round
             class="bar-checkout-btn"
-            :disabled="!cart.length || isCheckingOut || quotePending"
+            :disabled="isCheckingOut || (cart.length > 0 && quotePending)"
             :loading="isCheckingOut"
             @click.stop="$emit('checkout')"
           >
-            去结算
+            {{ cart.length ? '去结算' : '展示收款码' }}
           </n-button>
         </div>
       </div>
@@ -126,12 +126,12 @@
             block
             round
             size="large"
-            :disabled="!cart.length || isCheckingOut || quotePending"
+            :disabled="isCheckingOut || (cart.length > 0 && quotePending)"
             :loading="isCheckingOut"
             class="checkout-btn"
             @click="$emit('checkout')"
           >
-            {{ isCheckingOut ? '提交中...' : '去结算' }}
+            {{ isCheckingOut ? '提交中...' : cart.length ? '去结算' : '展示收款码' }}
           </n-button>
         </div>
       </div>

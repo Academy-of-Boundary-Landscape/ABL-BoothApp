@@ -11,6 +11,7 @@ import WorkbenchIndex from '../views/WorkbenchIndex.vue'
 import AdminSocieties from '../views/AdminSocieties.vue'
 import VendorEventSelection from '../views/VendorEventSelection.vue' // 【新增】导入新视图
 import VendorShell from '../views/vendor/VendorShell.vue'
+import VendorQuickSale from '../views/vendor/VendorQuickSale.vue'
 import VendorOrders from '../views/vendor/VendorOrders.vue'
 import VendorInventory from '../views/vendor/VendorInventory.vue'
 import VendorClosing from '../views/vendor/VendorClosing.vue'
@@ -135,7 +136,7 @@ const routes = [
     component: VendorEventSelection,
   },
 
-  // 摊主端外壳：订单 / 库存 / 收摊三个 tab 各是子路由；旧的 `/vendor/:id` URL 保留。
+  // 摊主端外壳：快售 / 订单 / 库存 / 收摊四个 tab 各是子路由；旧的 `/vendor/:id` URL 保留。
   {
     // 外壳同样不命名（理由见上面的展会工作台）：按名字跳这里不会走空路径子路由的重定向。
     path: '/vendor/:id', // :id 是展会 ID
@@ -147,6 +148,12 @@ const routes = [
         // 父路由的 :id 在子路由上仍存在；redirect 显式带过去。
         path: '',
         redirect: (to: RouteLocation) => ({ name: 'vendor-orders', params: { id: to.params.id } }),
+      },
+      {
+        path: 'quick-sale',
+        name: 'vendor-quick-sale',
+        component: VendorQuickSale,
+        props: true,
       },
       {
         path: 'orders',

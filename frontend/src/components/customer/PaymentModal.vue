@@ -9,9 +9,10 @@
           <div v-if="orderId" class="order-no">
             订单 <strong>#{{ orderId }}</strong>
           </div>
-          <div class="pay-line">
+          <div v-if="total !== null" class="pay-line">
             请扫码支付 <strong>{{ formatYuan(total) }}</strong>
           </div>
+          <div v-else class="pay-line">扫码付款</div>
         </div>
 
         <!-- 中间：二维码区域 -->
@@ -41,7 +42,7 @@
           </div>
           <p class="timer-text">{{ countdown }} 秒后自动返回</p>
           <n-button type="primary" block round size="large" class="close-btn" @click="handleClose">
-            完成
+            {{ closeLabel }}
           </n-button>
           <button
             v-if="countdown > 0 && countdown <= 30"
@@ -67,12 +68,13 @@ const emit = defineEmits<{ (e: 'close'): void }>()
 const props = withDefaults(
   defineProps<{
     show: boolean
-    total: Cents
+    total?: Cents | null
+    closeLabel?: string
     /** 下单响应里的订单号；为空时不显示那一行 */
     orderId?: number | null
     qrCodeUrls?: string[]
   }>(),
-  { qrCodeUrls: () => [], orderId: null }
+  { qrCodeUrls: () => [], orderId: null, total: null, closeLabel: '完成' }
 )
 
 const countdown = ref(0)
@@ -175,38 +177,30 @@ onUnmounted(stopCountdown)
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
 }
 
 .qr-grid {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
   gap: var(--space-lg);
-  align-items: center;
-  justify-content: center;
-  max-height: 100%;
-  max-width: 100%;
 }
 
-/* 单码：居中最大化 */
-.qr-grid.single .qr-wrapper {
-  max-width: min(100%, 70vh);
-}
-
-/* 双码：各占一半，保证都能看到 */
-.qr-grid:not(.single) .qr-wrapper {
-  max-width: min(48%, 60vh);
+.qr-grid.single {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .qr-wrapper {
-  aspect-ratio: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 1;
-  /* 保证二维码可扫描的最小尺寸（双码并排时尤其重要） */
-  min-width: 140px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .qr-img {
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
@@ -280,11 +274,8 @@ onUnmounted(stopCountdown)
 /* 竖屏手机：双码改为上下排列 */
 @media (--phone) and (orientation: portrait) {
   .qr-grid:not(.single) {
-    flex-direction: column;
-  }
-  /* 两码上下叠：各自最多占约 3 成屏高，给顶部订单号和底部提示、按钮留位置 */
-  .qr-grid:not(.single) .qr-wrapper {
-    max-width: min(70%, 28vh);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: repeat(2, minmax(0, 1fr));
   }
 }
 </style>

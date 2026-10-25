@@ -556,6 +556,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/events/{event_id}/quick-sales": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 快售与普通下单共用销售和收款逻辑，两本流水同事务提交。 */
+        post: operations["order.quick_sale"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/events/{event_id}/quote": {
         parameters: {
             query?: never;
@@ -1881,6 +1898,16 @@ export interface components {
         };
         ProductUpdateRequest: {
             unit_price?: components["schemas"]["Money"] | null;
+        };
+        /** @description 摊主已经核对到账后，快速记一整单。 */
+        QuickSaleRequest: {
+            channel: string;
+            /** @description 前端已经显示并经摊主确认的本单金额（分）；价格或优惠变动时拒绝。 */
+            expected_amount: components["schemas"]["Money"];
+            final_amount?: components["schemas"]["Money"] | null;
+            items: components["schemas"]["CartItemRequest"][];
+            /** Format: uuid */
+            request_id: string;
         };
         ReconcileRequest: {
             counts: components["schemas"]["ChannelActual"][];
@@ -4275,6 +4302,78 @@ export interface operations {
                 };
             };
             /** @description 展会已结算 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    "order.quick_sale": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 展会 id */
+                event_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuickSaleRequest"];
+            };
+        };
+        responses: {
+            /** @description 同一请求的安全重试 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderResponse"];
+                };
+            };
+            /** @description 快售已记入订单与账本 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderResponse"];
+                };
+            };
+            /** @description 商品或渠道无效 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 未登录 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 无权访问展会 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description 库存不足、展会不在进行中或请求编号被复用 */
             409: {
                 headers: {
                     [name: string]: unknown;

@@ -294,6 +294,30 @@ describe('CustomerView 下单流程', () => {
     expect(wrapper.find('.success-screen').text()).toContain('#42')
     wrapper.unmount()
   })
+
+  it('空购物车可展示收款码，关闭后不出现下单成功屏', async () => {
+    const wrapper = mountCustomer()
+    await flushPromises()
+    useCustomerStore().clearCart()
+    await nextTick()
+    const button = wrapper.get('.bar-checkout-btn')
+    expect(button.text()).toBe('展示收款码')
+    expect(button.attributes('disabled')).toBeUndefined()
+    const postCallsBefore = mocks.apiPost.mock.calls.length
+    await button.trigger('click')
+
+    const pay = wrapper.findComponent({ name: 'PaymentModal' })
+    expect(pay.props('show')).toBe(true)
+    expect(pay.props('orderId')).toBeNull()
+    expect(pay.props('total')).toBeNull()
+    expect(wrapper.findComponent({ name: 'OrderConfirmPanel' }).props('show')).toBe(false)
+    pay.vm.$emit('close')
+    await nextTick()
+    expect(pay.props('show')).toBe(false)
+    expect(wrapper.find('.success-screen').exists()).toBe(false)
+    expect(mocks.apiPost.mock.calls.length).toBe(postCallsBefore)
+    wrapper.unmount()
+  })
 })
 
 describe('CustomerView 拍照识别入口', () => {

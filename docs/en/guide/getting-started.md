@@ -136,12 +136,14 @@ Purpose: new-order alerts, confirming payment, packing orders.
 
 1. Open it with the **Vendor entry** QR code and choose the event
 2. Enter the vendor password (this event's own password if you set one, otherwise the default vendor password `vendor123`)
-3. There are three tabs at the bottom: **Orders / Stock / Closing** (「订单 / 库存 / 收摊」)
+3. There are four tabs at the bottom: **Quick Sale / Orders / Stock / Closing** (「快售 / 订单 / 库存 / 收摊」)
 
 <p style="text-align: center;"><img src="/images/v1.2/vendor-orders-phone.png" alt="Vendor view: Orders" style="max-width: 300px; width: 100%; border-radius: 8px; border: 1px solid var(--vp-c-divider);"></p>
 
 
 The phone plays a sound when a new order comes in. Turn up the media volume and tap anywhere on the page once (browsers only play sound after the page has been touched).
+
+In **Quick Sale** (「快售」), add one or more items from the same event catalog. The cart uses the same bundle discounts as the customer view. After checking that payment has arrived, select the channel, adjust the actual amount if needed, and tap **Confirm received, record order** (「确认已收，记这单」). This completes the order directly. Tap “展示收款码” whenever you need to show the payment QR codes. If the network result is uncertain, use **Retry previous order** (「重试上一单」) instead of submitting it again.
 
 :::tip Typical on-site flow
 1. Customer picks items on the tablet → **Checkout** (「去结算」) → **Place order** (「确认下单」) → the tablet shows your payment QR code

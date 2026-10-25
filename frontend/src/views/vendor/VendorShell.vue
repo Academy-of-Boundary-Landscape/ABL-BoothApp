@@ -1,5 +1,5 @@
 <!--
-  摊主端外壳（spec §3.6）：页头（展会名 + 去点单 + 切换展会）+ 三个 tab 子路由。
+  摊主端外壳（spec §3.6）：页头（展会名 + 去点单 + 切换展会）+ 四个 tab 子路由。
   3 秒轮询、新单提示音与 `<audio>` 元素都挂在这里，切到库存 / 收摊 tab 也不中断。
 
   手机（`useViewport().isPhone`）把 tab 行换成底部固定 tab 栏，并在根元素上写
@@ -40,7 +40,7 @@
       <router-view />
     </PageShell>
 
-    <!-- 手机：底部固定三格 tab 栏 -->
+    <!-- 手机：底部固定四格 tab 栏 -->
     <nav v-if="isPhone" class="vendor-tabbar">
       <RouterLink
         v-for="tab in TABS"
@@ -71,6 +71,7 @@ import { provideVendorPolling, useVendorPolling } from '@/composables/useVendorP
 const props = defineProps<{ id: string }>()
 
 const TABS = [
+  { name: 'vendor-quick-sale', label: '快售' },
   { name: 'vendor-orders', label: '订单' },
   { name: 'vendor-inventory', label: '库存' },
   { name: 'vendor-closing', label: '收摊' },

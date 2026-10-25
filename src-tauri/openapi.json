@@ -2764,6 +2764,104 @@
         ]
       }
     },
+    "/events/{event_id}/quick-sales": {
+      "post": {
+        "tags": [
+          "order"
+        ],
+        "summary": "快售与普通下单共用销售和收款逻辑，两本流水同事务提交。",
+        "operationId": "order.quick_sale",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "展会 id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuickSaleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "同一请求的安全重试",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "快售已记入订单与账本",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "商品或渠道无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权访问展会",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "库存不足、展会不在进行中或请求编号被复用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/events/{event_id}/quote": {
       "post": {
         "tags": [
@@ -7794,6 +7892,46 @@
                 "type": "null"
               }
             ]
+          }
+        }
+      },
+      "QuickSaleRequest": {
+        "type": "object",
+        "description": "摊主已经核对到账后，快速记一整单。",
+        "required": [
+          "items",
+          "channel",
+          "expected_amount",
+          "request_id"
+        ],
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "expected_amount": {
+            "$ref": "#/components/schemas/Money",
+            "description": "前端已经显示并经摊主确认的本单金额（分）；价格或优惠变动时拒绝。"
+          },
+          "final_amount": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Money",
+                "description": "实际收到的金额（分）；省略时等于报价，手工让价规则与普通订单相同。"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CartItemRequest"
+            }
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },

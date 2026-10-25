@@ -30,8 +30,8 @@ hero:
 
 features:
   - icon: 🚀
-    title: Automated workflow
-    details: Totals, stock deduction and reports are all automatic. No more tally marks and calculator punching.
+    title: Fast checkout on the vendor's phone
+    details: Pick items from the same catalog and get the same bundle deals as the customer view. Confirm payment and complete the order directly, with one-tap access to payment QR codes and no need to switch views.
   - icon: 📶
     title: Multi-device
     details: Take orders on a tablet, collect payment on a phone. One device runs the app; the others just scan a QR code and connect in the browser.
